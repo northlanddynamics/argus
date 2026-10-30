@@ -10,6 +10,10 @@ A collaborative case management workspace where an in-house security team invest
 The in-house security team (and the company it protects) that uses Argus; the unit of tenancy and data isolation.
 _Avoid_: Tenant, account, workspace, company, client
 
+**Operator**:
+A person who runs the Argus service itself and creates Organizations; not a member of any Organization and distinct from an Admin.
+_Avoid_: Super admin, platform admin, staff
+
 **Member**:
 A person who belongs to an Organization with one of the roles Owner, Admin or Analyst.
 _Avoid_: User, employee, staff
