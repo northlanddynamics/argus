@@ -37,8 +37,12 @@ A security matter the Organization is tracking and working, from a phishing repo
 _Avoid_: Incident, ticket, issue, alert, event
 
 **Status**:
-Where a Case currently stands, from a fixed list: New, Triage, In Progress, Awaiting Info, Resolved, Closed.
+Where a Case currently stands, from a fixed list: New, Triage, In Progress, Awaiting Info, Resolved (work done, awaiting review) or Closed (final and read-only unless an Admin reopens it).
 _Avoid_: State, phase, stage
+
+**Resolution**:
+The outcome recorded when a Case is closed: True Positive, Benign, False Positive or Duplicate.
+_Avoid_: Disposition, verdict, outcome, close reason
 
 **Severity**:
 How serious a Case is: Critical, High, Medium, Low or Informational.
@@ -49,7 +53,7 @@ A Case hidden from Analysts unless they are assigned to it; Admins and assigned 
 _Avoid_: Private case, confidential case, locked case
 
 **Assignee**:
-The one person accountable for driving a Case forward; a Case with no Assignee is unassigned.
+The one person accountable for driving a Case forward, or for triaging an Alert; with none, the Case or Alert is unassigned.
 _Avoid_: Owner, lead, handler
 
 **Case Role**:
@@ -71,8 +75,20 @@ _Avoid_: Private, hidden, confidential
 ### Alerts
 
 **Alert**:
-A detection raised by an external security tool (e.g. CrowdStrike) and brought into Argus; it is not a Case, but one or more Alerts can be attached to a Case.
+A detection raised by an external security tool (e.g. CrowdStrike) and received by Argus; it is not a Case, and is attached to at most one Case at a time.
 _Avoid_: Detection, event, signal, case
+
+**Alert Status**:
+Where an Alert stands in triage: New, Acknowledged, Attached (to a Case) or Dismissed.
+_Avoid_: Alert state
+
+**Dismissal Reason**:
+Why an Alert was dismissed without being attached to a Case: False Positive, Benign, Duplicate or Other.
+_Avoid_: Close reason, suppression
+
+**Integration**:
+An Organization's connection to an external security tool through which that tool sends Alerts into Argus.
+_Avoid_: Connector, source, plugin, feed
 
 ### Record of a Case
 
