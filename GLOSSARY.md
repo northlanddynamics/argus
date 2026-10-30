@@ -87,7 +87,7 @@ Why an Alert was dismissed without being attached to a Case: False Positive, Ben
 _Avoid_: Close reason, suppression
 
 **Integration**:
-An Organization's connection to an external security tool through which that tool sends Alerts into Argus.
+An Organization's two-way connection to an external security tool: the tool sends Alerts into Argus, and Argus sends changes to those Alerts back.
 _Avoid_: Connector, source, plugin, feed
 
 ### Record of a Case

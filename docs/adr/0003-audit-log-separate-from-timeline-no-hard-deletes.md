@@ -1,0 +1,3 @@
+# The Audit Log is separate from the Timeline, and nothing is hard-deleted
+
+The Timeline is the analyst-curated account of what happened in the real world, ordered by when it happened; the Audit Log is the immutable, system-written record of what people did in Argus, ordered by when they did it. They are kept as separate stores (linked by Promotion) because conflating them makes the narrative unreadable and the audit trail editable. Nothing is ever hard-deleted: Timeline Entries and Discussion messages can be edited or retracted with the original preserved in the Audit Log, and Cases and Evidence cannot be deleted, because chain of custody and legal holds outweigh convenience. Privacy erasure requests are not supported in v1.
