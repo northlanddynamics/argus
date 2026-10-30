@@ -44,6 +44,10 @@ _Avoid_: State, phase, stage
 The outcome recorded when a Case is closed: True Positive, Benign, False Positive or Duplicate.
 _Avoid_: Disposition, verdict, outcome, close reason
 
+**Case Type**:
+The kind of security matter a Case is, from a fixed list: Phishing, Malware, Account Compromise, Unauthorized Access, Data Loss, Insider Threat, Denial of Service, Vulnerability or Other.
+_Avoid_: Category, classification, incident type
+
 **Severity**:
 How serious a Case is: Critical, High, Medium, Low or Informational.
 _Avoid_: Priority, impact, SEV level
@@ -111,6 +115,10 @@ _Avoid_: Chat, comments, thread
 **Promotion**:
 Turning a Discussion message or Audit Log entry into a Timeline Entry that links back to its source.
 _Avoid_: Pinning, highlighting
+
+**Case Report**:
+An exported, point-in-time document summarising a Case, either complete or Guest-safe (excluding Internal items).
+_Avoid_: Export, summary, post-mortem, write-up
 
 ### Evidence and context
 
