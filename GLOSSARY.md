@@ -37,12 +37,8 @@ A security matter the Organization is tracking and working, from a phishing repo
 _Avoid_: Incident, ticket, issue, alert, event
 
 **Status**:
-Where a Case currently stands in the Organization's workflow (e.g. New, In Progress, Awaiting Info, Closed); each Status belongs to exactly one Status Category.
+Where a Case currently stands, from a fixed list: New, Triage, In Progress, Awaiting Info, Resolved, Closed.
 _Avoid_: State, phase, stage
-
-**Status Category**:
-One of the fixed groupings Open, Active or Closed that every Status maps to, so Cases can be compared across differently named Statuses.
-_Avoid_: Status type
 
 **Severity**:
 How serious a Case is: Critical, High, Medium, Low or Informational.
@@ -63,3 +59,53 @@ _Avoid_: Position, responsibility
 **Task**:
 A unit of work on a Case with a single owner and a done/not-done state.
 _Avoid_: Action item, to-do, subtask
+
+**Case Link**:
+A typed relationship between two Cases: Related, Duplicate of, or Parent/Child.
+_Avoid_: Relation, association, merge
+
+**Internal**:
+A marking on an item within a Case that hides it from Guests on that Case.
+_Avoid_: Private, hidden, confidential
+
+### Alerts
+
+**Alert**:
+A detection raised by an external security tool (e.g. CrowdStrike) and brought into Argus; it is not a Case, but one or more Alerts can be attached to a Case.
+_Avoid_: Detection, event, signal, case
+
+### Record of a Case
+
+**Timeline**:
+The analyst-written account of what happened in the real world during a Case, ordered by when things happened rather than when they were recorded.
+_Avoid_: Narrative, chronology, history
+
+**Timeline Entry**:
+One real-world occurrence on the Timeline, with an occurred-at time that may be exact, a range or approximate, and a separate recorded-at time.
+_Avoid_: Event, key event, log entry
+
+**Audit Log**:
+The immutable, system-written record of every action taken on a Case within Argus, including who accessed or exported Evidence.
+_Avoid_: History, activity feed, timeline, change log
+
+**Discussion**:
+The conversation among the people working a Case.
+_Avoid_: Chat, comments, thread
+
+**Promotion**:
+Turning a Discussion message or Audit Log entry into a Timeline Entry that links back to its source.
+_Avoid_: Pinning, highlighting
+
+### Evidence and context
+
+**Evidence**:
+Any file added to a Case; fingerprinted when added, never altered afterwards, and every access to it is recorded in the Audit Log.
+_Avoid_: Attachment, file, artifact, upload
+
+**Observable**:
+An indicator such as an IP address, domain, hash or email address, held once per Organization and linked to every Case it appears in.
+_Avoid_: IOC, indicator, artifact, entity
+
+**Asset**:
+A thing the Organization owns or operates, such as a host or account, held once per Organization and linked to every Case that affects it.
+_Avoid_: Device, system, resource, entity
