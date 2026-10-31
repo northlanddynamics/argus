@@ -6,11 +6,11 @@ import { canManage } from "@/lib/roles";
 import { AcceptInvitePage } from "@/routes/accept-invite";
 import { OperatorConsolePage } from "@/routes/operator-console";
 import { CaseAuditLogPage } from "@/routes/cases/audit-log";
-import { CaseDiscussionPage } from "@/routes/cases/discussion";
 import { CaseLayout } from "@/routes/cases/case-layout";
 import { CasesPage, validateCaseListSearch } from "@/routes/cases/list";
 import { CaseOverviewPage } from "@/routes/cases/overview";
 import { CaseTasksPage } from "@/routes/cases/tasks";
+import { CaseTimelinePage } from "@/routes/cases/timeline";
 import { OrgAuditLogPage } from "@/routes/settings/audit-log";
 import { SettingsLayout } from "@/routes/settings/layout";
 import { MembersPage } from "@/routes/settings/members";
@@ -57,10 +57,10 @@ const caseTasksRoute = createRoute({
   component: CaseTasksPage,
 });
 
-const caseDiscussionRoute = createRoute({
+const caseTimelineRoute = createRoute({
   getParentRoute: () => caseRoute,
-  path: "/discussion",
-  component: CaseDiscussionPage,
+  path: "/timeline",
+  component: CaseTimelinePage,
 });
 
 const caseAuditLogRoute = createRoute({
@@ -128,7 +128,7 @@ const inviteRoute = createRoute({
 export const router = createRouter({
   routeTree: rootRoute.addChildren([
     homeRoute,
-    caseRoute.addChildren([caseOverviewRoute, caseDiscussionRoute, caseTasksRoute, caseAuditLogRoute]),
+    caseRoute.addChildren([caseOverviewRoute, caseTimelineRoute, caseTasksRoute, caseAuditLogRoute]),
     operatorRoute,
     settingsRoute.addChildren([settingsIndexRoute, membersRoute, orgAuditLogRoute]),
     signInRoute,

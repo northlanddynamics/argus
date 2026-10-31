@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -12,6 +13,7 @@ import {
   type Resolution,
   resolutionLabel,
   type CaseSummary,
+  caseQuery,
   caseTypeLabel,
   type CaseType,
   severityLabel,
@@ -20,10 +22,12 @@ import {
   type Status,
   summaryText,
 } from "@/lib/cases";
+import { promotedSources, timelineQuery } from "@/lib/timeline";
 import { useCaseNumber } from "@/routes/cases/case-layout";
+import { PromoteDialog } from "@/routes/cases/timeline-entry-form";
 import { membersKey } from "@/routes/settings/members";
 
-const actionLabel: Record<CaseAuditAction, string> = {
+export const actionLabel: Record<CaseAuditAction, string> = {
   "case.opened": "Opened Case",
   "case.status_changed": "Changed Status",
   "case.severity_changed": "Changed Severity",
@@ -45,6 +49,10 @@ const actionLabel: Record<CaseAuditAction, string> = {
   "discussion.message_posted": "Posted message",
   "discussion.message_edited": "Edited message",
   "discussion.message_retracted": "Retracted message",
+  "timeline.entry_added": "Added Timeline Entry",
+  "timeline.entry_promoted": "Promoted to Timeline",
+  "timeline.entry_edited": "Edited Timeline Entry",
+  "timeline.entry_retracted": "Retracted Timeline Entry",
 };
 
 /** A recorded value as people read it: "In Progress" rather than "in_progress". */
@@ -74,8 +82,22 @@ function shown(action: CaseAuditAction, value: string | null) {
   }
 }
 
+type Entry = { id: string; occurredAt: string; action: CaseAuditAction; target: string | null; before: string | null; after: string | null };
+
+/** An entry in words, as the starting text of a Timeline Entry Promoted from it. */
+const entryText = (e: Entry) => {
+  const what = `${actionLabel[e.action] ?? e.action}${e.target === null ? "" : ` ${e.target}`}`;
+  if (e.before === null && e.after === null) return what;
+  const change = e.before === null ? shown(e.action, e.after) : `${shown(e.action, e.before)} → ${shown(e.action, e.after)}`;
+  return `${what}: ${change}`;
+};
+
 export function CaseAuditLogPage() {
   const number = useCaseNumber();
+  const { data: c } = useQuery(caseQuery(number));
+  const timeline = useQuery(timelineQuery(number));
+  const promoted = promotedSources(timeline.data);
+  const [promoting, setPromoting] = useState<Entry | null>(null);
   const [actor, setActor] = useState("");
   const [action, setAction] = useState<CaseAuditAction | "">("");
   const [from, setFrom] = useState("");
@@ -142,6 +164,7 @@ export function CaseAuditLogPage() {
                 <TableHead>Actor</TableHead>
                 <TableHead>Action</TableHead>
                 <TableHead>Before → After</TableHead>
+                <TableHead className="w-0" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -157,11 +180,22 @@ export function CaseAuditLogPage() {
                     {e.before !== null && <span className="line-through">{shown(e.action, e.before)}</span>}
                     {e.before !== null && " "}→ {shown(e.action, e.after)}
                   </TableCell>
+                  <TableCell className="text-right">
+                    {promoted.has(e.id) ? (
+                      <span className="text-xs text-muted-foreground">On the Timeline</span>
+                    ) : (
+                      c?.status !== "closed" && (
+                        <Button variant="outline" size="sm" onClick={() => setPromoting(e)}>
+                          Promote to Timeline
+                        </Button>
+                      )
+                    )}
+                  </TableCell>
                 </TableRow>
               ))}
               {entries.data?.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-muted-foreground">
+                  <TableCell colSpan={5} className="text-muted-foreground">
                     Nothing matches.
                   </TableCell>
                 </TableRow>
@@ -170,6 +204,15 @@ export function CaseAuditLogPage() {
           </Table>
         </CardContent>
       </Card>
+      {promoting && (
+        <PromoteDialog
+          number={number}
+          source={{ kind: "audit_log_entry", id: promoting.id }}
+          occurredAt={promoting.occurredAt}
+          body={entryText(promoting)}
+          onClose={() => setPromoting(null)}
+        />
+      )}
     </>
   );
 }

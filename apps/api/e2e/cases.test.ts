@@ -387,7 +387,9 @@ test("an Analyst discusses a Restricted Case, mentioning only people who can see
     await page.getByRole("listitem", { name: "Message from Olive Owner" }).getByText("Thanks, looking now.").waitFor();
 
     // Ana edits her message, keeping the mention; Olive's has no Edit for her.
-    expect(await page.getByRole("listitem", { name: "Message from Olive Owner" }).getByRole("button").count()).toBe(0);
+    const olives = page.getByRole("listitem", { name: "Message from Olive Owner" });
+    expect(await olives.getByRole("button", { name: "Edit" }).count()).toBe(0);
+    expect(await olives.getByRole("button", { name: "Retract" }).count()).toBe(0);
     await mine.getByRole("button", { name: "Edit" }).click();
     const editBox = page.getByRole("textbox", { name: "Edit message" });
     expect(await editBox.inputValue()).toBe("Memory image is up — @Olive Owner");
@@ -410,3 +412,111 @@ test("an Analyst discusses a Restricted Case, mentioning only people who can see
     await stop();
   }
 }, 60_000);
+
+test("an Analyst writes the Timeline: exact, range and approximate entries, citations, Promotion, a stale edit and a retraction", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    for (const email of ["ana@acme.example", "ben@acme.example"]) {
+      await owner.api.organization.invitations.$post({ json: { email, role: "analyst" } });
+    }
+    const ana = await t.acceptInvite("ana@acme.example", PASSWORD, "Ana Analyst");
+    const ben = await t.acceptInvite("ben@acme.example", PASSWORD, "Ben Analyst");
+    const number = { number: "1" };
+    await ana.api.cases.$post({ json: { title: "Suspicious PowerShell on FIN-LT-0231", caseType: "malware", severity: "critical" } });
+    const me = await (await ana.api.me.$get()).json();
+    if (!("user" in me)) throw new Error("Not signed in");
+    await ana.api.cases[":number"].tasks.$post({ param: number, json: { title: "Contain host", ownerId: me.user.id } });
+    await ben.api.cases[":number"].discussion.$post({ param: number, json: { body: "Containing host from console now." } });
+    await owner.api.cases[":number"].$patch({ param: number, json: { severity: "high" } });
+
+    const page = await browser.newPage();
+    await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
+    await page.goto(`${baseUrl}/cases/1`);
+    await page.getByRole("link", { name: "Timeline & Discussion" }).click();
+    await page.getByText("Nothing on the Timeline yet.").waitFor();
+    const form = page.getByRole("form", { name: "Add entry" });
+    const entries = page.getByRole("list", { name: "Timeline Entries" });
+    const headings = () => entries.getByRole("heading").allTextContents();
+
+    // A range, citing the Task.
+    await form.getByRole("button", { name: "Range" }).click();
+    await form.getByLabel("From (UTC)").fill("2026-10-28T09:20");
+    await form.getByLabel("To (UTC)").fill("2026-10-28T09:47");
+    await form.getByLabel("What happened").fill("Beaconing to 185.220.101.4 roughly every 60 s.");
+    await form.getByLabel("Cite a Task").selectOption({ label: "Contain host" });
+    await form.getByRole("button", { name: "Add entry" }).click();
+    const beaconing = page.getByRole("listitem", { name: "Timeline Entry: Beaconing to 185.220.101.4 roughly every 60 s." });
+    await beaconing.getByText("Task · Contain host").waitFor();
+    expect(await form.getByLabel("What happened").inputValue()).toBe("");
+
+    // An approximate entry, which happened earlier, goes above it.
+    await form.getByRole("button", { name: "Approximate" }).click();
+    await form.getByLabel("Around (UTC)").fill("2026-10-27T18:00");
+    await form.getByLabel("Give or take").selectOption({ label: "± 6 h" });
+    await form.getByLabel("What happened").fill("Phishing email delivered to d.howe.");
+    await form.getByRole("button", { name: "Add entry" }).click();
+    await page.getByRole("listitem", { name: "Timeline Entry: Phishing email delivered to d.howe." }).waitFor();
+    expect(await headings()).toEqual(["≈ 2026-10-27 18:00 UTC ± 6 h", "2026-10-28 09:20 → 09:47 UTC"]);
+
+    // Ben's message is Promoted; it links back, and the message shows it's on the Timeline.
+    const bens = page.getByRole("listitem", { name: "Message from Ben Analyst" });
+    await bens.getByRole("button", { name: "Promote to Timeline" }).click();
+    const dialog = page.getByRole("dialog", { name: "Promote to Timeline" });
+    expect(await dialog.getByLabel("What happened").inputValue()).toBe("Containing host from console now.");
+    await dialog.getByLabel("At (UTC)").fill("2026-10-28T10:02");
+    await dialog.getByLabel("What happened").fill("Host network-contained from the Falcon console.");
+    await dialog.getByRole("button", { name: "Promote" }).click();
+    const contained = page.getByRole("listitem", { name: "Timeline Entry: Host network-contained from the Falcon console." });
+    await contained.getByText("Promoted from Discussion message by Ben Analyst").waitFor();
+    await bens.getByText("· on the Timeline").waitFor();
+    expect(await bens.getByRole("button", { name: "Promote to Timeline" }).count()).toBe(0);
+    expect(await headings()).toEqual(["≈ 2026-10-27 18:00 UTC ± 6 h", "2026-10-28 09:20 → 09:47 UTC", "2026-10-28 10:02 UTC"]);
+
+    // Ana starts editing; Ben saves first, so her save is refused until she loads his.
+    await contained.getByRole("button", { name: "Edit" }).click();
+    const list = await (await ben.api.cases[":number"].timeline.$get({ param: number })).json();
+    if (!("entries" in list)) throw new Error("No Timeline");
+    const theirs = list.entries.find((e) => e.body.startsWith("Host network-contained"))!;
+    await ben.api.cases[":number"].timeline[":id"].$patch({
+      param: { ...number, id: theirs.id },
+      json: { occurredAt: theirs.occurredAt, body: "Host network-contained (Ben).", citations: [], version: theirs.version },
+    });
+    const editForm = page.getByRole("form", { name: "Save" });
+    await editForm.getByLabel("What happened").fill("Host network-contained (Ana).");
+    await editForm.getByRole("button", { name: "Save" }).click();
+    await page.getByText("Not saved — the entry changed since you opened it").waitFor();
+    await page.getByRole("button", { name: "Load current" }).click();
+    expect(await editForm.getByLabel("What happened").inputValue()).toBe("Host network-contained (Ben).");
+    await editForm.getByLabel("What happened").fill("Host network-contained from the Falcon console at 10:02.");
+    await editForm.getByRole("button", { name: "Save" }).click();
+    const edited = page.getByRole("listitem", { name: "Timeline Entry: Host network-contained from the Falcon console at 10:02." });
+    await edited.getByText("edited (original in Audit Log)").waitFor();
+
+    // The approximate entry is retracted, with a reason; it stays, struck through.
+    const phishing = page.getByRole("listitem", { name: "Timeline Entry: Phishing email delivered to d.howe." });
+    await phishing.getByRole("button", { name: "Retract" }).click();
+    await phishing.getByLabel("Why retract it? (optional)").fill("wrong recipient");
+    await phishing.getByRole("button", { name: "Retract entry" }).click();
+    await phishing.getByText("Retracted by Ana Analyst — wrong recipient. Original kept in the Audit Log.").waitFor();
+    expect(await phishing.getByRole("button", { name: "Edit" }).count()).toBe(0);
+
+    // From the Audit Log, the Severity change is Promoted.
+    await page.getByRole("link", { name: "Audit Log" }).click();
+    const severity = page.getByRole("row").filter({ hasText: "Changed Severity" });
+    await severity.getByRole("button", { name: "Promote to Timeline" }).click();
+    expect(await dialog.getByLabel("What happened").inputValue()).toBe("Changed Severity: Critical → High");
+    await dialog.getByRole("button", { name: "Promote" }).click();
+    await severity.getByText("On the Timeline").waitFor();
+    for (const action of ["Added Timeline Entry", "Promoted to Timeline", "Edited Timeline Entry", "Retracted Timeline Entry"]) {
+      await page.getByRole("cell", { name: action }).first().waitFor();
+    }
+    await page.getByRole("cell", { name: "≈ 2026-10-27 18:00 UTC ± 6 h · Phishing email delivered to d.howe." }).first().waitFor();
+
+    await page.getByRole("link", { name: "Timeline & Discussion" }).click();
+    await page.getByText("Promoted from Audit Log (Changed Severity by Olive Owner)").waitFor();
+  } finally {
+    await stop();
+  }
+}, 90_000);

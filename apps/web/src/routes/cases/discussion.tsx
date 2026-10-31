@@ -17,15 +17,20 @@ import {
   typedText,
 } from "@/lib/discussion";
 import { roleLabel } from "@/lib/roles";
+import { promotedSources, timelineQuery } from "@/lib/timeline";
 import { useCaseNumber } from "@/routes/cases/case-layout";
+import { PromoteDialog } from "@/routes/cases/timeline-entry-form";
 
-/** Case · Discussion: the conversation among the people working the Case. */
-export function CaseDiscussionPage() {
+/** The Discussion: the conversation among the people working the Case. Shown beside the Timeline. */
+export function CaseDiscussion() {
   const number = useCaseNumber();
   const queryClient = useQueryClient();
   const { data: c } = useQuery(caseQuery(number));
   const messages = useQuery(discussionQuery(number));
+  const timeline = useQuery(timelineQuery(number));
+  const promoted = promotedSources(timeline.data);
   const [editing, setEditing] = useState<string | null>(null);
+  const [promoting, setPromoting] = useState<MessageView | null>(null);
   const refresh = () => queryClient.invalidateQueries({ queryKey: discussionKey(number) });
 
   const post = useMutation({
@@ -51,7 +56,15 @@ export function CaseDiscussionPage() {
                 <EditMessage number={number} message={m} onDone={() => setEditing(null)} />
               </li>
             ) : (
-              <Message key={m.id} number={number} message={m} readOnly={readOnly} onEdit={() => setEditing(m.id)} />
+              <Message
+                key={m.id}
+                number={number}
+                message={m}
+                readOnly={readOnly}
+                promoted={promoted.has(m.id)}
+                onEdit={() => setEditing(m.id)}
+                onPromote={() => setPromoting(m)}
+              />
             ),
           )}
           {messages.data?.length === 0 && <li className="text-sm text-muted-foreground">No messages yet.</li>}
@@ -66,12 +79,36 @@ export function CaseDiscussionPage() {
             onSubmit={(body, reset) => post.mutate(body, { onSuccess: reset })}
           />
         )}
+        {promoting && (
+          <PromoteDialog
+            number={number}
+            source={{ kind: "discussion_message", id: promoting.id }}
+            occurredAt={promoting.postedAt}
+            body={typedText(promoting.body ?? "", promoting.mentions)}
+            onClose={() => setPromoting(null)}
+          />
+        )}
       </CardContent>
     </Card>
   );
 }
 
-function Message({ number, message: m, readOnly, onEdit }: { number: number; message: MessageView; readOnly: boolean; onEdit: () => void }) {
+function Message({
+  number,
+  message: m,
+  readOnly,
+  promoted,
+  onEdit,
+  onPromote,
+}: {
+  number: number;
+  message: MessageView;
+  readOnly: boolean;
+  /** On the Timeline already. */
+  promoted: boolean;
+  onEdit: () => void;
+  onPromote: () => void;
+}) {
   const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
   const retract = useMutation({
@@ -89,6 +126,7 @@ function Message({ number, message: m, readOnly, onEdit }: { number: number; mes
           {new Date(m.postedAt).toLocaleString()}
         </time>
         {m.editedAt && !m.retractedAt && <span className="text-xs text-muted-foreground">· edited</span>}
+        {promoted && <span className="text-xs text-muted-foreground">· on the Timeline</span>}
       </div>
       {m.body === null ? (
         <p className="text-sm text-muted-foreground italic">Retracted by {m.author.name}. The original is kept in the Audit Log.</p>
@@ -105,8 +143,13 @@ function Message({ number, message: m, readOnly, onEdit }: { number: number; mes
           )}
         </p>
       )}
-      {!readOnly && (m.can.edit || m.can.retract) && (
+      {!readOnly && m.body !== null && (
         <div className="flex gap-2">
+          {!promoted && (
+            <Button variant="outline" size="sm" onClick={onPromote}>
+              Promote to Timeline
+            </Button>
+          )}
           {m.can.edit && (
             <Button variant="outline" size="sm" onClick={onEdit}>
               Edit
