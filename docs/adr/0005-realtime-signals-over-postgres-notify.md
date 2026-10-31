@@ -1,0 +1,3 @@
+# Real-time updates are change signals fanned out with Postgres LISTEN/NOTIFY
+
+WebSocket messages tell clients only what changed (e.g. "Case 123 Timeline changed"); clients then refetch through the normal API. This keeps every visibility rule (Restricted Cases, Internal items, Guest scope) enforced in one place, so nothing can leak over the socket, and the same refetch recovers events missed while disconnected. Signals from all `web` instances and the `worker` are fanned out with Postgres LISTEN/NOTIFY rather than Redis pub/sub, because signal-only payloads fit within NOTIFY's limits and it adds no infrastructure. If fan-out outgrows Postgres, Redis pub/sub is the upgrade path; the signal-only message design does not change.

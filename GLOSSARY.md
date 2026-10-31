@@ -61,7 +61,7 @@ A Case hidden from Analysts unless they are assigned to it; Admins and assigned 
 _Avoid_: Private case, confidential case, locked case
 
 **Assignee**:
-The one person accountable for driving a Case forward, or for triaging an Alert; with none, the Case or Alert is unassigned.
+The one person accountable for driving a Case forward; a Case with no Assignee is unassigned. Alerts have no Assignee.
 _Avoid_: Owner, lead, handler
 
 **Case Role**:
@@ -83,11 +83,11 @@ _Avoid_: Private, hidden, confidential
 ### Alerts
 
 **Alert**:
-A detection raised by an external security tool (e.g. CrowdStrike) and received by Argus; it is not a Case, and is attached to at most one Case at a time.
+A detection raised by an external security tool (e.g. CrowdStrike) and received by Argus; it is not a Case and is never worked on its own, only attached to a Case (at most one at a time) or dismissed.
 _Avoid_: Detection, event, signal, case
 
 **Alert Status**:
-Where an Alert stands in triage: New, Acknowledged, Attached (to a Case) or Dismissed.
+Where an Alert stands: New, Attached (to a Case) or Dismissed.
 _Avoid_: Alert state
 
 **Dismissal Reason**:
