@@ -55,7 +55,7 @@ test("the Owner accepts their invite, enrolls in TOTP, signs in with password an
     await page.getByRole("button", { name: "Also add a passkey" }).click();
     await page.getByRole("button", { name: "Passkey added" }).waitFor();
     await page.getByRole("button", { name: "Continue to Argus" }).click();
-    await page.getByRole("heading", { name: "Acme Security" }).waitFor();
+    await page.getByText("Acme Security", { exact: true }).waitFor();
 
     // Password sign-in asks for a TOTP code.
     await page.getByRole("button", { name: "Sign out" }).click();
@@ -66,14 +66,14 @@ test("the Owner accepts their invite, enrolls in TOTP, signs in with password an
     await page.getByText("Enter your 6-digit code", { exact: true }).waitFor();
     await page.getByLabel("Authentication code").fill(await t.totpCode(secret));
     await page.getByRole("button", { name: "Verify" }).click();
-    await page.getByRole("heading", { name: "Acme Security" }).waitFor();
+    await page.getByText("Acme Security", { exact: true }).waitFor();
     expect(page.url()).toBe(`${baseUrl}/`);
 
     // The passkey signs in on its own.
     await page.getByRole("button", { name: "Sign out" }).click();
     await page.waitForURL(`${baseUrl}/sign-in`);
     await page.getByRole("button", { name: "Sign in with a passkey" }).click();
-    await page.getByRole("heading", { name: "Acme Security" }).waitFor();
+    await page.getByText("Acme Security", { exact: true }).waitFor();
     expect(page.url()).toBe(`${baseUrl}/`);
   } finally {
     await stop();

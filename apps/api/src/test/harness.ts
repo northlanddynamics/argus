@@ -1,4 +1,3 @@
-import { afterEach } from "bun:test";
 import { passkeyClient } from "@better-auth/passkey/client";
 import { createAuthClient } from "better-auth/client";
 import { adminClient, organizationClient, twoFactorClient } from "better-auth/client/plugins";
@@ -26,9 +25,11 @@ export const totpSecret = (totpURI: string) => {
 };
 
 const cleanups: (() => Promise<void>)[] = [];
-afterEach(async () => {
+
+/** Drops every test database made since the last call. `test/setup.ts` runs it after each test, in every file. */
+export async function cleanUpTestApps() {
   while (cleanups.length) await cleanups.pop()!();
-});
+}
 
 /**
  * Builds the API in-process against a fresh Postgres database, with a fake clock

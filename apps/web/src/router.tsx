@@ -4,7 +4,10 @@ import { meQuery } from "@/lib/api";
 import { canManage } from "@/lib/roles";
 import { AcceptInvitePage } from "@/routes/accept-invite";
 import { OperatorConsolePage } from "@/routes/operator-console";
-import { OrganizationHomePage } from "@/routes/organization-home";
+import { CaseAuditLogPage } from "@/routes/cases/audit-log";
+import { CaseLayout } from "@/routes/cases/case-layout";
+import { CasesPage, validateCaseListSearch } from "@/routes/cases/list";
+import { CaseOverviewPage } from "@/routes/cases/overview";
 import { OrgAuditLogPage } from "@/routes/settings/audit-log";
 import { SettingsLayout } from "@/routes/settings/layout";
 import { MembersPage } from "@/routes/settings/members";
@@ -16,16 +19,39 @@ const rootRoute = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   component: Outlet,
 });
 
+/** Signed-in Members only; Operators go to their console. */
+const requireMember = async ({ context }: { context: { queryClient: QueryClient } }) => {
+  const me = await context.queryClient.fetchQuery(meQuery);
+  if (!me) throw redirect({ to: "/sign-in" });
+  if (me.isOperator) throw redirect({ to: "/operator" });
+  return { me };
+};
+
 const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  beforeLoad: async ({ context }) => {
-    const me = await context.queryClient.fetchQuery(meQuery);
-    if (!me) throw redirect({ to: "/sign-in" });
-    if (me.isOperator) throw redirect({ to: "/operator" });
-    return { me };
-  },
-  component: OrganizationHomePage,
+  validateSearch: validateCaseListSearch,
+  beforeLoad: requireMember,
+  component: CasesPage,
+});
+
+const caseRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/cases/$number",
+  beforeLoad: requireMember,
+  component: CaseLayout,
+});
+
+const caseOverviewRoute = createRoute({
+  getParentRoute: () => caseRoute,
+  path: "/",
+  component: CaseOverviewPage,
+});
+
+const caseAuditLogRoute = createRoute({
+  getParentRoute: () => caseRoute,
+  path: "/audit-log",
+  component: CaseAuditLogPage,
 });
 
 const operatorRoute = createRoute({
@@ -87,6 +113,7 @@ const inviteRoute = createRoute({
 export const router = createRouter({
   routeTree: rootRoute.addChildren([
     homeRoute,
+    caseRoute.addChildren([caseOverviewRoute, caseAuditLogRoute]),
     operatorRoute,
     settingsRoute.addChildren([settingsIndexRoute, membersRoute, orgAuditLogRoute]),
     signInRoute,

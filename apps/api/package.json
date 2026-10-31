@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./client": "./src/client.ts"
+    "./client": "./src/client.ts",
+    "./cases/vocabulary": "./src/cases/vocabulary.ts",
+    "./cases/case-summary": "./src/cases/case-summary.ts"
   },
   "scripts": {
     "dev": "bun --watch src/server.ts",

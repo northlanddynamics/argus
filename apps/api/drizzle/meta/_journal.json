@@ -29,6 +29,20 @@
       "when": 1793468783559,
       "tag": "0003_org_audit_log_append_only",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793471339050,
+      "tag": "0004_cases",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793471347754,
+      "tag": "0005_cases_append_only",
+      "breakpoints": true
     }
   ]
 }

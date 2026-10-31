@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { totpEnrollmentPending } from "./auth/totp-enrollment";
 import type { Deps, Env } from "./deps";
+import { caseRoutes } from "./routes/cases";
 import { invitationRoutes } from "./routes/invitations";
 import { meRoutes } from "./routes/me";
 import { operatorRoutes } from "./routes/operator";
@@ -23,7 +24,8 @@ export function createApi(deps: Deps) {
     .route("/me", meRoutes(deps))
     .route("/operator", operatorRoutes(deps))
     .route("/invitations", invitationRoutes(deps))
-    .route("/organization", organizationRoutes(deps));
+    .route("/organization", organizationRoutes(deps))
+    .route("/cases", caseRoutes(deps));
 }
 
 export type ApiType = ReturnType<typeof createApi>;
