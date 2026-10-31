@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Case Tasks, Evidence, Observables and Assets</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#EDEDEA;color:#1C1C1A;font-family:Inter,system-ui,sans-serif;font-size:14px;line-height:1.45}
+a{color:#2448B8}a:hover{color:#16307F}
+*{box-sizing:border-box}
+h1,h2,h3,p{margin:0}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:8px 20px;padding:10px 24px;background:#1C1C1A;color:#F4F4F1}
+.top a{color:#F4F4F1;text-decoration:none;padding:6px 2px}
+.top a.on{border-bottom:2px solid #F4F4F1}
+.top nav{display:flex;flex-wrap:wrap;gap:16px}
+.brand{font-weight:700;letter-spacing:.06em}
+.org{color:#C9C9C4;font-size:13px}
+.search{flex:1 1 240px;display:flex}
+.search input{width:100%;border-color:#6A6A64;background:#2A2A27;color:#F4F4F1}
+.iconbtn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:44px;min-height:40px;background:transparent;border:1px solid #6A6A64;border-radius:6px;color:#F4F4F1;font:inherit}
+.live{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#C9C9C4}
+.live i{width:8px;height:8px;border-radius:50%;background:#7BD88F;display:inline-block}
+.wrap{max-width:1280px;margin:0 auto;padding:24px;display:flex;flex-direction:column;gap:16px}
+.card{background:#fff;border:1px solid #D2D2CC;border-radius:8px}
+.pad{padding:16px}
+.row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.between{justify-content:space-between}
+.stack{display:flex;flex-direction:column;gap:8px}
+.muted{color:#5E5E58}
+.small{font-size:12px}
+.mono{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12px}
+.btn{font:inherit;padding:8px 14px;border-radius:6px;border:1px solid #8E8E87;background:#fff;color:#1C1C1A;min-height:40px;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.btn.pri{background:#2448B8;border-color:#2448B8;color:#fff}
+.btn.sm{min-height:32px;padding:4px 10px;font-size:13px}
+.badge{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:1px 8px;border-radius:999px;border:1px solid #8E8E87;white-space:nowrap;background:#fff}
+.sev-Critical{background:#1C1C1A;color:#fff;border-color:#1C1C1A}
+.int{border-style:dashed}
+.warn{border-color:#9E2A1F;color:#9E2A1F;font-weight:600}
+.tabs{display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid #D2D2CC}
+.tabs a{padding:10px 14px;text-decoration:none;color:#5E5E58}
+.tabs a.on{color:#1C1C1A;border-bottom:2px solid #1C1C1A;font-weight:600}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:12px;font-weight:600;color:#5E5E58;padding:8px 12px;border-bottom:1px solid #D2D2CC;white-space:nowrap}
+td{padding:10px 12px;border-bottom:1px solid #E6E6E1;vertical-align:middle}
+.scroll{overflow-x:auto}
+input,select,textarea{font:inherit;padding:8px 10px;border:1px solid #8E8E87;border-radius:6px;background:#fff;color:#1C1C1A;min-height:40px}
+input[type=checkbox]{min-height:auto;width:18px;height:18px}
+.drop{border:2px dashed #A9A9A2;border-radius:8px;padding:20px;text-align:center;color:#5E5E58;background:#F7F7F5}
+.sec-h{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:14px 16px;border-bottom:1px solid #E6E6E1}
+</style>
+</helmet>
+<div>
+<header class="top">
+  <span class="brand">ARGUS</span>
+  <span class="org">[Organization]</span>
+  <nav aria-label="Main">
+    <a href="Main.dc.html" class="on">Cases</a>
+    <a href="AlertQueue.dc.html">Alerts</a>
+    <a href="Dashboard.dc.html">Dashboard</a>
+    <a href="Members.dc.html">Settings</a>
+  </nav>
+  <label class="search"><span style="position: absolute; left: -9999px">Search</span><input type="search" placeholder="Search Cases, Alerts, Observables, Assets"></label>
+  <span class="live"><i></i>Live</span>
+  <a class="iconbtn" href="Notifications.dc.html" aria-label="Notifications, 3 unread"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10 21h4"></path></svg>3</a>
+  <span class="badge" style="background: #3A3A36; color: #F4F4F1; border-color: #6A6A64">AR · Analyst</span>
+</header>
+
+<main class="wrap">
+  <div class="row"><span class="mono muted">C-1041</span><h1 style="font-size: 20px">Suspicious PowerShell on FIN-LT-0231</h1><span class="badge">In Progress</span><span class="badge sev-Critical">Critical</span></div>
+  <nav class="tabs" aria-label="Case sections">
+    <a href="Case.dc.html">Overview</a>
+    <a href="Timeline.dc.html">Timeline &amp; Discussion</a>
+    <a href="CaseWork.dc.html" class="on">Tasks</a>
+    <a href="CaseWork.dc.html" class="on">Evidence</a>
+    <a href="CaseWork.dc.html" class="on">Observables &amp; Assets</a>
+    <a href="AlertQueue.dc.html">Alerts (7)</a>
+    <a href="AuditLog.dc.html">Audit Log</a>
+  </nav>
+  <p class="small muted">Three tabs shown stacked on one board for review.</p>
+
+  <!-- Tasks -->
+  <section class="card">
+    <div class="sec-h"><h2 style="font-size: 17px">Tasks <span class="muted" style="font-weight: 400">3 of 5 done</span></h2><button class="btn pri">+ New Task</button></div>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Done</th><th>Task</th><th>Owner</th><th>Due</th><th>Visibility</th><th></th></tr></thead>
+        <tbody>
+          <sc-for list="{{tasks}}" as="t" hint-placeholder-count="5">
+            <tr>
+              <td><input type="checkbox" checked="{{t.done}}" aria-label="Mark done"></td>
+              <td><strong>{{t.title}}</strong><div class="small muted">{{t.desc}}</div></td>
+              <td>{{t.owner}}</td>
+              <td><span class="{{t.dueClass}}">{{t.due}}</span></td>
+              <td><span class="{{t.visClass}}">{{t.vis}}</span></td>
+              <td><button class="btn sm">Edit</button></td>
+            </tr>
+          </sc-for>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Evidence -->
+  <section class="card">
+    <div class="sec-h"><h2 style="font-size: 17px">Evidence</h2><span class="small muted">Fingerprinted on upload · never altered or deleted · every view and download is logged</span></div>
+    <div class="pad"><div class="drop">Drop files here or <button class="btn sm">Choose files</button> — SHA-256 computed on upload</div></div>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>File</th><th>Size</th><th>Added</th><th>SHA-256</th><th>Visibility</th><th></th></tr></thead>
+        <tbody>
+          <sc-for list="{{evidence}}" as="e" hint-placeholder-count="4">
+            <tr>
+              <td><strong>{{e.name}}</strong></td>
+              <td class="small">{{e.size}}</td>
+              <td class="small">{{e.added}}</td>
+              <td><span class="mono">{{e.hash}}</span> <button class="btn sm" aria-label="Copy fingerprint">Copy</button></td>
+              <td><span class="{{e.visClass}}">{{e.vis}}</span></td>
+              <td><div class="row"><button class="btn sm">View</button><button class="btn sm">Download</button></div></td>
+            </tr>
+          </sc-for>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Observables & Assets -->
+  <div class="row" style="align-items: stretch; gap: 16px">
+    <section class="card" style="flex: 1 1 520px; min-width: 0">
+      <div class="sec-h"><h2 style="font-size: 17px">Observables</h2><button class="btn sm">+ Add Observable</button></div>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Type</th><th>Value</th><th>Source</th><th>Seen in other Cases</th></tr></thead>
+          <tbody>
+            <sc-for list="{{obs}}" as="o" hint-placeholder-count="4">
+              <tr><td>{{o.type}}</td><td class="mono">{{o.value}}</td><td class="small">{{o.src}}</td><td><a href="Case.dc.html">{{o.seen}}</a></td></tr>
+            </sc-for>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <section class="card" style="flex: 1 1 420px; min-width: 0">
+      <div class="sec-h"><h2 style="font-size: 17px">Assets</h2><button class="btn sm">+ Add Asset</button></div>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Type</th><th>Identifier</th><th>Source</th><th>Seen in other Cases</th></tr></thead>
+          <tbody>
+            <sc-for list="{{assets}}" as="a" hint-placeholder-count="3">
+              <tr><td>{{a.type}}</td><td class="mono">{{a.value}}</td><td class="small">{{a.src}}</td><td><a href="Case.dc.html">{{a.seen}}</a></td></tr>
+            </sc-for>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+  <p class="small muted">“Seen in other Cases” lists only Cases the viewer can see; hidden entirely for Guests. Unlinking from this Case is recorded in the Audit Log.</p>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1300}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const tasks = [
+      { done: true, title: 'Contain host', desc: 'Network-contain FIN-LT-0231 from Falcon', owner: 'A. Rivera', due: '2026-10-28', vis: 'Visible to Guests' },
+      { done: true, title: 'Reset d.howe credentials', desc: 'Force password reset and revoke sessions', owner: 'M. Chen', due: '2026-10-28', vis: 'Visible to Guests' },
+      { done: false, title: 'Capture memory image', desc: 'Before reboot; upload as Evidence', owner: 'J. Okafor', due: 'Overdue · 2026-10-30', overdue: true, vis: 'Internal', internal: true },
+      { done: false, title: 'Assess notification duty', desc: 'Is payroll data in scope?', owner: 'K. Patel (Guest)', due: '2026-11-04', vis: 'Visible to Guests' },
+      { done: true, title: 'Block C2 IP at egress', desc: '', owner: 'A. Rivera', due: '—', vis: 'Internal', internal: true }
+    ];
+    const evidence = [
+      { name: 'invoice-4471.eml', size: '84 KB', added: 'A. Rivera · 10-28 10:10', hash: '3b9e…a01f', vis: 'Visible to Guests' },
+      { name: 'netflow-0928.csv', size: '2.1 MB', added: 'J. Okafor · 10-28 10:28', hash: 'c41d…77e2', vis: 'Internal', internal: true },
+      { name: 'FIN-LT-0231.mem', size: '16 GB', added: 'J. Okafor · 10-28 12:01', hash: '9f02…b6c4', vis: 'Internal', internal: true },
+      { name: 'counsel-memo.pdf', size: '210 KB', added: 'K. Patel (Guest) · 10-29', hash: '51aa…0d93', vis: 'Visible to Guests' }
+    ];
+    const obs = [
+      { type: 'IP', value: '185.220.101.4', src: 'Alert (auto)', seen: 'C-1042, C-1012' },
+      { type: 'SHA-256', value: '7f3a…c91', src: 'Alert (auto)', seen: '—' },
+      { type: 'Domain', value: 'invoice-portal[.]biz', src: 'Added by J. Okafor', seen: 'C-1042' },
+      { type: 'Email', value: 'billing@invoice-portal[.]biz', src: 'Added by A. Rivera', seen: 'C-1042' }
+    ];
+    const assets = [
+      { type: 'Host', value: 'FIN-LT-0231', src: 'Alert (auto)', seen: 'C-0988' },
+      { type: 'Account', value: 'd.howe', src: 'Alert (auto)', seen: '—' },
+      { type: 'Account', value: 'svc-backup', src: 'Added by M. Chen', seen: 'C-1037' }
+    ];
+    return {
+      tasks: tasks.map(t => ({ ...t, dueClass: t.overdue ? 'badge warn' : 'small', visClass: t.internal ? 'badge int' : 'small muted' })),
+      evidence: evidence.map(e => ({ ...e, visClass: e.internal ? 'badge int' : 'small muted' })),
+      obs, assets
+    };
+  }
+}
+</script>
+</body>
+</html>
