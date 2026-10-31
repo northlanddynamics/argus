@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Case dialogs</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:Inter,system-ui,sans-serif;font-size:14px;line-height:1.45;color:#1C1C1A}
+a{color:#2448B8}a:hover{color:#16307F}
+*{box-sizing:border-box}
+h1,h2,h3,p{margin:0}
+.dlg{background:#fff;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.25);display:flex;flex-direction:column;overflow:hidden}
+.dlg header{padding:16px 20px;border-bottom:1px solid #E6E6E1;display:flex;justify-content:space-between;align-items:center}
+.dlg .body{padding:16px 20px;display:flex;flex-direction:column;gap:12px;flex:1}
+.dlg footer{padding:12px 20px;border-top:1px solid #E6E6E1;display:flex;justify-content:flex-end;gap:8px}
+.row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.muted{color:#5E5E58}
+.small{font-size:12px}
+.mono{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12px}
+.btn{font:inherit;padding:8px 14px;border-radius:6px;border:1px solid #8E8E87;background:#fff;color:#1C1C1A;min-height:40px;display:inline-flex;align-items:center;gap:6px}
+.btn.pri{background:#2448B8;border-color:#2448B8;color:#fff}
+.x{min-width:40px;justify-content:center;padding:4px}
+.badge{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:1px 8px;border-radius:999px;border:1px solid #8E8E87;white-space:nowrap;background:#fff}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label,.lbl{font-size:12px;font-weight:600;color:#3F3F3B}
+input,select,textarea{font:inherit;padding:8px 10px;border:1px solid #8E8E87;border-radius:6px;background:#fff;color:#1C1C1A;min-height:40px}
+input[type=radio],input[type=checkbox]{min-height:auto;width:18px;height:18px}
+.info{background:#EEF1FA;border:1px solid #C3CCEA;border-radius:6px;padding:10px 12px;font-size:13px}
+.warn{background:#FFF6DA;border:1px solid #C9A23F;border-radius:6px;padding:10px 12px;font-size:13px}
+.opt{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid #D2D2CC;border-radius:6px}
+.opt.on{border:2px solid #2448B8;background:#F5F7FD}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+</style>
+</helmet>
+<div style="width: 1280px; height: 1060px; background: #8A8A84; padding: 40px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px">
+
+  <!-- Close Case -->
+  <section class="dlg" role="dialog" aria-labelledby="c1">
+    <header><h2 id="c1" style="font-size: 17px">Close Case C-1041</h2><button class="btn x" aria-label="Close">✕</button></header>
+    <div class="body">
+      <fieldset style="border: 0; padding: 0; margin: 0">
+        <legend class="lbl" style="margin-bottom: 8px">Resolution (required)</legend>
+        <div class="grid2">
+          <label class="opt on"><input type="radio" name="res" checked> True Positive</label>
+          <label class="opt"><input type="radio" name="res"> Benign</label>
+          <label class="opt"><input type="radio" name="res"> False Positive</label>
+          <label class="opt"><input type="radio" name="res"> Duplicate</label>
+        </div>
+      </fieldset>
+      <div class="field"><label for="cl-n">Closing note (added to Discussion)</label><textarea id="cl-n" rows="2"></textarea></div>
+      <div class="warn">The Case becomes read-only. Only an Admin can reopen it.</div>
+      <div class="info">7 attached Alerts will be closed in Falcon with the Resolution as a comment. 2 Tasks are still open.</div>
+    </div>
+    <footer><button class="btn">Cancel</button><button class="btn pri">Close Case</button></footer>
+  </section>
+
+  <!-- Link Case -->
+  <section class="dlg" role="dialog" aria-labelledby="c2">
+    <header><h2 id="c2" style="font-size: 17px">Link C-1030 to another Case</h2><button class="btn x" aria-label="Close">✕</button></header>
+    <div class="body">
+      <fieldset style="border: 0; padding: 0; margin: 0">
+        <legend class="lbl" style="margin-bottom: 8px">Link type</legend>
+        <div class="grid2">
+          <label class="opt"><input type="radio" name="lt"> Related</label>
+          <label class="opt on"><input type="radio" name="lt" checked> Duplicate of</label>
+          <label class="opt"><input type="radio" name="lt"> Parent of</label>
+          <label class="opt"><input type="radio" name="lt"> Child of</label>
+        </div>
+      </fieldset>
+      <div class="field"><label for="lk">Target Case</label><input id="lk" type="search" value="C-1042 Credential phishing — finance mailboxes"></div>
+      <div class="warn">Marking as Duplicate of C-1042 closes C-1030 now with Resolution Duplicate.</div>
+      <span class="small muted">Recorded in both Cases’ Audit Logs. Cases you can’t see aren’t offered.</span>
+    </div>
+    <footer><button class="btn">Cancel</button><button class="btn pri">Link and close</button></footer>
+  </section>
+
+  <!-- Invite Guest -->
+  <section class="dlg" role="dialog" aria-labelledby="c3">
+    <header><h2 id="c3" style="font-size: 17px">Invite a Guest to C-1041</h2><button class="btn x" aria-label="Close">✕</button></header>
+    <div class="body">
+      <div class="field"><label for="g-em">Email</label><input id="g-em" type="email" value="k.patel@lawfirm.example"></div>
+      <div class="field"><label for="g-role">Case Roles</label><select id="g-role"><option>Legal</option></select></div>
+      <div class="field"><label for="g-exp">Access expires (optional)</label><input id="g-exp" type="date" value="2026-12-01"></div>
+      <div class="info">They sign in with a magic link and see only this Case — never Internal items, the Audit Log, linked Cases or other Cases. Sessions last about 12 hours.</div>
+      <span class="small muted">Only Admins and this Case’s Assignee can invite or remove Guests. The Assignee is notified.</span>
+    </div>
+    <footer><button class="btn">Cancel</button><button class="btn pri">Send invite</button></footer>
+  </section>
+
+  <!-- Export Case Report -->
+  <section class="dlg" role="dialog" aria-labelledby="c4">
+    <header><h2 id="c4" style="font-size: 17px">Export Case Report</h2><button class="btn x" aria-label="Close">✕</button></header>
+    <div class="body">
+      <fieldset style="border: 0; padding: 0; margin: 0">
+        <legend class="lbl" style="margin-bottom: 8px">Variant</legend>
+        <div class="grid2">
+          <label class="opt on"><input type="radio" name="var" checked><span><strong>Complete</strong><br><span class="small muted">All items</span></span></label>
+          <label class="opt"><input type="radio" name="var"><span><strong>Guest-safe</strong><br><span class="small muted">Excludes Internal items</span></span></label>
+        </div>
+      </fieldset>
+      <fieldset style="border: 0; padding: 0; margin: 0">
+        <legend class="lbl" style="margin-bottom: 8px">Format</legend>
+        <div class="row"><label class="opt on"><input type="radio" name="fmt" checked> PDF</label><label class="opt"><input type="radio" name="fmt"> Markdown</label></div>
+      </fieldset>
+      <div class="lbl">Contains</div>
+      <div class="row small"><span class="badge">Case Summary</span><span class="badge">Timeline</span><span class="badge">Tasks</span><span class="badge">Observables</span><span class="badge">Assets</span><span class="badge">Evidence list + SHA-256</span></div>
+      <span class="small muted">The export is recorded in the Audit Log. Guests can export only the Guest-safe variant.</span>
+    </div>
+    <footer><button class="btn">Cancel</button><button class="btn pri">Export</button></footer>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1060}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

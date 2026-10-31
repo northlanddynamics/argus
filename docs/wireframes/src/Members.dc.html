@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Settings — Members, Case Roles, SSO</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#EDEDEA;color:#1C1C1A;font-family:Inter,system-ui,sans-serif;font-size:14px;line-height:1.45}
+a{color:#2448B8}a:hover{color:#16307F}
+*{box-sizing:border-box}
+h1,h2,h3,p{margin:0}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:8px 20px;padding:10px 24px;background:#1C1C1A;color:#F4F4F1}
+.top a{color:#F4F4F1;text-decoration:none;padding:6px 2px}
+.top a.on{border-bottom:2px solid #F4F4F1}
+.top nav{display:flex;flex-wrap:wrap;gap:16px}
+.brand{font-weight:700;letter-spacing:.06em}
+.org{color:#C9C9C4;font-size:13px}
+.search{flex:1 1 240px;display:flex}
+.search input{width:100%;border-color:#6A6A64;background:#2A2A27;color:#F4F4F1}
+.iconbtn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:44px;min-height:40px;background:transparent;border:1px solid #6A6A64;border-radius:6px;color:#F4F4F1;font:inherit}
+.wrap{max-width:1280px;margin:0 auto;padding:24px}
+.card{background:#fff;border:1px solid #D2D2CC;border-radius:8px}
+.pad{padding:16px}
+.row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.between{justify-content:space-between}
+.stack{display:flex;flex-direction:column;gap:8px}
+.muted{color:#5E5E58}
+.small{font-size:12px}
+.mono{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12px}
+.btn{font:inherit;padding:8px 14px;border-radius:6px;border:1px solid #8E8E87;background:#fff;color:#1C1C1A;min-height:40px;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.btn.pri{background:#2448B8;border-color:#2448B8;color:#fff}
+.btn.sm{min-height:32px;padding:4px 10px;font-size:13px}
+.btn.danger{border-color:#9E2A1F;color:#9E2A1F}
+.badge{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:1px 8px;border-radius:999px;border:1px solid #8E8E87;white-space:nowrap;background:#fff}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:12px;font-weight:600;color:#5E5E58;padding:8px 12px;border-bottom:1px solid #D2D2CC;white-space:nowrap}
+td{padding:10px 12px;border-bottom:1px solid #E6E6E1;vertical-align:middle}
+.scroll{overflow-x:auto}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:12px;font-weight:600;color:#3F3F3B}
+input,select,textarea{font:inherit;padding:8px 10px;border:1px solid #8E8E87;border-radius:6px;background:#fff;color:#1C1C1A;min-height:40px}
+input[type=checkbox]{min-height:auto;width:18px;height:18px}
+.snav a{display:block;padding:10px 12px;border-radius:6px;text-decoration:none;color:#1C1C1A}
+.snav a.on{background:#E1E1DC;font-weight:600}
+.sec-h{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:14px 16px;border-bottom:1px solid #E6E6E1}
+</style>
+</helmet>
+<div>
+<header class="top">
+  <span class="brand">ARGUS</span>
+  <span class="org">[Organization]</span>
+  <nav aria-label="Main">
+    <a href="Main.dc.html">Cases</a>
+    <a href="AlertQueue.dc.html">Alerts</a>
+    <a href="Dashboard.dc.html">Dashboard</a>
+    <a href="Members.dc.html" class="on">Settings</a>
+  </nav>
+  <label class="search"><span style="position: absolute; left: -9999px">Search</span><input type="search" placeholder="Search Cases, Alerts, Observables, Assets"></label>
+  <a class="iconbtn" href="Notifications.dc.html" aria-label="Notifications">3</a>
+  <span class="badge" style="background: #3A3A36; color: #F4F4F1; border-color: #6A6A64">MC · Admin</span>
+</header>
+
+<main class="wrap">
+  <div class="row" style="align-items: flex-start; gap: 20px">
+    <nav class="snav stack" style="flex: 1 1 200px; gap: 2px" aria-label="Settings">
+      <span class="small muted" style="padding: 0 12px 6px">Organization settings · Admins</span>
+      <a href="Members.dc.html" class="on">Members</a>
+      <a href="#roles">Case Roles</a>
+      <a href="#sso">Single sign-on</a>
+      <a href="Integrations.dc.html">Integrations</a>
+      <a href="Integrations.dc.html">Teams channel</a>
+      <a href="OrgAudit.dc.html">Organization Audit Log</a>
+      <a href="#owner">Ownership</a>
+    </nav>
+
+    <div class="stack" style="flex: 999 1 640px; min-width: 0; gap: 16px">
+      <section class="card">
+        <div class="sec-h"><h2 style="font-size: 17px">Members</h2><span class="small muted">One Owner · Admins and Analysts</span></div>
+        <form class="pad row" style="align-items: flex-end; border-bottom: 1px solid #E6E6E1" aria-label="Invite Member">
+          <div class="field" style="flex: 1 1 260px"><label for="inv-e">Invite by email</label><input id="inv-e" type="email" placeholder="name@[org]"></div>
+          <div class="field"><label for="inv-r">Role</label><select id="inv-r"><option>Analyst</option><option>Admin</option></select></div>
+          <button type="button" class="btn pri">Send invite</button>
+        </form>
+        <div class="scroll">
+          <table>
+            <thead><tr><th>Member</th><th>Role</th><th>Sign-in</th><th>Last active</th><th></th></tr></thead>
+            <tbody>
+              <sc-for list="{{members}}" as="m" hint-placeholder-count="5">
+                <tr>
+                  <td><strong>{{m.name}}</strong><div class="small muted">{{m.email}}</div></td>
+                  <td><sc-if value="{{m.owner}}" hint-placeholder-val="{{false}}"><span class="badge" style="background: #1C1C1A; color: #fff">Owner</span></sc-if><sc-if value="{{m.notOwner}}" hint-placeholder-val="{{true}}"><select aria-label="Role"><option>{{m.role}}</option></select></sc-if></td>
+                  <td class="small">{{m.auth}}</td>
+                  <td class="small muted">{{m.last}}</td>
+                  <td><sc-if value="{{m.notOwner}}" hint-placeholder-val="{{true}}"><button class="btn sm">Remove</button></sc-if></td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card" id="roles">
+        <div class="sec-h"><h2 style="font-size: 17px">Case Roles catalog</h2><button class="btn sm">+ New Case Role</button></div>
+        <div class="pad stack">
+          <sc-for list="{{roles}}" as="r" hint-placeholder-count="4">
+            <div class="row between" style="padding: 6px 0; border-bottom: 1px solid #EEEEEA"><span><strong>{{r.name}}</strong> <span class="small muted">{{r.use}}</span></span><div class="row"><button class="btn sm">Rename</button><button class="btn sm">Retire</button></div></div>
+          </sc-for>
+        </div>
+      </section>
+
+      <section class="card" id="sso">
+        <div class="sec-h"><h2 style="font-size: 17px">Single sign-on (SAML)</h2><span class="badge">Not enabled</span></div>
+        <div class="pad stack" style="gap: 12px">
+          <div class="row" style="gap: 12px">
+            <div class="field" style="flex: 1 1 300px"><label for="sso-m">IdP metadata URL</label><input id="sso-m" placeholder="https://idp.example/metadata.xml"></div>
+            <div class="field" style="flex: 1 1 200px"><label for="sso-d">Email domain</label><input id="sso-d" placeholder="[org domain]"></div>
+          </div>
+          <div class="row small"><span class="muted">Argus ACS URL</span><span class="mono">[ACS URL]</span><span class="muted">Entity ID</span><span class="mono">[Entity ID]</span></div>
+          <label class="row"><input type="checkbox"> Provision unknown SSO users as Analysts</label>
+          <div class="row"><button class="btn pri">Enable SSO</button><button class="btn">Test connection</button></div>
+        </div>
+      </section>
+
+      <section class="card" id="owner">
+        <div class="sec-h"><h2 style="font-size: 17px">Ownership</h2><span class="small muted">Owner only</span></div>
+        <div class="pad row between">
+          <div class="field" style="flex: 1 1 260px"><label for="own-t">Transfer ownership to</label><select id="own-t"><option>Choose a Member…</option></select></div>
+          <div class="row"><button class="btn">Transfer</button><button class="btn danger">Delete Organization…</button></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1240}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const members = [
+      { name: 'S. Lindqvist', email: 's.lindqvist@[org]', owner: true, auth: 'Password + TOTP, passkey', last: 'Today' },
+      { name: 'M. Chen', email: 'm.chen@[org]', role: 'Admin', auth: 'Passkey', last: 'Now' },
+      { name: 'A. Rivera', email: 'a.rivera@[org]', role: 'Analyst', auth: 'Password + TOTP', last: 'Now' },
+      { name: 'J. Okafor', email: 'j.okafor@[org]', role: 'Analyst', auth: 'Password + TOTP', last: '1 h ago' },
+      { name: 'r.ito@[org]', email: 'Invited · pending', role: 'Analyst', auth: '—', last: '—' }
+    ];
+    const roles = [
+      { name: 'Lead', use: 'on 14 Cases' }, { name: 'Forensics', use: 'on 9 Cases' }, { name: 'Comms', use: 'on 3 Cases' }, { name: 'Legal', use: 'on 4 Cases' }
+    ];
+    return { members: members.map(m => ({ ...m, owner: !!m.owner, notOwner: !m.owner })), roles };
+  }
+}
+</script>
+</body>
+</html>
