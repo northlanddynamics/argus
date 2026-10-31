@@ -1,0 +1,20 @@
+{
+  "name": "argus",
+  "private": true,
+  "type": "module",
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev:api": "bun --filter api dev",
+    "dev:web": "bun --filter web dev",
+    "build": "bun --filter web build",
+    "start": "bun apps/api/src/server.ts",
+    "lint": "oxlint --deny-warnings apps",
+    "typecheck": "bun --filter '*' typecheck",
+    "test": "bun --cwd apps/api test",
+    "test:e2e": "bun run build && bun --cwd apps/api test:e2e",
+    "check": "bun run lint && bun run typecheck && bun run test"
+  },
+  "devDependencies": {
+    "oxlint": "^1.90.0"
+  }
+}
