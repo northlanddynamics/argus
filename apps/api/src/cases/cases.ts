@@ -7,7 +7,7 @@ import { secureId } from "../ids";
 import type { Membership } from "../members/membership";
 import { type CaseActor, type CaseAuditEntry, listCaseAudit, recordCaseAudit, type CaseAuditFilter } from "./case-audit-log";
 import { type CaseSummary, emptySummary } from "./case-summary";
-import type { CaseType, Severity, Status } from "./vocabulary";
+import { type CaseType, REOPENED_STATUS, type Resolution, type Severity, type Status } from "./vocabulary";
 
 /**
  * Cases within one Organization. Every read and write goes through here and is scoped to the
@@ -21,6 +21,18 @@ export type CaseListFilter = { view?: CaseListView; status?: Status; severity?: 
 
 export class CaseNotFound extends Error {}
 export class NotAMember extends Error {}
+/** The Case is Closed, so it can't be changed until an Admin reopens it. */
+export class CaseClosed extends Error {
+  constructor() {
+    super("This Case is Closed and read-only; an Admin can reopen it");
+  }
+}
+/** Only a Closed Case can be reopened. */
+export class CaseNotClosed extends Error {
+  constructor() {
+    super("Only a Closed Case can be reopened");
+  }
+}
 export class StaleSummary extends Error {
   readonly current: CaseSummaryView;
   constructor(current: CaseSummaryView) {
@@ -35,6 +47,7 @@ export type CaseSummaryView = { content: CaseSummary; version: number; updatedBy
 const assignee = alias(user, "assignee");
 const openedBy = alias(user, "opened_by");
 const summaryBy = alias(user, "summary_by");
+const closedBy = alias(user, "closed_by");
 
 const listColumns = {
   number: cases.number,
@@ -42,6 +55,7 @@ const listColumns = {
   status: cases.status,
   severity: cases.severity,
   caseType: cases.caseType,
+  resolution: cases.resolution,
   assigneeId: assignee.id,
   assigneeName: assignee.name,
   openedAt: cases.openedAt,
@@ -54,6 +68,7 @@ type ListRow = {
   status: Status;
   severity: Severity;
   caseType: CaseType;
+  resolution: Resolution | null;
   assigneeId: string | null;
   assigneeName: string | null;
   openedAt: Date;
@@ -66,6 +81,7 @@ const listItem = (row: ListRow) => ({
   status: row.status,
   severity: row.severity,
   caseType: row.caseType,
+  resolution: row.resolution,
   assignee: row.assigneeId ? { id: row.assigneeId, name: row.assigneeName ?? "" } : null,
   openedAt: row.openedAt.toISOString(),
   updatedAt: row.updatedAt.toISOString(),
@@ -83,6 +99,30 @@ const memberName = async (tx: Db | Tx, organizationId: string, userId: string) =
     .limit(1);
   if (!row) throw new NotAMember();
   return row.name;
+};
+
+/**
+ * Locks the Case's row for the rest of `tx` and returns its current values. Throws `CaseNotFound`
+ * when it isn't in the Member's Organization, and `CaseClosed` when it's Closed unless `closed` is "allow".
+ */
+const lock = async (tx: Tx, me: Membership, number: number, closed: "refuse" | "allow" = "refuse") => {
+  const [current] = await tx
+    .select({
+      id: cases.id,
+      status: cases.status,
+      resolution: cases.resolution,
+      severity: cases.severity,
+      caseType: cases.caseType,
+      assigneeId: cases.assigneeId,
+      summary: cases.summary,
+      summaryVersion: cases.summaryVersion,
+    })
+    .from(cases)
+    .where(and(eq(cases.organizationId, me.organizationId), eq(cases.number, number)))
+    .for("update");
+  if (!current) throw new CaseNotFound();
+  if (closed === "refuse" && current.status === "closed") throw new CaseClosed();
+  return current;
 };
 
 export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
@@ -108,9 +148,13 @@ export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
         summaryById: summaryBy.id,
         summaryByName: summaryBy.name,
         summaryUpdatedAt: cases.summaryUpdatedAt,
+        closedById: closedBy.id,
+        closedByName: closedBy.name,
+        closedAt: cases.closedAt,
       })
       .from(cases)
       .leftJoin(assignee, eq(cases.assigneeId, assignee.id))
+      .leftJoin(closedBy, eq(cases.closedById, closedBy.id))
       .innerJoin(openedBy, eq(cases.openedById, openedBy.id))
       .innerJoin(summaryBy, eq(cases.summaryUpdatedById, summaryBy.id))
       .where(and(eq(cases.organizationId, organizationId), eq(cases.number, number)))
@@ -119,6 +163,10 @@ export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
     return {
       ...listItem(row),
       openedBy: { id: row.openedById, name: row.openedByName },
+      closed:
+        row.closedById && row.closedAt
+          ? { by: { id: row.closedById, name: row.closedByName ?? "" }, at: row.closedAt.toISOString() }
+          : null,
       summary: {
         content: row.summary,
         version: row.summaryVersion,
@@ -207,12 +255,7 @@ export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
     async change(me: Membership, number: number, changes: CaseChanges) {
       const now = clock.now();
       await db.transaction(async (tx) => {
-        const [current] = await tx
-          .select({ id: cases.id, status: cases.status, severity: cases.severity, caseType: cases.caseType, assigneeId: cases.assigneeId })
-          .from(cases)
-          .where(and(eq(cases.organizationId, me.organizationId), eq(cases.number, number)))
-          .for("update");
-        if (!current) throw new CaseNotFound();
+        const current = await lock(tx, me, number);
         const entry = (action: CaseAuditEntry["action"], before: string | null, after: string | null): CaseAuditEntry => ({
           organizationId: me.organizationId,
           caseId: current.id,
@@ -255,13 +298,8 @@ export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
     async saveSummary(me: Membership, number: number, content: CaseSummary, version: number) {
       const now = clock.now();
       const saved = await db.transaction(async (tx) => {
-        const [current] = await tx
-          .select({ id: cases.id, summary: cases.summary, version: cases.summaryVersion })
-          .from(cases)
-          .where(and(eq(cases.organizationId, me.organizationId), eq(cases.number, number)))
-          .for("update");
-        if (!current) throw new CaseNotFound();
-        if (current.version !== version) return false;
+        const current = await lock(tx, me, number);
+        if (current.summaryVersion !== version) return false;
         await tx
           .update(cases)
           .set({ summary: content, summaryVersion: version + 1, summaryUpdatedById: me.userId, summaryUpdatedAt: now, updatedAt: now })
@@ -280,6 +318,51 @@ export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
       const { summary } = await view(me.organizationId, number);
       if (!saved) throw new StaleSummary(summary);
       return summary;
+    },
+
+    /** Closes the Case with `resolution`; from then on it is read-only until an Admin reopens it. */
+    async close(me: Membership, number: number, resolution: Resolution) {
+      const now = clock.now();
+      await db.transaction(async (tx) => {
+        const current = await lock(tx, me, number);
+        await tx
+          .update(cases)
+          .set({ status: "closed", resolution, closedById: me.userId, closedAt: now, updatedAt: now })
+          .where(eq(cases.id, current.id));
+        await recordCaseAudit(tx, {
+          organizationId: me.organizationId,
+          caseId: current.id,
+          occurredAt: now,
+          actor: actorOf(me),
+          action: "case.closed",
+          before: current.status,
+          after: resolution,
+        });
+      });
+      return view(me.organizationId, number);
+    },
+
+    /** Reopens a Closed Case to In Progress and clears its Resolution. The caller checks the Member may. */
+    async reopen(me: Membership, number: number) {
+      const now = clock.now();
+      await db.transaction(async (tx) => {
+        const current = await lock(tx, me, number, "allow");
+        if (current.status !== "closed") throw new CaseNotClosed();
+        await tx
+          .update(cases)
+          .set({ status: REOPENED_STATUS, resolution: null, closedById: null, closedAt: null, updatedAt: now })
+          .where(eq(cases.id, current.id));
+        await recordCaseAudit(tx, {
+          organizationId: me.organizationId,
+          caseId: current.id,
+          occurredAt: now,
+          actor: actorOf(me),
+          action: "case.reopened",
+          before: current.resolution,
+          after: REOPENED_STATUS,
+        });
+      });
+      return view(me.organizationId, number);
     },
 
     async auditLog(organizationId: string, number: number, filter: CaseAuditFilter) {

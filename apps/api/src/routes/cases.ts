@@ -2,10 +2,10 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
 import { caseSummarySchema } from "../cases/case-summary";
-import { CaseNotFound, caseStore, NotAMember, StaleSummary } from "../cases/cases";
-import { CASE_AUDIT_ACTIONS, CASE_TYPES, SEVERITIES, STATUSES } from "../cases/vocabulary";
+import { CaseClosed, CaseNotClosed, CaseNotFound, caseStore, NotAMember, StaleSummary } from "../cases/cases";
+import { CASE_AUDIT_ACTIONS, CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabulary";
 import type { Deps } from "../deps";
-import { type MemberEnv, requireMember } from "../members/membership";
+import { MANAGERS, type MemberEnv, requireMember } from "../members/membership";
 
 const numberParam = z.object({ number: z.coerce.number().int().positive() });
 const isoDate = z.string().refine((s) => !Number.isNaN(Date.parse(s)), "Not a date");
@@ -35,6 +35,8 @@ const changeBody = z.object({
   assigneeId: z.string().min(1).nullable().optional(),
 });
 
+const closeBody = z.object({ resolution: z.enum(RESOLUTIONS) });
+
 const summaryBody = z.object({ summary: caseSummarySchema, version: z.number().int().positive() });
 
 const auditQuery = z.object({
@@ -52,7 +54,13 @@ const unlessNotFound = <T>(work: Promise<T>) =>
     throw e;
   });
 
-/** Cases: open, list, view, change, the Case Summary and the Case Audit Log. */
+/** Turns a refusal to change a Closed Case into the result it carries, and rethrows anything else. */
+const closedConflict = (e: unknown) => {
+  if (e instanceof CaseClosed || e instanceof CaseNotClosed) return { error: e.message };
+  throw e;
+};
+
+/** Cases: open, list, view, change, close, reopen, the Case Summary and the Case Audit Log. */
 export const caseRoutes = (deps: Deps) => {
   const store = caseStore(deps);
   return new Hono<MemberEnv>()
@@ -78,7 +86,27 @@ export const caseRoutes = (deps: Deps) => {
         return c.json({ case: changed }, 200);
       } catch (e) {
         if (e instanceof NotAMember) return c.json({ error: "The Assignee must be a Member of the Organization" }, 400);
-        throw e;
+        return c.json(closedConflict(e), 409);
+      }
+    })
+    .post("/:number/close", zValidator("param", numberParam), zValidator("json", closeBody), async (c) => {
+      try {
+        const closed = await unlessNotFound(store.close(c.get("membership"), c.req.valid("param").number, c.req.valid("json").resolution));
+        if (!closed) return c.json(notFound, 404);
+        return c.json({ case: closed }, 200);
+      } catch (e) {
+        return c.json(closedConflict(e), 409);
+      }
+    })
+    .post("/:number/reopen", zValidator("param", numberParam), async (c) => {
+      const me = c.get("membership");
+      if (!MANAGERS.includes(me.role)) return c.json({ error: "Only an Admin can reopen a Case" }, 403);
+      try {
+        const reopened = await unlessNotFound(store.reopen(me, c.req.valid("param").number));
+        if (!reopened) return c.json(notFound, 404);
+        return c.json({ case: reopened }, 200);
+      } catch (e) {
+        return c.json(closedConflict(e), 409);
       }
     })
     .put("/:number/summary", zValidator("param", numberParam), zValidator("json", summaryBody), async (c) => {
@@ -89,7 +117,7 @@ export const caseRoutes = (deps: Deps) => {
         return c.json({ summary: saved }, 200);
       } catch (e) {
         if (e instanceof StaleSummary) return c.json({ error: e.message, current: e.current }, 409);
-        throw e;
+        return c.json(closedConflict(e), 409);
       }
     })
     .get("/:number/audit-log", zValidator("param", numberParam), zValidator("query", auditQuery), async (c) => {

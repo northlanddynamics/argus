@@ -45,6 +45,19 @@ export const caseTypeLabel: Record<CaseType, string> = {
   other: "Other",
 };
 
+/** The outcome recorded when a Case is closed. */
+export const RESOLUTIONS = ["true_positive", "benign", "false_positive", "duplicate"] as const;
+export type Resolution = (typeof RESOLUTIONS)[number];
+export const resolutionLabel: Record<Resolution, string> = {
+  true_positive: "True Positive",
+  benign: "Benign",
+  false_positive: "False Positive",
+  duplicate: "Duplicate",
+};
+
+/** The Status a Case returns to when an Admin reopens it. */
+export const REOPENED_STATUS = "in_progress" satisfies Status;
+
 /** What a Case Audit Log entry records. */
 export const CASE_AUDIT_ACTIONS = [
   "case.opened",
@@ -53,6 +66,8 @@ export const CASE_AUDIT_ACTIONS = [
   "case.case_type_changed",
   "case.assignee_changed",
   "case.summary_edited",
+  "case.closed",
+  "case.reopened",
 ] as const;
 export type CaseAuditAction = (typeof CASE_AUDIT_ACTIONS)[number];
 
