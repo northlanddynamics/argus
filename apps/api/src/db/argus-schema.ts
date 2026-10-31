@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { bigserial, boolean, check, date, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import type { CaseSummary } from "../cases/case-summary";
 import { CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabulary";
+import { type Citation, PROMOTION_SOURCES } from "../timeline/vocabulary";
 import { organization, user } from "./auth-schema";
 
 /**
@@ -287,5 +288,65 @@ export const discussionMentions = pgTable(
   (t) => [
     uniqueIndex("discussion_mentions_message_user_idx").on(t.messageId, t.userId),
     index("discussion_mentions_user_idx").on(t.userId, t.mentionedAt),
+  ],
+);
+
+/**
+ * A Timeline Entry: one real-world occurrence on a Case's Timeline. Never deleted (ADR 0003): it is
+ * edited or retracted, and the Case Audit Log keeps every earlier version.
+ *
+ * Occurred-at is exact (`occurred_start` only), a range (`occurred_start` to `occurred_end`) or
+ * approximate (`occurred_start` give or take `occurred_precision_minutes`). The Timeline is ordered
+ * by `occurred_start`. `recorded_at` is when it was added to Argus.
+ *
+ * A Promoted entry names its source: a Discussion message or a Case Audit Log entry on the same Case.
+ * `version` moves on with every edit; an edit based on an older version is refused.
+ */
+export const timelineEntries = pgTable(
+  "timeline_entries",
+  {
+    id: text("id").primaryKey(),
+    /** Insertion order, to sort entries recorded at the same instant. */
+    seq: bigserial("seq", { mode: "number" }).notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    caseId: text("case_id")
+      .notNull()
+      .references(() => cases.id, { onDelete: "restrict" }),
+    occurredKind: text("occurred_kind", { enum: ["exact", "range", "approximate"] }).notNull(),
+    occurredStart: timestamp("occurred_start", { withTimezone: true }).notNull(),
+    occurredEnd: timestamp("occurred_end", { withTimezone: true }),
+    occurredPrecisionMinutes: integer("occurred_precision_minutes"),
+    body: text("body").notNull(),
+    citations: jsonb("citations").$type<Citation[]>().notNull(),
+    sourceKind: text("source_kind", { enum: PROMOTION_SOURCES }),
+    sourceId: text("source_id"),
+    version: integer("version").notNull(),
+    recordedById: text("recorded_by_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+    editedAt: timestamp("edited_at", { withTimezone: true }),
+    retractedById: text("retracted_by_id").references(() => user.id, { onDelete: "restrict" }),
+    retractedAt: timestamp("retracted_at", { withTimezone: true }),
+    retractionReason: text("retraction_reason"),
+  },
+  (t) => [
+    index("timeline_entries_case_idx").on(t.caseId, t.occurredStart),
+    /** A source is Promoted into at most one entry that hasn't been retracted. */
+    uniqueIndex("timeline_entries_source_idx")
+      .on(t.caseId, t.sourceKind, t.sourceId)
+      .where(sql`${t.sourceKind} IS NOT NULL AND ${t.retractedAt} IS NULL`),
+    check(
+      "timeline_entries_occurred",
+      sql`CASE ${t.occurredKind}
+        WHEN 'exact' THEN ${t.occurredEnd} IS NULL AND ${t.occurredPrecisionMinutes} IS NULL
+        WHEN 'range' THEN ${t.occurredEnd} > ${t.occurredStart} AND ${t.occurredPrecisionMinutes} IS NULL
+        WHEN 'approximate' THEN ${t.occurredEnd} IS NULL AND ${t.occurredPrecisionMinutes} > 0
+      END`,
+    ),
+    check("timeline_entries_source", sql`(${t.sourceKind} IS NULL) = (${t.sourceId} IS NULL)`),
+    check("timeline_entries_retracted", sql`(${t.retractedAt} IS NULL) = (${t.retractedById} IS NULL)`),
   ],
 );

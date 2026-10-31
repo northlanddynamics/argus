@@ -81,6 +81,10 @@ export const CASE_AUDIT_ACTIONS = [
   "discussion.message_posted",
   "discussion.message_edited",
   "discussion.message_retracted",
+  "timeline.entry_added",
+  "timeline.entry_promoted",
+  "timeline.entry_edited",
+  "timeline.entry_retracted",
 ] as const;
 export type CaseAuditAction = (typeof CASE_AUDIT_ACTIONS)[number];
 

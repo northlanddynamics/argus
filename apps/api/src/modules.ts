@@ -6,6 +6,7 @@ import { invitationStore } from "./invitations/invitations";
 import { memberStore } from "./members/members";
 import { organizationStore } from "./organizations/organizations";
 import { taskStore } from "./tasks/tasks";
+import { timelineStore } from "./timeline/timeline";
 
 /**
  * One module per area of the domain, built once from `deps`. Routes, and any other caller (a
@@ -17,6 +18,7 @@ export function createModules(deps: Deps) {
     tasks: taskStore(deps),
     caseRoles: caseRoleStore(deps),
     discussion: discussionStore(deps),
+    timeline: timelineStore(deps),
     members: memberStore(deps),
     invitations: invitationStore(deps),
     organizations: organizationStore(deps),

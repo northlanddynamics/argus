@@ -6,7 +6,8 @@
     "./client": "./src/client.ts",
     "./cases/vocabulary": "./src/cases/vocabulary.ts",
     "./cases/case-summary": "./src/cases/case-summary.ts",
-    "./realtime/messages": "./src/realtime/messages.ts"
+    "./realtime/messages": "./src/realtime/messages.ts",
+    "./timeline/occurred-at": "./src/timeline/occurred-at.ts"
   },
   "scripts": {
     "dev": "bun --watch src/server.ts",
