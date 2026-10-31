@@ -61,6 +61,12 @@ export const casePolicy = {
   canReopen: (actor: Actor) => managesOrganization(actor),
 };
 
+/** Discussion permissions, for a message on a Case the actor can already see. */
+export const discussionPolicy = {
+  /** Only a message's author edits or retracts it. */
+  canChangeMessage: (actor: Actor, message: { authorId: string }) => message.authorId === actor.userId,
+};
+
 /** Organization permissions. */
 export const organizationPolicy = {
   /** Invite, change the role of and remove Members; see pending invitations. */

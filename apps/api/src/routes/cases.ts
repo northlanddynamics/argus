@@ -11,6 +11,7 @@ import {
 import { CaseClosed, CaseNotClosed, CaseNotFound, NotAMember, NotPermitted, StaleSummary } from "../cases/cases";
 import { CASE_AUDIT_ACTIONS, CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabulary";
 import type { Deps } from "../deps";
+import { MentionCannotSeeCase, MessageNotFound, MessageRetracted } from "../discussion/discussion";
 import { type MemberEnv, requireMember } from "../members/membership";
 import type { Modules } from "../modules";
 import { OwnerCannotSeeCase, StaleTask, TaskNotFound } from "../tasks/tasks";
@@ -82,6 +83,10 @@ const doneBody = z.object({ done: z.boolean() });
 
 const assignBody = z.object({ caseRoleId: z.string().min(1), userId: z.string().min(1) });
 
+const messageParam = numberParam.extend({ id: z.string().min(1) });
+/** Plain text; `<@userId>` mentions someone. */
+const messageBody = z.object({ body: z.string().trim().min(1).max(10_000) });
+
 const notFound = { error: "Case not found" } as const;
 
 /** The result, or null if the Member can't see the Case (another Organization's, or Restricted). */
@@ -98,10 +103,10 @@ const closedConflict = (e: unknown) => {
 };
 
 /**
- * Cases: open, list, view, change, close, reopen, the Case Summary, Tasks, Case Role assignments and
- * the Case Audit Log.
+ * Cases: open, list, view, change, close, reopen, the Case Summary, Tasks, Case Role assignments, the
+ * Discussion and the Case Audit Log.
  */
-export const caseRoutes = (deps: Deps, { cases: store, tasks, caseRoles }: Modules) => {
+export const caseRoutes = (deps: Deps, { cases: store, tasks, caseRoles, discussion }: Modules) => {
   return new Hono<MemberEnv>()
     .use(requireMember(deps.db))
     .post("/", zValidator("json", openBody), async (c) => {
@@ -220,6 +225,53 @@ export const caseRoutes = (deps: Deps, { cases: store, tasks, caseRoles }: Modul
       } catch (e) {
         if (e instanceof CaseNotFound) return c.json(notFound, 404);
         if (e instanceof AssignmentNotFound) return c.json({ error: e.message }, 404);
+        return c.json(closedConflict(e), 409);
+      }
+    })
+    .get("/:number/discussion", zValidator("param", numberParam), async (c) => {
+      const messages = await unlessNotFound(discussion.list(c.get("membership"), c.req.valid("param").number));
+      if (!messages) return c.json(notFound, 404);
+      return c.json({ messages }, 200);
+    })
+    .get("/:number/discussion/mentionable", zValidator("param", numberParam), async (c) => {
+      const people = await unlessNotFound(discussion.mentionable(c.get("membership"), c.req.valid("param").number));
+      if (!people) return c.json(notFound, 404);
+      return c.json({ people }, 200);
+    })
+    .post("/:number/discussion", zValidator("param", numberParam), zValidator("json", messageBody), async (c) => {
+      try {
+        const message = await unlessNotFound(discussion.post(c.get("membership"), c.req.valid("param").number, c.req.valid("json").body));
+        if (!message) return c.json(notFound, 404);
+        return c.json({ message }, 201);
+      } catch (e) {
+        if (e instanceof MentionCannotSeeCase) return c.json({ error: e.message }, 400);
+        return c.json(closedConflict(e), 409);
+      }
+    })
+    .patch("/:number/discussion/:id", zValidator("param", messageParam), zValidator("json", messageBody), async (c) => {
+      const { number, id } = c.req.valid("param");
+      try {
+        const message = await unlessNotFound(discussion.edit(c.get("membership"), number, id, c.req.valid("json").body));
+        if (!message) return c.json(notFound, 404);
+        return c.json({ message }, 200);
+      } catch (e) {
+        if (e instanceof MessageNotFound) return c.json({ error: e.message }, 404);
+        if (e instanceof NotPermitted) return c.json({ error: "Only its author can edit a message" }, 403);
+        if (e instanceof MentionCannotSeeCase) return c.json({ error: e.message }, 400);
+        if (e instanceof MessageRetracted) return c.json({ error: e.message }, 409);
+        return c.json(closedConflict(e), 409);
+      }
+    })
+    .post("/:number/discussion/:id/retract", zValidator("param", messageParam), async (c) => {
+      const { number, id } = c.req.valid("param");
+      try {
+        const message = await unlessNotFound(discussion.retract(c.get("membership"), number, id));
+        if (!message) return c.json(notFound, 404);
+        return c.json({ message }, 200);
+      } catch (e) {
+        if (e instanceof MessageNotFound) return c.json({ error: e.message }, 404);
+        if (e instanceof NotPermitted) return c.json({ error: "Only its author can retract a message" }, 403);
+        if (e instanceof MessageRetracted) return c.json({ error: e.message }, 409);
         return c.json(closedConflict(e), 409);
       }
     })

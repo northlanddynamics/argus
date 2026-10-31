@@ -230,3 +230,62 @@ export const tasks = pgTable(
     ),
   ],
 );
+
+/**
+ * A message in a Case's Discussion. Never deleted (ADR 0003): its author edits or retracts it, and
+ * the Case Audit Log keeps every earlier text. `body` is plain text in which `<@userId>` mentions
+ * someone (see `discussion/mentions.ts`). A retracted message's text is no longer shown.
+ */
+export const discussionMessages = pgTable(
+  "discussion_messages",
+  {
+    id: text("id").primaryKey(),
+    /** Insertion order, to sort messages posted at the same instant. */
+    seq: bigserial("seq", { mode: "number" }).notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    caseId: text("case_id")
+      .notNull()
+      .references(() => cases.id, { onDelete: "restrict" }),
+    authorId: text("author_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    body: text("body").notNull(),
+    postedAt: timestamp("posted_at", { withTimezone: true }).notNull(),
+    editedAt: timestamp("edited_at", { withTimezone: true }),
+    retractedAt: timestamp("retracted_at", { withTimezone: true }),
+  },
+  (t) => [index("discussion_messages_case_idx").on(t.caseId, t.seq)],
+);
+
+/**
+ * Who was mentioned in which Discussion message, and when they first were: on posting, or on the
+ * edit that added them. Append-only, for notifications. A mention never grants access to the Case.
+ */
+export const discussionMentions = pgTable(
+  "discussion_mentions",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    caseId: text("case_id")
+      .notNull()
+      .references(() => cases.id, { onDelete: "restrict" }),
+    messageId: text("message_id")
+      .notNull()
+      .references(() => discussionMessages.id, { onDelete: "restrict" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    mentionedById: text("mentioned_by_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    mentionedAt: timestamp("mentioned_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    uniqueIndex("discussion_mentions_message_user_idx").on(t.messageId, t.userId),
+    index("discussion_mentions_user_idx").on(t.userId, t.mentionedAt),
+  ],
+);

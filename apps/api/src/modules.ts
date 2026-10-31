@@ -1,6 +1,7 @@
 import { caseRoleStore } from "./case-roles/case-roles";
 import { caseStore } from "./cases/cases";
 import type { Deps } from "./deps";
+import { discussionStore } from "./discussion/discussion";
 import { invitationStore } from "./invitations/invitations";
 import { memberStore } from "./members/members";
 import { organizationStore } from "./organizations/organizations";
@@ -15,6 +16,7 @@ export function createModules(deps: Deps) {
     cases: caseStore(deps),
     tasks: taskStore(deps),
     caseRoles: caseRoleStore(deps),
+    discussion: discussionStore(deps),
     members: memberStore(deps),
     invitations: invitationStore(deps),
     organizations: organizationStore(deps),
