@@ -262,3 +262,83 @@ test("Case pages and the Case list refresh live, and show who is viewing the Cas
     await stop();
   }
 }, 60_000);
+
+test("an Admin adds a Case Role; an Analyst gives it on a Case, works its Tasks past a colleague's edit, and reads the Audit Log", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    for (const email of ["ana@acme.example", "ben@acme.example"]) {
+      await owner.api.organization.invitations.$post({ json: { email, role: "analyst" } });
+    }
+    const ana = await t.acceptInvite("ana@acme.example", PASSWORD, "Ana Analyst");
+    await t.acceptInvite("ben@acme.example", PASSWORD, "Ben Analyst");
+    await ana.api.cases.$post({ json: { title: "Suspicious PowerShell on FIN-LT-0231", caseType: "malware", severity: "critical" } });
+
+    // The Owner adds Forensics to the catalog.
+    const ownerPage = await browser.newPage();
+    await signIn(ownerPage, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
+    await ownerPage.goto(`${baseUrl}/settings/members`);
+    await ownerPage.getByLabel("New Case Role").fill("Forensics");
+    await ownerPage.getByRole("button", { name: "+ New Case Role" }).click();
+    await ownerPage.getByTestId("case-role-Forensics").getByText("on 0 Cases").waitFor();
+
+    // Ana gives Ben Forensics on the Case.
+    const page = await browser.newPage();
+    await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
+    await page.goto(`${baseUrl}/cases/1`);
+    await page.getByRole("button", { name: "+ Assign" }).click();
+    await page.getByLabel("Case Role", { exact: true }).selectOption({ label: "Forensics" });
+    await page.getByLabel("Member", { exact: true }).selectOption({ label: "Ben Analyst" });
+    await page.getByRole("button", { name: "Assign", exact: true }).click();
+    await page.getByRole("button", { name: "Take Forensics from Ben Analyst" }).waitFor();
+
+    // She creates a Task for Ben and completes another of her own.
+    await page.getByRole("link", { name: "Tasks (0/0)" }).click();
+    await page.getByRole("button", { name: "+ New Task" }).click();
+    let dialog = page.getByRole("dialog", { name: "New Task" });
+    await dialog.getByLabel("Title").fill("Capture memory image");
+    await dialog.getByLabel("Description").fill("Before reboot; upload as Evidence");
+    await dialog.getByLabel("Owner").selectOption({ label: "Ben Analyst" });
+    await dialog.getByLabel("Due date (optional)").fill("2026-01-05");
+    await dialog.getByRole("button", { name: "Create Task" }).click();
+    await page.getByTestId("task-Capture memory image").getByText("Ben Analyst").waitFor();
+    await page.getByRole("button", { name: "+ New Task" }).click();
+    dialog = page.getByRole("dialog", { name: "New Task" });
+    await dialog.getByLabel("Title").fill("Contain host");
+    await dialog.getByRole("button", { name: "Create Task" }).click();
+    await page.getByRole("checkbox", { name: "Contain host done" }).click();
+    await page.getByText("1 of 2 done").waitFor();
+    await page.getByRole("link", { name: "Tasks (1/2)" }).waitFor();
+
+    // Ana starts editing; Olive saves first; Ana's save is refused and she loads the current Task.
+    await page.getByRole("button", { name: "Edit Capture memory image" }).click();
+    dialog = page.getByRole("dialog", { name: "Edit Task" });
+    await dialog.getByLabel("Title").fill("Capture memory image now");
+    const listed = await (await owner.api.cases[":number"].tasks.$get({ param: { number: "1" } })).json();
+    const memory = "tasks" in listed ? listed.tasks.find((x) => x.title === "Capture memory image")! : null;
+    await owner.api.cases[":number"].tasks[":id"].$patch({
+      param: { number: "1", id: memory!.id },
+      json: { title: "Capture memory image (FIN-LT-0231)", version: 1 },
+    });
+    await dialog.getByRole("button", { name: "Save" }).click();
+    await dialog.getByText("Not saved — the Task changed since you opened it").waitFor();
+    await dialog.getByRole("button", { name: "Load current" }).click();
+    expect(await dialog.getByLabel("Title").inputValue()).toBe("Capture memory image (FIN-LT-0231)");
+    await dialog.getByLabel("Due date (optional)").fill("2026-01-06");
+    await dialog.getByRole("button", { name: "Save" }).click();
+    await page.getByTestId("task-Capture memory image (FIN-LT-0231)").getByText("2026-01-06").waitFor();
+
+    // Everything is in the Audit Log.
+    await page.getByRole("link", { name: "Audit Log" }).click();
+    for (const action of ["Gave Case Role to Ben Analyst", "Created Task Capture memory image", "Completed Task Contain host", "Changed Task due date"]) {
+      await page.getByRole("cell", { name: action }).first().waitFor();
+    }
+
+    // The catalog counts the Case.
+    await ownerPage.reload();
+    await ownerPage.getByTestId("case-role-Forensics").getByText("on 1 Case").waitFor();
+  } finally {
+    await stop();
+  }
+}, 60_000);

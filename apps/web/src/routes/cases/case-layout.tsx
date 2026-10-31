@@ -218,7 +218,7 @@ export function CaseLayout() {
                     />
                     <Label htmlFor="case-restricted">Restricted</Label>
                     <span className="text-sm text-muted-foreground">
-                      Only Admins and people assigned to it can see it.
+                      Only Admins, its Assignee and people with a Case Role on it can see it.
                     </span>
                   </div>
                 )}
@@ -232,6 +232,9 @@ export function CaseLayout() {
             <nav className="flex gap-1 border-b" aria-label="Case sections">
               <Link to="/cases/$number" params={{ number: String(number) }} activeOptions={{ exact: true }} className={tabLink}>
                 Overview
+              </Link>
+              <Link to="/cases/$number/tasks" params={{ number: String(number) }} className={tabLink}>
+                Tasks ({c.tasks.done}/{c.tasks.total})
               </Link>
               <Link to="/cases/$number/audit-log" params={{ number: String(number) }} className={tabLink}>
                 Audit Log

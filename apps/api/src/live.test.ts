@@ -85,6 +85,21 @@ describe("Case signals", () => {
     expect(await live.next()).toEqual({ type: "case", number });
   });
 
+  test("creating, editing and completing a Task signal its Case", async () => {
+    const { t, owner, ana, open, userId } = await acme();
+    const number = await open(owner);
+    const live = await t.connect(ana);
+    const tasks = owner.api.cases[":number"].tasks;
+    const res = await tasks.$post({ param: param(number), json: { title: "Contain host", ownerId: await userId(ana) } });
+    const body = await res.json();
+    if (!("task" in body)) throw new Error("Could not create a Task");
+    expect(await live.next()).toEqual({ type: "case", number });
+    await tasks[":id"].$patch({ param: { ...param(number), id: body.task.id }, json: { title: "Contain FIN-LT-0231", version: 1 } });
+    expect(await live.next()).toEqual({ type: "case", number });
+    await tasks[":id"].done.$put({ param: { ...param(number), id: body.task.id }, json: { done: true } });
+    expect(await live.next()).toEqual({ type: "case", number });
+  });
+
   test("signals name only what changed", async () => {
     const { t, owner, ana, open } = await acme();
     const live = await t.connect(ana);
@@ -182,6 +197,34 @@ describe("Signals are forwarded only to those who can see the Case", () => {
     const live = await t.connect(ben);
     await change(owner, number, { assigneeId: await userId(ben) });
     expect(await live.next()).toEqual({ type: "case", number });
+  });
+
+  test("an Analyst given a Case Role on a Restricted Case starts hearing about it; hears it taken away, and nothing after", async () => {
+    const { t, owner, admin, ben, open, change, userId, restrictedToAna } = await acme();
+    const number = await restrictedToAna();
+    const marker = await open(owner, "Phishing wave");
+    const roleRes = await admin.api.organization["case-roles"].$post({ json: { name: "Forensics" } });
+    const roleBody = await roleRes.json();
+    if (!("caseRole" in roleBody)) throw new Error("Could not create a Case Role");
+    const live = await t.connect(ben);
+
+    const assigned = await owner.api.cases[":number"]["case-roles"].$post({
+      param: param(number),
+      json: { caseRoleId: roleBody.caseRole.id, userId: await userId(ben) },
+    });
+    const assignedBody = await assigned.json();
+    if (!("caseRoles" in assignedBody)) throw new Error("Could not give the Case Role");
+    expect(await live.next()).toEqual({ type: "case", number });
+
+    await owner.api.cases[":number"]["case-roles"][":assignmentId"].$delete({
+      param: { ...param(number), assignmentId: assignedBody.caseRoles[0]!.id },
+    });
+    expect(await live.next()).toEqual({ type: "case", number });
+
+    await change(owner, number, { severity: "critical" });
+    await change(owner, marker, { severity: "low" });
+    await live.next(caseSignal(marker));
+    expect(signalsAbout(live.messages, number)).toHaveLength(2);
   });
 
   test("a removed Member's socket is closed and hears nothing more", async () => {

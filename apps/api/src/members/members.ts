@@ -38,6 +38,17 @@ export async function memberName(tx: Db | Tx, organizationId: string, userId: st
   return row?.name ?? null;
 }
 
+/** The Member's name and role, or null unless `userId` is a Member of `organizationId`. Joins `tx`. */
+export async function memberOf(tx: Db | Tx, organizationId: string, userId: string) {
+  const [row] = await tx
+    .select({ name: user.name, role: member.role })
+    .from(member)
+    .innerJoin(user, eq(member.userId, user.id))
+    .where(and(eq(member.organizationId, organizationId), eq(member.userId, userId)))
+    .limit(1);
+  return row ? { userId, organizationId, name: row.name, role: row.role as OrgRole } : null;
+}
+
 const ROLE_CHANGE_REFUSED = "The Owner's role changes only by transferring ownership";
 const REMOVAL_REFUSED = "The Owner cannot be removed";
 

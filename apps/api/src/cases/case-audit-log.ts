@@ -13,6 +13,8 @@ export type CaseAuditEntry = {
   occurredAt: Date;
   actor: CaseActor;
   action: CaseAuditAction;
+  /** What within the Case was acted on, as named now: a Task's title, a Case Role holder's name. */
+  target?: string | null;
   before?: string | null;
   after?: string | null;
 };
@@ -28,6 +30,7 @@ export async function recordCaseAudit(tx: Tx, entry: CaseAuditEntry) {
     actorId: entry.actor.id,
     actorName: entry.actor.name,
     action: entry.action,
+    target: entry.target ?? null,
     before: entry.before ?? null,
     after: entry.after ?? null,
   });
@@ -55,6 +58,7 @@ export async function listCaseAudit(db: Db, caseId: string, filter: CaseAuditFil
     occurredAt: row.occurredAt.toISOString(),
     actor: { type: row.actorType, id: row.actorId, name: row.actorName },
     action: row.action as CaseAuditAction,
+    target: row.target,
     before: row.before,
     after: row.after,
   }));

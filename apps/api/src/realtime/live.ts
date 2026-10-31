@@ -4,6 +4,7 @@ import { type Actor, type CaseAccessFacts, canSeeCase, visibleCases } from "../a
 import type { OrgRole } from "../auth/roles";
 import type { Clock } from "../clock";
 import type { Db } from "../db/client";
+import { caseRoleHolderIds } from "../case-roles/holders";
 import { cases, caseViewers, member, organization, user } from "../db/schema";
 import { secureId } from "../ids";
 import type { ClientMessage, ServerMessage, Viewer } from "./messages";
@@ -64,7 +65,7 @@ export function createLive({ db, clock, signals }: { db: Db; clock: Clock; signa
       .from(cases)
       .where(eq(cases.id, caseId))
       .limit(1);
-    return row ?? null;
+    return row ? { ...row, caseRoleHolderIds: await caseRoleHolderIds(db, caseId) } : null;
   };
 
   /** Who is viewing the Case, once each, by name. */

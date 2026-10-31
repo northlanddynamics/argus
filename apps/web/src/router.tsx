@@ -9,6 +9,7 @@ import { CaseAuditLogPage } from "@/routes/cases/audit-log";
 import { CaseLayout } from "@/routes/cases/case-layout";
 import { CasesPage, validateCaseListSearch } from "@/routes/cases/list";
 import { CaseOverviewPage } from "@/routes/cases/overview";
+import { CaseTasksPage } from "@/routes/cases/tasks";
 import { OrgAuditLogPage } from "@/routes/settings/audit-log";
 import { SettingsLayout } from "@/routes/settings/layout";
 import { MembersPage } from "@/routes/settings/members";
@@ -47,6 +48,12 @@ const caseOverviewRoute = createRoute({
   getParentRoute: () => caseRoute,
   path: "/",
   component: CaseOverviewPage,
+});
+
+const caseTasksRoute = createRoute({
+  getParentRoute: () => caseRoute,
+  path: "/tasks",
+  component: CaseTasksPage,
 });
 
 const caseAuditLogRoute = createRoute({
@@ -114,7 +121,7 @@ const inviteRoute = createRoute({
 export const router = createRouter({
   routeTree: rootRoute.addChildren([
     homeRoute,
-    caseRoute.addChildren([caseOverviewRoute, caseAuditLogRoute]),
+    caseRoute.addChildren([caseOverviewRoute, caseTasksRoute, caseAuditLogRoute]),
     operatorRoute,
     settingsRoute.addChildren([settingsIndexRoute, membersRoute, orgAuditLogRoute]),
     signInRoute,

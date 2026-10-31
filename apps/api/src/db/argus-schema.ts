@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { bigserial, boolean, check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { bigserial, boolean, check, date, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import type { CaseSummary } from "../cases/case-summary";
 import { CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabulary";
 import { organization, user } from "./auth-schema";
@@ -103,6 +103,8 @@ export const caseAuditLog = pgTable(
     /** The actor's name when they acted, so the entry reads the same after they leave. */
     actorName: text("actor_name").notNull(),
     action: text("action").notNull(),
+    /** What within the Case was acted on, as it was named at the time: a Task's title, a Member's name. */
+    target: text("target"),
     before: text("before"),
     after: text("after"),
   },
@@ -130,4 +132,101 @@ export const caseViewers = pgTable(
     seenAt: timestamp("seen_at", { withTimezone: true }).notNull(),
   },
   (t) => [index("case_viewers_case_idx").on(t.caseId), index("case_viewers_seen_idx").on(t.seenAt)],
+);
+
+/**
+ * The Organization's Case Role catalog. Never deleted: a retired Case Role is no longer offered,
+ * but the Case Role assignments already made with it stay. Names are unique among the active ones.
+ */
+export const caseRoles = pgTable(
+  "case_roles",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    name: text("name").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    retiredAt: timestamp("retired_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("case_roles_org_active_name_idx")
+      .on(t.organizationId, sql`lower(${t.name})`)
+      .where(sql`${t.retiredAt} IS NULL`),
+  ],
+);
+
+/**
+ * A Case Role given to a Member on a Case. Counts as assigned for Restricted Case visibility while
+ * it hasn't ended (see `access/policy.ts`). Ending it keeps the row (ADR 0003).
+ */
+export const caseRoleAssignments = pgTable(
+  "case_role_assignments",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    caseId: text("case_id")
+      .notNull()
+      .references(() => cases.id, { onDelete: "restrict" }),
+    caseRoleId: text("case_role_id")
+      .notNull()
+      .references(() => caseRoles.id, { onDelete: "restrict" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    assignedById: text("assigned_by_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    assignedAt: timestamp("assigned_at", { withTimezone: true }).notNull(),
+    endedById: text("ended_by_id").references(() => user.id, { onDelete: "restrict" }),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("case_role_assignments_active_idx")
+      .on(t.caseId, t.caseRoleId, t.userId)
+      .where(sql`${t.endedAt} IS NULL`),
+    index("case_role_assignments_user_idx").on(t.userId, t.caseId),
+    check("case_role_assignments_ended", sql`(${t.endedAt} IS NULL) = (${t.endedById} IS NULL)`),
+  ],
+);
+
+/**
+ * A Task on a Case: one owner, done or not. Never deleted (ADR 0003). `version` moves on with every
+ * edit; an edit based on an older version is refused.
+ */
+export const tasks = pgTable(
+  "tasks",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    caseId: text("case_id")
+      .notNull()
+      .references(() => cases.id, { onDelete: "restrict" }),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    dueDate: date("due_date", { mode: "string" }),
+    done: boolean("done").notNull().default(false),
+    completedById: text("completed_by_id").references(() => user.id, { onDelete: "restrict" }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    version: integer("version").notNull(),
+    createdById: text("created_by_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    index("tasks_case_idx").on(t.caseId, t.createdAt),
+    check(
+      "tasks_done_has_completion",
+      sql`${t.done} = (${t.completedById} IS NOT NULL) AND ${t.done} = (${t.completedAt} IS NOT NULL)`,
+    ),
+  ],
 );

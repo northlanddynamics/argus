@@ -69,6 +69,15 @@ export const CASE_AUDIT_ACTIONS = [
   "case.summary_edited",
   "case.closed",
   "case.reopened",
+  "task.created",
+  "task.title_changed",
+  "task.description_changed",
+  "task.owner_changed",
+  "task.due_date_changed",
+  "task.completed",
+  "task.reopened",
+  "case_role.assigned",
+  "case_role.unassigned",
 ] as const;
 export type CaseAuditAction = (typeof CASE_AUDIT_ACTIONS)[number];
 

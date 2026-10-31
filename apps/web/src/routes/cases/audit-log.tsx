@@ -33,6 +33,15 @@ const actionLabel: Record<CaseAuditAction, string> = {
   "case.summary_edited": "Edited Case Summary",
   "case.closed": "Closed Case",
   "case.reopened": "Reopened Case",
+  "task.created": "Created Task",
+  "task.title_changed": "Renamed Task",
+  "task.description_changed": "Changed Task description",
+  "task.owner_changed": "Changed Task owner",
+  "task.due_date_changed": "Changed Task due date",
+  "task.completed": "Completed Task",
+  "task.reopened": "Reopened Task",
+  "case_role.assigned": "Gave Case Role to",
+  "case_role.unassigned": "Took Case Role from",
 };
 
 /** A recorded value as people read it: "In Progress" rather than "in_progress". */
@@ -55,6 +64,8 @@ function shown(action: CaseAuditAction, value: string | null) {
       const text = summaryText(JSON.parse(value) as CaseSummary).replaceAll("\n", " ");
       return text.length > 80 ? `${text.slice(0, 80)}…` : text || "(empty)";
     }
+    case "task.description_changed":
+      return value.length > 80 ? `${value.slice(0, 80)}…` : value || "(empty)";
     default:
       return value;
   }
@@ -135,7 +146,10 @@ export function CaseAuditLogPage() {
                 <TableRow key={e.id}>
                   <TableCell className="font-mono text-xs">{new Date(e.occurredAt).toLocaleString()}</TableCell>
                   <TableCell>{e.actor.name}</TableCell>
-                  <TableCell>{actionLabel[e.action] ?? e.action}</TableCell>
+                  <TableCell>
+                    {actionLabel[e.action] ?? e.action}
+                    {e.target !== null && <span className="font-medium"> {e.target}</span>}
+                  </TableCell>
                   <TableCell className="max-w-md font-mono text-xs whitespace-normal">
                     {e.before !== null && <span className="line-through">{shown(e.action, e.before)}</span>}
                     {e.before !== null && " "}→ {shown(e.action, e.after)}

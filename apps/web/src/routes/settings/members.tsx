@@ -11,6 +11,7 @@ import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api, authClient, errorMessage } from "@/lib/api";
 import { roleLabel } from "@/lib/roles";
+import { CaseRolesCard } from "@/routes/settings/case-roles-card";
 
 export const membersKey = ["organization", "members"];
 
@@ -168,6 +169,7 @@ export function MembersPage() {
           </Table>
         </CardContent>
       </Card>
+      <CaseRolesCard />
       {me.organization?.role === "owner" && list && <OwnershipCard members={list.members} />}
     </>
   );
