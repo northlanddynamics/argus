@@ -1,6 +1,30 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["typescript", "react", "import", "unicorn"],
-  "categories": { "correctness": "error", "suspicious": "warn" },
-  "ignorePatterns": ["**/dist/**", "**/node_modules/**", "apps/api/drizzle/**", "apps/web/src/components/ui/**"]
+  "plugins": [
+    "typescript",
+    "react",
+    "import",
+    "unicorn"
+  ],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/node_modules/**",
+    "apps/api/drizzle/**",
+    "apps/web/src/components/ui/**"
+  ],
+  "rules": {
+    "react/react-in-jsx-scope": "off",
+    "import/no-unassigned-import": [
+      "warn",
+      {
+        "allow": [
+          "**/*.css"
+        ]
+      }
+    ]
+  }
 }
