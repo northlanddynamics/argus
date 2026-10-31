@@ -3,6 +3,7 @@ import { Link, Outlet, useNavigate, useParams, useRouteContext } from "@tanstack
 import { LockIcon } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { OrgNav } from "@/components/org-nav";
+import { PresenceAvatars } from "@/components/presence-avatars";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -93,7 +94,7 @@ export function CaseLayout() {
   const locked = change.isPending || c?.status === "closed";
   return (
     <div className="min-h-svh bg-muted">
-      <AppHeader email={me.user.email} badge={<OrgNav me={me} />} />
+      <AppHeader email={me.user.email} badge={<OrgNav me={me} />} live />
       <main className="mx-auto grid max-w-6xl gap-4 p-6">
         <nav className="text-sm text-muted-foreground" aria-label="Breadcrumb">
           <Link to="/" className="text-primary underline">
@@ -122,7 +123,10 @@ export function CaseLayout() {
                     </p>
                     <h1 className="text-2xl font-semibold">{c.title}</h1>
                   </div>
-                  {c.status !== "closed" && <CloseCaseDialog number={c.number} />}
+                  <div className="flex items-center gap-4">
+                    <PresenceAvatars number={c.number} />
+                    {c.status !== "closed" && <CloseCaseDialog number={c.number} />}
+                  </div>
                 </div>
                 {c.closed && c.resolution && (
                   <Alert className="border-amber-300 bg-amber-50 text-amber-950">

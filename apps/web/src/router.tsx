@@ -1,6 +1,7 @@
-import { QueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { createRootRouteWithContext, createRoute, createRouter, Outlet, redirect } from "@tanstack/react-router";
 import { meQuery } from "@/lib/api";
+import { queryClient } from "@/lib/query-client";
 import { canManage } from "@/lib/roles";
 import { AcceptInvitePage } from "@/routes/accept-invite";
 import { OperatorConsolePage } from "@/routes/operator-console";
@@ -13,7 +14,7 @@ import { SettingsLayout } from "@/routes/settings/layout";
 import { MembersPage } from "@/routes/settings/members";
 import { SignInPage } from "@/routes/sign-in";
 
-export const queryClient = new QueryClient();
+export { queryClient };
 
 const rootRoute = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   component: Outlet,

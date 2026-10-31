@@ -1,3 +1,4 @@
+import { websocket } from "@hono/bun";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chromium, type Browser, type Page } from "playwright";
 import { defaultWebDist } from "../src/config";
@@ -17,11 +18,11 @@ const PASSWORD = "correct-horse-battery";
 const starting = () => new Response("starting", { status: 503 });
 
 async function serveTestApp() {
-  let handler: (request: Request) => Response | Promise<Response> = starting;
-  const server = Bun.serve({ port: 0, fetch: (request) => handler(request) });
+  let handler: (request: Request, server: Bun.Server<unknown>) => Response | Promise<Response> = starting;
+  const server = Bun.serve({ port: 0, fetch: (request, bun) => handler(request, bun), websocket });
   const baseUrl = server.url.origin;
   const t = await buildTestApp({ baseUrl });
-  handler = createServerApp(t.deps, defaultWebDist).fetch;
+  handler = createServerApp(t.deps, defaultWebDist, t.live).fetch;
   return { t, baseUrl, stop: () => server.stop(true) };
 }
 

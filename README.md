@@ -29,7 +29,9 @@ bun run test:e2e    # builds the SPA, then a Playwright smoke test with the pre-
 
 Members who sign in with a password must use TOTP: until they enroll, their session reaches only the enrollment endpoints (`apps/api/src/auth/totp-enrollment.ts`). Passkeys use `BASE_URL` as their origin and its hostname as the relying party ID, so set it to the public origin.
 
-Tests build the API in-process (`apps/api/src/test/harness.ts`) with a fresh database cloned from a migrated template, a fake clock and a captured mail outbox, and drive it over HTTP with the Hono RPC client and the Better Auth client. `t.acceptInvite(email, password, name)` accepts the latest invite sent to `email` and gives a fully signed-in, TOTP-enrolled Member; `t.totpCode(secret)` plays the authenticator app.
+Live updates (ADR 0005): each signed-in tab holds one WebSocket at `/api/live` (`apps/api/src/realtime/`). Changes publish a signal with `pg_notify` in the same transaction; every process listens and forwards it only to sockets whose Member can see the Case, and the SPA (`apps/web/src/lib/live.ts`) invalidates the matching queries. Presence is kept in `case_viewers`, refreshed by each process's heartbeat.
+
+Tests build the API in-process (`apps/api/src/test/harness.ts`) with a fresh database cloned from a migrated template, a fake clock and a captured mail outbox, and drive it over HTTP with the Hono RPC client and the Better Auth client. `t.acceptInvite(email, password, name)` accepts the latest invite sent to `email` and gives a fully signed-in, TOTP-enrolled Member; `t.totpCode(secret)` plays the authenticator app. `t.connect(member)` opens that Member's live socket and collects what it receives; `t.anotherInstance()` starts a second server process on the same database.
 
 ## Generated code
 

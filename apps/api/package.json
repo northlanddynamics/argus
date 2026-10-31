@@ -5,7 +5,8 @@
   "exports": {
     "./client": "./src/client.ts",
     "./cases/vocabulary": "./src/cases/vocabulary.ts",
-    "./cases/case-summary": "./src/cases/case-summary.ts"
+    "./cases/case-summary": "./src/cases/case-summary.ts",
+    "./realtime/messages": "./src/realtime/messages.ts"
   },
   "scripts": {
     "dev": "bun --watch src/server.ts",
@@ -19,6 +20,7 @@
   },
   "dependencies": {
     "@better-auth/passkey": "1.7.14",
+    "@hono/bun": "^1.0.1",
     "@hono/zod-validator": "^0.9.1",
     "better-auth": "^1.7.14",
     "drizzle-orm": "^0.45.4",

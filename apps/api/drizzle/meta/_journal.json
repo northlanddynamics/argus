@@ -64,6 +64,13 @@
       "when": 1793476226008,
       "tag": "0008_restricted_cases",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793477578007,
+      "tag": "0009_case_viewers",
+      "breakpoints": true
     }
   ]
 }

@@ -1,3 +1,4 @@
+import { websocket } from "@hono/bun";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chromium, type Browser } from "playwright";
 import { defaultWebDist } from "../src/config";
@@ -16,11 +17,11 @@ const starting = () => new Response("starting", { status: 503 });
 
 /** Serves the API and the built SPA on a real port, with the test harness's injected fakes. */
 async function serveTestApp() {
-  let handler: (request: Request) => Response | Promise<Response> = starting;
-  const server = Bun.serve({ port: 0, fetch: (request) => handler(request) });
+  let handler: (request: Request, server: Bun.Server<unknown>) => Response | Promise<Response> = starting;
+  const server = Bun.serve({ port: 0, fetch: (request, bun) => handler(request, bun), websocket });
   const baseUrl = server.url.origin;
   const t = await buildTestApp({ baseUrl });
-  handler = createServerApp(t.deps, defaultWebDist).fetch;
+  handler = createServerApp(t.deps, defaultWebDist, t.live).fetch;
   return { t, baseUrl, stop: () => server.stop(true) };
 }
 

@@ -2,13 +2,14 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Hono } from "hono";
-import { serveStatic } from "hono/bun";
+import { serveStatic } from "@hono/bun";
 import { createApi } from "./app";
 import type { Deps } from "./deps";
+import type { Live } from "./realtime/live";
 
 /** The API plus the built SPA from `webDist`, as served in production by one process. */
-export function createServerApp(deps: Deps, webDist: string) {
-  const app = new Hono().route("/", createApi(deps));
+export function createServerApp(deps: Deps, webDist: string, live?: Live) {
+  const app = new Hono().route("/", createApi(deps, live));
   if (!existsSync(webDist)) return app;
   const indexHtml = readFile(join(webDist, "index.html"), "utf8");
   return app

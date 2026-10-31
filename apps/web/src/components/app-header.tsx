@@ -1,11 +1,13 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { LiveIndicator } from "@/components/live-indicator";
 import { AddPasskeyButton } from "@/components/sign-in/add-passkey-button";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/api";
 
-export function AppHeader({ badge, email }: { badge?: ReactNode; email: string }) {
+/** With `live`, holds the live connection open and shows its state. */
+export function AppHeader({ badge, email, live = false }: { badge?: ReactNode; email: string; live?: boolean }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const signOut = async () => {
@@ -20,6 +22,7 @@ export function AppHeader({ badge, email }: { badge?: ReactNode; email: string }
         {badge}
       </div>
       <div className="flex items-center gap-4 text-sm">
+        {live && <LiveIndicator />}
         <span>{email}</span>
         <AddPasskeyButton size="sm" className="bg-transparent text-slate-50" />
         <Button variant="secondary" size="sm" onClick={signOut}>

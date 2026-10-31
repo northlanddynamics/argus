@@ -6,6 +6,7 @@ import { type Actor, canSeeCase, casePermissions, casePolicy, visibleCases } fro
 import { cases, member, organization, user } from "../db/schema";
 import { secureId } from "../ids";
 import type { Membership } from "../members/membership";
+import { publish } from "../realtime/signals";
 import { type CaseActor, type CaseAuditEntry, listCaseAudit, recordCaseAudit, type CaseAuditFilter } from "./case-audit-log";
 import { type CaseSummary, emptySummary } from "./case-summary";
 import { type CaseType, REOPENED_STATUS, type Resolution, type Severity, type Status } from "./vocabulary";
@@ -230,6 +231,7 @@ export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
           action: "case.opened",
           after: input.title,
         });
+        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: id });
         return last + 1;
       });
       return view(me, number);
@@ -318,6 +320,8 @@ export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
         if (!entries.length) return next;
         await tx.update(cases).set({ ...set, updatedAt: now }).where(eq(cases.id, current.id));
         for (const e of entries) await recordCaseAudit(tx, e);
+        const before = { restricted: current.restricted, assigneeId: current.assigneeId };
+        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id, before });
         return next;
       });
       return canSeeCase(me, result) ? view(me, number) : null;
@@ -342,6 +346,7 @@ export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
           before: JSON.stringify(current.summary),
           after: JSON.stringify(content),
         });
+        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id });
         return true;
       });
       const { summary } = await view(me, number);
@@ -367,6 +372,7 @@ export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
           before: current.status,
           after: resolution,
         });
+        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id });
       });
       return view(me, number);
     },
@@ -391,6 +397,7 @@ export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
           before: current.resolution,
           after: REOPENED_STATUS,
         });
+        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id });
       });
       return view(me, number);
     },
