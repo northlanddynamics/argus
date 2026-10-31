@@ -1,5 +1,5 @@
 import { zValidator } from "@hono/zod-validator";
-import { and, asc, count, eq, gt, inArray, max } from "drizzle-orm";
+import { and, asc, count, eq, gt, inArray, max, ne } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 import { ORG_AUDIT_CATEGORIES, listOrgAudit, recordOrgAudit, type OrgAuditEntry } from "../audit/org-audit-log";
@@ -129,13 +129,15 @@ export const organizationRoutes = (deps: Deps) => {
       const { email, role } = c.req.valid("json");
       const now = clock.now();
       const existing = await db.query.user.findFirst({ where: eq(userTable.email, email) });
-      if (existing) return c.json({ error: "This email already has an Argus account" }, 409);
+      // One answer for both cases, so Admins can't probe other Organizations' Members or invitations.
+      const taken = { error: "This email already has an Argus account or a pending invitation" };
+      if (existing) return c.json(taken, 409);
       const [pending] = await db
         .select({ id: invitation.id })
         .from(invitation)
         .where(and(eq(invitation.email, email), eq(invitation.status, "pending"), gt(invitation.expiresAt, now)))
         .limit(1);
-      if (pending) return c.json({ error: "This email already has a pending invitation" }, 409);
+      if (pending) return c.json(taken, 409);
 
       const id = secureId();
       await db.transaction(async (tx) => {
@@ -181,8 +183,14 @@ export const organizationRoutes = (deps: Deps) => {
       if (!target) return c.json({ error: "Member not found" }, 404);
       if (target.role === "owner") return c.json({ error: "The Owner's role changes only by transferring ownership" }, 409);
       if (target.role === role) return c.json({ ok: true }, 200);
-      await db.transaction(async (tx) => {
-        await tx.update(member).set({ role }).where(eq(member.id, target.id));
+      const changed = await db.transaction(async (tx) => {
+        // Re-checked here: ownership may have moved to this Member since `findMember`.
+        const rows = await tx
+          .update(member)
+          .set({ role })
+          .where(and(eq(member.id, target.id), ne(member.role, "owner")))
+          .returning();
+        if (!rows.length) return false;
         await recordOrgAudit(tx, {
           ...auditBy(me),
           action: "member.role_changed",
@@ -190,7 +198,9 @@ export const organizationRoutes = (deps: Deps) => {
           before: target.role,
           after: role,
         });
+        return true;
       });
+      if (!changed) return c.json({ error: "The Owner's role changes only by transferring ownership" }, 409);
       return c.json({ ok: true }, 200);
     })
     .delete("/members/:id", managers, async (c) => {
@@ -198,11 +208,18 @@ export const organizationRoutes = (deps: Deps) => {
       const target = await findMember(me.organizationId, c.req.param("id"));
       if (!target) return c.json({ error: "Member not found" }, 404);
       if (target.role === "owner") return c.json({ error: "The Owner cannot be removed" }, 409);
-      await db.transaction(async (tx) => {
-        await tx.delete(member).where(eq(member.id, target.id));
+      const removed = await db.transaction(async (tx) => {
+        // Re-checked here: ownership may have moved to this Member since `findMember`.
+        const rows = await tx
+          .delete(member)
+          .where(and(eq(member.id, target.id), ne(member.role, "owner")))
+          .returning();
+        if (!rows.length) return false;
         await signOutEverywhere(tx, [target.userId]);
         await recordOrgAudit(tx, { ...auditBy(me), action: "member.removed", target: target.name, before: target.role });
+        return true;
       });
+      if (!removed) return c.json({ error: "The Owner cannot be removed" }, 409);
       return c.json({ ok: true }, 200);
     })
     .post("/ownership", ownerOnly, zValidator("json", transferBody), async (c) => {
