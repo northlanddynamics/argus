@@ -9,7 +9,8 @@ import { account, invitation, member, organization, passkey, session, user as us
 import type { Deps } from "../deps";
 import { secureId } from "../ids";
 import { INVITE_TTL_MS, sendInvite } from "../invites";
-import { MANAGERS, type MemberEnv, type Membership, requireMember } from "../members/membership";
+import { organizationPolicy } from "../access/policy";
+import { type MemberEnv, type Membership, requireMember } from "../members/membership";
 
 /** Roles an Admin can give. Ownership only moves by transfer. */
 const assignableRole = z.enum(["admin", "analyst"]);
@@ -37,8 +38,9 @@ type PendingInvitation = { id: string; email: string; role: OrgRole; expiresAt: 
 export const organizationRoutes = (deps: Deps) => {
   const { db, clock } = deps;
   const anyMember = requireMember(db);
-  const managers = requireMember(db, MANAGERS);
-  const ownerOnly = requireMember(db, ["owner"]);
+  const managesMembers = requireMember(db, organizationPolicy.canManageMembers);
+  const readsAuditLog = requireMember(db, organizationPolicy.canReadAuditLog);
+  const ownerOnly = requireMember(db, organizationPolicy.canActAsOwner);
 
   /** Fields every entry written by `by` shares. */
   const auditBy = (by: Membership): Omit<OrgAuditEntry, "action"> => ({
@@ -103,7 +105,7 @@ export const organizationRoutes = (deps: Deps) => {
         lastActiveAt: lastActive.find((s) => s.userId === r.userId)?.at?.toISOString() ?? null,
       }));
       // Pending invitations are for Admins only.
-      if (!MANAGERS.includes(me.role)) return c.json({ members, invitations: undefined as PendingInvitation[] | undefined }, 200);
+      if (!organizationPolicy.canManageMembers(me)) return c.json({ members, invitations: undefined as PendingInvitation[] | undefined }, 200);
       const invitations = await db
         .select({ id: invitation.id, email: invitation.email, role: invitation.role, expiresAt: invitation.expiresAt })
         .from(invitation)
@@ -124,7 +126,7 @@ export const organizationRoutes = (deps: Deps) => {
         200,
       );
     })
-    .post("/invitations", managers, zValidator("json", inviteBody), async (c) => {
+    .post("/invitations", managesMembers, zValidator("json", inviteBody), async (c) => {
       const me = c.get("membership");
       const { email, role } = c.req.valid("json");
       const now = clock.now();
@@ -156,7 +158,7 @@ export const organizationRoutes = (deps: Deps) => {
       await sendInvite(deps, { invitationId: id, email, organizationName: me.organizationName, role });
       return c.json({ invitation: { id, email, role } }, 201);
     })
-    .delete("/invitations/:id", managers, async (c) => {
+    .delete("/invitations/:id", managesMembers, async (c) => {
       const me = c.get("membership");
       const [invite] = await db
         .select()
@@ -176,7 +178,7 @@ export const organizationRoutes = (deps: Deps) => {
       });
       return c.json({ ok: true }, 200);
     })
-    .patch("/members/:id", managers, zValidator("json", roleBody), async (c) => {
+    .patch("/members/:id", managesMembers, zValidator("json", roleBody), async (c) => {
       const me = c.get("membership");
       const { role } = c.req.valid("json");
       const target = await findMember(me.organizationId, c.req.param("id"));
@@ -203,7 +205,7 @@ export const organizationRoutes = (deps: Deps) => {
       if (!changed) return c.json({ error: "The Owner's role changes only by transferring ownership" }, 409);
       return c.json({ ok: true }, 200);
     })
-    .delete("/members/:id", managers, async (c) => {
+    .delete("/members/:id", managesMembers, async (c) => {
       const me = c.get("membership");
       const target = await findMember(me.organizationId, c.req.param("id"));
       if (!target) return c.json({ error: "Member not found" }, 404);
@@ -259,7 +261,7 @@ export const organizationRoutes = (deps: Deps) => {
       });
       return c.json({ ok: true }, 200);
     })
-    .get("/audit-log", managers, zValidator("query", auditQuery), async (c) => {
+    .get("/audit-log", readsAuditLog, zValidator("query", auditQuery), async (c) => {
       const me = c.get("membership");
       const { category, actor, from } = c.req.valid("query");
       const entries = await listOrgAudit(db, me.organizationId, {

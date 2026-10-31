@@ -57,6 +57,13 @@
       "when": 1793475403781,
       "tag": "0007_closed_cases_read_only",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793476226008,
+      "tag": "0008_restricted_cases",
+      "breakpoints": true
     }
   ]
 }

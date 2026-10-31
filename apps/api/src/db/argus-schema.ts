@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { bigserial, check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { bigserial, boolean, check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import type { CaseSummary } from "../cases/case-summary";
 import { CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabulary";
 import { organization, user } from "./auth-schema";
@@ -51,6 +51,8 @@ export const cases = pgTable(
     severity: text("severity", { enum: SEVERITIES }).notNull(),
     caseType: text("case_type", { enum: CASE_TYPES }).notNull(),
     assigneeId: text("assignee_id").references(() => user.id, { onDelete: "restrict" }),
+    /** Hidden from Analysts unless they are assigned to it; see `access/policy.ts`. */
+    restricted: boolean("restricted").notNull().default(false),
     resolution: text("resolution", { enum: RESOLUTIONS }),
     closedById: text("closed_by_id").references(() => user.id, { onDelete: "restrict" }),
     closedAt: timestamp("closed_at", { withTimezone: true }),

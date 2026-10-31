@@ -29,6 +29,7 @@ const actionLabel: Record<CaseAuditAction, string> = {
   "case.severity_changed": "Changed Severity",
   "case.case_type_changed": "Changed Case Type",
   "case.assignee_changed": "Changed Assignee",
+  "case.restricted_changed": "Changed Restricted",
   "case.summary_edited": "Edited Case Summary",
   "case.closed": "Closed Case",
   "case.reopened": "Reopened Case",
@@ -48,6 +49,8 @@ function shown(action: CaseAuditAction, value: string | null) {
       return severityLabel[value as Severity] ?? value;
     case "case.case_type_changed":
       return caseTypeLabel[value as CaseType] ?? value;
+    case "case.restricted_changed":
+      return value === "true" ? "Restricted" : "Not Restricted";
     case "case.summary_edited": {
       const text = summaryText(JSON.parse(value) as CaseSummary).replaceAll("\n", " ");
       return text.length > 80 ? `${text.slice(0, 80)}…` : text || "(empty)";
