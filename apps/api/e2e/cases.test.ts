@@ -1,0 +1,102 @@
+import { afterAll, beforeAll, expect, test } from "bun:test";
+import { chromium, type Browser, type Page } from "playwright";
+import { defaultWebDist } from "../src/config";
+import { createServerApp } from "../src/server-app";
+import { buildTestApp } from "../src/test/harness";
+
+let browser: Browser;
+beforeAll(async () => {
+  browser = await chromium.launch();
+});
+afterAll(async () => {
+  await browser?.close();
+});
+
+const PASSWORD = "correct-horse-battery";
+
+const starting = () => new Response("starting", { status: 503 });
+
+async function serveTestApp() {
+  let handler: (request: Request) => Response | Promise<Response> = starting;
+  const server = Bun.serve({ port: 0, fetch: (request) => handler(request) });
+  const baseUrl = server.url.origin;
+  const t = await buildTestApp({ baseUrl });
+  handler = createServerApp(t.deps, defaultWebDist).fetch;
+  return { t, baseUrl, stop: () => server.stop(true) };
+}
+
+async function signIn(page: Page, baseUrl: string, email: string, code: () => Promise<string>) {
+  await page.goto(`${baseUrl}/sign-in`);
+  await page.getByLabel("Work email").fill(email);
+  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByLabel("Authentication code").fill(await code());
+  await page.getByRole("button", { name: "Verify" }).click();
+  await page.getByRole("heading", { name: "Cases" }).waitFor();
+}
+
+test("an Analyst opens a Case, assigns it, edits the Case Summary past a colleague's save, and reads the Audit Log", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    await owner.api.organization.invitations.$post({ json: { email: "ana@acme.example", role: "analyst" } });
+    const ana = await t.acceptInvite("ana@acme.example", PASSWORD, "Ana Analyst");
+    const page = await browser.newPage();
+    await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
+
+    // Open a Case.
+    await page.getByRole("button", { name: "+ Open Case" }).click();
+    const dialog = page.getByRole("dialog", { name: "Open a Case" });
+    await dialog.getByLabel("Title").fill("Suspicious PowerShell on FIN-LT-0231");
+    await dialog.getByLabel("Case Type").selectOption("malware");
+    await dialog.getByLabel("Severity").selectOption("high");
+    await dialog.getByRole("textbox", { name: "Case Summary" }).fill("Falcon flagged encoded PowerShell.");
+    await dialog.getByRole("button", { name: "Open Case", exact: true }).click();
+    await page.waitForURL(`${baseUrl}/cases/1`);
+    await page.getByRole("heading", { name: "Suspicious PowerShell on FIN-LT-0231" }).waitFor();
+    await page.getByText("Falcon flagged encoded PowerShell.").waitFor();
+    expect(await page.getByLabel("Status").inputValue()).toBe("new");
+
+    // Take it and move it on.
+    await page.getByLabel("Assignee").selectOption({ label: "Ana Analyst" });
+    await page.getByLabel("Status").selectOption("in_progress");
+    await page.getByLabel("Status").and(page.locator(":enabled")).waitFor();
+    await page.reload();
+    await page.getByRole("heading", { name: "Suspicious PowerShell on FIN-LT-0231" }).waitFor();
+    expect(await page.getByLabel("Status").inputValue()).toBe("in_progress");
+    expect(await page.getByLabel("Assignee").locator("option:checked").textContent()).toBe("Ana Analyst");
+
+    // It shows in My Cases.
+    await page.getByRole("link", { name: "Cases", exact: true }).first().click();
+    await page.getByRole("button", { name: "My Cases (1)" }).waitFor();
+    await page.getByRole("link", { name: "Suspicious PowerShell on FIN-LT-0231" }).click();
+
+    // Ana starts editing; Olive saves first; Ana's save is refused and her text kept.
+    await page.getByRole("button", { name: "Edit" }).click();
+    const editor = page.getByRole("textbox", { name: "Case Summary" });
+    await editor.fill("Ana's handover notes.");
+    await owner.api.cases[":number"].summary.$put({
+      param: { number: "1" },
+      json: { version: 1, summary: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Olive's update." }] }] } },
+    });
+    await page.getByRole("button", { name: "Save" }).click();
+    await page.getByText("Not saved — the Case Summary changed since you opened it").waitFor();
+    expect(await editor.textContent()).toBe("Ana's handover notes.");
+    await page.getByRole("button", { name: "Load current, keep my draft aside" }).click();
+    expect(await editor.textContent()).toBe("Olive's update.");
+    await page.getByText("Your draft, set aside").waitFor();
+    await editor.fill("Olive's update. Ana: memory image requested.");
+    await page.getByRole("button", { name: "Save" }).click();
+    await page.getByText("Last saved by Ana Analyst · v3").waitFor();
+
+    // Everything is in the Audit Log.
+    await page.getByRole("link", { name: "Audit Log" }).click();
+    for (const action of ["Opened Case", "Changed Assignee", "Changed Status", "Edited Case Summary"]) {
+      await page.getByRole("cell", { name: action }).first().waitFor();
+    }
+    expect(await page.getByRole("cell", { name: "Edited Case Summary" }).count()).toBe(2);
+  } finally {
+    await stop();
+  }
+}, 60_000);

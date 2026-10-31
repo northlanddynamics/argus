@@ -32,7 +32,7 @@ async function signIn(page: Page, baseUrl: string, email: string, code: () => Pr
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByLabel("Authentication code").fill(await code());
   await page.getByRole("button", { name: "Verify" }).click();
-  await page.getByRole("heading", { name: "Acme Security" }).waitFor();
+  await page.getByText("Acme Security", { exact: true }).waitFor();
 }
 
 test("the Owner invites an Analyst, promotes them, and sees both in the Organization Audit Log", async () => {
