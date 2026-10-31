@@ -14,4 +14,11 @@ export type Deps = {
 };
 
 export type SessionUser = Auth["$Infer"]["Session"]["user"];
-export type Env = { Variables: { user: SessionUser | null } };
+export type Env = {
+  Variables: {
+    /** The signed-in person; null when signed out or still awaiting TOTP enrollment. */
+    user: SessionUser | null;
+    /** Signed in with a password, but TOTP enrollment is not done yet. */
+    totpEnrollmentPending: boolean;
+  };
+};

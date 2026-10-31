@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { TotpEnrollment } from "@/components/sign-in/totp-enrollment";
 import { api, authClient, errorMessage } from "@/lib/api";
 
 export function AcceptInvitePage() {
@@ -14,6 +15,8 @@ export function AcceptInvitePage() {
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  // Set once the new account is signed in: next comes mandatory TOTP enrollment.
+  const [enrollWith, setEnrollWith] = useState<string | null>(null);
 
   const invitation = useQuery({
     queryKey: ["invitation", invitationId],
@@ -51,9 +54,20 @@ export function AcceptInvitePage() {
       setError(signIn.error.message ?? "Sign-in failed");
       return;
     }
-    await queryClient.invalidateQueries();
-    await navigate({ to: "/" });
+    setEnrollWith(password);
   };
+
+  if (enrollWith) {
+    return (
+      <TotpEnrollment
+        password={enrollWith}
+        onDone={async () => {
+          await queryClient.invalidateQueries();
+          await navigate({ to: "/" });
+        }}
+      />
+    );
+  }
 
   return (
     <main className="flex min-h-svh items-center justify-center bg-muted p-4">

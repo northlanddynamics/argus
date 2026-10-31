@@ -33,7 +33,7 @@ describe("Operator creates an Organization and invites its Owner", () => {
     });
   });
 
-  test("the Owner accepts, sets a password, signs in and lands in their Organization", async () => {
+  test("the Owner accepts, sets a password, signs in, enrolls in TOTP and lands in their Organization", async () => {
     const { t } = await operatorCreatesAcme();
     const owner = t.session();
     const accept = await owner.api.invitations[":id"].accept.$post({
@@ -43,6 +43,7 @@ describe("Operator creates an Organization and invites its Owner", () => {
     expect(accept.status).toBe(200);
 
     await owner.signIn(OWNER, OWNER_PASSWORD);
+    await owner.enrollTotp(OWNER_PASSWORD);
     const me = await owner.api.me.$get();
     expect(me.status).toBe(200);
     const body = await me.json();
@@ -128,12 +129,7 @@ describe("Only Operators create Organizations", () => {
 
   test("an Owner cannot create Organizations", async () => {
     const { t } = await operatorCreatesAcme();
-    const owner = t.session();
-    await owner.api.invitations[":id"].accept.$post({
-      param: { id: t.inviteIdFor(OWNER) },
-      json: { name: "Olive Owner", password: OWNER_PASSWORD },
-    });
-    await owner.signIn(OWNER, OWNER_PASSWORD);
+    const owner = await t.acceptAsOwner(OWNER, OWNER_PASSWORD);
     const viaApi = await owner.api.operator.organizations.$post({
       json: { name: "Second", ownerEmail: "x@second.example" },
     });
