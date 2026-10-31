@@ -3,11 +3,12 @@ import { and, count, desc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { createMiddleware } from "hono/factory";
 import { z } from "zod";
+import { recordOrgAudit } from "../audit/org-audit-log";
 import { OPERATOR_ROLE } from "../auth/roles";
 import { invitation, member, organization, user as userTable } from "../db/schema";
 import type { Deps, Env } from "../deps";
 import { secureId } from "../ids";
-import { sendOwnerInvite } from "../invites";
+import { INVITE_TTL_MS, sendInvite } from "../invites";
 
 const createOrganizationBody = z.object({
   name: z.string().trim().min(1).max(120),
@@ -63,6 +64,7 @@ export const operatorRoutes = (deps: Deps) => {
             id: org.id,
             name: org.name,
             createdAt: org.createdAt.toISOString(),
+            deleted: org.deletedAt !== null,
             members: memberCount?.count ?? 0,
             owner: owner
               ? { email: owner.email, status: "active" as const }
@@ -94,11 +96,12 @@ export const operatorRoutes = (deps: Deps) => {
             inviterId: operator.id,
           })
           .returning();
+        const audit = { organizationId: org.id, occurredAt: now, actor: { type: "operator", id: operator.id }, category: "members" } as const;
+        await recordOrgAudit(tx, { ...audit, action: "organization.created", target: name, after: ownerEmail });
+        await recordOrgAudit(tx, { ...audit, action: "member.invited", target: ownerEmail, after: "owner" });
         return row!;
       });
-      await sendOwnerInvite(deps, { invitationId: invite.id, email: ownerEmail, organizationName: name });
+      await sendInvite(deps, { invitationId: invite.id, email: ownerEmail, organizationName: name, role: "owner" });
       return c.json({ organization: { id: org.id, name: org.name } }, 201);
     });
 };
-
-export const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;

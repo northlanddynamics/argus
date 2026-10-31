@@ -7,6 +7,17 @@ import type { Db } from "../db/client";
 import { OPERATOR_ROLE, ac, orgRoles, serviceAc, serviceRoles } from "./roles";
 import { TOTP_ENROLLMENT_PATHS, TOTP_ENROLLMENT_REQUIRED, totpEnrollmentPending } from "./totp-enrollment";
 
+/** The organization plugin's endpoints that only read; every other one is refused. */
+const ORGANIZATION_READ_PATHS = new Set([
+  "/organization/list",
+  "/organization/set-active",
+  "/organization/get-full-organization",
+  "/organization/get-active-member",
+  "/organization/get-active-member-role",
+  "/organization/list-members",
+  "/organization/has-permission",
+]);
+
 export type AuthDeps = {
   db: Db;
   baseUrl: string;
@@ -29,6 +40,12 @@ export function createAuth({ db, baseUrl, secret }: AuthDeps) {
         roles: orgRoles,
         creatorRole: "owner",
         allowUserToCreateOrganization: false,
+        // Organizations are never hard-deleted (ADR 0003); deletion sets this.
+        schema: {
+          organization: {
+            additionalFields: { deletedAt: { type: "date", required: false, input: false } },
+          },
+        },
       }),
       twoFactor({ issuer: "Argus" }),
       passkey({ rpName: "Argus", origin: baseUrl }),
@@ -41,6 +58,10 @@ export function createAuth({ db, baseUrl, secret }: AuthDeps) {
         }
         if (ctx.path.startsWith("/two-factor/verify-") && ctx.body?.trustDevice) {
           throw new APIError("BAD_REQUEST", { message: "Trusted devices are not supported" });
+        }
+        // Membership changes go through Argus so each one lands in the Organization Audit Log.
+        if (ctx.path.startsWith("/organization/") && !ORGANIZATION_READ_PATHS.has(ctx.path)) {
+          throw new APIError("FORBIDDEN", { message: "Manage Members in Argus settings" });
         }
         if (TOTP_ENROLLMENT_PATHS.has(ctx.path)) return;
         const session = await getSessionFromCtx(ctx);

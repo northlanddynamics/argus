@@ -15,6 +15,20 @@
       "when": 1793466167559,
       "tag": "0001_totp_passkeys",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793468782705,
+      "tag": "0002_org_audit_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793468783559,
+      "tag": "0003_org_audit_log_append_only",
+      "breakpoints": true
     }
   ]
 }

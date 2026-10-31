@@ -94,6 +94,7 @@ export const organization = pgTable("organization", {
   logo: text("logo"),
   createdAt: timestamp("created_at").notNull(),
   metadata: text("metadata"),
+  deletedAt: timestamp("deleted_at"),
 });
 
 export const member = pgTable(
