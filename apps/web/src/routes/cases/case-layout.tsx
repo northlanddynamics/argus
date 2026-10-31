@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, Outlet, useParams, useRouteContext } from "@tanstack/react-router";
+import { Link, Outlet, useNavigate, useParams, useRouteContext } from "@tanstack/react-router";
+import { LockIcon } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { OrgNav } from "@/components/org-nav";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { api, errorMessage } from "@/lib/api";
@@ -25,14 +27,19 @@ import {
   type Status,
   statusLabel,
 } from "@/lib/cases";
-import { canManage } from "@/lib/roles";
 import { CloseCaseDialog } from "@/routes/cases/close-case-dialog";
 import { membersKey } from "@/routes/settings/members";
 
 const tabLink =
   "-mb-px border-b-2 border-transparent px-3 py-2 text-sm text-muted-foreground hover:text-foreground data-[status=active]:border-foreground data-[status=active]:font-medium data-[status=active]:text-foreground";
 
-type Changes = { status?: Exclude<Status, "closed">; severity?: Severity; caseType?: CaseType; assigneeId?: string | null };
+type Changes = {
+  status?: Exclude<Status, "closed">;
+  severity?: Severity;
+  caseType?: CaseType;
+  assigneeId?: string | null;
+  restricted?: boolean;
+};
 
 export const useCaseNumber = () => Number(useParams({ from: "/cases/$number" }).number);
 
@@ -40,6 +47,7 @@ export function CaseLayout() {
   const { me } = useRouteContext({ from: "/cases/$number" });
   const number = useCaseNumber();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const found = useQuery(caseQuery(number));
   const members = useQuery({
     queryKey: membersKey,
@@ -55,8 +63,14 @@ export function CaseLayout() {
       return body.case;
     },
     onSuccess: (changed) => {
-      queryClient.setQueryData(caseKey(number), changed);
       void queryClient.invalidateQueries({ queryKey: casesKey });
+      // The change took the Case out of the Member's sight (they unassigned a Restricted Case from themself).
+      if (!changed) {
+        queryClient.removeQueries({ queryKey: caseKey(number) });
+        void navigate({ to: "/" });
+        return;
+      }
+      queryClient.setQueryData(caseKey(number), changed);
     },
   });
 
@@ -98,7 +112,14 @@ export function CaseLayout() {
               <CardContent className="grid gap-4">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="font-mono text-xs text-muted-foreground">{caseRef(c.number)}</p>
+                    <p className="flex items-center gap-1 font-mono text-xs text-muted-foreground">
+                      {caseRef(c.number)}
+                      {c.restricted && (
+                        <span className="flex items-center gap-1 font-sans">
+                          · <LockIcon className="size-3" aria-hidden /> Restricted
+                        </span>
+                      )}
+                    </p>
                     <h1 className="text-2xl font-semibold">{c.title}</h1>
                   </div>
                   {c.status !== "closed" && <CloseCaseDialog number={c.number} />}
@@ -109,9 +130,9 @@ export function CaseLayout() {
                     <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
                       <span>
                         Closed by {c.closed.by.name} on {new Date(c.closed.at).toLocaleString()}. This Case is read-only
-                        {canManage(me.organization?.role) ? "." : "; only an Admin can reopen it."}
+                        {c.can.reopen ? "." : "; only an Admin can reopen it."}
                       </span>
-                      {canManage(me.organization?.role) && (
+                      {c.can.reopen && (
                         <Button variant="outline" size="sm" disabled={reopen.isPending} onClick={() => reopen.mutate()}>
                           Reopen to {statusLabel[REOPENED_STATUS]}
                         </Button>
@@ -183,6 +204,20 @@ export function CaseLayout() {
                     </NativeSelect>
                   </Field>
                 </div>
+                {c.can.restrict && (
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="case-restricted"
+                      checked={c.restricted}
+                      disabled={locked}
+                      onCheckedChange={(checked) => change.mutate({ restricted: checked === true })}
+                    />
+                    <Label htmlFor="case-restricted">Restricted</Label>
+                    <span className="text-sm text-muted-foreground">
+                      Only Admins and people assigned to it can see it.
+                    </span>
+                  </div>
+                )}
                 {(change.error ?? reopen.error) && (
                   <Alert variant="destructive">
                     <AlertDescription>{(change.error ?? reopen.error)?.message}</AlertDescription>

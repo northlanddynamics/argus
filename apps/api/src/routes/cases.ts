@@ -2,10 +2,10 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
 import { caseSummarySchema } from "../cases/case-summary";
-import { CaseClosed, CaseNotClosed, CaseNotFound, caseStore, NotAMember, StaleSummary } from "../cases/cases";
+import { CaseClosed, CaseNotClosed, CaseNotFound, caseStore, NotAMember, NotPermitted, StaleSummary } from "../cases/cases";
 import { CASE_AUDIT_ACTIONS, CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabulary";
 import type { Deps } from "../deps";
-import { MANAGERS, type MemberEnv, requireMember } from "../members/membership";
+import { type MemberEnv, requireMember } from "../members/membership";
 
 const numberParam = z.object({ number: z.coerce.number().int().positive() });
 const isoDate = z.string().refine((s) => !Number.isNaN(Date.parse(s)), "Not a date");
@@ -33,6 +33,8 @@ const changeBody = z.object({
   severity: z.enum(SEVERITIES).optional(),
   caseType: z.enum(CASE_TYPES).optional(),
   assigneeId: z.string().min(1).nullable().optional(),
+  /** Admins, the Owner and the Assignee only. */
+  restricted: z.boolean().optional(),
 });
 
 const closeBody = z.object({ resolution: z.enum(RESOLUTIONS) });
@@ -47,7 +49,7 @@ const auditQuery = z.object({
 
 const notFound = { error: "Case not found" } as const;
 
-/** The result, or null if the Case isn't in the Member's Organization. */
+/** The result, or null if the Member can't see the Case (another Organization's, or Restricted). */
 const unlessNotFound = <T>(work: Promise<T>) =>
   work.catch((e: unknown) => {
     if (e instanceof CaseNotFound) return null;
@@ -70,22 +72,23 @@ export const caseRoutes = (deps: Deps) => {
       return c.json({ case: opened }, 201);
     })
     .get("/", zValidator("query", listQuery), async (c) => {
-      const me = c.get("membership");
-      return c.json(await store.list(me.organizationId, me.userId, c.req.valid("query")), 200);
+      return c.json(await store.list(c.get("membership"), c.req.valid("query")), 200);
     })
     .get("/:number", zValidator("param", numberParam), async (c) => {
-      const me = c.get("membership");
-      const found = await unlessNotFound(store.view(me.organizationId, c.req.valid("param").number));
+      const found = await unlessNotFound(store.view(c.get("membership"), c.req.valid("param").number));
       if (!found) return c.json(notFound, 404);
       return c.json({ case: found }, 200);
     })
     .patch("/:number", zValidator("param", numberParam), zValidator("json", changeBody), async (c) => {
       try {
-        const changed = await unlessNotFound(store.change(c.get("membership"), c.req.valid("param").number, c.req.valid("json")));
-        if (!changed) return c.json(notFound, 404);
+        const changed = await store.change(c.get("membership"), c.req.valid("param").number, c.req.valid("json"));
+        // The change went through, but left the Member unable to see the Case.
+        if (!changed) return c.json({ case: null }, 200);
         return c.json({ case: changed }, 200);
       } catch (e) {
+        if (e instanceof CaseNotFound) return c.json(notFound, 404);
         if (e instanceof NotAMember) return c.json({ error: "The Assignee must be a Member of the Organization" }, 400);
+        if (e instanceof NotPermitted) return c.json({ error: "Only an Admin or the Assignee can change whether a Case is Restricted" }, 403);
         return c.json(closedConflict(e), 409);
       }
     })
@@ -99,13 +102,12 @@ export const caseRoutes = (deps: Deps) => {
       }
     })
     .post("/:number/reopen", zValidator("param", numberParam), async (c) => {
-      const me = c.get("membership");
-      if (!MANAGERS.includes(me.role)) return c.json({ error: "Only an Admin can reopen a Case" }, 403);
       try {
-        const reopened = await unlessNotFound(store.reopen(me, c.req.valid("param").number));
+        const reopened = await unlessNotFound(store.reopen(c.get("membership"), c.req.valid("param").number));
         if (!reopened) return c.json(notFound, 404);
         return c.json({ case: reopened }, 200);
       } catch (e) {
+        if (e instanceof NotPermitted) return c.json({ error: "Only an Admin can reopen a Case" }, 403);
         return c.json(closedConflict(e), 409);
       }
     })
@@ -121,10 +123,9 @@ export const caseRoutes = (deps: Deps) => {
       }
     })
     .get("/:number/audit-log", zValidator("param", numberParam), zValidator("query", auditQuery), async (c) => {
-      const me = c.get("membership");
       const { actor, action, from } = c.req.valid("query");
       const entries = await unlessNotFound(
-        store.auditLog(me.organizationId, c.req.valid("param").number, {
+        store.auditLog(c.get("membership"), c.req.valid("param").number, {
           actorId: actor,
           action,
           from: from ? new Date(from) : undefined,

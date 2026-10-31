@@ -1,0 +1,1 @@
+ALTER TABLE "cases" ADD COLUMN "restricted" boolean DEFAULT false NOT NULL;

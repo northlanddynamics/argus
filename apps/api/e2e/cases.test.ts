@@ -149,3 +149,56 @@ test("an Analyst closes a Case with a Resolution and it becomes read-only; the O
     await stop();
   }
 }, 60_000);
+
+test("an Analyst marks the Case assigned to them Restricted; a colleague can't see it; the Owner sees it with a lock", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    for (const email of ["ana@acme.example", "ben@acme.example"]) {
+      await owner.api.organization.invitations.$post({ json: { email, role: "analyst" } });
+    }
+    const ana = await t.acceptInvite("ana@acme.example", PASSWORD, "Ana Analyst");
+    const ben = await t.acceptInvite("ben@acme.example", PASSWORD, "Ben Analyst");
+    await ana.api.cases.$post({ json: { title: "Departing employee bulk download", caseType: "insider_threat", severity: "high" } });
+
+    // Ana takes the Case and marks it Restricted.
+    const page = await browser.newPage();
+    await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
+    await page.goto(`${baseUrl}/cases/1`);
+    await page.getByRole("heading", { name: "Departing employee bulk download" }).waitFor();
+    expect(await page.getByLabel("Restricted").count()).toBe(0);
+    await page.getByLabel("Assignee").selectOption({ label: "Ana Analyst" });
+    await page.getByRole("checkbox", { name: "Restricted" }).click();
+    await page.getByText("· Restricted").waitFor();
+    expect(await page.getByRole("checkbox", { name: "Restricted" }).getAttribute("aria-checked")).toBe("true");
+
+    // Ben, another Analyst, finds no trace of it.
+    const benPage = await browser.newPage();
+    await signIn(benPage, baseUrl, "ben@acme.example", () => t.totpCode(ben.totp.secret));
+    await benPage.getByRole("button", { name: "All open (0)" }).click();
+    await benPage.getByText("No Cases here.").waitFor();
+    await benPage.goto(`${baseUrl}/cases/1`);
+    await benPage.getByText("There is no Case C-1 in your Organization.").waitFor();
+
+    // The Owner sees it, locked, in the list, and the change in the Audit Log.
+    const ownerPage = await browser.newPage();
+    await signIn(ownerPage, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
+    await ownerPage.getByRole("button", { name: "All open (1)" }).click();
+    await ownerPage.getByRole("img", { name: "Restricted" }).waitFor();
+    await ownerPage.getByRole("link", { name: "Departing employee bulk download" }).click();
+    await ownerPage.getByRole("link", { name: "Audit Log" }).click();
+    await ownerPage.getByRole("cell", { name: "Changed Restricted" }).waitFor();
+    await ownerPage.getByRole("cell", { name: "Not Restricted" }).waitFor();
+
+    // Ana hands it to Ben: she loses sight of it and lands on the list; Ben now sees it.
+    await page.getByLabel("Assignee").selectOption({ label: "Ben Analyst" });
+    await page.waitForURL(`${baseUrl}/`);
+    await page.getByRole("button", { name: "All open (0)" }).click();
+    await page.getByText("No Cases here.").waitFor();
+    await benPage.goto(`${baseUrl}/cases/1`);
+    await benPage.getByRole("heading", { name: "Departing employee bulk download" }).waitFor();
+  } finally {
+    await stop();
+  }
+}, 60_000);

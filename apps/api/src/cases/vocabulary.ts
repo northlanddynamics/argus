@@ -65,6 +65,7 @@ export const CASE_AUDIT_ACTIONS = [
   "case.severity_changed",
   "case.case_type_changed",
   "case.assignee_changed",
+  "case.restricted_changed",
   "case.summary_edited",
   "case.closed",
   "case.reopened",

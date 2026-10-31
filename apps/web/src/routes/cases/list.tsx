@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useRouteContext, useSearch } from "@tanstack/react-router";
+import { LockIcon } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { SeverityBadge, StatusBadge } from "@/components/case-badges";
 import { OrgNav } from "@/components/org-nav";
@@ -120,9 +121,12 @@ export function CasesPage() {
                       </Link>
                     </TableCell>
                     <TableCell>
-                      <Link to="/cases/$number" params={{ number: String(c.number) }} className="font-medium underline">
-                        {c.title}
-                      </Link>
+                      <span className="flex items-center gap-1.5">
+                        {c.restricted && <LockIcon className="size-3.5 shrink-0" role="img" aria-label="Restricted" />}
+                        <Link to="/cases/$number" params={{ number: String(c.number) }} className="font-medium underline">
+                          {c.title}
+                        </Link>
+                      </span>
                     </TableCell>
                     <TableCell>
                       <StatusBadge status={c.status} resolution={c.resolution} />
