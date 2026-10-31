@@ -100,6 +100,20 @@ describe("Case signals", () => {
     expect(await live.next()).toEqual({ type: "case", number });
   });
 
+  test("posting, editing and retracting a Discussion message signal its Case", async () => {
+    const { t, owner, ana, open } = await acme();
+    const number = await open(owner);
+    const live = await t.connect(ana);
+    const discussion = owner.api.cases[":number"].discussion;
+    const body = await (await discussion.$post({ param: param(number), json: { body: "Contained." } })).json();
+    if (!("message" in body)) throw new Error("Could not post");
+    expect(await live.next()).toEqual({ type: "case", number });
+    await discussion[":id"].$patch({ param: { ...param(number), id: body.message.id }, json: { body: "Contained from Falcon." } });
+    expect(await live.next()).toEqual({ type: "case", number });
+    await discussion[":id"].retract.$post({ param: { ...param(number), id: body.message.id } });
+    expect(await live.next()).toEqual({ type: "case", number });
+  });
+
   test("signals name only what changed", async () => {
     const { t, owner, ana, open } = await acme();
     const live = await t.connect(ana);

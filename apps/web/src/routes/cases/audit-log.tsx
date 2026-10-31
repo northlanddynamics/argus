@@ -42,6 +42,9 @@ const actionLabel: Record<CaseAuditAction, string> = {
   "task.reopened": "Reopened Task",
   "case_role.assigned": "Gave Case Role to",
   "case_role.unassigned": "Took Case Role from",
+  "discussion.message_posted": "Posted message",
+  "discussion.message_edited": "Edited message",
+  "discussion.message_retracted": "Retracted message",
 };
 
 /** A recorded value as people read it: "In Progress" rather than "in_progress". */

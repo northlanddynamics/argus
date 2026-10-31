@@ -342,3 +342,71 @@ test("an Admin adds a Case Role; an Analyst gives it on a Case, works its Tasks 
     await stop();
   }
 }, 60_000);
+
+test("an Analyst discusses a Restricted Case, mentioning only people who can see it, then edits and retracts a message", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    for (const email of ["ana@acme.example", "ben@acme.example"]) {
+      await owner.api.organization.invitations.$post({ json: { email, role: "analyst" } });
+    }
+    const ana = await t.acceptInvite("ana@acme.example", PASSWORD, "Ana Analyst");
+    await t.acceptInvite("ben@acme.example", PASSWORD, "Ben Analyst");
+    await ana.api.cases.$post({ json: { title: "Executive mailbox access", caseType: "insider_threat", severity: "high" } });
+    const me = await (await ana.api.me.$get()).json();
+    if (!("user" in me)) throw new Error("Not signed in");
+    // Restricting is judged on the Case as it was, so she takes it first.
+    await ana.api.cases[":number"].$patch({ param: { number: "1" }, json: { assigneeId: me.user.id } });
+    const restricted = await ana.api.cases[":number"].$patch({ param: { number: "1" }, json: { restricted: true } });
+    expect(restricted.status).toBe(200);
+
+    const page = await browser.newPage();
+    await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
+    await page.goto(`${baseUrl}/cases/1`);
+    await page.getByRole("link", { name: "Discussion" }).click();
+    await page.getByText("No messages yet.").waitFor();
+
+    // "@" offers only those who can see the Restricted Case: not Ben.
+    const box = page.getByRole("textbox", { name: "Message" });
+    await box.pressSequentially("Memory image is up — @");
+    const offered = page.getByRole("listbox", { name: "People who can see this Case" });
+    await offered.getByRole("option", { name: "@Olive Owner · Owner" }).waitFor();
+    expect(await offered.getByRole("option").allTextContents()).toEqual(["@Ana Analyst · Analyst", "@Olive Owner · Owner"]);
+    await box.pressSequentially("Ol");
+    expect(await offered.getByRole("option").count()).toBe(1);
+    await box.press("Enter");
+    expect(await box.inputValue()).toBe("Memory image is up — @Olive Owner ");
+    await page.getByRole("button", { name: "Send" }).click();
+    const mine = page.getByRole("listitem", { name: "Message from Ana Analyst" });
+    await mine.getByText("@Olive Owner").waitFor();
+    expect(await box.inputValue()).toBe("");
+
+    // Olive's reply appears live.
+    await owner.api.cases[":number"].discussion.$post({ param: { number: "1" }, json: { body: "Thanks, looking now." } });
+    await page.getByRole("listitem", { name: "Message from Olive Owner" }).getByText("Thanks, looking now.").waitFor();
+
+    // Ana edits her message, keeping the mention; Olive's has no Edit for her.
+    expect(await page.getByRole("listitem", { name: "Message from Olive Owner" }).getByRole("button").count()).toBe(0);
+    await mine.getByRole("button", { name: "Edit" }).click();
+    const editBox = page.getByRole("textbox", { name: "Edit message" });
+    expect(await editBox.inputValue()).toBe("Memory image is up — @Olive Owner");
+    await editBox.fill("Memory image uploaded as Evidence — @Olive Owner");
+    await page.getByRole("button", { name: "Save" }).click();
+    await mine.getByText("· edited").waitFor();
+    await mine.getByText("@Olive Owner").waitFor();
+
+    // Then retracts it.
+    await mine.getByRole("button", { name: "Retract" }).click();
+    await mine.getByRole("button", { name: "Retract message" }).click();
+    await mine.getByText("Retracted by Ana Analyst. The original is kept in the Audit Log.").waitFor();
+
+    // The Audit Log keeps every version.
+    await page.getByRole("link", { name: "Audit Log" }).click();
+    for (const action of ["Posted message", "Edited message", "Retracted message"]) await page.getByRole("cell", { name: action }).first().waitFor();
+    await page.getByRole("cell", { name: "Memory image is up — @Olive Owner" }).first().waitFor();
+    await page.getByRole("cell", { name: "Memory image uploaded as Evidence — @Olive Owner" }).first().waitFor();
+  } finally {
+    await stop();
+  }
+}, 60_000);

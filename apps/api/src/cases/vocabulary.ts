@@ -78,6 +78,9 @@ export const CASE_AUDIT_ACTIONS = [
   "task.reopened",
   "case_role.assigned",
   "case_role.unassigned",
+  "discussion.message_posted",
+  "discussion.message_edited",
+  "discussion.message_retracted",
 ] as const;
 export type CaseAuditAction = (typeof CASE_AUDIT_ACTIONS)[number];
 
