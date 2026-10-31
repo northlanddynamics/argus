@@ -68,11 +68,14 @@ export function CasesPage() {
 
   return (
     <div className="min-h-svh bg-muted">
-      <AppHeader email={me.user.email} badge={<OrgNav me={me} />} />
+      <AppHeader email={me.user.email} badge={<OrgNav me={me} />} live />
       <main className="mx-auto grid max-w-6xl gap-4 p-6">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold">Cases</h1>
-          <OpenCaseDialog />
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-muted-foreground">Refreshes live</span>
+            <OpenCaseDialog />
+          </div>
         </div>
         <nav className="flex gap-1 border-b" aria-label="Case views">
           {CASE_VIEWS.map((v) => (

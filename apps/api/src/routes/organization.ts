@@ -11,6 +11,7 @@ import { secureId } from "../ids";
 import { INVITE_TTL_MS, sendInvite } from "../invites";
 import { organizationPolicy } from "../access/policy";
 import { type MemberEnv, type Membership, requireMember } from "../members/membership";
+import { publish } from "../realtime/signals";
 
 /** Roles an Admin can give. Ownership only moves by transfer. */
 const assignableRole = z.enum(["admin", "analyst"]);
@@ -200,6 +201,7 @@ export const organizationRoutes = (deps: Deps) => {
           before: target.role,
           after: role,
         });
+        await publish(tx, { kind: "members", organizationId: me.organizationId });
         return true;
       });
       if (!changed) return c.json({ error: "The Owner's role changes only by transferring ownership" }, 409);
@@ -219,6 +221,7 @@ export const organizationRoutes = (deps: Deps) => {
         if (!rows.length) return false;
         await signOutEverywhere(tx, [target.userId]);
         await recordOrgAudit(tx, { ...auditBy(me), action: "member.removed", target: target.name, before: target.role });
+        await publish(tx, { kind: "members", organizationId: me.organizationId });
         return true;
       });
       if (!removed) return c.json({ error: "The Owner cannot be removed" }, 409);
@@ -240,6 +243,7 @@ export const organizationRoutes = (deps: Deps) => {
           before: me.name,
           after: target.name,
         });
+        await publish(tx, { kind: "members", organizationId: me.organizationId });
       });
       return c.json({ ok: true }, 200);
     })
@@ -258,6 +262,7 @@ export const organizationRoutes = (deps: Deps) => {
           .where(and(eq(invitation.organizationId, me.organizationId), eq(invitation.status, "pending")));
         await tx.update(organization).set({ deletedAt: clock.now() }).where(eq(organization.id, me.organizationId));
         await recordOrgAudit(tx, { ...auditBy(me), action: "organization.deleted", target: me.organizationName });
+        await publish(tx, { kind: "members", organizationId: me.organizationId });
       });
       return c.json({ ok: true }, 200);
     })

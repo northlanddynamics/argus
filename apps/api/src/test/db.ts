@@ -36,9 +36,12 @@ export async function createTestDb() {
   const name = `argus_test_${process.pid}_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
   const admin = postgres(ADMIN_URL, { onnotice: () => {} });
   await admin.unsafe(`CREATE DATABASE ${name} TEMPLATE ${TEMPLATE}`);
-  const { db, close } = createDb(urlFor(name));
+  const url = urlFor(name);
+  const { db, sql, close } = createDb(url);
   return {
     db,
+    sql,
+    url,
     async drop() {
       await close();
       await admin.unsafe(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);

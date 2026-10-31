@@ -1,14 +1,19 @@
 import { Hono } from "hono";
 import { totpEnrollmentPending } from "./auth/totp-enrollment";
 import type { Deps, Env } from "./deps";
+import { createLive, type Live } from "./realtime/live";
 import { caseRoutes } from "./routes/cases";
 import { invitationRoutes } from "./routes/invitations";
+import { liveRoutes } from "./routes/live";
 import { meRoutes } from "./routes/me";
 import { operatorRoutes } from "./routes/operator";
 import { organizationRoutes } from "./routes/organization";
 
-/** Builds the HTTP API. Everything outside the process comes in through `deps`. */
-export function createApi(deps: Deps) {
+/**
+ * Builds the HTTP API. Everything outside the process comes in through `deps`; `live` is this
+ * process's live hub, made here unless the caller runs its heartbeat (see `realtime/live.ts`).
+ */
+export function createApi(deps: Deps, live: Live = createLive(deps)) {
   const { auth } = deps;
   return new Hono<Env>()
     .basePath("/api")
@@ -25,7 +30,8 @@ export function createApi(deps: Deps) {
     .route("/operator", operatorRoutes(deps))
     .route("/invitations", invitationRoutes(deps))
     .route("/organization", organizationRoutes(deps))
-    .route("/cases", caseRoutes(deps));
+    .route("/cases", caseRoutes(deps))
+    .route("/live", liveRoutes(deps, live));
 }
 
 export type ApiType = ReturnType<typeof createApi>;

@@ -1,3 +1,4 @@
+import { websocket } from "@hono/bun";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chromium, type Browser, type Page } from "playwright";
 import { defaultWebDist } from "../src/config";
@@ -17,12 +18,26 @@ const PASSWORD = "correct-horse-battery";
 const starting = () => new Response("starting", { status: 503 });
 
 async function serveTestApp() {
-  let handler: (request: Request) => Response | Promise<Response> = starting;
-  const server = Bun.serve({ port: 0, fetch: (request) => handler(request) });
+  let handler: (request: Request, server: Bun.Server<unknown>) => Response | Promise<Response> = starting;
+  const serve = (port = 0) => Bun.serve({ port, fetch: (request, bun) => handler(request, bun), websocket });
+  let server = serve();
   const baseUrl = server.url.origin;
   const t = await buildTestApp({ baseUrl });
-  handler = createServerApp(t.deps, defaultWebDist).fetch;
-  return { t, baseUrl, stop: () => server.stop(true) };
+  handler = createServerApp(t.deps, defaultWebDist, t.live).fetch;
+  return {
+    t,
+    baseUrl,
+    stop: () => server.stop(true),
+    /** Drops every connection, live sockets included, until `restart` is called. */
+    async interrupt() {
+      await server.stop(true);
+      return {
+        restart: () => {
+          server = serve(Number(new URL(baseUrl).port));
+        },
+      };
+    },
+  };
 }
 
 async function signIn(page: Page, baseUrl: string, email: string, code: () => Promise<string>) {
@@ -198,6 +213,51 @@ test("an Analyst marks the Case assigned to them Restricted; a colleague can't s
     await page.getByText("No Cases here.").waitFor();
     await benPage.goto(`${baseUrl}/cases/1`);
     await benPage.getByRole("heading", { name: "Departing employee bulk download" }).waitFor();
+  } finally {
+    await stop();
+  }
+}, 60_000);
+
+test("Case pages and the Case list refresh live, and show who is viewing the Case", async () => {
+  const { t, baseUrl, stop, interrupt } = await serveTestApp();
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    await owner.api.organization.invitations.$post({ json: { email: "ana@acme.example", role: "analyst" } });
+    const ana = await t.acceptInvite("ana@acme.example", PASSWORD, "Ana Analyst");
+
+    // Ana watches the list; a Case Olive opens appears without a reload.
+    const page = await browser.newPage();
+    await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
+    await page.getByRole("button", { name: "All open (0)" }).click();
+    await page.getByRole("status").getByText("Live").waitFor();
+    await owner.api.cases.$post({ json: { title: "Suspicious PowerShell on FIN-LT-0231", caseType: "malware", severity: "high" } });
+    await page.getByRole("link", { name: "Suspicious PowerShell on FIN-LT-0231" }).waitFor();
+    await page.getByRole("button", { name: "All open (1)" }).waitFor();
+
+    // On the Case page, Ana sees Olive arrive, and Olive's change of Status.
+    await page.getByRole("link", { name: "Suspicious PowerShell on FIN-LT-0231" }).click();
+    const viewing = page.getByRole("list", { name: "Viewing now" });
+    await viewing.getByRole("listitem", { name: "Ana Analyst" }).waitFor();
+    const ownerPage = await browser.newPage();
+    await signIn(ownerPage, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
+    await ownerPage.goto(`${baseUrl}/cases/1`);
+    await viewing.getByRole("listitem", { name: "Olive Owner" }).waitFor();
+    await ownerPage.getByLabel("Status").selectOption("in_progress");
+    await page.locator("#case-status").and(page.locator("select:has(option[value=in_progress]:checked)")).waitFor();
+
+    // Olive leaves.
+    await ownerPage.close();
+    await viewing.getByRole("listitem", { name: "Olive Owner" }).waitFor({ state: "detached" });
+    expect(await viewing.getByRole("listitem").count()).toBe(1);
+
+    // Ana's connection drops and she misses a change; reconnecting refetches what she's looking at.
+    const outage = await interrupt();
+    await page.getByRole("status").getByText("Reconnecting…").waitFor();
+    await owner.api.cases[":number"].$patch({ param: { number: "1" }, json: { severity: "critical" } });
+    outage.restart();
+    await page.getByRole("status").getByText("Reconnected · views refreshed").waitFor({ timeout: 15_000 });
+    await page.locator("#case-severity").and(page.locator("select:has(option[value=critical]:checked)")).waitFor();
   } finally {
     await stop();
   }

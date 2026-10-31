@@ -108,3 +108,26 @@ export const caseAuditLog = pgTable(
   },
   (t) => [index("case_audit_log_case_idx").on(t.caseId, t.occurredAt)],
 );
+
+/**
+ * Who is viewing which Case right now, for presence avatars: one row per live socket on a Case page,
+ * shared by every `web` instance. Each instance refreshes `seen_at` for its own sockets; rows not
+ * refreshed within the presence timeout (a crashed instance's) are swept. See `realtime/live.ts`.
+ */
+export const caseViewers = pgTable(
+  "case_viewers",
+  {
+    socketId: text("socket_id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    caseId: text("case_id")
+      .notNull()
+      .references(() => cases.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    seenAt: timestamp("seen_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [index("case_viewers_case_idx").on(t.caseId), index("case_viewers_seen_idx").on(t.seenAt)],
+);

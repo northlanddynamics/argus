@@ -2,6 +2,7 @@ import type { Auth } from "./auth/auth";
 import type { Clock } from "./clock";
 import type { Db } from "./db/client";
 import type { Mailer } from "./mail";
+import type { SignalSource } from "./realtime/signals";
 
 /** Everything the app reaches outside itself; injected so tests can swap in fakes. */
 export type Deps = {
@@ -9,6 +10,8 @@ export type Deps = {
   auth: Auth;
   mailer: Mailer;
   clock: Clock;
+  /** Change signals from every process (ADR 0005). */
+  signals: SignalSource;
   /** Public origin of the app, used in links sent by email. */
   baseUrl: string;
 };
