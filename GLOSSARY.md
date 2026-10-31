@@ -120,9 +120,13 @@ _Avoid_: Chat, comments, thread
 Turning a Discussion message or Audit Log entry into a Timeline Entry that links back to its source.
 _Avoid_: Pinning, highlighting
 
+**Case Summary**:
+The single, current rich-text overview of a Case (what is known so far, handover notes), edited by one person at a time.
+_Avoid_: Description, notes, overview, brief
+
 **Case Report**:
 An exported, point-in-time document summarising a Case, either complete or Guest-safe (excluding Internal items).
-_Avoid_: Export, summary, post-mortem, write-up
+_Avoid_: Export, post-mortem, write-up
 
 ### Evidence and context
 
