@@ -129,7 +129,7 @@ describe("Only Operators create Organizations", () => {
 
   test("an Owner cannot create Organizations", async () => {
     const { t } = await operatorCreatesAcme();
-    const owner = await t.acceptAsOwner(OWNER, OWNER_PASSWORD);
+    const owner = await t.acceptInvite(OWNER, OWNER_PASSWORD);
     const viaApi = await owner.api.operator.organizations.$post({
       json: { name: "Second", ownerEmail: "x@second.example" },
     });

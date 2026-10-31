@@ -1,10 +1,12 @@
 import { zValidator } from "@hono/zod-validator";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
+import { recordOrgAudit } from "../audit/org-audit-log";
 import type { OrgRole } from "../auth/roles";
-import { invitation, organization, user as userTable } from "../db/schema";
+import { invitation, member, organization, user as userTable } from "../db/schema";
 import type { Deps, Env } from "../deps";
+import { secureId } from "../ids";
 
 const acceptBody = z.object({
   name: z.string().trim().min(1).max(120),
@@ -25,7 +27,7 @@ export const invitationRoutes = ({ db, auth, clock }: Deps) => {
       })
       .from(invitation)
       .innerJoin(organization, eq(invitation.organizationId, organization.id))
-      .where(eq(invitation.id, id))
+      .where(and(eq(invitation.id, id), isNull(organization.deletedAt)))
       .limit(1);
     if (!row || row.status !== "pending") return { error: "not_found" as const };
     if (row.expiresAt <= clock.now()) return { error: "expired" as const };
@@ -57,10 +59,21 @@ export const invitationRoutes = ({ db, auth, clock }: Deps) => {
       const { user } = await auth.api.createUser({
         body: { email: invite.email, password, name, role: "user", data: { emailVerified: true } },
       });
-      await auth.api.addMember({
-        body: { userId: user.id, organizationId: invite.organizationId, role: (invite.role ?? "analyst") as OrgRole },
+      const role = (invite.role ?? "analyst") as OrgRole;
+      const now = clock.now();
+      await db.transaction(async (tx) => {
+        await tx.insert(member).values({ id: secureId(), organizationId: invite.organizationId, userId: user.id, role, createdAt: now });
+        await tx.update(invitation).set({ status: "accepted" }).where(eq(invitation.id, invite.id));
+        await recordOrgAudit(tx, {
+          organizationId: invite.organizationId,
+          occurredAt: now,
+          actor: { type: "member", id: user.id, name },
+          category: "members",
+          action: "member.joined",
+          target: invite.email,
+          after: role,
+        });
       });
-      await db.update(invitation).set({ status: "accepted" }).where(eq(invitation.id, invite.id));
       return c.json({ email: invite.email }, 200);
     });
 };

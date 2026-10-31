@@ -91,8 +91,8 @@ export async function buildTestApp({ baseUrl = "http://argus.test" }: { baseUrl?
   /** The current code for a TOTP secret, as the Member's authenticator app shows it. */
   const totpCode = async (secret: string) => (await auth.api.generateTOTP({ body: { secret } })).code;
 
-  /** Accepts an Owner invite, signs in and enrolls in TOTP: a Member as they are after their first sign-in. */
-  const acceptAsOwner = async (email: string, password: string, name = "Olive Owner") => {
+  /** Accepts the latest invite sent to `email`, signs in and enrolls in TOTP: a Member as they are after their first sign-in. */
+  const acceptInvite = async (email: string, password: string, name = "Olive Owner") => {
     const s = session();
     const res = await s.api.invitations[":id"].accept.$post({ param: { id: inviteIdFor(email) }, json: { name, password } });
     if (res.status !== 200) throw new Error(`Could not accept invite for ${email}: ${res.status}`);
@@ -103,7 +103,8 @@ export async function buildTestApp({ baseUrl = "http://argus.test" }: { baseUrl?
 
   /** Creates an Operator directly, the way `bun run operator:create` does. */
   const createOperator = async (email = "ops@argus.test", password = "operator-password-1") => {
-    await auth.api.createUser({ body: { email, password, name: "Ops", role: OPERATOR_ROLE } });
+    const existing = await db.query.user.findFirst({ where: (u, { eq }) => eq(u.email, email) });
+    if (!existing) await auth.api.createUser({ body: { email, password, name: "Ops", role: OPERATOR_ROLE } });
     const s = session();
     await s.signIn(email, password);
     return s;
@@ -125,5 +126,5 @@ export async function buildTestApp({ baseUrl = "http://argus.test" }: { baseUrl?
     return `${BASE_URL}/invite/${inviteIdFor(ownerEmail)}`;
   };
 
-  return { app, deps, clock, outbox, session, createOperator, inviteIdFor, inviteOwner, acceptAsOwner, totpCode };
+  return { app, deps, clock, outbox, session, createOperator, inviteIdFor, inviteOwner, acceptInvite, totpCode };
 }

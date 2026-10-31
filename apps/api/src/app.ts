@@ -4,6 +4,7 @@ import type { Deps, Env } from "./deps";
 import { invitationRoutes } from "./routes/invitations";
 import { meRoutes } from "./routes/me";
 import { operatorRoutes } from "./routes/operator";
+import { organizationRoutes } from "./routes/organization";
 
 /** Builds the HTTP API. Everything outside the process comes in through `deps`. */
 export function createApi(deps: Deps) {
@@ -21,7 +22,8 @@ export function createApi(deps: Deps) {
     })
     .route("/me", meRoutes(deps))
     .route("/operator", operatorRoutes(deps))
-    .route("/invitations", invitationRoutes(deps));
+    .route("/invitations", invitationRoutes(deps))
+    .route("/organization", organizationRoutes(deps));
 }
 
 export type ApiType = ReturnType<typeof createApi>;
