@@ -26,5 +26,34 @@
         ]
       }
     ]
-  }
+  },
+  "overrides": [
+    {
+      "files": [
+        "apps/api/src/routes/**"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "drizzle-orm",
+                "message": "Routes go through a module (src/modules.ts); only modules touch the database (ADR 0006)."
+              }
+            ],
+            "patterns": [
+              {
+                "group": [
+                  "**/db/*",
+                  "drizzle-orm/*"
+                ],
+                "message": "Routes go through a module (src/modules.ts); only modules touch the database (ADR 0006)."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
 }

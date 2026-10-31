@@ -1,5 +1,5 @@
-import type { OrgRole } from "./auth/roles";
-import type { Deps } from "./deps";
+import type { OrgRole } from "../auth/roles";
+import type { Deps } from "../deps";
 
 export const inviteUrl = (baseUrl: string, invitationId: string) => `${baseUrl}/invite/${invitationId}`;
 
