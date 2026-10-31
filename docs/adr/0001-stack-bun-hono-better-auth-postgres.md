@@ -1,6 +1,6 @@
 # Bun, Hono, Better Auth, Postgres and Drizzle in one monorepo
 
-Argus is a Bun monorepo with `apps/web` (Vite + React SPA using shadcn/ui and TanStack Router) and `apps/api` (Hono on Bun, Better Auth mounted at `/api/auth/*`), sharing types through Hono RPC; in production Hono serves the built SPA so there is one deployable. Data lives in Postgres via Drizzle, using Better Auth's Drizzle adapter, because collaborative multi-user editing and tenancy isolation need a real concurrent database. Live updates go over WebSockets (native in Bun).
+Argus is a Bun monorepo with `apps/web` (Vite + React SPA using shadcn/ui and TanStack Router) and `apps/api` (Hono on Bun, Better Auth mounted at `/api/auth/*`), sharing types through Hono RPC; in production Hono serves the built SPA. One image runs in two process roles: `web` (Hono API, SPA, WebSockets) and `worker` (long-lived CrowdStrike Event Streams connections, one per Integration, each owned by exactly one worker via a Postgres advisory lock). Data lives in Postgres via Drizzle, using Better Auth's Drizzle adapter, because collaborative multi-user editing and tenancy isolation need a real concurrent database. Live updates go over WebSockets (native in Bun).
 
 ## Consequences
 
