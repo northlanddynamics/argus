@@ -16,6 +16,7 @@
     "operator:create": "bun src/scripts/create-operator.ts"
   },
   "dependencies": {
+    "@better-auth/passkey": "1.7.14",
     "@hono/zod-validator": "^0.9.1",
     "better-auth": "^1.7.14",
     "drizzle-orm": "^0.45.4",

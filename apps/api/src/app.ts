@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { totpEnrollmentPending } from "./auth/totp-enrollment";
 import type { Deps, Env } from "./deps";
 import { invitationRoutes } from "./routes/invitations";
 import { meRoutes } from "./routes/me";
@@ -12,7 +13,10 @@ export function createApi(deps: Deps) {
     .on(["GET", "POST"], "/auth/*", (c) => auth.handler(c.req.raw))
     .use(async (c, next) => {
       const session = await auth.api.getSession({ headers: c.req.raw.headers });
-      c.set("user", session?.user ?? null);
+      // A Member who still has to enroll in TOTP is not signed in as far as Argus is concerned.
+      const pending = !!session && totpEnrollmentPending(session);
+      c.set("user", pending ? null : (session?.user ?? null));
+      c.set("totpEnrollmentPending", pending);
       await next();
     })
     .route("/me", meRoutes(deps))

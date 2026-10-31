@@ -1,6 +1,7 @@
 import { afterEach } from "bun:test";
+import { passkeyClient } from "@better-auth/passkey/client";
 import { createAuthClient } from "better-auth/client";
-import { adminClient, organizationClient } from "better-auth/client/plugins";
+import { adminClient, organizationClient, twoFactorClient } from "better-auth/client/plugins";
 import { createApi } from "../app";
 import { createAuth } from "../auth/auth";
 import { OPERATOR_ROLE } from "../auth/roles";
@@ -9,6 +10,20 @@ import { fakeClock } from "../clock";
 import type { Deps } from "../deps";
 import { captureOutbox } from "../mail";
 import { createTestDb } from "./db";
+
+/**
+ * Reads the secret out of an `otpauth://` URI, decoded from base32 back to the raw
+ * string Better Auth generated (what `generateTOTP` expects).
+ */
+export const totpSecret = (totpURI: string) => {
+  const encoded = new URL(totpURI).searchParams.get("secret");
+  if (!encoded) throw new Error(`No secret in ${totpURI}`);
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let bits = "";
+  for (const char of encoded.replace(/=+$/, "")) bits += alphabet.indexOf(char).toString(2).padStart(5, "0");
+  const bytes = bits.match(/.{8}/g)!.map((byte) => parseInt(byte, 2));
+  return new TextDecoder().decode(new Uint8Array(bytes));
+};
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -53,14 +68,37 @@ export async function buildTestApp({ baseUrl = "http://argus.test" }: { baseUrl?
     const authClient = createAuthClient({
       baseURL: `${BASE_URL}/api/auth`,
       fetchOptions: { customFetchImpl: fetch },
-      plugins: [adminClient(), organizationClient()],
+      plugins: [adminClient(), organizationClient(), twoFactorClient(), passkeyClient()],
     });
+    /** Email and password only; a Member enrolled in TOTP gets `twoFactorRedirect` and no session yet. */
     const signIn = async (email: string, password: string) => {
       const result = await authClient.signIn.email({ email, password });
       if (result.error) throw new Error(`Sign-in failed for ${email}: ${result.error.message}`);
       return result.data;
     };
-    return { api, auth: authClient, signIn };
+    /** Enrolls the signed-in Member in TOTP and confirms it with a code from their new secret. */
+    const enrollTotp = async (password: string) => {
+      const enabled = await authClient.twoFactor.enable({ password });
+      if (enabled.error || enabled.data.method !== "totp") throw new Error(`Could not enable TOTP: ${enabled.error?.message}`);
+      const secret = totpSecret(enabled.data.totpURI);
+      const verified = await authClient.twoFactor.verifyTotp({ code: await totpCode(secret) });
+      if (verified.error) throw new Error(`Could not confirm TOTP: ${verified.error.message}`);
+      return { secret, backupCodes: enabled.data.backupCodes };
+    };
+    return { api, auth: authClient, signIn, enrollTotp };
+  };
+
+  /** The current code for a TOTP secret, as the Member's authenticator app shows it. */
+  const totpCode = async (secret: string) => (await auth.api.generateTOTP({ body: { secret } })).code;
+
+  /** Accepts an Owner invite, signs in and enrolls in TOTP: a Member as they are after their first sign-in. */
+  const acceptAsOwner = async (email: string, password: string, name = "Olive Owner") => {
+    const s = session();
+    const res = await s.api.invitations[":id"].accept.$post({ param: { id: inviteIdFor(email) }, json: { name, password } });
+    if (res.status !== 200) throw new Error(`Could not accept invite for ${email}: ${res.status}`);
+    await s.signIn(email, password);
+    const totp = await s.enrollTotp(password);
+    return { ...s, totp };
   };
 
   /** Creates an Operator directly, the way `bun run operator:create` does. */
@@ -87,5 +125,5 @@ export async function buildTestApp({ baseUrl = "http://argus.test" }: { baseUrl?
     return `${BASE_URL}/invite/${inviteIdFor(ownerEmail)}`;
   };
 
-  return { app, deps, clock, outbox, session, createOperator, inviteIdFor, inviteOwner };
+  return { app, deps, clock, outbox, session, createOperator, inviteIdFor, inviteOwner, acceptAsOwner, totpCode };
 }

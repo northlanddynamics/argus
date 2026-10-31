@@ -1,20 +1,22 @@
+import { passkeyClient } from "@better-auth/passkey/client";
 import { createApiClient } from "api/client";
 import { createAuthClient } from "better-auth/react";
-import { adminClient, organizationClient } from "better-auth/client/plugins";
+import { adminClient, organizationClient, twoFactorClient } from "better-auth/client/plugins";
 import { queryOptions } from "@tanstack/react-query";
 
 export const api = createApiClient(window.location.origin).api;
 
 export const authClient = createAuthClient({
   baseURL: `${window.location.origin}/api/auth`,
-  plugins: [adminClient(), organizationClient()],
+  plugins: [adminClient(), organizationClient(), twoFactorClient(), passkeyClient()],
 });
 
 export const meQuery = queryOptions({
   queryKey: ["me"],
   queryFn: async () => {
     const res = await api.me.$get();
-    if (res.status === 401) return null;
+    // 403: signed in with a password but TOTP enrollment isn't done, so sign in again to finish it.
+    if (res.status === 401 || res.status === 403) return null;
     if (!res.ok) throw new Error("Could not load your account");
     return res.json();
   },
