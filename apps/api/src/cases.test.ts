@@ -74,7 +74,19 @@ async function acme() {
     return body.entries;
   };
 
-  return { t, owner, analyst, userId, open, view, list, change, saveSummary, auditLog };
+  type CloseBody = Parameters<Member["api"]["cases"][":number"]["close"]["$post"]>[0]["json"];
+  const close = (as: Member, number: number, json: CloseBody) =>
+    as.api.cases[":number"].close.$post({ param: { number: String(number) }, json });
+
+  const reopen = (as: Member, number: number) => as.api.cases[":number"].reopen.$post({ param: { number: String(number) } });
+
+  /** An Admin of Acme, signed in. */
+  const admin = async () => {
+    await owner.api.organization.invitations.$post({ json: { email: "adam@acme.example", role: "admin" } });
+    return t.acceptInvite("adam@acme.example", PASSWORD, "Adam Admin");
+  };
+
+  return { t, owner, analyst, userId, open, view, list, change, saveSummary, auditLog, close, reopen, admin };
 }
 
 describe("Opening a Case", () => {
@@ -340,6 +352,166 @@ describe("Case Summary", () => {
     expect((await view(analyst, number)).body).toMatchObject({
       case: { summary: { content: { type: "doc", content: [] }, version: 1 } },
     });
+  });
+});
+
+describe("Closing a Case", () => {
+  test("closing records a Resolution from the fixed list, who closed it and when", async () => {
+    const { t, analyst, open, change, close, view, auditLog, userId } = await acme();
+    const { number } = await open(analyst);
+    await change(analyst, number, { status: "in_progress" });
+    t.clock.advance(60_000);
+    const res = await close(analyst, number, { resolution: "true_positive" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ case: { status: "closed", resolution: "true_positive" } });
+    expect((await view(analyst, number)).body).toMatchObject({
+      case: {
+        status: "closed",
+        resolution: "true_positive",
+        closed: { by: { id: await userId(analyst), name: "Ana Analyst" }, at: t.clock.now().toISOString() },
+      },
+    });
+    const [entry] = await auditLog(analyst, number);
+    expect(entry).toMatchObject({ action: "case.closed", actor: { name: "Ana Analyst" }, before: "in_progress", after: "true_positive" });
+  });
+
+  test("closing without a Resolution from the fixed list is refused", async () => {
+    const { analyst, open, close, view, auditLog } = await acme();
+    const { number } = await open(analyst);
+    expect((await close(analyst, number, {} as never)).status).toBe(400);
+    expect((await close(analyst, number, { resolution: "resolved" as never })).status).toBe(400);
+    expect((await close(analyst, number, { resolution: "" as never })).status).toBe(400);
+    expect((await view(analyst, number)).body).toMatchObject({ case: { status: "new", resolution: null, closed: null } });
+    expect((await auditLog(analyst, number)).map((e) => e.action)).toEqual(["case.opened"]);
+  });
+
+  test("every Resolution closes a Case", async () => {
+    const { analyst, open, close } = await acme();
+    for (const resolution of ["true_positive", "benign", "false_positive", "duplicate"] as const) {
+      const { number } = await open(analyst);
+      expect((await close(analyst, number, { resolution })).status).toBe(200);
+    }
+  });
+
+  test("a Closed Case is read-only: changes, Case Summary saves and closing again are refused", async () => {
+    const { t, owner, analyst, open, close, change, saveSummary, view, auditLog, userId } = await acme();
+    const { number } = await open(analyst, { severity: "high" });
+    await close(analyst, number, { resolution: "benign" });
+    const before = (await view(analyst, number)).body;
+
+    for (const as of [analyst, owner]) {
+      const refused = [
+        await change(as, number, { severity: "low" }),
+        await change(as, number, { status: "in_progress" }),
+        await change(as, number, { caseType: "malware" }),
+        await change(as, number, { assigneeId: await userId(as) }),
+        await saveSummary(as, number, { summary: summary("Late note"), version: 1 }),
+        await close(as, number, { resolution: "false_positive" }),
+      ];
+      for (const res of refused) {
+        expect(res.status as number).toBe(409);
+        expect(await res.json()).toMatchObject({ error: expect.stringContaining("read-only") });
+      }
+    }
+    expect((await view(analyst, number)).body).toEqual(before);
+    expect((await auditLog(analyst, number)).map((e) => e.action)).toEqual(["case.closed", "case.opened"]);
+
+    // Going around the application doesn't work either.
+    expect(await dbError(t.deps.db.execute(sql`UPDATE cases SET severity = 'low'`))).toMatch(/Closed and read-only/);
+  });
+
+  test("Resolved means work done, awaiting review: the Case stays editable", async () => {
+    const { analyst, open, change, saveSummary, view } = await acme();
+    const { number } = await open(analyst, { severity: "high" });
+    expect((await change(analyst, number, { status: "resolved" })).status).toBe(200);
+    expect((await change(analyst, number, { severity: "medium" })).status).toBe(200);
+    expect((await saveSummary(analyst, number, { summary: summary("Reviewed"), version: 1 })).status).toBe(200);
+    expect((await change(analyst, number, { status: "in_progress" })).status).toBe(200);
+    expect((await view(analyst, number)).body).toMatchObject({ case: { status: "in_progress", severity: "medium", resolution: null } });
+  });
+
+  test("the Status and Resolution must agree at the database", async () => {
+    const { t, analyst, open } = await acme();
+    await open(analyst);
+    const { db } = t.deps;
+    expect(await dbError(db.execute(sql`UPDATE cases SET status = 'closed'`))).toMatch(/cases_closed_has_resolution/);
+    expect(await dbError(db.execute(sql`UPDATE cases SET resolution = 'benign'`))).toMatch(/cases_closed_has_resolution/);
+  });
+
+  test("Closed Cases leave the open views and show in Closed, with their Resolution", async () => {
+    const { analyst, open, close, list } = await acme();
+    await open(analyst, { title: "Still open" });
+    const done = await open(analyst, { title: "Done" });
+    await close(analyst, done.number, { resolution: "false_positive" });
+    expect((await list(analyst)).cases.map((c) => c.title)).toEqual(["Still open"]);
+    expect((await list(analyst, { view: "closed" })).cases).toEqual([
+      expect.objectContaining({ title: "Done", status: "closed", resolution: "false_positive" }),
+    ]);
+    expect((await list(analyst)).counts).toMatchObject({ open: 1, closed: 1 });
+  });
+});
+
+describe("Reopening a Case", () => {
+  test("an Admin reopens a Closed Case: it goes back to In Progress without a Resolution, recorded in the Audit Log", async () => {
+    const { t, analyst, open, close, reopen, view, change, auditLog, admin } = await acme();
+    const adam = await admin();
+    const { number } = await open(analyst);
+    await close(analyst, number, { resolution: "duplicate" });
+    t.clock.advance(60_000);
+
+    const res = await reopen(adam, number);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ case: { status: "in_progress", resolution: null, closed: null } });
+    const [entry] = await auditLog(analyst, number);
+    expect(entry).toMatchObject({
+      action: "case.reopened",
+      actor: { name: "Adam Admin" },
+      occurredAt: t.clock.now().toISOString(),
+      before: "duplicate",
+      after: "in_progress",
+    });
+
+    // Editable again, and can be closed again.
+    expect((await change(analyst, number, { severity: "low" })).status).toBe(200);
+    expect((await close(analyst, number, { resolution: "true_positive" })).status).toBe(200);
+    expect((await view(analyst, number)).body).toMatchObject({ case: { status: "closed", resolution: "true_positive" } });
+  });
+
+  test("the Owner can reopen", async () => {
+    const { owner, analyst, open, close, reopen } = await acme();
+    const { number } = await open(analyst);
+    await close(analyst, number, { resolution: "benign" });
+    expect((await reopen(owner, number)).status).toBe(200);
+  });
+
+  test("an Analyst cannot reopen, and nothing is recorded", async () => {
+    const { analyst, open, close, reopen, view, auditLog } = await acme();
+    const { number } = await open(analyst);
+    await close(analyst, number, { resolution: "benign" });
+    expect((await reopen(analyst, number)).status as number).toBe(403);
+    expect((await view(analyst, number)).body).toMatchObject({ case: { status: "closed", resolution: "benign" } });
+    expect((await auditLog(analyst, number)).map((e) => e.action)).toEqual(["case.closed", "case.opened"]);
+  });
+
+  test("only a Closed Case can be reopened", async () => {
+    const { owner, analyst, open, change, reopen } = await acme();
+    const { number } = await open(analyst);
+    await change(analyst, number, { status: "resolved" });
+    expect((await reopen(owner, number)).status as number).toBe(409);
+    expect((await reopen(owner, 99)).status as number).toBe(404);
+  });
+
+  test("another Organization can neither close nor reopen a Case", async () => {
+    const { t, analyst, open, close, reopen, view } = await acme();
+    const a = await open(analyst);
+    const b = await open(analyst);
+    await close(analyst, b.number, { resolution: "benign" });
+    await t.inviteOwner("Globex", "owner@globex.example");
+    const globex = await t.acceptInvite("owner@globex.example", PASSWORD, "Gil Globex");
+    expect((await close(globex, a.number, { resolution: "benign" })).status as number).toBe(404);
+    expect((await reopen(globex, b.number)).status as number).toBe(404);
+    expect((await view(analyst, a.number)).body).toMatchObject({ case: { status: "new" } });
+    expect((await view(analyst, b.number)).body).toMatchObject({ case: { status: "closed" } });
   });
 });
 

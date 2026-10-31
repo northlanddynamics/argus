@@ -1,6 +1,7 @@
-import { bigserial, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { bigserial, check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import type { CaseSummary } from "../cases/case-summary";
-import { CASE_TYPES, SEVERITIES, STATUSES } from "../cases/vocabulary";
+import { CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabulary";
 import { organization, user } from "./auth-schema";
 
 /**
@@ -34,6 +35,8 @@ export const orgAuditLog = pgTable(
 /**
  * A Case. Never deleted: migration 0005 makes DELETE and TRUNCATE fail at the database (ADR 0003).
  * `number` is the Organization's own sequence ("C-12"), which is how routes name a Case.
+ * A Closed Case has a Resolution and nothing else has one; migration 0007 refuses changes to a
+ * Closed Case's row other than reopening it.
  */
 export const cases = pgTable(
   "cases",
@@ -48,6 +51,9 @@ export const cases = pgTable(
     severity: text("severity", { enum: SEVERITIES }).notNull(),
     caseType: text("case_type", { enum: CASE_TYPES }).notNull(),
     assigneeId: text("assignee_id").references(() => user.id, { onDelete: "restrict" }),
+    resolution: text("resolution", { enum: RESOLUTIONS }),
+    closedById: text("closed_by_id").references(() => user.id, { onDelete: "restrict" }),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
     summary: jsonb("summary").$type<CaseSummary>().notNull(),
     /** Moves on with every Case Summary save; a save based on an older version is refused. */
     summaryVersion: integer("summary_version").notNull(),
@@ -64,6 +70,12 @@ export const cases = pgTable(
   (t) => [
     uniqueIndex("cases_org_number_idx").on(t.organizationId, t.number),
     index("cases_org_updated_idx").on(t.organizationId, t.updatedAt),
+    check(
+      "cases_closed_has_resolution",
+      sql`(${t.status} = 'closed') = (${t.resolution} IS NOT NULL)
+        AND (${t.status} = 'closed') = (${t.closedById} IS NOT NULL)
+        AND (${t.status} = 'closed') = (${t.closedAt} IS NOT NULL)`,
+    ),
   ],
 );
 

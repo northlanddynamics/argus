@@ -9,6 +9,8 @@ import { api } from "@/lib/api";
 import {
   CASE_AUDIT_ACTIONS,
   type CaseAuditAction,
+  type Resolution,
+  resolutionLabel,
   type CaseSummary,
   caseTypeLabel,
   type CaseType,
@@ -28,6 +30,8 @@ const actionLabel: Record<CaseAuditAction, string> = {
   "case.case_type_changed": "Changed Case Type",
   "case.assignee_changed": "Changed Assignee",
   "case.summary_edited": "Edited Case Summary",
+  "case.closed": "Closed Case",
+  "case.reopened": "Reopened Case",
 };
 
 /** A recorded value as people read it: "In Progress" rather than "in_progress". */
@@ -36,6 +40,10 @@ function shown(action: CaseAuditAction, value: string | null) {
   switch (action) {
     case "case.status_changed":
       return statusLabel[value as Status] ?? value;
+    // Closing moves from a Status to a Resolution; reopening from the Resolution back to a Status.
+    case "case.closed":
+    case "case.reopened":
+      return statusLabel[value as Status] ?? resolutionLabel[value as Resolution] ?? value;
     case "case.severity_changed":
       return severityLabel[value as Severity] ?? value;
     case "case.case_type_changed":

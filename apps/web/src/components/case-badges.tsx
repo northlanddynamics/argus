@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import { type Severity, severityLabel, type Status, statusLabel } from "@/lib/cases";
+import { type Resolution, resolutionLabel, type Severity, severityLabel, type Status, statusLabel } from "@/lib/cases";
 import { cn } from "@/lib/utils";
 
 /** Critical is solid, High a heavy outline, the rest a thin outline. */
@@ -14,6 +14,12 @@ export function SeverityBadge({ severity }: { severity: Severity }) {
   );
 }
 
-export function StatusBadge({ status }: { status: Status }) {
-  return <Badge variant="outline">{statusLabel[status]}</Badge>;
+/** The Status, and for a Closed Case its Resolution: "Closed · Benign". */
+export function StatusBadge({ status, resolution }: { status: Status; resolution?: Resolution | null }) {
+  return (
+    <Badge variant="outline">
+      {statusLabel[status]}
+      {status === "closed" && resolution && ` · ${resolutionLabel[resolution]}`}
+    </Badge>
+  );
 }

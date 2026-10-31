@@ -100,3 +100,52 @@ test("an Analyst opens a Case, assigns it, edits the Case Summary past a colleag
     await stop();
   }
 }, 60_000);
+
+test("an Analyst closes a Case with a Resolution and it becomes read-only; the Owner reopens it", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    await owner.api.organization.invitations.$post({ json: { email: "ana@acme.example", role: "analyst" } });
+    const ana = await t.acceptInvite("ana@acme.example", PASSWORD, "Ana Analyst");
+    await ana.api.cases.$post({ json: { title: "Credential phishing — finance mailboxes", caseType: "phishing", severity: "high" } });
+
+    const page = await browser.newPage();
+    await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
+    await page.goto(`${baseUrl}/cases/1`);
+    await page.getByRole("heading", { name: "Credential phishing — finance mailboxes" }).waitFor();
+
+    // Closing needs a Resolution.
+    await page.getByRole("button", { name: "Close Case" }).click();
+    const dialog = page.getByRole("dialog", { name: "Close Case C-1" });
+    await dialog.getByText("The Case becomes read-only. Only an Admin can reopen it.").waitFor();
+    expect(await dialog.getByRole("button", { name: "Close Case" }).isDisabled()).toBe(true);
+    await dialog.getByLabel("False Positive").check();
+    await dialog.getByRole("button", { name: "Close Case" }).click();
+
+    // Read-only, and an Analyst can't reopen.
+    await page.getByText("Closed · False Positive").waitFor();
+    await page.getByText("only an Admin can reopen it").waitFor();
+    for (const field of ["Status", "Severity", "Case Type", "Assignee"]) expect(await page.getByLabel(field).isDisabled()).toBe(true);
+    expect(await page.getByRole("button", { name: "Edit" }).count()).toBe(0);
+    expect(await page.getByRole("button", { name: /Reopen/ }).count()).toBe(0);
+    await page.getByRole("link", { name: "Cases", exact: true }).first().click();
+    await page.getByRole("button", { name: "Closed" }).click();
+    await page.getByText("Closed · False Positive").waitFor();
+
+    // The Owner reopens it.
+    const ownerPage = await browser.newPage();
+    await signIn(ownerPage, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
+    await ownerPage.goto(`${baseUrl}/cases/1`);
+    await ownerPage.getByRole("button", { name: "Reopen to In Progress" }).click();
+    await ownerPage.getByRole("button", { name: "Close Case" }).waitFor();
+    expect(await ownerPage.getByLabel("Status").inputValue()).toBe("in_progress");
+    expect(await ownerPage.getByLabel("Severity").isDisabled()).toBe(false);
+
+    await ownerPage.getByRole("link", { name: "Audit Log" }).click();
+    await ownerPage.getByRole("cell", { name: "Reopened Case" }).waitFor();
+    await ownerPage.getByRole("cell", { name: "Closed Case" }).waitFor();
+  } finally {
+    await stop();
+  }
+}, 60_000);

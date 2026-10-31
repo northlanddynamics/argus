@@ -125,7 +125,7 @@ export function CasesPage() {
                       </Link>
                     </TableCell>
                     <TableCell>
-                      <StatusBadge status={c.status} />
+                      <StatusBadge status={c.status} resolution={c.resolution} />
                     </TableCell>
                     <TableCell>
                       <SeverityBadge severity={c.severity} />

@@ -5,7 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api, errorMessage } from "@/lib/api";
-import { type CaseSummary, type CaseView, caseKey, caseQuery, casesKey } from "@/lib/cases";
+import { type CaseSummary, type CaseView, caseKey, caseQuery, casesKey, resolutionLabel } from "@/lib/cases";
 import { useCaseNumber } from "@/routes/cases/case-layout";
 
 type Summary = CaseView["summary"];
@@ -21,7 +21,7 @@ export function CaseOverviewPage() {
   if (!c) return null;
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
-      <CaseSummaryCard number={number} summary={c.summary} />
+      <CaseSummaryCard number={number} summary={c.summary} readOnly={c.status === "closed"} />
       <Card className="self-start">
         <CardHeader>
           <CardTitle className="text-xs tracking-widest text-muted-foreground uppercase">Details</CardTitle>
@@ -34,6 +34,16 @@ export function CaseOverviewPage() {
             </dd>
             <dt className="text-muted-foreground">Updated</dt>
             <dd>{when(c.updatedAt)}</dd>
+            {c.closed && c.resolution && (
+              <>
+                <dt className="text-muted-foreground">Closed</dt>
+                <dd>
+                  {when(c.closed.at)} by {c.closed.by.name}
+                </dd>
+                <dt className="text-muted-foreground">Resolution</dt>
+                <dd>{resolutionLabel[c.resolution]}</dd>
+              </>
+            )}
           </dl>
         </CardContent>
       </Card>
@@ -41,7 +51,7 @@ export function CaseOverviewPage() {
   );
 }
 
-function CaseSummaryCard({ number, summary }: { number: number; summary: Summary }) {
+function CaseSummaryCard({ number, summary, readOnly }: { number: number; summary: Summary; readOnly: boolean }) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<Draft | null>(null);
   /** The newer version a refused save ran into. */
@@ -55,7 +65,9 @@ function CaseSummaryCard({ number, summary }: { number: number; summary: Summary
       const res = await api.cases[":number"].summary.$put({ param: { number: String(number) }, json: { summary: content, version } });
       if (res.status === 409) {
         const body = await res.json();
-        if ("current" in body) return { kind: "conflict", current: body.current } as const;
+        // A newer version carries `current`; a Closed Case refuses with only an error.
+        if ("current" in body) return { kind: "conflict", current: body.current as Summary } as const;
+        throw new Error(body.error);
       }
       if (!res.ok) throw new Error(await errorMessage(res, "Could not save the Case Summary"));
       const body = await res.json();
@@ -147,11 +159,13 @@ function CaseSummaryCard({ number, summary }: { number: number; summary: Summary
               ) : (
                 <p className="text-sm text-muted-foreground">Nothing written yet.</p>
               )}
-              <div className="flex justify-end">
-                <Button variant="outline" onClick={() => setDraft({ content: summary.content, version: summary.version })}>
-                  Edit
-                </Button>
-              </div>
+              {!readOnly && (
+                <div className="flex justify-end">
+                  <Button variant="outline" onClick={() => setDraft({ content: summary.content, version: summary.version })}>
+                    Edit
+                  </Button>
+                </div>
+              )}
             </>
           )}
         </CardContent>
