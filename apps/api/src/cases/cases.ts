@@ -3,11 +3,13 @@ import { alias } from "drizzle-orm/pg-core";
 import type { Clock } from "../clock";
 import type { Db, Tx } from "../db/client";
 import { type Actor, canSeeCase, casePermissions, casePolicy, NotPermitted, visibleCases } from "../access/policy";
+import { caseRoleAssignmentsOf, caseRoleHolderIds } from "../case-roles/holders";
 import { cases, organization, user } from "../db/schema";
 import { secureId } from "../ids";
 import type { Membership } from "../members/membership";
 import { memberName } from "../members/members";
 import { publish } from "../realtime/signals";
+import { taskCounts } from "../tasks/task-counts";
 import { type CaseActor, type CaseAuditEntry, listCaseAudit, recordCaseAudit, type CaseAuditFilter } from "./case-audit-log";
 import { type CaseSummary, emptySummary } from "./case-summary";
 import { type CaseType, REOPENED_STATUS, type Resolution, type Severity, type Status } from "./vocabulary";
@@ -100,13 +102,15 @@ const listItem = (row: ListRow) => ({
   updatedAt: row.updatedAt.toISOString(),
 });
 
-const actorOf = (me: Membership): CaseActor => ({ type: "member", id: me.userId, name: me.name });
+/** The acting Member as the Case Audit Log records them. */
+export const actorOf = (me: Membership): CaseActor => ({ type: "member", id: me.userId, name: me.name });
 
 /**
- * Locks the Case's row for the rest of `tx` and returns its current values. Throws `CaseNotFound`
- * when the Member can't see it, and `CaseClosed` when it's Closed unless `closed` is "allow".
+ * Locks the Case's row for the rest of `tx` and returns its current values, with who holds Case Roles
+ * on it. Throws `CaseNotFound` when the Member can't see it, and `CaseClosed` when it's Closed unless
+ * `closed` is "allow". Anything that changes a Case, or something on it, starts here.
  */
-const lock = async (tx: Tx, me: Membership, number: number, closed: "refuse" | "allow" = "refuse") => {
+export const lockCase = async (tx: Tx, me: Membership, number: number, closed: "refuse" | "allow" = "refuse") => {
   const [current] = await tx
     .select({
       id: cases.id,
@@ -125,7 +129,7 @@ const lock = async (tx: Tx, me: Membership, number: number, closed: "refuse" | "
     .for("update");
   if (!current) throw new CaseNotFound();
   if (closed === "refuse" && current.status === "closed") throw new CaseClosed();
-  return current;
+  return { ...current, caseRoleHolderIds: await caseRoleHolderIds(tx, current.id) };
 };
 
 export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
@@ -145,6 +149,7 @@ export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
     const [row] = await db
       .select({
         ...listColumns,
+        id: cases.id,
         openedById: openedBy.id,
         openedByName: openedBy.name,
         summary: cases.summary,
@@ -164,9 +169,10 @@ export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
       .where(and(visibleCases(me), eq(cases.number, number)))
       .limit(1);
     if (!row) throw new CaseNotFound();
+    const [caseRoles, tasks] = await Promise.all([caseRoleAssignmentsOf(db, row.id), taskCounts(db, row.id)]);
     return {
       ...listItem(row),
-      can: casePermissions(me, { organizationId: me.organizationId, restricted: row.restricted, assigneeId: row.assigneeId }),
+      can: casePermissions(me, { assigneeId: row.assigneeId }),
       openedBy: { id: row.openedById, name: row.openedByName },
       closed:
         row.closedById && row.closedAt
@@ -178,6 +184,8 @@ export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
         updatedBy: { id: row.summaryById, name: row.summaryByName },
         updatedAt: row.summaryUpdatedAt.toISOString(),
       } satisfies CaseSummaryView,
+      caseRoles,
+      tasks,
     };
   };
 
@@ -266,7 +274,7 @@ export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
     async change(me: Membership, number: number, changes: CaseChanges) {
       const now = clock.now();
       const result = await db.transaction(async (tx) => {
-        const current = await lock(tx, me, number);
+        const current = await lockCase(tx, me, number);
         const entry = (action: CaseAuditEntry["action"], before: string | null, after: string | null): CaseAuditEntry => ({
           organizationId: me.organizationId,
           caseId: current.id,
@@ -323,7 +331,7 @@ export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
     async saveSummary(me: Membership, number: number, content: CaseSummary, version: number) {
       const now = clock.now();
       const saved = await db.transaction(async (tx) => {
-        const current = await lock(tx, me, number);
+        const current = await lockCase(tx, me, number);
         if (current.summaryVersion !== version) return false;
         await tx
           .update(cases)
@@ -350,7 +358,7 @@ export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
     async close(me: Membership, number: number, resolution: Resolution) {
       const now = clock.now();
       await db.transaction(async (tx) => {
-        const current = await lock(tx, me, number);
+        const current = await lockCase(tx, me, number);
         await tx
           .update(cases)
           .set({ status: "closed", resolution, closedById: me.userId, closedAt: now, updatedAt: now })
@@ -373,7 +381,7 @@ export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
     async reopen(me: Membership, number: number) {
       const now = clock.now();
       await db.transaction(async (tx) => {
-        const current = await lock(tx, me, number, "allow");
+        const current = await lockCase(tx, me, number, "allow");
         if (!casePolicy.canReopen(me)) throw new NotPermitted();
         if (current.status !== "closed") throw new CaseNotClosed();
         await tx

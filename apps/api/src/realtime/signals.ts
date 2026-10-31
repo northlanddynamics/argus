@@ -16,8 +16,14 @@ export type Signal =
   /**
    * A Case changed. `before` is who could see it before the change, when that changed too,
    * so people who just lost sight of it still hear about it (and drop it from their screens).
+   * It names only the facts that changed.
    */
-  | { kind: "case"; organizationId: string; caseId: string; before?: Pick<CaseAccessFacts, "restricted" | "assigneeId"> }
+  | {
+      kind: "case";
+      organizationId: string;
+      caseId: string;
+      before?: Partial<Pick<CaseAccessFacts, "restricted" | "assigneeId" | "caseRoleHolderIds">>;
+    }
   /** Who is viewing a Case changed. */
   | { kind: "presence"; organizationId: string; caseId: string }
   /** Membership changed (removed, role changed, Organization deleted): who sees what may have too. */

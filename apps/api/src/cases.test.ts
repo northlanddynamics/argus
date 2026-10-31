@@ -175,6 +175,7 @@ describe("Opening a Case", () => {
         occurredAt: t.clock.now().toISOString(),
         actor: { type: "member", id: await userId(analyst), name: "Ana Analyst" },
         action: "case.opened",
+        target: null,
         before: null,
         after: "Credential phishing — finance mailboxes",
       },

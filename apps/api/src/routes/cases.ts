@@ -2,11 +2,18 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
 import { caseSummarySchema } from "../cases/case-summary";
+import {
+  AssignmentNotFound,
+  CaseRoleNotFound,
+  CaseRoleRetired,
+  NotAMember as CaseRoleNotForMember,
+} from "../case-roles/case-roles";
 import { CaseClosed, CaseNotClosed, CaseNotFound, NotAMember, NotPermitted, StaleSummary } from "../cases/cases";
 import { CASE_AUDIT_ACTIONS, CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabulary";
 import type { Deps } from "../deps";
 import { type MemberEnv, requireMember } from "../members/membership";
 import type { Modules } from "../modules";
+import { OwnerCannotSeeCase, StaleTask, TaskNotFound } from "../tasks/tasks";
 
 const numberParam = z.object({ number: z.coerce.number().int().positive() });
 const isoDate = z.string().refine((s) => !Number.isNaN(Date.parse(s)), "Not a date");
@@ -48,6 +55,33 @@ const auditQuery = z.object({
   from: isoDate.optional(),
 });
 
+const taskParam = numberParam.extend({ id: z.string().min(1) });
+const assignmentParam = numberParam.extend({ assignmentId: z.string().min(1) });
+
+/** A calendar date, YYYY-MM-DD. */
+const dueDate = z.iso.date();
+const taskTitle = z.string().trim().min(1).max(300);
+const taskDescription = z.string().trim().max(10_000);
+
+const newTaskBody = z.object({
+  title: taskTitle,
+  description: taskDescription.default(""),
+  ownerId: z.string().min(1),
+  dueDate: dueDate.nullable().default(null),
+});
+
+const taskEditBody = z.object({
+  title: taskTitle.optional(),
+  description: taskDescription.optional(),
+  ownerId: z.string().min(1).optional(),
+  dueDate: dueDate.nullable().optional(),
+  version: z.number().int().positive(),
+});
+
+const doneBody = z.object({ done: z.boolean() });
+
+const assignBody = z.object({ caseRoleId: z.string().min(1), userId: z.string().min(1) });
+
 const notFound = { error: "Case not found" } as const;
 
 /** The result, or null if the Member can't see the Case (another Organization's, or Restricted). */
@@ -63,8 +97,11 @@ const closedConflict = (e: unknown) => {
   throw e;
 };
 
-/** Cases: open, list, view, change, close, reopen, the Case Summary and the Case Audit Log. */
-export const caseRoutes = (deps: Deps, { cases: store }: Modules) => {
+/**
+ * Cases: open, list, view, change, close, reopen, the Case Summary, Tasks, Case Role assignments and
+ * the Case Audit Log.
+ */
+export const caseRoutes = (deps: Deps, { cases: store, tasks, caseRoles }: Modules) => {
   return new Hono<MemberEnv>()
     .use(requireMember(deps.db))
     .post("/", zValidator("json", openBody), async (c) => {
@@ -119,6 +156,70 @@ export const caseRoutes = (deps: Deps, { cases: store }: Modules) => {
         return c.json({ summary: saved }, 200);
       } catch (e) {
         if (e instanceof StaleSummary) return c.json({ error: e.message, current: e.current }, 409);
+        return c.json(closedConflict(e), 409);
+      }
+    })
+    .get("/:number/tasks", zValidator("param", numberParam), async (c) => {
+      const found = await unlessNotFound(tasks.list(c.get("membership"), c.req.valid("param").number));
+      if (!found) return c.json(notFound, 404);
+      return c.json({ tasks: found }, 200);
+    })
+    .post("/:number/tasks", zValidator("param", numberParam), zValidator("json", newTaskBody), async (c) => {
+      try {
+        const created = await unlessNotFound(tasks.create(c.get("membership"), c.req.valid("param").number, c.req.valid("json")));
+        if (!created) return c.json(notFound, 404);
+        return c.json({ task: created }, 201);
+      } catch (e) {
+        if (e instanceof OwnerCannotSeeCase) return c.json({ error: e.message }, 400);
+        return c.json(closedConflict(e), 409);
+      }
+    })
+    .patch("/:number/tasks/:id", zValidator("param", taskParam), zValidator("json", taskEditBody), async (c) => {
+      const { number, id } = c.req.valid("param");
+      const { version, ...changes } = c.req.valid("json");
+      try {
+        const edited = await unlessNotFound(tasks.edit(c.get("membership"), number, id, changes, version));
+        if (!edited) return c.json(notFound, 404);
+        return c.json({ task: edited }, 200);
+      } catch (e) {
+        if (e instanceof TaskNotFound) return c.json({ error: e.message }, 404);
+        if (e instanceof OwnerCannotSeeCase) return c.json({ error: e.message }, 400);
+        if (e instanceof StaleTask) return c.json({ error: e.message, current: e.current }, 409);
+        return c.json(closedConflict(e), 409);
+      }
+    })
+    .put("/:number/tasks/:id/done", zValidator("param", taskParam), zValidator("json", doneBody), async (c) => {
+      const { number, id } = c.req.valid("param");
+      try {
+        const task = await unlessNotFound(tasks.setDone(c.get("membership"), number, id, c.req.valid("json").done));
+        if (!task) return c.json(notFound, 404);
+        return c.json({ task }, 200);
+      } catch (e) {
+        if (e instanceof TaskNotFound) return c.json({ error: e.message }, 404);
+        return c.json(closedConflict(e), 409);
+      }
+    })
+    .post("/:number/case-roles", zValidator("param", numberParam), zValidator("json", assignBody), async (c) => {
+      try {
+        const assignments = await unlessNotFound(caseRoles.assign(c.get("membership"), c.req.valid("param").number, c.req.valid("json")));
+        if (!assignments) return c.json(notFound, 404);
+        return c.json({ caseRoles: assignments }, 200);
+      } catch (e) {
+        if (e instanceof CaseRoleNotFound || e instanceof CaseRoleRetired || e instanceof CaseRoleNotForMember) {
+          return c.json({ error: e.message }, 400);
+        }
+        return c.json(closedConflict(e), 409);
+      }
+    })
+    .delete("/:number/case-roles/:assignmentId", zValidator("param", assignmentParam), async (c) => {
+      const { number, assignmentId } = c.req.valid("param");
+      try {
+        const assignments = await caseRoles.unassign(c.get("membership"), number, assignmentId);
+        // Taken away, but that left the Member unable to see the Case.
+        return c.json({ caseRoles: assignments }, 200);
+      } catch (e) {
+        if (e instanceof CaseNotFound) return c.json(notFound, 404);
+        if (e instanceof AssignmentNotFound) return c.json({ error: e.message }, 404);
         return c.json(closedConflict(e), 409);
       }
     })

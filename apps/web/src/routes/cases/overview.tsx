@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api, errorMessage } from "@/lib/api";
 import { type CaseSummary, type CaseView, caseKey, caseQuery, casesKey, resolutionLabel } from "@/lib/cases";
 import { useCaseNumber } from "@/routes/cases/case-layout";
+import { CaseRolesPanel } from "@/routes/cases/case-roles-panel";
 
 type Summary = CaseView["summary"];
 
@@ -22,7 +23,8 @@ export function CaseOverviewPage() {
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
       <CaseSummaryCard number={number} summary={c.summary} readOnly={c.status === "closed"} />
-      <Card className="self-start">
+      <div className="grid content-start gap-4">
+      <Card>
         <CardHeader>
           <CardTitle className="text-xs tracking-widest text-muted-foreground uppercase">Details</CardTitle>
         </CardHeader>
@@ -47,6 +49,8 @@ export function CaseOverviewPage() {
           </dl>
         </CardContent>
       </Card>
+      <CaseRolesPanel number={number} caseRoles={c.caseRoles} readOnly={c.status === "closed"} />
+      </div>
     </div>
   );
 }

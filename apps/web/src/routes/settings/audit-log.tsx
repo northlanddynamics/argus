@@ -21,6 +21,9 @@ const actionLabels: Record<string, string> = {
   "member.role_changed": "Changed role of",
   "member.removed": "Removed",
   "ownership.transferred": "Transferred ownership to",
+  "case_role.created": "Created Case Role",
+  "case_role.renamed": "Renamed Case Role",
+  "case_role.retired": "Retired Case Role",
 };
 
 /** Describes an entry: "Changed role of J. Okafor". The creation entry already names its target in "after". */
