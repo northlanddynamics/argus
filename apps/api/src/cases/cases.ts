@@ -2,10 +2,11 @@ import { and, count, desc, eq, isNull, ne, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { Clock } from "../clock";
 import type { Db, Tx } from "../db/client";
-import { type Actor, canSeeCase, casePermissions, casePolicy, visibleCases } from "../access/policy";
-import { cases, member, organization, user } from "../db/schema";
+import { type Actor, canSeeCase, casePermissions, casePolicy, NotPermitted, visibleCases } from "../access/policy";
+import { cases, organization, user } from "../db/schema";
 import { secureId } from "../ids";
 import type { Membership } from "../members/membership";
+import { memberName } from "../members/members";
 import { publish } from "../realtime/signals";
 import { type CaseActor, type CaseAuditEntry, listCaseAudit, recordCaseAudit, type CaseAuditFilter } from "./case-audit-log";
 import { type CaseSummary, emptySummary } from "./case-summary";
@@ -29,8 +30,7 @@ export type CaseListFilter = { view?: CaseListView; status?: Status; severity?: 
 
 export class CaseNotFound extends Error {}
 export class NotAMember extends Error {}
-/** The access policy doesn't let the Member do this to a Case they can see. */
-export class NotPermitted extends Error {}
+export { NotPermitted };
 /** The Case is Closed, so it can't be changed until an Admin reopens it. */
 export class CaseClosed extends Error {
   constructor() {
@@ -101,18 +101,6 @@ const listItem = (row: ListRow) => ({
 });
 
 const actorOf = (me: Membership): CaseActor => ({ type: "member", id: me.userId, name: me.name });
-
-/** The Member's name, or throws `NotAMember` unless `userId` belongs to `organizationId`. */
-const memberName = async (tx: Db | Tx, organizationId: string, userId: string) => {
-  const [row] = await tx
-    .select({ name: user.name })
-    .from(member)
-    .innerJoin(user, eq(member.userId, user.id))
-    .where(and(eq(member.organizationId, organizationId), eq(member.userId, userId)))
-    .limit(1);
-  if (!row) throw new NotAMember();
-  return row.name;
-};
 
 /**
  * Locks the Case's row for the rest of `tx` and returns its current values. Throws `CaseNotFound`
@@ -309,7 +297,11 @@ export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
           entries.push(entry("case.case_type_changed", current.caseType, changes.caseType));
         }
         if (changes.assigneeId !== undefined && changes.assigneeId !== current.assigneeId) {
-          const after = changes.assigneeId === null ? null : await memberName(tx, me.organizationId, changes.assigneeId);
+          let after: string | null = null;
+          if (changes.assigneeId !== null) {
+            after = await memberName(tx, me.organizationId, changes.assigneeId);
+            if (after === null) throw new NotAMember();
+          }
           const before = current.assigneeId
             ? ((await tx.select({ name: user.name }).from(user).where(eq(user.id, current.assigneeId)))[0]?.name ?? null)
             : null;

@@ -14,6 +14,9 @@ import { cases } from "../db/schema";
  * A Case the actor can't see is reported as not found, so its existence doesn't leak.
  */
 
+/** The access policy doesn't let the actor do this. Modules throw it; routes answer 403. */
+export class NotPermitted extends Error {}
+
 /** Who is acting: a Member of one Organization. Guests arrive with later work. */
 export type Actor = { organizationId: string; userId: string; role: OrgRole };
 

@@ -71,6 +71,25 @@ describe("Operator creates an Organization and invites its Owner", () => {
     ]);
   });
 
+  test("the Operator console lists each Organization, newest first, with its own Owner and Member count", async () => {
+    const { t, operator } = await operatorCreatesAcme();
+    await t.session().api.invitations[":id"].accept.$post({
+      param: { id: t.inviteIdFor(OWNER) },
+      json: { name: "Olive Owner", password: OWNER_PASSWORD },
+    });
+    t.clock.advance(60_000);
+    const res = await operator.api.operator.organizations.$post({
+      json: { name: "Globex Defense", ownerEmail: "owner@globex.example" },
+    });
+    expect(res.status).toBe(201);
+
+    const { organizations } = await (await operator.api.operator.organizations.$get()).json();
+    expect(organizations).toMatchObject([
+      { name: "Globex Defense", members: 0, owner: { email: "owner@globex.example", status: "invited" } },
+      { name: "Acme Security", members: 1, owner: { email: OWNER, status: "active" } },
+    ]);
+  });
+
   test("an invitation can be accepted only once", async () => {
     const { t } = await operatorCreatesAcme();
     const id = t.inviteIdFor(OWNER);

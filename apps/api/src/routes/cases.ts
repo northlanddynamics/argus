@@ -2,10 +2,11 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
 import { caseSummarySchema } from "../cases/case-summary";
-import { CaseClosed, CaseNotClosed, CaseNotFound, caseStore, NotAMember, NotPermitted, StaleSummary } from "../cases/cases";
+import { CaseClosed, CaseNotClosed, CaseNotFound, NotAMember, NotPermitted, StaleSummary } from "../cases/cases";
 import { CASE_AUDIT_ACTIONS, CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabulary";
 import type { Deps } from "../deps";
 import { type MemberEnv, requireMember } from "../members/membership";
+import type { Modules } from "../modules";
 
 const numberParam = z.object({ number: z.coerce.number().int().positive() });
 const isoDate = z.string().refine((s) => !Number.isNaN(Date.parse(s)), "Not a date");
@@ -63,8 +64,7 @@ const closedConflict = (e: unknown) => {
 };
 
 /** Cases: open, list, view, change, close, reopen, the Case Summary and the Case Audit Log. */
-export const caseRoutes = (deps: Deps) => {
-  const store = caseStore(deps);
+export const caseRoutes = (deps: Deps, { cases: store }: Modules) => {
   return new Hono<MemberEnv>()
     .use(requireMember(deps.db))
     .post("/", zValidator("json", openBody), async (c) => {

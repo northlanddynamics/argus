@@ -1,6 +1,5 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { createMiddleware } from "hono/factory";
-import type { Actor } from "../access/policy";
 import type { OrgRole } from "../auth/roles";
 import type { Db } from "../db/client";
 import { member, organization } from "../db/schema";
@@ -34,18 +33,14 @@ export async function findMembership(db: Db, userId: string) {
   return row ? { ...row, role: row.role as OrgRole } : null;
 }
 
-/**
- * Lets through signed-in Members and sets `membership`. With `permitted` (a check from the access
- * policy), refuses Members it doesn't allow with 403.
- */
-export const requireMember = (db: Db, permitted?: (actor: Actor) => boolean) =>
+/** Lets through signed-in Members and sets `membership`. What each may do is up to the modules. */
+export const requireMember = (db: Db) =>
   createMiddleware<MemberEnv>(async (c, next) => {
     const user = c.get("user");
     if (!user) return c.json({ error: "Not signed in" }, 401);
     const found = await findMembership(db, user.id);
     if (!found) return c.json({ error: "Not a Member of an Organization" }, 403);
     const membership = { ...found, userId: user.id, name: user.name };
-    if (permitted && !permitted(membership)) return c.json({ error: "Not permitted" }, 403);
     c.set("membership", membership);
     await next();
   });

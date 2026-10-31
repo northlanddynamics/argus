@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { totpEnrollmentPending } from "./auth/totp-enrollment";
 import type { Deps, Env } from "./deps";
+import { createModules } from "./modules";
 import { createLive, type Live } from "./realtime/live";
 import { caseRoutes } from "./routes/cases";
 import { invitationRoutes } from "./routes/invitations";
@@ -15,6 +16,7 @@ import { organizationRoutes } from "./routes/organization";
  */
 export function createApi(deps: Deps, live: Live = createLive(deps)) {
   const { auth } = deps;
+  const modules = createModules(deps);
   return new Hono<Env>()
     .basePath("/api")
     .on(["GET", "POST"], "/auth/*", (c) => auth.handler(c.req.raw))
@@ -27,10 +29,10 @@ export function createApi(deps: Deps, live: Live = createLive(deps)) {
       await next();
     })
     .route("/me", meRoutes(deps))
-    .route("/operator", operatorRoutes(deps))
-    .route("/invitations", invitationRoutes(deps))
-    .route("/organization", organizationRoutes(deps))
-    .route("/cases", caseRoutes(deps))
+    .route("/operator", operatorRoutes(modules))
+    .route("/invitations", invitationRoutes(modules))
+    .route("/organization", organizationRoutes(deps, modules))
+    .route("/cases", caseRoutes(deps, modules))
     .route("/live", liveRoutes(deps, live));
 }
 
