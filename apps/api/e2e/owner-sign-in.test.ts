@@ -59,7 +59,8 @@ test("the Owner accepts their invite, enrolls in TOTP, signs in with password an
     await page.getByText("Acme Security", { exact: true }).waitFor();
 
     // Password sign-in asks for a TOTP code.
-    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.getByRole("button", { name: "Account" }).click();
+    await page.getByRole("menuitem", { name: "Sign out" }).click();
     await page.waitForURL(`${baseUrl}/sign-in`);
     await page.getByLabel("Work email").fill("owner@acme.example");
     await page.getByLabel("Password").fill("correct-horse-battery");
@@ -71,7 +72,8 @@ test("the Owner accepts their invite, enrolls in TOTP, signs in with password an
     expect(page.url()).toBe(`${baseUrl}/`);
 
     // The passkey signs in on its own.
-    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.getByRole("button", { name: "Account" }).click();
+    await page.getByRole("menuitem", { name: "Sign out" }).click();
     await page.waitForURL(`${baseUrl}/sign-in`);
     await page.getByRole("button", { name: "Sign in with a passkey" }).click();
     await page.getByText("Acme Security", { exact: true }).waitFor();
