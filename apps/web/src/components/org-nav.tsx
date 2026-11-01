@@ -12,6 +12,9 @@ export function OrgNav({ me }: { me: Me }) {
       <Link to="/" className={linkClass} activeOptions={{ exact: true }}>
         Cases
       </Link>
+      <Link to="/alerts" className={linkClass}>
+        Alerts
+      </Link>
       {canManage(me.organization?.role) && (
         <Link to="/settings" className={linkClass}>
           Settings

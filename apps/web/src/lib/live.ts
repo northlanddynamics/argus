@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { type ClientMessage, LIVE_PATH, type ServerMessage, type Viewer } from "api/realtime/messages";
 import { useEffect, useSyncExternalStore } from "react";
+import { alertsKey, integrationsKey } from "@/lib/alerts";
 import { casesKey } from "@/lib/cases";
 import { queryClient } from "@/lib/query-client";
 
@@ -136,6 +137,10 @@ class LiveConnection {
           queryKey: casesKey,
           predicate: ({ queryKey }) => typeof queryKey[1] !== "number" || queryKey[1] === message.number,
         });
+        return;
+      case "alerts":
+        void this.#queries.invalidateQueries({ queryKey: alertsKey });
+        void this.#queries.invalidateQueries({ queryKey: integrationsKey });
         return;
       case "presence":
         this.#presence.set(message.number, message.viewers);

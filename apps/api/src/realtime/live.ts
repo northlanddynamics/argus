@@ -187,6 +187,12 @@ export function createLive({ db, clock, signals }: { db: Db; clock: Clock; signa
       return;
     }
 
+    if (signal.kind === "alerts") {
+      // Guests never see Alerts or Integrations.
+      for (const s of open) if (s.member.role !== "guest") send(s, { type: "alerts" });
+      return;
+    }
+
     const facts = await accessFacts(signal.caseId);
     if (!facts) return;
 

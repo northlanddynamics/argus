@@ -3,6 +3,7 @@ import type { Clock } from "./clock";
 import type { Db } from "./db/client";
 import type { EvidenceStorage } from "./evidence/storage";
 import type { GuestSession } from "./guests/guest-sessions";
+import type { CredentialSealer } from "./integrations/credentials";
 import type { Mailer } from "./mail";
 import type { SignalSource } from "./realtime/signals";
 
@@ -18,6 +19,8 @@ export type Deps = {
   baseUrl: string;
   /** Where Evidence files are kept, and the largest file accepted. */
   evidence: EvidenceConfig;
+  /** Seals Integration credentials at rest. */
+  credentials: CredentialSealer;
 };
 
 export type EvidenceConfig = { storage: EvidenceStorage; maxBytes: number };

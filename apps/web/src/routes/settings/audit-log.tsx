@@ -24,6 +24,11 @@ const actionLabels: Record<string, string> = {
   "case_role.created": "Created Case Role",
   "case_role.renamed": "Renamed Case Role",
   "case_role.retired": "Retired Case Role",
+  "integration.created": "Added Integration",
+  "integration.credentials_rotated": "Rotated the credentials of",
+  "integration.paused": "Paused Integration",
+  "integration.resumed": "Resumed Integration",
+  "integration.stream_gap": "Gap in the stream of",
 };
 
 /** Describes an entry: "Changed role of J. Okafor". The creation entry already names its target in "after". */

@@ -120,6 +120,13 @@
       "when": 1793538686226,
       "tag": "0016_guests",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1793544397617,
+      "tag": "0017_integrations_alerts",
+      "breakpoints": true
     }
   ]
 }

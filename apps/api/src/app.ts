@@ -4,7 +4,9 @@ import type { Deps, Env } from "./deps";
 import { guestSession, isGuestAccount } from "./guests/guest-sessions";
 import { createModules } from "./modules";
 import { createLive, type Live } from "./realtime/live";
+import { alertRoutes } from "./routes/alerts";
 import { caseRoutes } from "./routes/cases";
+import { integrationRoutes } from "./routes/integrations";
 import { invitationRoutes } from "./routes/invitations";
 import { liveRoutes } from "./routes/live";
 import { meRoutes } from "./routes/me";
@@ -42,6 +44,8 @@ export function createApi(deps: Deps, live: Live = createLive(deps)) {
     .route("/invitations", invitationRoutes(modules))
     .route("/organization", organizationRoutes(deps, modules))
     .route("/cases", caseRoutes(deps, modules))
+    .route("/alerts", alertRoutes(deps, modules))
+    .route("/integrations", integrationRoutes(deps, modules))
     .route("/live", liveRoutes(deps, live));
 }
 

@@ -17,7 +17,12 @@ export type OrgAuditAction =
   | "ownership.transferred"
   | "case_role.created"
   | "case_role.renamed"
-  | "case_role.retired";
+  | "case_role.retired"
+  | "integration.created"
+  | "integration.credentials_rotated"
+  | "integration.paused"
+  | "integration.resumed"
+  | "integration.stream_gap";
 
 /** Who acted: a Member (or the Operator) by id and name at the time, or the system itself. */
 export type OrgAuditActor =
