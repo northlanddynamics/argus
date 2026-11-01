@@ -9,6 +9,7 @@ import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api, errorMessage } from "@/lib/api";
 import { caseQuery, caseRef } from "@/lib/cases";
+import { shortHash } from "@/lib/evidence";
 import {
   ASSET_TYPES,
   type AssetType,
@@ -43,7 +44,7 @@ export function CaseObservablesPage() {
           placeholder="185.220.101.4, invoice-portal[.]biz, a hash…"
           types={OBSERVABLE_TYPES}
           typeLabel={observableTypeLabel}
-          shown={defang}
+          shown={(type, value) => (["md5", "sha1", "sha256"].includes(type) ? shortHash(value) : defang(type, value))}
           items={observables.data}
           queryKey={observablesKey(number)}
           readOnly={readOnly}
@@ -162,20 +163,20 @@ function LinkedCard<Type extends string>(props: {
             <TableRow>
               <TableHead>Type</TableHead>
               <TableHead>{props.valueHeading}</TableHead>
-              <TableHead>Source</TableHead>
+              <TableHead>Added by</TableHead>
               <TableHead>Seen in other Cases</TableHead>
-              {!readOnly && <TableHead />}
+              {!readOnly && <TableHead className="w-0" />}
             </TableRow>
           </TableHeader>
           <TableBody>
             {items?.map((item) => (
               <TableRow key={item.id} data-testid={`${noun.toLowerCase()}-${item.value}`}>
                 <TableCell>{typeLabel[item.type] ?? item.type}</TableCell>
-                <TableCell className="max-w-64 font-mono text-xs break-all whitespace-normal" title={item.value}>
+                <TableCell className="min-w-36 font-mono text-xs break-all whitespace-normal" title={item.value}>
                   {shown(item.type, item.value)}
                 </TableCell>
                 <TableCell className="text-sm" title={new Date(item.linkedAt).toLocaleString()}>
-                  Added by {item.linkedBy.name}
+                  {item.linkedBy.name}
                 </TableCell>
                 <TableCell className="whitespace-normal">
                   {item.seenIn.length === 0 ? (
@@ -197,10 +198,11 @@ function LinkedCard<Type extends string>(props: {
                   )}
                 </TableCell>
                 {!readOnly && (
-                  <TableCell className="text-right">
+                  <TableCell className="w-0 pl-0 text-right">
                     <Button
                       variant="ghost"
                       size="sm"
+                      className="px-2"
                       disabled={unlink.isPending}
                       aria-label={`Unlink ${typeLabel[item.type]} ${item.value}`}
                       onClick={() => unlink.mutate(item.id)}

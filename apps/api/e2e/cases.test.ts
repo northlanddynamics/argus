@@ -600,7 +600,7 @@ test("an Analyst adds Observables and Assets, sees the other Cases they appear i
     await page.getByLabel("Asset identifier").fill("FIN-LT-0231");
     await page.getByRole("button", { name: "+ Add Asset" }).click();
     const host = page.getByTestId("asset-FIN-LT-0231");
-    await host.getByText("Added by Ana Analyst").waitFor();
+    await host.getByText("Ana Analyst").waitFor();
 
     await host.getByRole("button", { name: "Unlink Host FIN-LT-0231" }).click();
     await page.getByText("No Assets yet.").waitFor();
