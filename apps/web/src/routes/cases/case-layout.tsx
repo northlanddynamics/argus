@@ -1,12 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, Outlet, useNavigate, useParams, useRouteContext } from "@tanstack/react-router";
+import { Link, Outlet, useMatchRoute, useNavigate, useParams, useRouteContext } from "@tanstack/react-router";
 import { LockIcon } from "lucide-react";
 import { PresenceAvatars } from "@/components/presence-avatars";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Field, FieldContent, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, errorMessage } from "@/lib/api";
 import {
   CASE_TYPES,
@@ -29,8 +31,18 @@ import {
 import { CloseCaseDialog } from "@/routes/cases/close-case-dialog";
 import { membersKey } from "@/routes/settings/members";
 
-const tabLink =
-  "-mb-px shrink-0 border-b-2 whitespace-nowrap border-transparent px-3 py-2 text-sm text-muted-foreground hover:text-foreground data-[status=active]:border-foreground data-[status=active]:font-medium data-[status=active]:text-foreground";
+/** The Case's sections, each its own route under the Case. */
+const SECTIONS = [
+  "/cases/$number",
+  "/cases/$number/timeline",
+  "/cases/$number/tasks",
+  "/cases/$number/evidence",
+  "/cases/$number/observables",
+  "/cases/$number/audit-log",
+] as const;
+
+/** Radix Select can't hold an empty value, so "Unassigned" gets one of its own. */
+const UNASSIGNED = "unassigned";
 
 type Changes = {
   status?: Exclude<Status, "closed">;
@@ -47,6 +59,7 @@ export function CaseLayout() {
   const number = useCaseNumber();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const matchRoute = useMatchRoute();
   const found = useQuery(caseQuery(number));
   const members = useQuery({
     queryKey: membersKey,
@@ -91,6 +104,8 @@ export function CaseLayout() {
   const c = found.data;
   /** A Closed Case is read-only until an Admin reopens it; Guests change nothing. */
   const locked = change.isPending || !c || isReadOnly(c);
+  const params = { number: String(number) };
+  const section = SECTIONS.find((to) => matchRoute({ to, params })) ?? SECTIONS[0];
   return (
     <div className="mx-auto grid w-full grid-cols-1 max-w-6xl gap-4">
       {found.data === null && (
@@ -110,9 +125,9 @@ export function CaseLayout() {
                 <p className="flex items-center gap-1 font-mono text-xs text-muted-foreground">
                   {caseRef(c.number)}
                   {c.restricted && (
-                    <span className="flex items-center gap-1 font-sans">
-                      · <LockIcon className="size-3" aria-hidden /> Restricted
-                    </span>
+                    <Badge variant="outline" className="ml-1 font-sans">
+                      <LockIcon aria-hidden /> Restricted
+                    </Badge>
                   )}
                 </p>
                 <h1 className="text-2xl font-semibold tracking-tight">{c.title}</h1>
@@ -139,86 +154,102 @@ export function CaseLayout() {
               </Alert>
             )}
             <div className="grid gap-4 rounded-xl border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4">
-              <Field label="Status" id="case-status">
-                <NativeSelect
-                  className="w-full"
-                  id="case-status"
+              <Field className="gap-1.5">
+                <FieldLabel htmlFor="case-status" className="text-xs font-normal text-muted-foreground">
+                  Status
+                </FieldLabel>
+                <Select
                   value={c.status}
                   disabled={locked}
-                  onChange={(e) => change.mutate({ status: e.target.value as Changes["status"] })}
+                  onValueChange={(value) => change.mutate({ status: value as Changes["status"] })}
                 >
-                  {STATUSES.map((s) => (
-                    // Closing needs a Resolution, set from its own dialog.
-                    <NativeSelectOption key={s} value={s} disabled={s === "closed"}>
-                      {statusLabel[s]}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
+                  <SelectTrigger id="case-status" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STATUSES.map((s) => (
+                      // Closing needs a Resolution, set from its own dialog.
+                      <SelectItem key={s} value={s} disabled={s === "closed"}>
+                        {statusLabel[s]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </Field>
-              <Field label="Severity" id="case-severity">
-                <NativeSelect
-                  className="w-full"
-                  id="case-severity"
-                  value={c.severity}
-                  disabled={locked}
-                  onChange={(e) => change.mutate({ severity: e.target.value as Severity })}
-                >
-                  {SEVERITIES.map((s) => (
-                    <NativeSelectOption key={s} value={s}>
-                      {severityLabel[s]}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
+              <Field className="gap-1.5">
+                <FieldLabel htmlFor="case-severity" className="text-xs font-normal text-muted-foreground">
+                  Severity
+                </FieldLabel>
+                <Select value={c.severity} disabled={locked} onValueChange={(value) => change.mutate({ severity: value as Severity })}>
+                  <SelectTrigger id="case-severity" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SEVERITIES.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {severityLabel[s]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </Field>
-              <Field label="Case Type" id="case-type">
-                <NativeSelect
-                  className="w-full"
-                  id="case-type"
-                  value={c.caseType}
-                  disabled={locked}
-                  onChange={(e) => change.mutate({ caseType: e.target.value as CaseType })}
-                >
-                  {CASE_TYPES.map((t) => (
-                    <NativeSelectOption key={t} value={t}>
-                      {caseTypeLabel[t]}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
+              <Field className="gap-1.5">
+                <FieldLabel htmlFor="case-type" className="text-xs font-normal text-muted-foreground">
+                  Case Type
+                </FieldLabel>
+                <Select value={c.caseType} disabled={locked} onValueChange={(value) => change.mutate({ caseType: value as CaseType })}>
+                  <SelectTrigger id="case-type" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CASE_TYPES.map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {caseTypeLabel[t]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </Field>
-              <Field label="Assignee" id="case-assignee">
-                <NativeSelect
-                  className="w-full"
-                  id="case-assignee"
-                  value={c.assignee?.id ?? ""}
+              <Field className="gap-1.5">
+                <FieldLabel htmlFor="case-assignee" className="text-xs font-normal text-muted-foreground">
+                  Assignee
+                </FieldLabel>
+                <Select
+                  value={c.assignee?.id ?? UNASSIGNED}
                   disabled={locked}
-                  onChange={(e) => change.mutate({ assigneeId: e.target.value || null })}
+                  onValueChange={(value) => change.mutate({ assigneeId: value === UNASSIGNED ? null : value })}
                 >
-                  <NativeSelectOption value="">Unassigned</NativeSelectOption>
-                  {/* A former Member stays selectable until someone changes it. */}
-                  {c.assignee && !members.data?.members.some((m) => m.userId === c.assignee?.id) && (
-                    <NativeSelectOption value={c.assignee.id}>{c.assignee.name}</NativeSelectOption>
-                  )}
-                  {members.data?.members.map((m) => (
-                    <NativeSelectOption key={m.userId} value={m.userId}>
-                      {m.name}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
+                  <SelectTrigger id="case-assignee" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
+                    {/* A former Member stays selectable until someone changes it. */}
+                    {c.assignee && !members.data?.members.some((m) => m.userId === c.assignee?.id) && (
+                      <SelectItem value={c.assignee.id}>{c.assignee.name}</SelectItem>
+                    )}
+                    {members.data?.members.map((m) => (
+                      <SelectItem key={m.userId} value={m.userId}>
+                        {m.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </Field>
             </div>
             {c.can.restrict && (
-              <div className="flex items-center gap-2">
+              <Field orientation="horizontal" data-disabled={locked}>
                 <Checkbox
                   id="case-restricted"
                   checked={c.restricted}
                   disabled={locked}
                   onCheckedChange={(checked) => change.mutate({ restricted: checked === true })}
                 />
-                <Label htmlFor="case-restricted">Restricted</Label>
-                <span className="text-sm text-muted-foreground">
-                  Only Admins, its Assignee and people with a Case Role on it can see it.
-                </span>
-              </div>
+                <FieldContent>
+                  <FieldLabel htmlFor="case-restricted">Restricted</FieldLabel>
+                  <FieldDescription>Only Admins, its Assignee and people with a Case Role on it can see it.</FieldDescription>
+                </FieldContent>
+              </Field>
             )}
             {(change.error ?? reopen.error) && (
               <Alert variant="destructive">
@@ -226,42 +257,51 @@ export function CaseLayout() {
               </Alert>
             )}
           </section>
-          <nav className="flex gap-1 overflow-x-auto border-b" aria-label="Case sections">
-            <Link to="/cases/$number" params={{ number: String(number) }} activeOptions={{ exact: true }} className={tabLink}>
-              Overview
-            </Link>
-            <Link to="/cases/$number/timeline" params={{ number: String(number) }} className={tabLink}>
-              Timeline &amp; Discussion
-            </Link>
-            <Link to="/cases/$number/tasks" params={{ number: String(number) }} className={tabLink}>
-              Tasks ({c.tasks.done}/{c.tasks.total})
-            </Link>
-            <Link to="/cases/$number/evidence" params={{ number: String(number) }} className={tabLink}>
-              Evidence
-            </Link>
-            <Link to="/cases/$number/observables" params={{ number: String(number) }} className={tabLink}>
-              Observables &amp; Assets
-            </Link>
-            {c.can.readAuditLog && (
-              <Link to="/cases/$number/audit-log" params={{ number: String(number) }} className={tabLink}>
-                Audit Log
-              </Link>
-            )}
-          </nav>
-          <Outlet />
+          <Tabs value={section} activationMode="manual">
+            <TabsList variant="line" aria-label="Case sections" className="w-full justify-start overflow-x-auto overflow-y-hidden border-b">
+              <TabsTrigger value="/cases/$number" className="flex-none" asChild>
+                <Link to="/cases/$number" params={params}>
+                  Overview
+                </Link>
+              </TabsTrigger>
+              <TabsTrigger value="/cases/$number/timeline" className="flex-none" asChild>
+                <Link to="/cases/$number/timeline" params={params}>
+                  Timeline &amp; Discussion
+                </Link>
+              </TabsTrigger>
+              <TabsTrigger value="/cases/$number/tasks" className="flex-none" asChild>
+                <Link to="/cases/$number/tasks" params={params}>
+                  Tasks
+                  <Badge variant="secondary" className="tabular-nums">
+                    {c.tasks.done}/{c.tasks.total}
+                  </Badge>
+                </Link>
+              </TabsTrigger>
+              <TabsTrigger value="/cases/$number/evidence" className="flex-none" asChild>
+                <Link to="/cases/$number/evidence" params={params}>
+                  Evidence
+                </Link>
+              </TabsTrigger>
+              <TabsTrigger value="/cases/$number/observables" className="flex-none" asChild>
+                <Link to="/cases/$number/observables" params={params}>
+                  Observables &amp; Assets
+                </Link>
+              </TabsTrigger>
+              {c.can.readAuditLog && (
+                <TabsTrigger value="/cases/$number/audit-log" className="flex-none" asChild>
+                  <Link to="/cases/$number/audit-log" params={params}>
+                    Audit Log
+                  </Link>
+                </TabsTrigger>
+              )}
+            </TabsList>
+            <TabsContent value={section}>
+              <Outlet />
+            </TabsContent>
+          </Tabs>
         </>
       )}
     </div>
   );
 }
 
-function Field({ label, id, children }: { label: string; id: string; children: React.ReactNode }) {
-  return (
-    <div className="grid gap-1.5">
-      <Label htmlFor={id} className="text-xs font-normal text-muted-foreground">
-        {label}
-      </Label>
-      {children}
-    </div>
-  );
-}

@@ -1,12 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { CalendarIcon } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Calendar } from "@/components/ui/calendar";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Skeleton } from "@/components/ui/skeleton";
 import { api, errorMessage } from "@/lib/api";
 import { type CaseView, caseKey, caseRef } from "@/lib/cases";
 import { expiryLabel } from "@/lib/guests";
@@ -42,12 +46,18 @@ export function GuestsPanel({ c }: { c: CaseView }) {
   const canInvite = c.can.manageGuests && c.status !== "closed";
   return (
     <Card className="self-start">
-      <CardHeader className="flex-row items-center justify-between">
+      <CardHeader>
         <CardTitle className="text-xs tracking-widest text-muted-foreground uppercase">Guests</CardTitle>
-        {canInvite && <InviteGuestDialog number={number} />}
+        {canInvite && (
+          <CardAction>
+            <InviteGuestDialog number={number} />
+          </CardAction>
+        )}
       </CardHeader>
       <CardContent className="grid gap-3">
-        {guests.data?.length ? (
+        {guests.isPending ? (
+          <Skeleton className="h-10 w-full" />
+        ) : guests.data?.length ? (
           <ul className="grid gap-2 text-sm">
             {guests.data.map((g) => (
               <li key={g.id} className="flex items-start justify-between gap-2">
@@ -73,7 +83,7 @@ export function GuestsPanel({ c }: { c: CaseView }) {
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-muted-foreground">{guests.isPending ? "Loading…" : "No Guests on this Case."}</p>
+          <p className="text-sm text-muted-foreground">No Guests on this Case.</p>
         )}
         {(guests.error ?? remove.error) && (
           <Alert variant="destructive">
@@ -89,6 +99,11 @@ export function GuestsPanel({ c }: { c: CaseView }) {
 function InviteGuestDialog({ number }: { number: number }) {
   const queryClient = useQueryClient();
   const [isOpen, setIsOpen] = useState(false);
+  /** Access ends as this day ends; none means it never expires. */
+  const [expiresOn, setExpiresOn] = useState<Date>();
+  const [pickingDate, setPickingDate] = useState(false);
+  /** Days before this one can't be picked; set when the dialog opens. */
+  const [today, setToday] = useState(() => new Date());
   const invite = useMutation({
     mutationFn: async (json: InviteInput) => {
       const res = await api.cases[":number"].guests.$post({ param: { number: String(number) }, json });
@@ -105,12 +120,13 @@ function InviteGuestDialog({ number }: { number: number }) {
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const until = String(form.get("expiresOn") ?? "");
     const name = String(form.get("name") ?? "").trim();
     invite.mutate({
       email: String(form.get("email")),
       ...(name && { name }),
-      expiresAt: until ? new Date(`${until}T23:59:59`).toISOString() : null,
+      expiresAt: expiresOn
+        ? new Date(expiresOn.getFullYear(), expiresOn.getMonth(), expiresOn.getDate(), 23, 59, 59).toISOString()
+        : null,
     });
   };
 
@@ -119,7 +135,11 @@ function InviteGuestDialog({ number }: { number: number }) {
       open={isOpen}
       onOpenChange={(next) => {
         setIsOpen(next);
-        if (next) invite.reset();
+        if (next) {
+          invite.reset();
+          setExpiresOn(undefined);
+          setToday(new Date());
+        }
       }}
     >
       <DialogTrigger asChild>
@@ -136,18 +156,45 @@ function InviteGuestDialog({ number }: { number: number }) {
           </DialogDescription>
         </DialogHeader>
         <form className="grid gap-4" onSubmit={onSubmit}>
-          <div className="grid gap-2">
-            <Label htmlFor="guest-email">Email</Label>
-            <Input id="guest-email" name="email" type="email" required />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="guest-name">Name (optional)</Label>
-            <Input id="guest-name" name="name" maxLength={200} />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="guest-expires">Access expires (optional)</Label>
-            <Input id="guest-expires" name="expiresOn" type="date" />
-          </div>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="guest-email">Email</FieldLabel>
+              <Input id="guest-email" name="email" type="email" required />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="guest-name">Name (optional)</FieldLabel>
+              <Input id="guest-name" name="name" maxLength={200} />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="guest-expires">Access expires (optional)</FieldLabel>
+              <Popover open={pickingDate} onOpenChange={setPickingDate}>
+                <PopoverTrigger asChild>
+                  <Button
+                    id="guest-expires"
+                    type="button"
+                    variant="outline"
+                    data-empty={!expiresOn}
+                    className="w-full justify-between font-normal data-[empty=true]:text-muted-foreground"
+                  >
+                    {expiresOn ? expiresOn.toLocaleDateString() : "Never"}
+                    <CalendarIcon />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={expiresOn}
+                    defaultMonth={expiresOn}
+                    disabled={{ before: today }}
+                    onSelect={(day) => {
+                      setExpiresOn(day);
+                      setPickingDate(false);
+                    }}
+                  />
+                </PopoverContent>
+              </Popover>
+            </Field>
+          </FieldGroup>
           <p className="text-xs text-muted-foreground">Only Admins and this Case's Assignee can invite or remove Guests.</p>
           {invite.error && (
             <Alert variant="destructive">

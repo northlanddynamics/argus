@@ -1,6 +1,6 @@
 import { websocket } from "@hono/bun";
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { chromium, type Browser, type Page } from "playwright";
+import { chromium, type Browser, type Locator, type Page } from "playwright";
 import { defaultWebDist } from "../src/config";
 import { createServerApp } from "../src/server-app";
 import { buildTestApp } from "../src/test/harness";
@@ -50,6 +50,13 @@ async function signIn(page: Page, baseUrl: string, email: string, code: () => Pr
   await page.getByRole("heading", { name: "Cases" }).waitFor();
 }
 
+/** Picks `option` in the shadcn/ui Select labelled `label`. */
+async function choose(scope: Page | Locator, label: string, option: string) {
+  await scope.getByLabel(label, { exact: true }).click();
+  const page = "page" in scope ? scope.page() : scope;
+  await page.getByRole("option", { name: option, exact: true }).click();
+}
+
 test("an Analyst opens a Case, assigns it, edits the Case Summary past a colleague's save, and reads the Audit Log", async () => {
   const { t, baseUrl, stop } = await serveTestApp();
   try {
@@ -71,16 +78,16 @@ test("an Analyst opens a Case, assigns it, edits the Case Summary past a colleag
     await page.waitForURL(`${baseUrl}/cases/1`);
     await page.getByRole("heading", { name: "Suspicious PowerShell on FIN-LT-0231" }).waitFor();
     await page.getByText("Falcon flagged encoded PowerShell.").waitFor();
-    expect(await page.getByLabel("Status").inputValue()).toBe("new");
+    expect(await page.getByLabel("Status").textContent()).toBe("New");
 
     // Take it and move it on.
-    await page.getByLabel("Assignee").selectOption({ label: "Ana Analyst" });
-    await page.getByLabel("Status").selectOption("in_progress");
+    await choose(page, "Assignee", "Ana Analyst");
+    await choose(page, "Status", "In Progress");
     await page.getByLabel("Status").and(page.locator(":enabled")).waitFor();
     await page.reload();
     await page.getByRole("heading", { name: "Suspicious PowerShell on FIN-LT-0231" }).waitFor();
-    expect(await page.getByLabel("Status").inputValue()).toBe("in_progress");
-    expect(await page.getByLabel("Assignee").locator("option:checked").textContent()).toBe("Ana Analyst");
+    expect(await page.getByLabel("Status").textContent()).toBe("In Progress");
+    expect(await page.getByLabel("Assignee").textContent()).toBe("Ana Analyst");
 
     // It shows in the Active Cases panel, and among Ana's own there.
     const active = page.getByRole("navigation", { name: "Active Cases" });
@@ -114,7 +121,7 @@ test("an Analyst opens a Case, assigns it, edits the Case Summary past a colleag
     await page.getByText("Last saved by Ana Analyst · v3").waitFor();
 
     // Everything is in the Audit Log.
-    await page.getByRole("link", { name: "Audit Log" }).click();
+    await page.getByRole("tab", { name: "Audit Log" }).click();
     for (const action of ["Opened Case", "Changed Assignee", "Changed Status", "Edited Case Summary"]) {
       await page.getByRole("cell", { name: action }).first().waitFor();
     }
@@ -162,10 +169,10 @@ test("an Analyst closes a Case with a Resolution and it becomes read-only; the O
     await ownerPage.goto(`${baseUrl}/cases/1`);
     await ownerPage.getByRole("button", { name: "Reopen to In Progress" }).click();
     await ownerPage.getByRole("button", { name: "Close Case" }).waitFor();
-    expect(await ownerPage.getByLabel("Status").inputValue()).toBe("in_progress");
+    expect(await ownerPage.getByLabel("Status").textContent()).toBe("In Progress");
     expect(await ownerPage.getByLabel("Severity").isDisabled()).toBe(false);
 
-    await ownerPage.getByRole("link", { name: "Audit Log" }).click();
+    await ownerPage.getByRole("tab", { name: "Audit Log" }).click();
     await ownerPage.getByRole("cell", { name: "Reopened Case" }).waitFor();
     await ownerPage.getByRole("cell", { name: "Closed Case" }).waitFor();
   } finally {
@@ -191,9 +198,9 @@ test("an Analyst marks the Case assigned to them Restricted; a colleague can't s
     await page.goto(`${baseUrl}/cases/1`);
     await page.getByRole("heading", { name: "Departing employee bulk download" }).waitFor();
     expect(await page.getByLabel("Restricted").count()).toBe(0);
-    await page.getByLabel("Assignee").selectOption({ label: "Ana Analyst" });
+    await choose(page, "Assignee", "Ana Analyst");
     await page.getByRole("checkbox", { name: "Restricted" }).click();
-    await page.getByText("· Restricted").waitFor();
+    await page.locator("[data-slot=badge]", { hasText: "Restricted" }).waitFor();
     expect(await page.getByRole("checkbox", { name: "Restricted" }).getAttribute("aria-checked")).toBe("true");
 
     // Ben, another Analyst, finds no trace of it.
@@ -210,12 +217,12 @@ test("an Analyst marks the Case assigned to them Restricted; a colleague can't s
     await ownerPage.getByRole("button", { name: "All open 1" }).click();
     await ownerPage.getByRole("img", { name: "Restricted" }).waitFor();
     await ownerPage.getByRole("link", { name: "Departing employee bulk download", exact: true }).click();
-    await ownerPage.getByRole("link", { name: "Audit Log" }).click();
+    await ownerPage.getByRole("tab", { name: "Audit Log" }).click();
     await ownerPage.getByRole("cell", { name: "Changed Restricted" }).waitFor();
     await ownerPage.getByRole("cell", { name: "Not Restricted" }).waitFor();
 
     // Ana hands it to Ben: she loses sight of it and lands on the list; Ben now sees it.
-    await page.getByLabel("Assignee").selectOption({ label: "Ben Analyst" });
+    await choose(page, "Assignee", "Ben Analyst");
     await page.waitForURL(`${baseUrl}/`);
     await page.getByRole("button", { name: "All open 0" }).click();
     await page.getByText("No Cases here.").waitFor();
@@ -251,8 +258,8 @@ test("Case pages and the Case list refresh live, and show who is viewing the Cas
     await signIn(ownerPage, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
     await ownerPage.goto(`${baseUrl}/cases/1`);
     await viewing.getByRole("listitem", { name: "Olive Owner" }).waitFor();
-    await ownerPage.getByLabel("Status").selectOption("in_progress");
-    await page.locator("#case-status").and(page.locator("select:has(option[value=in_progress]:checked)")).waitFor();
+    await choose(ownerPage, "Status", "In Progress");
+    await page.locator("#case-status", { hasText: "In Progress" }).waitFor();
 
     // Olive leaves.
     await ownerPage.close();
@@ -265,7 +272,7 @@ test("Case pages and the Case list refresh live, and show who is viewing the Cas
     await owner.api.cases[":number"].$patch({ param: { number: "1" }, json: { severity: "critical" } });
     outage.restart();
     await page.getByRole("status").getByText("Reconnected · views refreshed").waitFor({ timeout: 15_000 });
-    await page.locator("#case-severity").and(page.locator("select:has(option[value=critical]:checked)")).waitFor();
+    await page.locator("#case-severity", { hasText: "Critical" }).waitFor();
   } finally {
     await stop();
   }
@@ -296,13 +303,13 @@ test("an Admin adds a Case Role; an Analyst gives it on a Case, works its Tasks 
     await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
     await page.goto(`${baseUrl}/cases/1`);
     await page.getByRole("button", { name: "+ Assign" }).click();
-    await page.getByLabel("Case Role", { exact: true }).selectOption({ label: "Forensics" });
-    await page.getByLabel("Member", { exact: true }).selectOption({ label: "Ben Analyst" });
+    await choose(page, "Case Role", "Forensics");
+    await choose(page, "Member", "Ben Analyst");
     await page.getByRole("button", { name: "Assign", exact: true }).click();
     await page.getByRole("button", { name: "Take Forensics from Ben Analyst" }).waitFor();
 
     // She creates a Task for Ben and completes another of her own.
-    await page.getByRole("link", { name: "Tasks (0/0)" }).click();
+    await page.getByRole("tab", { name: "Tasks 0/0" }).click();
     await page.getByRole("button", { name: "+ New Task" }).click();
     let dialog = page.getByRole("dialog", { name: "New Task" });
     await dialog.getByLabel("Title").fill("Capture memory image");
@@ -317,7 +324,7 @@ test("an Admin adds a Case Role; an Analyst gives it on a Case, works its Tasks 
     await dialog.getByRole("button", { name: "Create Task" }).click();
     await page.getByRole("checkbox", { name: "Contain host done" }).click();
     await page.getByText("1 of 2 done").waitFor();
-    await page.getByRole("link", { name: "Tasks (1/2)" }).waitFor();
+    await page.getByRole("tab", { name: "Tasks 1/2" }).waitFor();
 
     // Ana starts editing; Olive saves first; Ana's save is refused and she loads the current Task.
     await page.getByRole("button", { name: "Edit Capture memory image" }).click();
@@ -338,7 +345,7 @@ test("an Admin adds a Case Role; an Analyst gives it on a Case, works its Tasks 
     await page.getByTestId("task-Capture memory image (FIN-LT-0231)").getByText("2026-01-06").waitFor();
 
     // Everything is in the Audit Log.
-    await page.getByRole("link", { name: "Audit Log" }).click();
+    await page.getByRole("tab", { name: "Audit Log" }).click();
     for (const action of ["Gave Case Role to Ben Analyst", "Created Task Capture memory image", "Completed Task Contain host", "Changed Task due date"]) {
       await page.getByRole("cell", { name: action }).first().waitFor();
     }
@@ -372,7 +379,7 @@ test("an Analyst discusses a Restricted Case, mentioning only people who can see
     const page = await browser.newPage();
     await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
     await page.goto(`${baseUrl}/cases/1`);
-    await page.getByRole("link", { name: "Discussion" }).click();
+    await page.getByRole("tab", { name: "Discussion" }).click();
     await page.getByText("No messages yet.").waitFor();
 
     // "@" offers only those who can see the Restricted Case: not Ben.
@@ -412,7 +419,7 @@ test("an Analyst discusses a Restricted Case, mentioning only people who can see
     await mine.getByText("Retracted by Ana Analyst. The original is kept in the Audit Log.").waitFor();
 
     // The Audit Log keeps every version.
-    await page.getByRole("link", { name: "Audit Log" }).click();
+    await page.getByRole("tab", { name: "Audit Log" }).click();
     for (const action of ["Posted message", "Edited message", "Retracted message"]) await page.getByRole("cell", { name: action }).first().waitFor();
     await page.getByRole("cell", { name: "Memory image is up — @Olive Owner" }).first().waitFor();
     await page.getByRole("cell", { name: "Memory image uploaded as Evidence — @Olive Owner" }).first().waitFor();
@@ -442,7 +449,7 @@ test("an Analyst writes the Timeline: exact, range and approximate entries, cita
     const page = await browser.newPage();
     await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
     await page.goto(`${baseUrl}/cases/1`);
-    await page.getByRole("link", { name: "Timeline & Discussion" }).click();
+    await page.getByRole("tab", { name: "Timeline & Discussion" }).click();
     await page.getByText("Nothing on the Timeline yet.").waitFor();
     const form = page.getByRole("form", { name: "Add entry" });
     const entries = page.getByRole("list", { name: "Timeline Entries" });
@@ -511,7 +518,7 @@ test("an Analyst writes the Timeline: exact, range and approximate entries, cita
     expect(await phishing.getByRole("button", { name: "Edit" }).count()).toBe(0);
 
     // From the Audit Log, the Severity change is Promoted.
-    await page.getByRole("link", { name: "Audit Log" }).click();
+    await page.getByRole("tab", { name: "Audit Log" }).click();
     const severity = page.getByRole("row").filter({ hasText: "Changed Severity" });
     await severity.getByRole("button", { name: "Promote to Timeline" }).click();
     expect(await dialog.getByLabel("What happened").inputValue()).toBe("Changed Severity: Critical → High");
@@ -522,7 +529,7 @@ test("an Analyst writes the Timeline: exact, range and approximate entries, cita
     }
     await page.getByRole("cell", { name: "≈ 2026-10-27 18:00 UTC ± 6 h · Phishing email delivered to d.howe." }).first().waitFor();
 
-    await page.getByRole("link", { name: "Timeline & Discussion" }).click();
+    await page.getByRole("tab", { name: "Timeline & Discussion" }).click();
     await page.getByText("Promoted from Audit Log (Changed Severity by Olive Owner)").waitFor();
   } finally {
     await stop();
@@ -541,7 +548,7 @@ test("an Analyst adds Evidence, sees its SHA-256, views and downloads it, and fi
     const page = await browser.newPage({ acceptDownloads: true });
     await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
     await page.goto(`${baseUrl}/cases/1`);
-    await page.getByRole("link", { name: "Evidence" }).click();
+    await page.getByRole("tab", { name: "Evidence" }).click();
     await page.getByText("No Evidence yet.").waitFor();
 
     // Add a file; its fingerprint shows.
@@ -563,7 +570,7 @@ test("an Analyst adds Evidence, sees its SHA-256, views and downloads it, and fi
     expect(await Bun.file((await download.path())!).text()).toBe(eml);
 
     // Each is in the Audit Log.
-    await page.getByRole("link", { name: "Audit Log" }).click();
+    await page.getByRole("tab", { name: "Audit Log" }).click();
     for (const action of ["Added Evidence", "Viewed Evidence", "Downloaded Evidence"]) {
       await page.getByRole("cell", { name: action }).first().waitFor();
     }
@@ -587,7 +594,7 @@ test("an Analyst adds Observables and Assets, sees the other Cases they appear i
     const page = await browser.newPage();
     await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
     await page.goto(`${baseUrl}/cases/2`);
-    await page.getByRole("link", { name: "Observables & Assets" }).click();
+    await page.getByRole("tab", { name: "Observables & Assets" }).click();
     await page.getByText("No Observables yet.").waitFor();
 
     // A defanged domain is the same Observable as C-1's, shown defanged, and C-1 is listed.
@@ -613,7 +620,7 @@ test("an Analyst adds Observables and Assets, sees the other Cases they appear i
     await host.getByRole("button", { name: "Unlink Host FIN-LT-0231" }).click();
     await page.getByText("No Assets yet.").waitFor();
 
-    await page.getByRole("link", { name: "Audit Log" }).click();
+    await page.getByRole("tab", { name: "Audit Log" }).click();
     for (const action of ["Added Observable", "Added Asset", "Unlinked Asset"]) {
       await page.getByRole("cell", { name: action }).first().waitFor();
     }
@@ -661,7 +668,7 @@ test("an Analyst tags a Case, filters the list by Tag, links Cases and marks one
     await page.getByText("Not linked to any Case.").waitFor();
     await page.getByRole("button", { name: "+ Link" }).click();
     let dialog = page.getByRole("dialog", { name: "Link C-3 to another Case" });
-    await dialog.getByLabel("Target Case").selectOption("1");
+    await choose(dialog, "Target Case", "C-1 Credential phishing — finance mailboxes");
     await dialog.getByRole("button", { name: "Link", exact: true }).click();
     await page.getByLabel("Linked Cases").getByRole("link", { name: "C-1" }).waitFor();
 
@@ -670,7 +677,7 @@ test("an Analyst tags a Case, filters the list by Tag, links Cases and marks one
     await page.getByRole("button", { name: "+ Link" }).click();
     dialog = page.getByRole("dialog", { name: "Link C-2 to another Case" });
     await dialog.getByLabel("Duplicate of").check();
-    await dialog.getByLabel("Target Case").selectOption("1");
+    await choose(dialog, "Target Case", "C-1 Credential phishing — finance mailboxes");
     await dialog.getByText("Marking as Duplicate of C-1 closes C-2 now with Resolution Duplicate.").waitFor();
     await dialog.getByRole("button", { name: "Link and close" }).click();
     await page.getByText("Closed · Duplicate").first().waitFor();
@@ -683,7 +690,7 @@ test("an Analyst tags a Case, filters the list by Tag, links Cases and marks one
     await linked.getByRole("button", { name: "Remove link to C-3" }).click();
     await linked.getByRole("link", { name: "C-3" }).waitFor({ state: "detached" });
 
-    await page.getByRole("link", { name: "Audit Log" }).click();
+    await page.getByRole("tab", { name: "Audit Log" }).click();
     for (const action of ["Added Tag", "Removed Tag", "Linked Case", "Unlinked Case"]) {
       await page.getByRole("cell", { name: action }).first().waitFor();
     }
@@ -713,10 +720,15 @@ test("the Owner invites a Guest to a Case; the Guest signs in by email link, rea
     const dialog = ownerPage.getByRole("dialog", { name: "Invite a Guest to C-1" });
     await dialog.getByLabel("Email").fill("k.patel@lawfirm.example");
     await dialog.getByLabel("Name (optional)").fill("Kim Patel");
-    await dialog.getByLabel("Access expires (optional)").fill("2026-12-01");
+    // Access until the first of next month.
+    const now = new Date();
+    const until = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    await dialog.getByLabel("Access expires (optional)").click();
+    await ownerPage.getByRole("button", { name: "Go to the Next Month" }).click();
+    await ownerPage.locator(`[data-day="${until.toLocaleDateString()}"]`).click();
     await dialog.getByRole("button", { name: "Send invite" }).click();
     await ownerPage.getByText("k.patel@lawfirm.example").waitFor();
-    await ownerPage.getByText(`Access until ${new Date("2026-12-01T23:59:59").toLocaleDateString()}`).waitFor();
+    await ownerPage.getByText(`Access until ${until.toLocaleDateString()}`).waitFor();
     // Globex invites them too.
     await globex.api.cases[":number"].guests.$post({ param: { number: "1" }, json: { email: "k.patel@lawfirm.example" } });
 
@@ -738,10 +750,10 @@ test("the Owner invites a Guest to a Case; the Guest signs in by email link, rea
     await page.getByRole("main").getByRole("button", { name: /Suspicious PowerShell on FIN-LT-0231/ }).click();
     await page.getByRole("heading", { name: "Suspicious PowerShell on FIN-LT-0231" }).waitFor();
     for (const field of ["Status", "Severity", "Case Type", "Assignee"]) expect(await page.getByLabel(field).isDisabled()).toBe(true);
-    expect(await page.getByRole("link", { name: "Audit Log" }).count()).toBe(0);
+    expect(await page.getByRole("tab", { name: "Audit Log" }).count()).toBe(0);
     expect(await page.getByRole("button", { name: "Close Case" }).count()).toBe(0);
     expect(await page.getByRole("button", { name: "Edit" }).count()).toBe(0);
-    await page.getByRole("link", { name: "Timeline & Discussion" }).click();
+    await page.getByRole("tab", { name: "Timeline & Discussion" }).click();
     await page.getByText("Contained at 10:02.").waitFor();
     await page.goto(`${baseUrl}/cases/2`);
     await page.getByText("You don't have access to C-2 in Acme Security.").waitFor();
@@ -759,7 +771,7 @@ test("the Owner invites a Guest to a Case; the Guest signs in by email link, rea
     await page.getByRole("main").getByRole("button", { name: /Vendor email compromise/ }).waitFor();
     expect(await page.getByRole("button", { name: /Suspicious PowerShell/ }).count()).toBe(0);
 
-    await ownerPage.getByRole("link", { name: "Audit Log" }).click();
+    await ownerPage.getByRole("tab", { name: "Audit Log" }).click();
     await ownerPage.getByRole("cell", { name: "Invited Guest" }).waitFor();
     await ownerPage.getByRole("cell", { name: "Removed Guest" }).waitFor();
   } finally {
@@ -791,7 +803,7 @@ test("a Member hides a Task and a message from Guests; the Guest sees the rest, 
     await ownerPage.getByRole("button", { name: "Mark Capture memory image Internal" }).click();
     await ownerPage.getByTestId("task-Capture memory image").getByText("Internal").waitFor();
     await ownerPage.getByTestId("task-Assess notification duty").getByText("Visible to Guests").waitFor();
-    await ownerPage.getByRole("link", { name: "Timeline & Discussion" }).click();
+    await ownerPage.getByRole("tab", { name: "Timeline & Discussion" }).click();
     await ownerPage.getByLabel("Message", { exact: true }).fill("Ransom note found on the file share.");
     await ownerPage.getByLabel("Internal", { exact: true }).last().check();
     await ownerPage.getByRole("button", { name: "Send" }).click();
@@ -805,18 +817,18 @@ test("a Member hides a Task and a message from Guests; the Guest sees the rest, 
     await page.goto(t.magicLinkFor("k.patel@lawfirm.example")!);
     await page.getByRole("heading", { name: "Your Cases" }).waitFor();
     await page.goto(`${baseUrl}/cases/1/tasks`);
-    await page.getByRole("link", { name: "Tasks (0/1)" }).waitFor();
+    await page.getByRole("tab", { name: "Tasks 0/1" }).waitFor();
     await page.getByTestId("task-Assess notification duty").waitFor();
     expect(await page.getByText("Capture memory image").count()).toBe(0);
     expect(await page.getByRole("columnheader", { name: "Visibility" }).count()).toBe(0);
 
     // They complete their Task; the Owner sees it live.
     await page.getByRole("checkbox", { name: "Assess notification duty done" }).click();
-    await page.getByRole("link", { name: "Tasks (1/1)" }).waitFor();
-    await ownerPage.getByRole("link", { name: "Tasks (1/2)" }).waitFor();
+    await page.getByRole("tab", { name: "Tasks 1/1" }).waitFor();
+    await ownerPage.getByRole("tab", { name: "Tasks 1/2" }).waitFor();
 
     // They read the Discussion without the Internal message, and post in it.
-    await page.getByRole("link", { name: "Timeline & Discussion" }).click();
+    await page.getByRole("tab", { name: "Timeline & Discussion" }).click();
     await page.getByText("Contained at 10:02.").waitFor();
     expect(await page.getByText("Ransom note").count()).toBe(0);
     expect(await page.getByLabel("Internal", { exact: true }).count()).toBe(0);

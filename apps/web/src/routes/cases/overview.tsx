@@ -3,7 +3,7 @@ import { useState } from "react";
 import { RichTextEditor } from "@/components/rich-text-editor";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { api, errorMessage } from "@/lib/api";
 import { type CaseSummary, type CaseView, caseKey, caseQuery, casesKey, resolutionLabel, isReadOnly } from "@/lib/cases";
 import { useCaseNumber } from "@/routes/cases/case-layout";
@@ -140,11 +140,11 @@ function CaseSummaryCard({ number, summary, readOnly }: { number: number; summar
         </Alert>
       )}
       <Card>
-        <CardHeader className="flex-row items-center justify-between">
+        <CardHeader>
           <CardTitle>Case Summary</CardTitle>
-          <span className="text-xs text-muted-foreground">
+          <CardDescription className="text-xs">
             Last saved by {summary.updatedBy.name} · v{summary.version}
-          </span>
+          </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
           {draft ? (

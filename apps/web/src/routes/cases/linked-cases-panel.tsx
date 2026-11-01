@@ -5,14 +5,14 @@ import { type FormEvent, useState } from "react";
 import { StatusBadge } from "@/components/case-badges";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Field, FieldLabel, FieldLegend, FieldSet, FieldTitle } from "@/components/ui/field";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api, errorMessage } from "@/lib/api";
 import { LINK_TYPES, type LinkType, linkSideLabel, linksKey, linksQuery } from "@/lib/case-links";
 import { caseKey, caseRef, casesKey } from "@/lib/cases";
-import { cn } from "@/lib/utils";
 
 /** Case page · Linked Cases: the Cases this one is linked to that the Member can see. */
 export function LinkedCasesPanel({ number, readOnly }: { number: number; readOnly: boolean }) {
@@ -32,9 +32,13 @@ export function LinkedCasesPanel({ number, readOnly }: { number: number; readOnl
 
   return (
     <Card className="self-start">
-      <CardHeader className="flex-row items-center justify-between">
+      <CardHeader>
         <CardTitle className="text-xs tracking-widest text-muted-foreground uppercase">Linked Cases</CardTitle>
-        {!readOnly && <LinkCaseDialog number={number} />}
+        {!readOnly && (
+          <CardAction>
+            <LinkCaseDialog number={number} />
+          </CardAction>
+        )}
       </CardHeader>
       <CardContent className="grid gap-3">
         {links.data?.length ? (
@@ -154,36 +158,35 @@ function LinkCaseDialog({ number }: { number: number }) {
           <DialogTitle>Link {caseRef(number)} to another Case</DialogTitle>
         </DialogHeader>
         <form className="grid gap-4" onSubmit={onSubmit}>
-          <fieldset className="grid gap-2">
-            <legend className="mb-2 text-sm font-medium">Link type</legend>
-            <div className="grid gap-2 sm:grid-cols-2">
+          <FieldSet>
+            <FieldLegend variant="label">Link type</FieldLegend>
+            <RadioGroup name="linkType" value={type} onValueChange={(value) => setType(value as LinkType)} className="sm:grid-cols-2">
               {LINK_TYPES.map((t) => (
-                <label
-                  key={t}
-                  className={cn(
-                    "flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm",
-                    type === t && "border-primary ring-1 ring-primary",
-                  )}
-                >
-                  <input type="radio" name="linkType" value={t} checked={type === t} onChange={() => setType(t)} />
-                  {linkTypeLabel[t]}
-                </label>
+                <FieldLabel key={t} htmlFor={`link-type-${t}`}>
+                  <Field orientation="horizontal">
+                    <RadioGroupItem value={t} id={`link-type-${t}`} />
+                    <FieldTitle>{linkTypeLabel[t]}</FieldTitle>
+                  </Field>
+                </FieldLabel>
               ))}
-            </div>
-          </fieldset>
-          <div className="grid gap-2">
-            <Label htmlFor="link-target">Target Case</Label>
-            <NativeSelect id="link-target" required value={target} onChange={(e) => setTarget(e.target.value)}>
-              <NativeSelectOption value="" disabled>
-                Choose a Case…
-              </NativeSelectOption>
-              {candidates.data?.map((c) => (
-                <NativeSelectOption key={c.number} value={String(c.number)}>
-                  {caseRef(c.number)} {c.title}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </div>
+            </RadioGroup>
+          </FieldSet>
+          <Field>
+            <FieldLabel htmlFor="link-target">Target Case</FieldLabel>
+            <Select required value={target} onValueChange={setTarget}>
+              <SelectTrigger id="link-target" className="w-full">
+                <SelectValue placeholder="Choose a Case…" />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                {candidates.data?.map((c) => (
+                  <SelectItem key={c.number} value={String(c.number)}>
+                    <span className="font-mono text-xs text-muted-foreground">{caseRef(c.number)}</span>{" "}
+                    <span className="truncate">{c.title}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
           {duplicate && (
             <Alert className="border-amber-300 bg-amber-50 text-amber-950">
               <AlertDescription>

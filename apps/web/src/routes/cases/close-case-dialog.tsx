@@ -3,9 +3,10 @@ import { type FormEvent, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Field, FieldLabel, FieldLegend, FieldSet, FieldTitle } from "@/components/ui/field";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { api, errorMessage } from "@/lib/api";
 import { caseKey, caseRef, casesKey, RESOLUTIONS, type Resolution, resolutionLabel } from "@/lib/cases";
-import { cn } from "@/lib/utils";
 
 /** "Close Case": a Resolution is required, and the Case becomes read-only. */
 export function CloseCaseDialog({ number }: { number: number }) {
@@ -52,23 +53,25 @@ export function CloseCaseDialog({ number }: { number: number }) {
           <DialogTitle>Close Case {caseRef(number)}</DialogTitle>
         </DialogHeader>
         <form className="grid gap-4" onSubmit={onSubmit}>
-          <fieldset className="grid gap-2">
-            <legend className="mb-2 text-sm font-medium">Resolution (required)</legend>
-            <div className="grid gap-2 sm:grid-cols-2">
+          <FieldSet>
+            <FieldLegend variant="label">Resolution (required)</FieldLegend>
+            <RadioGroup
+              name="resolution"
+              required
+              value={resolution ?? ""}
+              onValueChange={(value) => setResolution(value as Resolution)}
+              className="sm:grid-cols-2"
+            >
               {RESOLUTIONS.map((r) => (
-                <label
-                  key={r}
-                  className={cn(
-                    "flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm",
-                    resolution === r && "border-primary ring-1 ring-primary",
-                  )}
-                >
-                  <input type="radio" name="resolution" value={r} checked={resolution === r} onChange={() => setResolution(r)} />
-                  {resolutionLabel[r]}
-                </label>
+                <FieldLabel key={r} htmlFor={`resolution-${r}`}>
+                  <Field orientation="horizontal">
+                    <RadioGroupItem value={r} id={`resolution-${r}`} />
+                    <FieldTitle>{resolutionLabel[r]}</FieldTitle>
+                  </Field>
+                </FieldLabel>
               ))}
-            </div>
-          </fieldset>
+            </RadioGroup>
+          </FieldSet>
           <Alert className="border-amber-300 bg-amber-50 text-amber-950">
             <AlertDescription>The Case becomes read-only. Only an Admin can reopen it.</AlertDescription>
           </Alert>
