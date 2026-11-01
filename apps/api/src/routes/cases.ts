@@ -14,6 +14,8 @@ import type { Deps } from "../deps";
 import { MentionCannotSeeCase, MessageNotFound, MessageRetracted } from "../discussion/discussion";
 import { type EvidenceAccess, EvidenceEmpty, EvidenceNotFound, EvidenceTooLarge } from "../evidence/evidence";
 import { type MemberEnv, requireMember } from "../members/membership";
+import { InvalidValue, NotLinked } from "../observables/observables";
+import { ASSET_TYPES, OBSERVABLE_TYPES } from "../observables/vocabulary";
 import type { Modules } from "../modules";
 import { OwnerCannotSeeCase, StaleTask, TaskNotFound } from "../tasks/tasks";
 import {
@@ -140,6 +142,11 @@ const evidenceQuery = z.object({
     ),
 });
 
+const linkedParam = numberParam.extend({ id: z.string().min(1) });
+/** Defanged values are accepted; the module normalises them. */
+const observableBody = z.object({ type: z.enum(OBSERVABLE_TYPES), value: z.string().trim().min(1).max(2048) });
+const assetBody = z.object({ type: z.enum(ASSET_TYPES), value: z.string().trim().min(1).max(300) });
+
 const notFound = { error: "Case not found" } as const;
 
 /** The result, or null if the Member can't see the Case (another Organization's, or Restricted). */
@@ -157,9 +164,9 @@ const closedConflict = (e: unknown) => {
 
 /**
  * Cases: open, list, view, change, close, reopen, the Case Summary, Tasks, Case Role assignments, the
- * Discussion, the Timeline, Evidence and the Case Audit Log.
+ * Discussion, the Timeline, Evidence, Observables and Assets, and the Case Audit Log.
  */
-export const caseRoutes = (deps: Deps, { cases: store, tasks, caseRoles, discussion, timeline, evidence }: Modules) => {
+export const caseRoutes = (deps: Deps, { cases: store, tasks, caseRoles, discussion, timeline, evidence, observables, assets }: Modules) => {
   const origin = new URL(deps.baseUrl).origin;
 
   /** Streams Evidence to view or download, once its access is recorded. */
@@ -421,6 +428,61 @@ export const caseRoutes = (deps: Deps, { cases: store, tasks, caseRoles, discuss
     .get("/:number/evidence/:id/download", zValidator("param", evidenceParam), (c) =>
       openEvidence("download")(c, c.req.valid("param")),
     )
+    .get("/:number/observables", zValidator("param", numberParam), async (c) => {
+      const linked = await unlessNotFound(observables.list(c.get("membership"), c.req.valid("param").number));
+      if (!linked) return c.json(notFound, 404);
+      return c.json({ observables: linked }, 200);
+    })
+    .post("/:number/observables", zValidator("param", numberParam), zValidator("json", observableBody), async (c) => {
+      const { type, value } = c.req.valid("json");
+      try {
+        const done = await unlessNotFound(observables.link(c.get("membership"), c.req.valid("param").number, type, value));
+        if (!done) return c.json(notFound, 404);
+        // 200 when it was already linked.
+        return c.json({ observable: done.view }, done.linked ? 201 : 200);
+      } catch (e) {
+        if (e instanceof InvalidValue) return c.json({ error: e.message }, 400);
+        return c.json(closedConflict(e), 409);
+      }
+    })
+    .delete("/:number/observables/:id", zValidator("param", linkedParam), async (c) => {
+      const { number, id } = c.req.valid("param");
+      try {
+        const linked = await unlessNotFound(observables.unlink(c.get("membership"), number, id));
+        if (!linked) return c.json(notFound, 404);
+        return c.json({ observables: linked }, 200);
+      } catch (e) {
+        if (e instanceof NotLinked) return c.json({ error: e.message }, 404);
+        return c.json(closedConflict(e), 409);
+      }
+    })
+    .get("/:number/assets", zValidator("param", numberParam), async (c) => {
+      const linked = await unlessNotFound(assets.list(c.get("membership"), c.req.valid("param").number));
+      if (!linked) return c.json(notFound, 404);
+      return c.json({ assets: linked }, 200);
+    })
+    .post("/:number/assets", zValidator("param", numberParam), zValidator("json", assetBody), async (c) => {
+      const { type, value } = c.req.valid("json");
+      try {
+        const done = await unlessNotFound(assets.link(c.get("membership"), c.req.valid("param").number, type, value));
+        if (!done) return c.json(notFound, 404);
+        return c.json({ asset: done.view }, done.linked ? 201 : 200);
+      } catch (e) {
+        if (e instanceof InvalidValue) return c.json({ error: e.message }, 400);
+        return c.json(closedConflict(e), 409);
+      }
+    })
+    .delete("/:number/assets/:id", zValidator("param", linkedParam), async (c) => {
+      const { number, id } = c.req.valid("param");
+      try {
+        const linked = await unlessNotFound(assets.unlink(c.get("membership"), number, id));
+        if (!linked) return c.json(notFound, 404);
+        return c.json({ assets: linked }, 200);
+      } catch (e) {
+        if (e instanceof NotLinked) return c.json({ error: e.message }, 404);
+        return c.json(closedConflict(e), 409);
+      }
+    })
     .get("/:number/audit-log", zValidator("param", numberParam), zValidator("query", auditQuery), async (c) => {
       const { actor, action, from } = c.req.valid("query");
       const entries = await unlessNotFound(
