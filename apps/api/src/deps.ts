@@ -1,6 +1,7 @@
 import type { Auth } from "./auth/auth";
 import type { Clock } from "./clock";
 import type { Db } from "./db/client";
+import type { EvidenceStorage } from "./evidence/storage";
 import type { Mailer } from "./mail";
 import type { SignalSource } from "./realtime/signals";
 
@@ -14,7 +15,11 @@ export type Deps = {
   signals: SignalSource;
   /** Public origin of the app, used in links sent by email. */
   baseUrl: string;
+  /** Where Evidence files are kept, and the largest file accepted. */
+  evidence: EvidenceConfig;
 };
+
+export type EvidenceConfig = { storage: EvidenceStorage; maxBytes: number };
 
 export type SessionUser = Auth["$Infer"]["Session"]["user"];
 export type Env = {

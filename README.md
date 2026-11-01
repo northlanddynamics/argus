@@ -6,7 +6,7 @@ Collaborative security case management for in-house teams. Vocabulary: `GLOSSARY
 
 - `apps/api`: Hono API on Bun, Better Auth at `/api/auth/*`, Postgres via Drizzle. In production it also serves the built SPA.
   - `src/routes/`: HTTP only: validate, call a module, map its errors to status codes.
-  - `src/cases/`, `src/tasks/`, `src/case-roles/`, `src/discussion/`, `src/timeline/`, `src/members/`, `src/invitations/`, `src/organizations/`: one module per area of the domain, built in `src/modules.ts`; the only code that touches the database (ADR 0006).
+  - `src/cases/`, `src/tasks/`, `src/case-roles/`, `src/discussion/`, `src/timeline/`, `src/evidence/`, `src/members/`, `src/invitations/`, `src/organizations/`: one module per area of the domain, built in `src/modules.ts`; the only code that touches the database (ADR 0006).
 - `apps/web`: Vite + React SPA (shadcn/ui, TanStack Router, TanStack Query), typed against the API through Hono RPC (`api/client`).
 
 ## Develop
@@ -31,9 +31,11 @@ bun run test:e2e    # builds the SPA, then a Playwright smoke test with the pre-
 
 Members who sign in with a password must use TOTP: until they enroll, their session reaches only the enrollment endpoints (`apps/api/src/auth/totp-enrollment.ts`). Passkeys use `BASE_URL` as their origin and its hostname as the relying party ID, so set it to the public origin.
 
+Evidence (`apps/api/src/evidence/`) is stored in an S3-compatible bucket through Bun's S3 client: set `S3_BUCKET` and its credentials (`S3_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`; MinIO works locally). Without `S3_BUCKET` the app runs but Evidence uploads and downloads fail. Files are fingerprinted with SHA-256 as they stream in, written once under a fresh key and never overwritten or deleted; turn on S3 Object Lock for a bucket that can't be altered from outside Argus either. Bytes reach browsers only through the API, which records every view and download in the Case Audit Log first. `EVIDENCE_MAX_BYTES` caps a file (default 64 GiB).
+
 Live updates (ADR 0005): each signed-in tab holds one WebSocket at `/api/live` (`apps/api/src/realtime/`). Changes publish a signal with `pg_notify` in the same transaction; every process listens and forwards it only to sockets whose Member can see the Case, and the SPA (`apps/web/src/lib/live.ts`) invalidates the matching queries. Presence is kept in `case_viewers`, refreshed by each process's heartbeat.
 
-Tests build the API in-process (`apps/api/src/test/harness.ts`) with a fresh database cloned from a migrated template, a fake clock and a captured mail outbox, and drive it over HTTP with the Hono RPC client and the Better Auth client. `t.acceptInvite(email, password, name)` accepts the latest invite sent to `email` and gives a fully signed-in, TOTP-enrolled Member; `t.totpCode(secret)` plays the authenticator app. `t.connect(member)` opens that Member's live socket and collects what it receives; `t.anotherInstance()` starts a second server process on the same database.
+Tests build the API in-process (`apps/api/src/test/harness.ts`) with a fresh database cloned from a migrated template, a fake clock, a captured mail outbox and in-memory Evidence storage (`t.evidenceObjects`), and drive it over HTTP with the Hono RPC client and the Better Auth client. `t.acceptInvite(email, password, name)` accepts the latest invite sent to `email` and gives a fully signed-in, TOTP-enrolled Member; `t.totpCode(secret)` plays the authenticator app. `t.connect(member)` opens that Member's live socket and collects what it receives; `t.anotherInstance()` starts a second server process on the same database.
 
 ## Generated code
 

@@ -9,6 +9,7 @@ import { createApiClient } from "../client";
 import { createDb } from "../db/client";
 import { fakeClock } from "../clock";
 import type { Deps } from "../deps";
+import { memoryEvidenceStorage } from "../evidence/storage";
 import { captureOutbox } from "../mail";
 import { createLive } from "../realtime/live";
 import { type ClientMessage, LIVE_PATH, type ServerMessage } from "../realtime/messages";
@@ -40,7 +41,10 @@ export async function cleanUpTestApps() {
  * Builds the API in-process against a fresh Postgres database, with a fake clock
  * and a captured mail outbox. Drive it through `session()`s, and watch it through `connect(...)`.
  */
-export async function buildTestApp({ baseUrl = "http://argus.test" }: { baseUrl?: string } = {}) {
+export async function buildTestApp({
+  baseUrl = "http://argus.test",
+  evidenceMaxBytes = 1024 * 1024,
+}: { baseUrl?: string; evidenceMaxBytes?: number } = {}) {
   const BASE_URL = baseUrl;
   const { db, sql, url, drop } = await createTestDb();
   cleanups.push(drop);
@@ -48,7 +52,16 @@ export async function buildTestApp({ baseUrl = "http://argus.test" }: { baseUrl?
   const outbox = captureOutbox();
   const authSecret = "test-secret-test-secret-test-secret";
   const auth = createAuth({ db, baseUrl: BASE_URL, secret: authSecret });
-  const deps: Deps = { db, auth, clock, mailer: outbox.mailer, signals: postgresSignals(sql), baseUrl: BASE_URL };
+  const evidence = memoryEvidenceStorage();
+  const deps: Deps = {
+    db,
+    auth,
+    clock,
+    mailer: outbox.mailer,
+    signals: postgresSignals(sql),
+    baseUrl: BASE_URL,
+    evidence: { storage: evidence.storage, maxBytes: evidenceMaxBytes },
+  };
 
   /**
    * One `web` process: the API with its own live hub, listening on a real port for live sockets.
@@ -230,6 +243,8 @@ export async function buildTestApp({ baseUrl = "http://argus.test" }: { baseUrl?
     deps,
     clock,
     outbox,
+    /** Evidence files as stored, by storage key. */
+    evidenceObjects: evidence.objects,
     live,
     /** Opens a live socket to the first instance; see `startInstance`. */
     connect: first.connect,

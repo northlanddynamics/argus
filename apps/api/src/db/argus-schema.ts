@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { bigserial, boolean, check, date, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { bigint, bigserial, boolean, check, date, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import type { CaseSummary } from "../cases/case-summary";
 import { CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabulary";
 import { type Citation, PROMOTION_SOURCES } from "../timeline/vocabulary";
@@ -348,5 +348,44 @@ export const timelineEntries = pgTable(
     ),
     check("timeline_entries_source", sql`(${t.sourceKind} IS NULL) = (${t.sourceId} IS NULL)`),
     check("timeline_entries_retracted", sql`(${t.retractedAt} IS NULL) = (${t.retractedById} IS NULL)`),
+  ],
+);
+
+/**
+ * Evidence: a file added to a Case. Its bytes are in Evidence storage under `storage_key`
+ * (`evidence/storage.ts`); `sha256` is their fingerprint, computed as they arrived. Never altered or
+ * deleted (ADR 0003): migration 0013 makes UPDATE, DELETE and TRUNCATE fail at the database. Every
+ * view and download is recorded in the Case Audit Log.
+ */
+export const evidence = pgTable(
+  "evidence",
+  {
+    id: text("id").primaryKey(),
+    /** Insertion order, to sort files added at the same instant. */
+    seq: bigserial("seq", { mode: "number" }).notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    caseId: text("case_id")
+      .notNull()
+      .references(() => cases.id, { onDelete: "restrict" }),
+    /** The file's name as it was added. */
+    name: text("name").notNull(),
+    /** The media type it was added with, such as `message/rfc822`. */
+    contentType: text("content_type").notNull(),
+    sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+    /** Lowercase hex. */
+    sha256: text("sha256").notNull(),
+    storageKey: text("storage_key").notNull(),
+    addedById: text("added_by_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    addedAt: timestamp("added_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    index("evidence_case_idx").on(t.caseId, t.seq),
+    uniqueIndex("evidence_storage_key_idx").on(t.storageKey),
+    check("evidence_sha256", sql`${t.sha256} ~ '^[0-9a-f]{64}$'`),
+    check("evidence_size", sql`${t.sizeBytes} > 0`),
   ],
 );

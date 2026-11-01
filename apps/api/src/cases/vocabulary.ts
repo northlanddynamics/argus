@@ -85,6 +85,9 @@ export const CASE_AUDIT_ACTIONS = [
   "timeline.entry_promoted",
   "timeline.entry_edited",
   "timeline.entry_retracted",
+  "evidence.added",
+  "evidence.viewed",
+  "evidence.downloaded",
 ] as const;
 export type CaseAuditAction = (typeof CASE_AUDIT_ACTIONS)[number];
 
