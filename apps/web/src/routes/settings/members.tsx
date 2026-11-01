@@ -39,7 +39,7 @@ function useMembersAction<T>(setError: (error: string | null) => void, fn: (inpu
 }
 
 export function MembersPage() {
-  const { me } = useRouteContext({ from: "/settings" });
+  const { me } = useRouteContext({ from: "/_app/settings" });
   const [error, setError] = useState<string | null>(null);
   const members = useQuery({
     queryKey: membersKey,
@@ -176,7 +176,7 @@ export function MembersPage() {
 }
 
 function OwnershipCard({ members }: { members: { id: string; name: string; email: string; role: string }[] }) {
-  const { me } = useRouteContext({ from: "/settings" });
+  const { me } = useRouteContext({ from: "/_app/settings" });
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);

@@ -82,10 +82,18 @@ test("an Analyst opens a Case, assigns it, edits the Case Summary past a colleag
     expect(await page.getByLabel("Status").inputValue()).toBe("in_progress");
     expect(await page.getByLabel("Assignee").locator("option:checked").textContent()).toBe("Ana Analyst");
 
+    // It shows in the Active Cases panel, and among Ana's own there.
+    const active = page.getByRole("navigation", { name: "Active Cases" });
+    await active.getByRole("link", { name: /Suspicious PowerShell on FIN-LT-0231/ }).and(page.locator("[aria-current=page]")).waitFor();
+    await page.getByRole("switch", { name: "Mine" }).click();
+    await active.getByRole("link", { name: /In Progress · Ana Analyst/ }).waitFor();
+    await page.getByLabel("Search Active Cases").fill("no such case");
+    await page.getByText("No Cases match.").waitFor();
+
     // It shows in My Cases.
     await page.getByRole("link", { name: "Cases", exact: true }).first().click();
-    await page.getByRole("button", { name: "My Cases (1)" }).waitFor();
-    await page.getByRole("link", { name: "Suspicious PowerShell on FIN-LT-0231" }).click();
+    await page.getByRole("button", { name: "My Cases 1" }).waitFor();
+    await page.getByRole("link", { name: "Suspicious PowerShell on FIN-LT-0231", exact: true }).click();
 
     // Ana starts editing; Olive saves first; Ana's save is refused and her text kept.
     await page.getByRole("button", { name: "Edit" }).click();
@@ -191,7 +199,7 @@ test("an Analyst marks the Case assigned to them Restricted; a colleague can't s
     // Ben, another Analyst, finds no trace of it.
     const benPage = await browser.newPage();
     await signIn(benPage, baseUrl, "ben@acme.example", () => t.totpCode(ben.totp.secret));
-    await benPage.getByRole("button", { name: "All open (0)" }).click();
+    await benPage.getByRole("button", { name: "All open 0" }).click();
     await benPage.getByText("No Cases here.").waitFor();
     await benPage.goto(`${baseUrl}/cases/1`);
     await benPage.getByText("There is no Case C-1 in your Organization.").waitFor();
@@ -199,9 +207,9 @@ test("an Analyst marks the Case assigned to them Restricted; a colleague can't s
     // The Owner sees it, locked, in the list, and the change in the Audit Log.
     const ownerPage = await browser.newPage();
     await signIn(ownerPage, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
-    await ownerPage.getByRole("button", { name: "All open (1)" }).click();
+    await ownerPage.getByRole("button", { name: "All open 1" }).click();
     await ownerPage.getByRole("img", { name: "Restricted" }).waitFor();
-    await ownerPage.getByRole("link", { name: "Departing employee bulk download" }).click();
+    await ownerPage.getByRole("link", { name: "Departing employee bulk download", exact: true }).click();
     await ownerPage.getByRole("link", { name: "Audit Log" }).click();
     await ownerPage.getByRole("cell", { name: "Changed Restricted" }).waitFor();
     await ownerPage.getByRole("cell", { name: "Not Restricted" }).waitFor();
@@ -209,7 +217,7 @@ test("an Analyst marks the Case assigned to them Restricted; a colleague can't s
     // Ana hands it to Ben: she loses sight of it and lands on the list; Ben now sees it.
     await page.getByLabel("Assignee").selectOption({ label: "Ben Analyst" });
     await page.waitForURL(`${baseUrl}/`);
-    await page.getByRole("button", { name: "All open (0)" }).click();
+    await page.getByRole("button", { name: "All open 0" }).click();
     await page.getByText("No Cases here.").waitFor();
     await benPage.goto(`${baseUrl}/cases/1`);
     await benPage.getByRole("heading", { name: "Departing employee bulk download" }).waitFor();
@@ -229,14 +237,14 @@ test("Case pages and the Case list refresh live, and show who is viewing the Cas
     // Ana watches the list; a Case Olive opens appears without a reload.
     const page = await browser.newPage();
     await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
-    await page.getByRole("button", { name: "All open (0)" }).click();
+    await page.getByRole("button", { name: "All open 0" }).click();
     await page.getByRole("status").getByText("Live").waitFor();
     await owner.api.cases.$post({ json: { title: "Suspicious PowerShell on FIN-LT-0231", caseType: "malware", severity: "high" } });
-    await page.getByRole("link", { name: "Suspicious PowerShell on FIN-LT-0231" }).waitFor();
-    await page.getByRole("button", { name: "All open (1)" }).waitFor();
+    await page.getByRole("link", { name: "Suspicious PowerShell on FIN-LT-0231", exact: true }).waitFor();
+    await page.getByRole("button", { name: "All open 1" }).waitFor();
 
     // On the Case page, Ana sees Olive arrive, and Olive's change of Status.
-    await page.getByRole("link", { name: "Suspicious PowerShell on FIN-LT-0231" }).click();
+    await page.getByRole("link", { name: "Suspicious PowerShell on FIN-LT-0231", exact: true }).click();
     const viewing = page.getByRole("list", { name: "Viewing now" });
     await viewing.getByRole("listitem", { name: "Ana Analyst" }).waitFor();
     const ownerPage = await browser.newPage();
@@ -643,10 +651,10 @@ test("an Analyst tags a Case, filters the list by Tag, links Cases and marks one
     // The Case list filters by Tag.
     await page.getByRole("link", { name: "Cases", exact: true }).first().click();
     await page.getByRole("button", { name: /All open/ }).click();
-    await page.getByRole("link", { name: "Beaconing host" }).waitFor();
+    await page.getByRole("link", { name: "Beaconing host", exact: true }).waitFor();
     await page.getByLabel("Tag").selectOption("bec");
-    await page.getByText("#bec  #finance").waitFor();
-    await page.getByRole("link", { name: "Beaconing host" }).waitFor({ state: "detached" });
+    await page.getByRole("cell").filter({ hasText: "#bec" }).filter({ hasText: "#finance" }).waitFor();
+    await page.getByRole("link", { name: "Beaconing host", exact: true }).waitFor({ state: "detached" });
 
     // Related, from C-3; listed on C-1 from its own side.
     await page.goto(`${baseUrl}/cases/3`);
@@ -727,7 +735,7 @@ test("the Owner invites a Guest to a Case; the Guest signs in by email link, rea
     await page.getByText("Guest access").waitFor();
     await page.getByText(/Session ends in 1[12] h/).waitFor();
     await page.getByText("One Guest account, invited by 2 Organizations.").waitFor();
-    await page.getByRole("button", { name: /Suspicious PowerShell on FIN-LT-0231/ }).click();
+    await page.getByRole("main").getByRole("button", { name: /Suspicious PowerShell on FIN-LT-0231/ }).click();
     await page.getByRole("heading", { name: "Suspicious PowerShell on FIN-LT-0231" }).waitFor();
     for (const field of ["Status", "Severity", "Case Type", "Assignee"]) expect(await page.getByLabel(field).isDisabled()).toBe(true);
     expect(await page.getByRole("link", { name: "Audit Log" }).count()).toBe(0);
@@ -740,7 +748,7 @@ test("the Owner invites a Guest to a Case; the Guest signs in by email link, rea
 
     // Over to the other Organization's Case.
     await page.getByRole("link", { name: "Your Cases" }).first().click();
-    await page.getByRole("button", { name: /Vendor email compromise/ }).click();
+    await page.getByRole("main").getByRole("button", { name: /Vendor email compromise/ }).click();
     await page.getByRole("heading", { name: "Vendor email compromise" }).waitFor();
     await page.getByText("Globex", { exact: true }).waitFor();
 
@@ -748,7 +756,7 @@ test("the Owner invites a Guest to a Case; the Guest signs in by email link, rea
     await ownerPage.getByRole("button", { name: "Remove Kim Patel" }).click();
     await ownerPage.getByText("No Guests on this Case.").waitFor();
     await page.getByRole("link", { name: "Your Cases" }).first().click();
-    await page.getByRole("button", { name: /Vendor email compromise/ }).waitFor();
+    await page.getByRole("main").getByRole("button", { name: /Vendor email compromise/ }).waitFor();
     expect(await page.getByRole("button", { name: /Suspicious PowerShell/ }).count()).toBe(0);
 
     await ownerPage.getByRole("link", { name: "Audit Log" }).click();

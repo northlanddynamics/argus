@@ -16,7 +16,7 @@ import { TaskDialog } from "@/routes/cases/task-dialog";
 
 /** Case · Tasks: who owns what, when it's due, what's done, and (for Members) what Guests can see. */
 export function CaseTasksPage() {
-  const { me } = useRouteContext({ from: "/cases/$number" });
+  const { me } = useRouteContext({ from: "/_app/cases/$number" });
   const number = useCaseNumber();
   const queryClient = useQueryClient();
   const { data: c } = useQuery(caseQuery(number));

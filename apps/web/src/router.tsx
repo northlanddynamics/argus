@@ -3,6 +3,7 @@ import { createRootRouteWithContext, createRoute, createRouter, Outlet, redirect
 import { meQuery } from "@/lib/api";
 import { queryClient } from "@/lib/query-client";
 import { canManage } from "@/lib/roles";
+import { AppShell } from "@/components/app-shell";
 import { AcceptInvitePage } from "@/routes/accept-invite";
 import { AlertQueuePage, validateAlertQueueSearch } from "@/routes/alerts/queue";
 import { OperatorConsolePage } from "@/routes/operator-console";
@@ -28,7 +29,7 @@ const rootRoute = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   component: Outlet,
 });
 
-/** Signed-in Members and Guests only; Operators go to their console. */
+/** Signed-in Members and Guests only; Operators go to their console. Fetches `me` afresh. */
 const requireParticipant = async ({ context }: { context: { queryClient: QueryClient } }) => {
   const me = await context.queryClient.fetchQuery(meQuery);
   if (!me) throw redirect({ to: "/sign-in" });
@@ -36,8 +37,18 @@ const requireParticipant = async ({ context }: { context: { queryClient: QueryCl
   return { me };
 };
 
-const homeRoute = createRoute({
+/** Every page a Member or Guest works in: the navigation rail and the Active Cases panel around it. */
+const appRoute = createRoute({
   getParentRoute: () => rootRoute,
+  id: "_app",
+  // Runs when entering the layout, not when moving between its pages, so pages whose content
+  // depends on `me` (Home, Case) check again.
+  beforeLoad: requireParticipant,
+  component: AppShell,
+});
+
+const homeRoute = createRoute({
+  getParentRoute: () => appRoute,
   path: "/",
   validateSearch: validateCaseListSearch,
   beforeLoad: requireParticipant,
@@ -45,7 +56,7 @@ const homeRoute = createRoute({
 });
 
 const caseRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: "/cases/$number",
   beforeLoad: requireParticipant,
   component: CaseLayout,
@@ -89,15 +100,11 @@ const caseAuditLogRoute = createRoute({
 
 /** The Alert queue: Members only. */
 const alertsRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: "/alerts",
   validateSearch: validateAlertQueueSearch,
-  beforeLoad: async ({ context }) => {
-    const me = await context.queryClient.fetchQuery(meQuery);
-    if (!me) throw redirect({ to: "/sign-in" });
-    if (me.isOperator) throw redirect({ to: "/operator" });
-    if (!me.organization) throw redirect({ to: "/" });
-    return { me };
+  beforeLoad: ({ context }) => {
+    if (!context.me.organization) throw redirect({ to: "/" });
   },
   component: AlertQueuePage,
 });
@@ -115,13 +122,10 @@ const operatorRoute = createRoute({
 });
 
 const settingsRoute = createRoute({
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => appRoute,
   path: "/settings",
-  beforeLoad: async ({ context }) => {
-    const me = await context.queryClient.fetchQuery(meQuery);
-    if (!me) throw redirect({ to: "/sign-in" });
-    if (!canManage(me.organization?.role)) throw redirect({ to: "/" });
-    return { me };
+  beforeLoad: ({ context }) => {
+    if (!canManage(context.me.organization?.role)) throw redirect({ to: "/" });
   },
   component: SettingsLayout,
 });
@@ -173,11 +177,13 @@ const inviteRoute = createRoute({
 
 export const router = createRouter({
   routeTree: rootRoute.addChildren([
-    homeRoute,
-    caseRoute.addChildren([caseOverviewRoute, caseTimelineRoute, caseTasksRoute, caseEvidenceRoute, caseObservablesRoute, caseAuditLogRoute]),
-    alertsRoute,
+    appRoute.addChildren([
+      homeRoute,
+      caseRoute.addChildren([caseOverviewRoute, caseTimelineRoute, caseTasksRoute, caseEvidenceRoute, caseObservablesRoute, caseAuditLogRoute]),
+      alertsRoute,
+      settingsRoute.addChildren([settingsIndexRoute, membersRoute, integrationsRoute, orgAuditLogRoute]),
+    ]),
     operatorRoute,
-    settingsRoute.addChildren([settingsIndexRoute, membersRoute, integrationsRoute, orgAuditLogRoute]),
     signInRoute,
     guestSignInRoute,
     inviteRoute,

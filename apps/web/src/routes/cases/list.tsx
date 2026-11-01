@@ -1,10 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate, useRouteContext, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { LockIcon } from "lucide-react";
-import { AppHeader } from "@/components/app-header";
 import { SeverityBadge, StatusBadge } from "@/components/case-badges";
-import { OrgNav } from "@/components/org-nav";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -52,8 +50,7 @@ const ago = (iso: string) => {
 };
 
 export function CasesPage() {
-  const { me } = useRouteContext({ from: "/" });
-  const search = useSearch({ from: "/" });
+  const search = useSearch({ from: "/_app/" });
   const navigate = useNavigate({ from: "/" });
   const view = search.view ?? "mine";
   const setSearch = (next: Partial<CaseListSearch>) => navigate({ search: (prev) => ({ ...prev, ...next }) });
@@ -72,97 +69,98 @@ export function CasesPage() {
   const tagLabels = Object.fromEntries(tagOptions.map((t) => [t, tagLabel(t)]));
 
   return (
-    <div className="min-h-svh bg-muted">
-      <AppHeader email={me.user.email} badge={<OrgNav me={me} />} live />
-      <main className="mx-auto grid max-w-6xl gap-4 p-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">Cases</h1>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-muted-foreground">Refreshes live</span>
-            <OpenCaseDialog />
-          </div>
+    <div className="mx-auto grid w-full grid-cols-1 max-w-6xl gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Cases</h1>
+          <p className="text-sm text-muted-foreground">Every Case you can see, filtered by view, Status, Severity, Case Type and Tag.</p>
         </div>
-        <nav className="flex gap-1 border-b" aria-label="Case views">
+        <OpenCaseDialog />
+      </div>
+      <div className="flex flex-wrap items-end justify-between gap-4 border-b">
+        <nav className="flex gap-1 overflow-x-auto" aria-label="Case views">
           {CASE_VIEWS.map((v) => (
             <button
               key={v}
               type="button"
               aria-current={v === view ? "page" : undefined}
               className={cn(
-                "-mb-px border-b-2 px-3 py-2 text-sm text-muted-foreground",
+                "-mb-px shrink-0 border-b-2 px-3 py-2 text-sm whitespace-nowrap text-muted-foreground",
                 v === view ? "border-foreground font-medium text-foreground" : "border-transparent hover:text-foreground",
               )}
               onClick={() => setSearch({ view: v })}
             >
               {viewLabel[v]}
-              {counts && v !== "closed" && ` (${counts[v]})`}
+              {counts && v !== "closed" && <span className="text-xs text-muted-foreground tabular-nums">{` ${counts[v]}`}</span>}
             </button>
           ))}
         </nav>
-        <Card>
-          <CardContent className="grid gap-4 sm:grid-cols-4">
-            <Filter label="Status" id="filter-status" value={search.status} options={STATUSES} labels={statusLabel} onChange={(status) => setSearch({ status })} />
-            <Filter label="Severity" id="filter-severity" value={search.severity} options={SEVERITIES} labels={severityLabel} onChange={(severity) => setSearch({ severity })} />
-            <Filter label="Case Type" id="filter-type" value={search.caseType} options={CASE_TYPES} labels={caseTypeLabel} onChange={(caseType) => setSearch({ caseType })} />
-            <Filter label="Tag" id="filter-tag" value={search.tag} options={tagOptions} labels={tagLabels} onChange={(tag) => setSearch({ tag })} />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Case</TableHead>
-                  <TableHead>Title</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Severity</TableHead>
-                  <TableHead>Case Type</TableHead>
-                  <TableHead>Assignee</TableHead>
-                  <TableHead>Updated</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {cases.data?.cases.map((c) => (
-                  <TableRow key={c.number}>
-                    <TableCell className="font-mono text-xs">
-                      <Link to="/cases/$number" params={{ number: String(c.number) }} className="text-primary underline">
-                        {caseRef(c.number)}
-                      </Link>
-                    </TableCell>
-                    <TableCell>
-                      <span className="flex items-center gap-1.5">
-                        {c.restricted && <LockIcon className="size-3.5 shrink-0" role="img" aria-label="Restricted" />}
-                        <Link to="/cases/$number" params={{ number: String(c.number) }} className="font-medium underline">
-                          {c.title}
-                        </Link>
-                      </span>
-                      {c.tags.length > 0 && (
-                        <span className="mt-1 block text-xs text-muted-foreground">{c.tags.map(tagLabel).join("  ")}</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <StatusBadge status={c.status} resolution={c.resolution} />
-                    </TableCell>
-                    <TableCell>
-                      <SeverityBadge severity={c.severity} />
-                    </TableCell>
-                    <TableCell>{caseTypeLabel[c.caseType]}</TableCell>
-                    <TableCell className={cn(!c.assignee && "text-muted-foreground")}>{c.assignee?.name ?? "Unassigned"}</TableCell>
-                    <TableCell className="text-muted-foreground">{ago(c.updatedAt)}</TableCell>
-                  </TableRow>
-                ))}
-                {cases.data?.cases.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-muted-foreground">
-                      No Cases here.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      </main>
+        <div className="flex flex-wrap items-center gap-3 pb-2">
+          <Filter label="Status" id="filter-status" value={search.status} options={STATUSES} labels={statusLabel} onChange={(status) => setSearch({ status })} />
+          <Filter label="Severity" id="filter-severity" value={search.severity} options={SEVERITIES} labels={severityLabel} onChange={(severity) => setSearch({ severity })} />
+          <Filter label="Case Type" id="filter-type" value={search.caseType} options={CASE_TYPES} labels={caseTypeLabel} onChange={(caseType) => setSearch({ caseType })} />
+          <Filter label="Tag" id="filter-tag" value={search.tag} options={tagOptions} labels={tagLabels} onChange={(tag) => setSearch({ tag })} />
+        </div>
+      </div>
+      <Card className="py-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="pl-4">Case</TableHead>
+              <TableHead>Title</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Severity</TableHead>
+              <TableHead>Case Type</TableHead>
+              <TableHead>Assignee</TableHead>
+              <TableHead className="pr-4">Updated</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {cases.data?.cases.map((c) => (
+              <TableRow key={c.number}>
+                <TableCell className="pl-4 font-mono text-xs text-muted-foreground">
+                  <Link to="/cases/$number" params={{ number: String(c.number) }} className="hover:underline">
+                    {caseRef(c.number)}
+                  </Link>
+                </TableCell>
+                <TableCell className="whitespace-normal">
+                  <span className="flex items-center gap-1.5">
+                    {c.restricted && <LockIcon className="size-3.5 shrink-0" role="img" aria-label="Restricted" />}
+                    <Link to="/cases/$number" params={{ number: String(c.number) }} className="font-medium hover:underline">
+                      {c.title}
+                    </Link>
+                  </span>
+                  {c.tags.length > 0 && (
+                    <span className="mt-1 flex flex-wrap gap-1">
+                      {c.tags.map((t) => (
+                        <span key={t} className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                          {tagLabel(t)}
+                        </span>
+                      ))}
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <StatusBadge status={c.status} resolution={c.resolution} />
+                </TableCell>
+                <TableCell>
+                  <SeverityBadge severity={c.severity} />
+                </TableCell>
+                <TableCell>{caseTypeLabel[c.caseType]}</TableCell>
+                <TableCell className={cn(!c.assignee && "text-muted-foreground")}>{c.assignee?.name ?? "Unassigned"}</TableCell>
+                <TableCell className="pr-4 text-muted-foreground">{ago(c.updatedAt)}</TableCell>
+              </TableRow>
+            ))}
+            {cases.data?.cases.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                  No Cases here.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </Card>
     </div>
   );
 }
@@ -183,9 +181,11 @@ function Filter<T extends string>({
   onChange: (value: T | undefined) => void;
 }) {
   return (
-    <div className="grid gap-2">
-      <Label htmlFor={id}>{label}</Label>
-      <NativeSelect id={id} value={value ?? ""} onChange={(e) => onChange((e.target.value || undefined) as T | undefined)}>
+    <div className="flex items-center gap-2">
+      <Label htmlFor={id} className="text-xs font-normal text-muted-foreground">
+        {label}
+      </Label>
+      <NativeSelect size="sm" id={id} value={value ?? ""} onChange={(e) => onChange((e.target.value || undefined) as T | undefined)}>
         <NativeSelectOption value="">Any</NativeSelectOption>
         {options.map((o) => (
           <NativeSelectOption key={o} value={o}>
