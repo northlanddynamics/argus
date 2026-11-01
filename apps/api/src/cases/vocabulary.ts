@@ -98,6 +98,8 @@ export const CASE_AUDIT_ACTIONS = [
   "case_link.removed",
   "tag.added",
   "tag.removed",
+  "alert.attached",
+  "alert.detached",
 ] as const;
 export type CaseAuditAction = (typeof CASE_AUDIT_ACTIONS)[number];
 

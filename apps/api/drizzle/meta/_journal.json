@@ -127,6 +127,13 @@
       "when": 1793544397617,
       "tag": "0017_integrations_alerts",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1793556965489,
+      "tag": "0018_alerts_to_cases",
+      "breakpoints": true
     }
   ]
 }

@@ -5,6 +5,19 @@ export const ALERT_STATUSES = ["new", "attached", "dismissed"] as const;
 export type AlertStatus = (typeof ALERT_STATUSES)[number];
 export const alertStatusLabel: Record<AlertStatus, string> = { new: "New", attached: "Attached", dismissed: "Dismissed" };
 
+/** Why an Alert was dismissed without being attached to a Case. */
+export const DISMISSAL_REASONS = ["false_positive", "benign", "duplicate", "other"] as const;
+export type DismissalReason = (typeof DISMISSAL_REASONS)[number];
+export const dismissalReasonLabel: Record<DismissalReason, string> = {
+  false_positive: "False Positive",
+  benign: "Benign",
+  duplicate: "Duplicate",
+  other: "Other",
+};
+
+/** How an Alert is named in Audit Logs: its detection's title and Falcon's id for it. */
+export const alertLabel = (a: { title: string; externalId: string }) => `${a.title} (${a.externalId})`;
+
 /** Which kind of CrowdStrike detection an Alert came from: endpoint, identity or mobile. */
 export const ALERT_KINDS = ["epp", "idp", "mobile"] as const;
 export type AlertKind = (typeof ALERT_KINDS)[number];

@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api, errorMessage } from "@/lib/api";
 import { type CaseSummary, type CaseView, caseKey, caseQuery, casesKey, resolutionLabel, isReadOnly } from "@/lib/cases";
 import { useCaseNumber } from "@/routes/cases/case-layout";
+import { CaseAlertsPanel } from "@/routes/cases/alerts-panel";
 import { CaseRolesPanel } from "@/routes/cases/case-roles-panel";
 import { GuestsPanel } from "@/routes/cases/guests-panel";
 import { LinkedCasesPanel } from "@/routes/cases/linked-cases-panel";
@@ -53,6 +54,7 @@ export function CaseOverviewPage() {
         </CardContent>
       </Card>
       <CaseRolesPanel number={number} caseRoles={c.caseRoles} readOnly={isReadOnly(c)} />
+      {c.can.readAuditLog && <CaseAlertsPanel number={number} />}
       <LinkedCasesPanel number={number} readOnly={isReadOnly(c)} />
       <TagsPanel number={number} tags={c.tags} readOnly={isReadOnly(c)} />
       {c.can.work && <GuestsPanel c={c} />}

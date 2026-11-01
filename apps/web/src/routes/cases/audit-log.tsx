@@ -66,6 +66,8 @@ export const actionLabel: Record<CaseAuditAction, string> = {
   "case_link.removed": "Unlinked Case",
   "tag.added": "Added Tag",
   "tag.removed": "Removed Tag",
+  "alert.attached": "Attached Alert",
+  "alert.detached": "Detached Alert",
 };
 
 /** A recorded value as people read it: "In Progress" rather than "in_progress". */

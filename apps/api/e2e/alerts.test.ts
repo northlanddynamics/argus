@@ -99,3 +99,60 @@ test("the Owner adds a CrowdStrike Integration; its detections appear live in an
     await stop();
   }
 }, 60_000);
+
+test("an Analyst bulk-attaches Alerts to a Case, is told which changed meanwhile, then opens a Case from the rest", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  const falcon = fakeFalcon();
+  const worker = createStreamWorker(t.deps, { connect: falcon.connect, workerId: "worker-1" });
+  t.onCleanup(worker.close);
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    await owner.api.organization.invitations.$post({ json: { email: "ana@acme.example", role: "analyst" } });
+    const ana = await t.acceptInvite("ana@acme.example", PASSWORD, "Ana Analyst");
+    await owner.api.integrations.$post({ json: { name: "CrowdStrike — Prod", cloud: "us-1", clientId: "falcon-client-0001", clientSecret: "s" } });
+    await worker.tick();
+    const stream = falcon.tenant("falcon-client-0001");
+    stream.detection("EppDetectionSummaryEvent", "ldt:1", { Name: "Encoded PowerShell from Office process", SeverityName: "High" });
+    stream.detection("EppDetectionSummaryEvent", "ldt:2", { Name: "Credential dumping attempt", SeverityName: "High" });
+    stream.detection("EppDetectionSummaryEvent", "ldt:3", { Name: "Suspicious outbound connection", SeverityName: "Medium" });
+    stream.detection("EppDetectionSummaryEvent", "ldt:4", { Name: "Unusual sign-in location", SeverityName: "Critical" });
+    await stream.drained();
+    const opened = await (await ana.api.cases.$post({ json: { title: "PowerShell on FIN-LT-0231", caseType: "malware", severity: "high" } })).json();
+    if (!("case" in opened)) throw new Error("Could not open a Case");
+    const number = opened.case.number;
+
+    const page = await browser.newPage();
+    await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
+    await page.goto(`${baseUrl}/alerts`);
+    for (const id of ["ldt:1", "ldt:2", "ldt:3"]) await page.getByLabel(`Select ${id}`).check();
+    await page.getByText("3 selected").waitFor();
+
+    // Falcon updates one of them after it was selected.
+    stream.detection("EppDetectionSummaryEvent", "ldt:2", { Name: "Credential dumping attempt", SeverityName: "Critical" });
+    await stream.drained();
+
+    await page.getByRole("button", { name: "Attach to Case…" }).click();
+    const dialog = page.getByRole("dialog", { name: "Attach 3 Alerts to a Case" });
+    await dialog.getByLabel("Find a Case").fill(`C-${number}`);
+    await dialog.getByText("PowerShell on FIN-LT-0231").click();
+    await dialog.getByRole("button", { name: "Attach" }).click();
+    await page.getByText("1 of 3 Alerts were not attached to").waitFor();
+    await page.getByText("ldt:2 changed since you selected it: it was updated from Falcon").waitFor();
+    await page.getByText(`The other 2 were attached to C-${number}.`).waitFor();
+    // The queue shows New Alerts: the attached ones leave it live.
+    await page.getByTestId("alert-ldt:1").waitFor({ state: "detached" });
+
+    await page.getByRole("button", { name: "Select the 1 again" }).click();
+    await page.getByLabel("Select ldt:4").check();
+    await page.getByRole("button", { name: "Open Case" }).click();
+    const open = page.getByRole("dialog", { name: "Open Case from 2 Alerts" });
+    expect(await open.getByLabel("Severity").inputValue()).toBe("critical");
+    await open.getByLabel("Title").fill("Credential theft");
+    await open.getByRole("button", { name: "Open Case" }).click();
+    await page.getByRole("heading", { name: "Credential theft" }).waitFor();
+    await page.getByRole("list", { name: "Attached Alerts" }).getByText("Unusual sign-in location").waitFor();
+  } finally {
+    await stop();
+  }
+}, 60_000);

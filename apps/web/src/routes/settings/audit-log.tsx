@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { api } from "@/lib/api";
 import { membersKey } from "@/routes/settings/members";
 
-const categories = { members: "Members", "case-roles": "Case Roles", sso: "Single sign-on", integrations: "Integrations", teams: "Teams" } as const;
+const categories = { members: "Members", "case-roles": "Case Roles", sso: "Single sign-on", integrations: "Integrations", alerts: "Alerts", teams: "Teams" } as const;
 type Category = keyof typeof categories;
 
 const actionLabels: Record<string, string> = {
@@ -29,6 +29,7 @@ const actionLabels: Record<string, string> = {
   "integration.paused": "Paused Integration",
   "integration.resumed": "Resumed Integration",
   "integration.stream_gap": "Gap in the stream of",
+  "alert.dismissed": "Dismissed Alert",
 };
 
 /** Describes an entry: "Changed role of J. Okafor". The creation entry already names its target in "after". */

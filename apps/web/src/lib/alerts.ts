@@ -7,11 +7,14 @@ export {
   ALERT_STATUSES,
   alertKindLabel,
   alertStatusLabel,
+  DISMISSAL_REASONS,
+  dismissalReasonLabel,
   FALCON_CLOUDS,
   falconCloudLabel,
   integrationHealthLabel,
   type AlertKind,
   type AlertStatus,
+  type DismissalReason,
   type FalconCloud,
   type IntegrationHealth,
 } from "api/alerts/vocabulary";
@@ -19,6 +22,40 @@ export {
 /** Every query on the Alert queue starts with this key. */
 export const alertsKey = ["alerts"] as const;
 export const integrationsKey = ["integrations"] as const;
+
+/** One Alert in full; under `alertsKey`, so the queue's live signal refreshes it. */
+export const alertQuery = (id: string) =>
+  queryOptions({
+    queryKey: [...alertsKey, "detail", id],
+    queryFn: async () => {
+      const res = await api.alerts[":id"].$get({ param: { id } });
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error("Could not load the Alert");
+      return (await res.json()).alert;
+    },
+  });
+
+export type AlertDetail = NonNullable<Awaited<ReturnType<ReturnType<typeof alertQuery>["queryFn"] & {}>>>;
+
+/** The Alerts attached to Case `number`. */
+export const caseAlertsQuery = (number: number) =>
+  queryOptions({
+    queryKey: [...alertsKey, "case", number],
+    queryFn: async () => {
+      const res = await api.alerts.$get({ query: { case: String(number) } });
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error("Could not load the Case's Alerts");
+      return (await res.json()).alerts;
+    },
+  });
+
+/** Selected Alerts: each id with the version shown when it was selected. */
+export type AlertSelection = { id: string; version: number }[];
+
+/** An Alert a bulk action left as it was: `detail` completes "<externalId> …". */
+export type Refusal = { id: string; externalId: string | null; title: string | null; reason: string; detail: string };
+/** What a bulk action did. */
+export type BulkResult = { applied: string[]; refused: Refusal[] };
 
 export const integrationsQuery = queryOptions({
   queryKey: integrationsKey,
