@@ -73,8 +73,12 @@ A unit of work on a Case with a single owner and a done/not-done state.
 _Avoid_: Action item, to-do, subtask
 
 **Case Link**:
-A typed relationship between two Cases: Related, Duplicate of, or Parent/Child.
+A typed relationship between two Cases: Related, Duplicate of, or Parent/Child. Marking a Case Duplicate of another closes it with Resolution Duplicate.
 _Avoid_: Relation, association, merge
+
+**Tag**:
+A short free-form label on a Case (e.g. #bec, #legal-hold) used to group and filter Cases; written in lowercase without the "#".
+_Avoid_: Label, category, keyword
 
 **Internal**:
 A marking on an item within a Case that hides it from Guests on that Case.

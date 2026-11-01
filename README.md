@@ -6,7 +6,7 @@ Collaborative security case management for in-house teams. Vocabulary: `GLOSSARY
 
 - `apps/api`: Hono API on Bun, Better Auth at `/api/auth/*`, Postgres via Drizzle. In production it also serves the built SPA.
   - `src/routes/`: HTTP only: validate, call a module, map its errors to status codes.
-  - `src/cases/`, `src/tasks/`, `src/case-roles/`, `src/discussion/`, `src/timeline/`, `src/evidence/`, `src/observables/`, `src/members/`, `src/invitations/`, `src/organizations/`: one module per area of the domain, built in `src/modules.ts`; the only code that touches the database (ADR 0006).
+  - `src/cases/`, `src/tasks/`, `src/case-roles/`, `src/discussion/`, `src/timeline/`, `src/evidence/`, `src/observables/`, `src/case-links/`, `src/tags/`, `src/members/`, `src/invitations/`, `src/organizations/`: one module per area of the domain, built in `src/modules.ts`; the only code that touches the database (ADR 0006).
 - `apps/web`: Vite + React SPA (shadcn/ui, TanStack Router, TanStack Query), typed against the API through Hono RPC (`api/client`).
 
 ## Develop

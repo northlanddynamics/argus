@@ -614,3 +614,73 @@ test("an Analyst adds Observables and Assets, sees the other Cases they appear i
     await stop();
   }
 }, 60_000);
+
+test("an Analyst tags a Case, filters the list by Tag, links Cases and marks one Duplicate of another, which closes it", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    await owner.api.organization.invitations.$post({ json: { email: "ana@acme.example", role: "analyst" } });
+    const ana = await t.acceptInvite("ana@acme.example", PASSWORD, "Ana Analyst");
+    await ana.api.cases.$post({ json: { title: "Credential phishing — finance mailboxes", caseType: "phishing", severity: "high" } });
+    await ana.api.cases.$post({ json: { title: "Phishing — payroll lure", caseType: "phishing", severity: "low" } });
+    await ana.api.cases.$post({ json: { title: "Beaconing host", caseType: "malware", severity: "critical" } });
+
+    const page = await browser.newPage();
+    await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
+
+    // Tags, normalised as they are added, and removed.
+    await page.goto(`${baseUrl}/cases/1`);
+    await page.getByText("No Tags yet.").waitFor();
+    for (const tag of ["#BEC", "finance", "oops"]) {
+      await page.getByLabel("New Tag").fill(tag);
+      await page.getByRole("button", { name: "+ Tag" }).click();
+      await page.getByLabel("Tags").getByText(`#${tag.replace("#", "").toLowerCase()}`).waitFor();
+    }
+    await page.getByRole("button", { name: "Remove #oops" }).click();
+    await page.getByLabel("Tags").getByText("#oops").waitFor({ state: "detached" });
+
+    // The Case list filters by Tag.
+    await page.getByRole("link", { name: "Cases", exact: true }).first().click();
+    await page.getByRole("button", { name: /All open/ }).click();
+    await page.getByRole("link", { name: "Beaconing host" }).waitFor();
+    await page.getByLabel("Tag").selectOption("bec");
+    await page.getByText("#bec  #finance").waitFor();
+    await page.getByRole("link", { name: "Beaconing host" }).waitFor({ state: "detached" });
+
+    // Related, from C-3; listed on C-1 from its own side.
+    await page.goto(`${baseUrl}/cases/3`);
+    await page.getByText("Not linked to any Case.").waitFor();
+    await page.getByRole("button", { name: "+ Link" }).click();
+    let dialog = page.getByRole("dialog", { name: "Link C-3 to another Case" });
+    await dialog.getByLabel("Target Case").selectOption("1");
+    await dialog.getByRole("button", { name: "Link", exact: true }).click();
+    await page.getByLabel("Linked Cases").getByRole("link", { name: "C-1" }).waitFor();
+
+    // Duplicate of closes the Case.
+    await page.goto(`${baseUrl}/cases/2`);
+    await page.getByRole("button", { name: "+ Link" }).click();
+    dialog = page.getByRole("dialog", { name: "Link C-2 to another Case" });
+    await dialog.getByLabel("Duplicate of").check();
+    await dialog.getByLabel("Target Case").selectOption("1");
+    await dialog.getByText("Marking as Duplicate of C-1 closes C-2 now with Resolution Duplicate.").waitFor();
+    await dialog.getByRole("button", { name: "Link and close" }).click();
+    await page.getByText("Closed · Duplicate").first().waitFor();
+    expect(await page.getByRole("button", { name: "+ Link" }).count()).toBe(0);
+
+    await page.goto(`${baseUrl}/cases/1`);
+    const linked = page.getByLabel("Linked Cases");
+    await linked.getByText("Related").waitFor();
+    await linked.getByText("Duplicated by").waitFor();
+    await linked.getByRole("button", { name: "Remove link to C-3" }).click();
+    await linked.getByRole("link", { name: "C-3" }).waitFor({ state: "detached" });
+
+    await page.getByRole("link", { name: "Audit Log" }).click();
+    for (const action of ["Added Tag", "Removed Tag", "Linked Case", "Unlinked Case"]) {
+      await page.getByRole("cell", { name: action }).first().waitFor();
+    }
+    await page.getByText("Duplicated by C-2").first().waitFor();
+  } finally {
+    await stop();
+  }
+}, 60_000);

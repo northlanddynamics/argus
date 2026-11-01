@@ -22,12 +22,13 @@ import {
   type Status,
   statusLabel,
 } from "@/lib/cases";
+import { normaliseTag, tagLabel, tagsInUseQuery } from "@/lib/tags";
 import { cn } from "@/lib/utils";
 import { OpenCaseDialog } from "@/routes/cases/open-case-dialog";
 
 export const CASE_VIEWS = ["mine", "unassigned", "open", "closed"] as const;
 export type CaseListView = (typeof CASE_VIEWS)[number];
-export type CaseListSearch = { view?: CaseListView; status?: Status; severity?: Severity; caseType?: CaseType };
+export type CaseListSearch = { view?: CaseListView; status?: Status; severity?: Severity; caseType?: CaseType; tag?: string };
 
 const pick = <T extends string>(list: readonly T[], value: unknown) => (list.includes(value as T) ? (value as T) : undefined);
 
@@ -37,6 +38,7 @@ export const validateCaseListSearch = (search: Record<string, unknown>): CaseLis
   status: pick(STATUSES, search.status),
   severity: pick(SEVERITIES, search.severity),
   caseType: pick(CASE_TYPES, search.caseType),
+  tag: typeof search.tag === "string" ? (normaliseTag(search.tag) ?? undefined) : undefined,
 });
 
 const viewLabel: Record<CaseListView, string> = { mine: "My Cases", unassigned: "Unassigned", open: "All open", closed: "Closed" };
@@ -65,6 +67,9 @@ export function CasesPage() {
     },
   });
   const counts = cases.data?.counts;
+  const tagsInUse = useQuery(tagsInUseQuery);
+  const tagOptions = [...new Set([...(tagsInUse.data?.map((t) => t.tag) ?? []), ...(search.tag ? [search.tag] : [])])].toSorted();
+  const tagLabels = Object.fromEntries(tagOptions.map((t) => [t, tagLabel(t)]));
 
   return (
     <div className="min-h-svh bg-muted">
@@ -95,10 +100,11 @@ export function CasesPage() {
           ))}
         </nav>
         <Card>
-          <CardContent className="grid gap-4 sm:grid-cols-3">
+          <CardContent className="grid gap-4 sm:grid-cols-4">
             <Filter label="Status" id="filter-status" value={search.status} options={STATUSES} labels={statusLabel} onChange={(status) => setSearch({ status })} />
             <Filter label="Severity" id="filter-severity" value={search.severity} options={SEVERITIES} labels={severityLabel} onChange={(severity) => setSearch({ severity })} />
             <Filter label="Case Type" id="filter-type" value={search.caseType} options={CASE_TYPES} labels={caseTypeLabel} onChange={(caseType) => setSearch({ caseType })} />
+            <Filter label="Tag" id="filter-tag" value={search.tag} options={tagOptions} labels={tagLabels} onChange={(tag) => setSearch({ tag })} />
           </CardContent>
         </Card>
         <Card>
@@ -130,6 +136,9 @@ export function CasesPage() {
                           {c.title}
                         </Link>
                       </span>
+                      {c.tags.length > 0 && (
+                        <span className="mt-1 block text-xs text-muted-foreground">{c.tags.map(tagLabel).join("  ")}</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <StatusBadge status={c.status} resolution={c.resolution} />

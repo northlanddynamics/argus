@@ -8,6 +8,8 @@ import { api, errorMessage } from "@/lib/api";
 import { type CaseSummary, type CaseView, caseKey, caseQuery, casesKey, resolutionLabel } from "@/lib/cases";
 import { useCaseNumber } from "@/routes/cases/case-layout";
 import { CaseRolesPanel } from "@/routes/cases/case-roles-panel";
+import { LinkedCasesPanel } from "@/routes/cases/linked-cases-panel";
+import { TagsPanel } from "@/routes/cases/tags-panel";
 
 type Summary = CaseView["summary"];
 
@@ -50,6 +52,8 @@ export function CaseOverviewPage() {
         </CardContent>
       </Card>
       <CaseRolesPanel number={number} caseRoles={c.caseRoles} readOnly={c.status === "closed"} />
+      <LinkedCasesPanel number={number} readOnly={c.status === "closed"} />
+      <TagsPanel number={number} tags={c.tags} readOnly={c.status === "closed"} />
       </div>
     </div>
   );
