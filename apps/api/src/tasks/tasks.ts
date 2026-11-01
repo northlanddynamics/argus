@@ -1,24 +1,27 @@
 import { and, asc, eq } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { canSeeCase, visibleCases } from "../access/policy";
+import { canSeeItem, visibleCases, visibleItems } from "../access/policy";
 import { actorOf, CaseNotFound, lockCase } from "../cases/cases";
 import { type CaseAuditEntry, recordCaseAudit } from "../cases/case-audit-log";
 import type { Clock } from "../clock";
 import type { Db, Tx } from "../db/client";
 import { cases, tasks, user } from "../db/schema";
 import { secureId } from "../ids";
+import { GuestCannotSeeInternal } from "../internal/internal";
 import type { Membership, Participant } from "../members/membership";
-import { memberOf } from "../members/members";
+import { peopleWhoCanSee } from "../cases/people";
 import { publish } from "../realtime/signals";
 
 /**
- * Tasks on a Case: created, edited, completed and reopened by anyone who can see the Case, while it
- * isn't Closed. Every change is in the Case Audit Log. Edits carry the version they were based on,
- * and one based on an older version is refused with the Task as it is now.
+ * Tasks on a Case: created and edited by Members who can see the Case, and completed and reopened by
+ * anyone who can see the Task (Guests included), while the Case isn't Closed. A Task is owned by a
+ * Member or a Guest who can see the Case; an Internal Task is hidden from Guests, so never owned by
+ * one. Every change is in the Case Audit Log. Edits carry the version they were based on, and one
+ * based on an older version is refused with the Task as it is now.
  */
 
-export type NewTask = { title: string; description: string; ownerId: string; dueDate: string | null };
-export type TaskEdit = Partial<NewTask>;
+export type NewTask = { title: string; description: string; ownerId: string; dueDate: string | null; internal?: boolean };
+export type TaskEdit = Partial<Omit<NewTask, "internal">>;
 
 /** The owner would be someone who can't see the Case (or isn't a Member at all). */
 export class OwnerCannotSeeCase extends Error {
@@ -41,6 +44,8 @@ export type TaskView = {
   dueDate: string | null;
   /** Not done, and its due date has passed. */
   overdue: boolean;
+  /** Hidden from Guests. */
+  internal: boolean;
   done: boolean;
   completed: { by: Person; at: string } | null;
   version: number;
@@ -72,6 +77,7 @@ const columns = {
   ownerId: owner.id,
   ownerName: owner.name,
   dueDate: tasks.dueDate,
+  internal: tasks.internal,
   done: tasks.done,
   completedById: completedBy.id,
   completedByName: completedBy.name,
@@ -83,21 +89,25 @@ const columns = {
   updatedAt: tasks.updatedAt,
 };
 
-/** Locks a Task on the locked Case for the rest of `tx`, or throws `TaskNotFound`. */
-const lock = async (tx: Tx, caseId: string, id: string) => {
+/** Locks a Task `me` can see on the locked Case for the rest of `tx`, or throws `TaskNotFound`. */
+const lock = async (tx: Tx, me: Participant, caseId: string, id: string) => {
   const [row] = await tx
     .select()
     .from(tasks)
     .where(and(eq(tasks.id, id), eq(tasks.caseId, caseId)))
     .for("update");
-  if (!row) throw new TaskNotFound();
+  if (!row || !canSeeItem(me, row)) throw new TaskNotFound();
   return row;
 };
 
-/** The owner's name, once they are known to be a Member who can see the Case; else `OwnerCannotSeeCase`. */
-const ownerName = async (tx: Tx, me: Membership, theCase: Awaited<ReturnType<typeof lockCase>>, ownerId: string) => {
-  const who = await memberOf(tx, me.organizationId, ownerId);
-  if (!who || !canSeeCase(who, theCase)) throw new OwnerCannotSeeCase();
+/**
+ * The owner's name, once they are known to be someone who can see the Case (and, for an Internal
+ * Task, not a Guest); else `OwnerCannotSeeCase` or `GuestCannotSeeInternal`.
+ */
+const ownerName = async (tx: Tx, theCase: Awaited<ReturnType<typeof lockCase>>, ownerId: string, internal: boolean, at: Date) => {
+  const who = (await peopleWhoCanSee(tx, theCase, at)).find((p) => p.id === ownerId);
+  if (!who) throw new OwnerCannotSeeCase();
+  if (internal && who.role === "guest") throw new GuestCannotSeeInternal();
   return who.name;
 };
 
@@ -117,6 +127,7 @@ export function taskStore({ db, clock }: { db: Db; clock: Clock }) {
     description: row.description,
     owner: { id: row.ownerId, name: row.ownerName },
     dueDate: row.dueDate,
+    internal: row.internal,
     overdue: !row.done && row.dueDate !== null && row.dueDate < today(clock.now()),
     done: row.done,
     completed:
@@ -133,7 +144,7 @@ export function taskStore({ db, clock }: { db: Db; clock: Clock }) {
   const view = async (me: Participant, number: number, id: string) => {
     const [row] = await select()
       .innerJoin(cases, eq(tasks.caseId, cases.id))
-      .where(and(visibleCases(me), eq(cases.number, number), eq(tasks.id, id)))
+      .where(and(visibleCases(me), eq(cases.number, number), eq(tasks.id, id), visibleItems(me, tasks.internal)))
       .limit(1);
     if (!row) throw new TaskNotFound();
     return toView(row);
@@ -149,16 +160,20 @@ export function taskStore({ db, clock }: { db: Db; clock: Clock }) {
         .where(and(visibleCases(me), eq(cases.number, number)))
         .limit(1);
       if (!found) throw new CaseNotFound();
-      const rows = await select().where(eq(tasks.caseId, found.id)).orderBy(asc(tasks.createdAt), asc(tasks.id));
+      const rows = await select()
+        .where(and(eq(tasks.caseId, found.id), visibleItems(me, tasks.internal)))
+        .orderBy(asc(tasks.createdAt), asc(tasks.id));
       return rows.map(toView);
     },
 
+    /** Adds a Task; with `internal`, hidden from Guests from the start. Members only. */
     async create(me: Membership, number: number, input: NewTask) {
       const now = clock.now();
       const id = secureId();
+      const internal = input.internal ?? false;
       await db.transaction(async (tx) => {
         const current = await lockCase(tx, me, number);
-        const name = await ownerName(tx, me, current, input.ownerId);
+        const name = await ownerName(tx, current, input.ownerId, internal, now);
         await tx.insert(tasks).values({
           id,
           organizationId: me.organizationId,
@@ -167,6 +182,7 @@ export function taskStore({ db, clock }: { db: Db; clock: Clock }) {
           description: input.description,
           ownerId: input.ownerId,
           dueDate: input.dueDate,
+          internal,
           done: false,
           version: 1,
           createdById: me.userId,
@@ -180,9 +196,9 @@ export function taskStore({ db, clock }: { db: Db; clock: Clock }) {
           actor: actorOf(me),
           action: "task.created",
           target: input.title,
-          after: name,
+          after: internal ? `${name} · Internal` : name,
         });
-        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id });
+        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id, membersOnly: internal });
       });
       return view(me, number, id);
     },
@@ -195,7 +211,7 @@ export function taskStore({ db, clock }: { db: Db; clock: Clock }) {
       const now = clock.now();
       const saved = await db.transaction(async (tx) => {
         const current = await lockCase(tx, me, number);
-        const task = await lock(tx, current.id, id);
+        const task = await lock(tx, me, current.id, id);
         if (task.version !== version) return false;
         const entries: CaseAuditEntry[] = [];
         const entry = (action: CaseAuditEntry["action"], before: string | null, after: string | null) =>
@@ -220,7 +236,7 @@ export function taskStore({ db, clock }: { db: Db; clock: Clock }) {
           entry("task.description_changed", task.description, changes.description);
         }
         if (changes.ownerId !== undefined && changes.ownerId !== task.ownerId) {
-          const after = await ownerName(tx, me, current, changes.ownerId);
+          const after = await ownerName(tx, current, changes.ownerId, task.internal, now);
           const [before] = await tx.select({ name: user.name }).from(user).where(eq(user.id, task.ownerId));
           set.ownerId = changes.ownerId;
           entry("task.owner_changed", before?.name ?? null, after);
@@ -235,7 +251,7 @@ export function taskStore({ db, clock }: { db: Db; clock: Clock }) {
           .set({ ...set, version: version + 1, updatedAt: now })
           .where(eq(tasks.id, task.id));
         for (const e of entries) await recordCaseAudit(tx, e);
-        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id });
+        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id, membersOnly: task.internal });
         return true;
       });
       const task = await view(me, number, id);
@@ -243,12 +259,15 @@ export function taskStore({ db, clock }: { db: Db; clock: Clock }) {
       return task;
     },
 
-    /** Marks the Task done, or not done again. Setting it to what it already is changes nothing. */
-    async setDone(me: Membership, number: number, id: string, done: boolean) {
+    /**
+     * Marks the Task done, or not done again. Setting it to what it already is changes nothing.
+     * Anyone who can see the Task, Guests included.
+     */
+    async setDone(me: Participant, number: number, id: string, done: boolean) {
       const now = clock.now();
       await db.transaction(async (tx) => {
         const current = await lockCase(tx, me, number);
-        const task = await lock(tx, current.id, id);
+        const task = await lock(tx, me, current.id, id);
         if (task.done === done) return;
         await tx
           .update(tasks)
@@ -262,7 +281,7 @@ export function taskStore({ db, clock }: { db: Db; clock: Clock }) {
           action: done ? "task.completed" : "task.reopened",
           target: task.title,
         });
-        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id });
+        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id, membersOnly: task.internal });
       });
       return view(me, number, id);
     },

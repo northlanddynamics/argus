@@ -3,8 +3,11 @@ import { useRef, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { caseQuery, isReadOnly } from "@/lib/cases";
+import { Visibility } from "@/components/visibility";
+import { canMarkInternal, canParticipate, caseQuery } from "@/lib/cases";
 import { evidenceKey, evidenceQuery, evidenceUrl, formatBytes, shortHash, uploadEvidence } from "@/lib/evidence";
 import { cn } from "@/lib/utils";
 import { useCaseNumber } from "@/routes/cases/case-layout";
@@ -12,7 +15,10 @@ import { useCaseNumber } from "@/routes/cases/case-layout";
 /** A file on its way up. */
 type Upload = { key: string; name: string; progress: number; error: string | null };
 
-/** Case · Evidence: files added to the Case, fingerprinted, never altered, every access logged. */
+/**
+ * Case · Evidence: files added to the Case, fingerprinted, never altered, every access logged. Guests
+ * add files too; Members see which are Internal and can add files as Internal.
+ */
 export function CaseEvidencePage() {
   const number = useCaseNumber();
   const queryClient = useQueryClient();
@@ -21,6 +27,8 @@ export function CaseEvidencePage() {
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [dragging, setDragging] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  /** Add the next files as Internal. */
+  const [internal, setInternal] = useState(false);
   const input = useRef<HTMLInputElement>(null);
 
   const update = (key: string, change: Partial<Upload>) =>
@@ -30,7 +38,7 @@ export function CaseEvidencePage() {
     for (const file of Array.from(files ?? [])) {
       const key = crypto.randomUUID();
       setUploads((all) => [...all, { key, name: file.name, progress: 0, error: null }]);
-      uploadEvidence(number, file, (progress) => update(key, { progress }))
+      uploadEvidence(number, file, internal, (progress) => update(key, { progress }))
         .then(() => {
           setUploads((all) => all.filter((u) => u.key !== key));
           void queryClient.invalidateQueries({ queryKey: evidenceKey(number) });
@@ -45,7 +53,9 @@ export function CaseEvidencePage() {
   };
 
   if (!c) return null;
-  const readOnly = isReadOnly(c);
+  const participating = canParticipate(c);
+  /** Guests see only what isn't Internal, so they get no Visibility column. */
+  const membersView = c.can.markInternal;
   const list = evidence.data ?? [];
   return (
     <Card>
@@ -56,7 +66,7 @@ export function CaseEvidencePage() {
         </span>
       </CardHeader>
       <CardContent className="grid gap-4">
-        {!readOnly && (
+        {participating && (
           <div
             className={cn(
               "flex flex-wrap items-center justify-center gap-2 rounded-md border-2 border-dashed p-6 text-sm text-muted-foreground",
@@ -78,6 +88,12 @@ export function CaseEvidencePage() {
               Choose files
             </Button>
             — SHA-256 computed on upload
+            {canMarkInternal(c) && (
+              <span className="ml-4 flex items-center gap-2">
+                <Checkbox id="evidence-internal" checked={internal} onCheckedChange={(checked) => setInternal(checked === true)} />
+                <Label htmlFor="evidence-internal">Add as Internal</Label>
+              </span>
+            )}
             <input
               ref={input}
               type="file"
@@ -119,6 +135,7 @@ export function CaseEvidencePage() {
               <TableHead>Size</TableHead>
               <TableHead>Added</TableHead>
               <TableHead>SHA-256</TableHead>
+              {membersView && <TableHead>Visibility</TableHead>}
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -140,6 +157,11 @@ export function CaseEvidencePage() {
                     </Button>
                   </span>
                 </TableCell>
+                {membersView && (
+                  <TableCell>
+                    <Visibility number={number} item={{ kind: "evidence", id: e.id }} internal={e.internal} label={e.name} canMark={canMarkInternal(c)} />
+                  </TableCell>
+                )}
                 <TableCell className="text-right">
                   <span className="inline-flex gap-2">
                     <Button asChild variant="outline" size="sm">
@@ -158,7 +180,7 @@ export function CaseEvidencePage() {
             ))}
             {evidence.data?.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="text-muted-foreground">
+                <TableCell colSpan={membersView ? 6 : 5} className="text-muted-foreground">
                   No Evidence yet.
                 </TableCell>
               </TableRow>

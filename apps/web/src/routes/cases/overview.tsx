@@ -54,7 +54,7 @@ export function CaseOverviewPage() {
         </CardContent>
       </Card>
       <CaseRolesPanel number={number} caseRoles={c.caseRoles} readOnly={isReadOnly(c)} />
-      {c.can.readAuditLog && <CaseAlertsPanel number={number} />}
+      <CaseAlertsPanel c={c} />
       <LinkedCasesPanel number={number} readOnly={isReadOnly(c)} />
       <TagsPanel number={number} tags={c.tags} readOnly={isReadOnly(c)} />
       {c.can.work && <GuestsPanel c={c} />}

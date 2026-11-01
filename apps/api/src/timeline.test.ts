@@ -127,6 +127,7 @@ describe("Adding Timeline Entries", () => {
       body: "Phishing email with invoice attachment delivered to d.howe.",
       citations: [],
       source: null,
+      internal: false,
       version: 1,
       recordedBy,
       recordedAt: "2026-10-28T11:05:00.000Z",

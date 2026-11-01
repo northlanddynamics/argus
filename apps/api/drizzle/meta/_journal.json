@@ -134,6 +134,13 @@
       "when": 1793556965489,
       "tag": "0018_alerts_to_cases",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793564040990,
+      "tag": "0019_internal_items",
+      "breakpoints": true
     }
   ]
 }

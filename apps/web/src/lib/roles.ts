@@ -4,3 +4,6 @@ export const roleLabel: Record<OrgRole, string> = { owner: "Owner", admin: "Admi
 
 /** Owners and Admins manage the Organization's settings. */
 export const canManage = (role: string | undefined) => role === "owner" || role === "admin";
+
+/** Someone who can see a Case: a Member by role, or a Guest. */
+export const personRoleLabel: Record<OrgRole | "guest", string> = { ...roleLabel, guest: "Guest" };

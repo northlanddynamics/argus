@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { api, errorMessage } from "@/lib/api";
-import { caseQuery, isReadOnly } from "@/lib/cases";
+import { Visibility } from "@/components/visibility";
+import { canMarkInternal, caseQuery, isReadOnly } from "@/lib/cases";
 import { describeOccurredAt, occurredKindLabel, precisionLabel, type TimelineEntryView, timelineKey, timelineQuery, utc } from "@/lib/timeline";
 import { actionLabel } from "@/routes/cases/audit-log";
 import { useCaseNumber } from "@/routes/cases/case-layout";
@@ -56,7 +57,7 @@ function CaseTimeline() {
                 {editing === e.id ? (
                   <EditEntryForm number={number} entry={e} onDone={() => setEditing(null)} />
                 ) : (
-                  <Entry number={number} entry={e} readOnly={readOnly} onEdit={() => setEditing(e.id)} />
+                  <Entry number={number} entry={e} readOnly={readOnly} canMark={canMarkInternal(c)} onEdit={() => setEditing(e.id)} />
                 )}
               </CardContent>
             </Card>
@@ -73,7 +74,19 @@ const sourceText = (source: NonNullable<TimelineEntryView["source"]>) =>
     ? `Promoted from Discussion message by ${source.author.name}`
     : `Promoted from Audit Log (${actionLabel[source.action] ?? source.action} by ${source.actor})`;
 
-function Entry({ number, entry: e, readOnly, onEdit }: { number: number; entry: TimelineEntryView; readOnly: boolean; onEdit: () => void }) {
+function Entry({
+  number,
+  entry: e,
+  readOnly,
+  canMark,
+  onEdit,
+}: {
+  number: number;
+  entry: TimelineEntryView;
+  readOnly: boolean;
+  canMark: boolean;
+  onEdit: () => void;
+}) {
   const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
   const [reason, setReason] = useState("");
@@ -94,6 +107,16 @@ function Entry({ number, entry: e, readOnly, onEdit }: { number: number; entry: 
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="font-semibold">{describeOccurredAt(o)}</h3>
         <Badge variant="outline">{o.kind === "approximate" ? `Approximate ${precisionLabel(o.precisionMinutes)}` : occurredKindLabel[o.kind]}</Badge>
+        {(e.internal || (canMark && live)) && (
+          <Visibility
+            number={number}
+            item={{ kind: "timeline_entry", id: e.id }}
+            internal={e.internal}
+            label={`entry “${e.body.slice(0, 40)}”`}
+            canMark={canMark && live}
+            showVisible={false}
+          />
+        )}
         {!readOnly && live && (
           <div className="ml-auto flex gap-2">
             <Button variant="outline" size="sm" onClick={onEdit}>

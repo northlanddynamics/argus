@@ -3,9 +3,12 @@ import { type KeyboardEvent, useRef, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Visibility } from "@/components/visibility";
 import { api, errorMessage } from "@/lib/api";
-import { caseQuery, isReadOnly } from "@/lib/cases";
+import { canMarkInternal, canParticipate, caseQuery, isReadOnly } from "@/lib/cases";
 import {
   discussionKey,
   discussionQuery,
@@ -16,12 +19,15 @@ import {
   type Person,
   typedText,
 } from "@/lib/discussion";
-import { roleLabel } from "@/lib/roles";
+import { personRoleLabel } from "@/lib/roles";
 import { promotedSources, timelineQuery } from "@/lib/timeline";
 import { useCaseNumber } from "@/routes/cases/case-layout";
 import { PromoteDialog } from "@/routes/cases/timeline-entry-form";
 
-/** The Discussion: the conversation among the people working the Case. Shown beside the Timeline. */
+/**
+ * The Discussion: the conversation among the people working the Case, Guests included. Shown beside
+ * the Timeline. Members may post Internal messages, which Guests never see.
+ */
 export function CaseDiscussion() {
   const number = useCaseNumber();
   const queryClient = useQueryClient();
@@ -34,8 +40,8 @@ export function CaseDiscussion() {
   const refresh = () => queryClient.invalidateQueries({ queryKey: discussionKey(number) });
 
   const post = useMutation({
-    mutationFn: async (body: string) => {
-      const res = await api.cases[":number"].discussion.$post({ param: { number: String(number) }, json: { body } });
+    mutationFn: async ({ body, internal }: { body: string; internal: boolean }) => {
+      const res = await api.cases[":number"].discussion.$post({ param: { number: String(number) }, json: { body, internal } });
       if (!res.ok) throw new Error(await errorMessage(res, "Could not send the message"));
     },
     onSuccess: refresh,
@@ -43,6 +49,7 @@ export function CaseDiscussion() {
 
   if (!c) return null;
   const readOnly = isReadOnly(c);
+  const participating = canParticipate(c);
   return (
     <Card>
       <CardHeader>
@@ -61,6 +68,8 @@ export function CaseDiscussion() {
                 number={number}
                 message={m}
                 readOnly={readOnly}
+                participating={participating}
+                canMark={canMarkInternal(c)}
                 promoted={promoted.has(m.id)}
                 onEdit={() => setEditing(m.id)}
                 onPromote={() => setPromoting(m)}
@@ -69,14 +78,15 @@ export function CaseDiscussion() {
           )}
           {messages.data?.length === 0 && <li className="text-sm text-muted-foreground">No messages yet.</li>}
         </ol>
-        {!readOnly && (
+        {participating && (
           <Composer
             number={number}
             label="Message"
             submitLabel="Send"
+            offerInternal={canMarkInternal(c)}
             pending={post.isPending}
             error={post.error?.message}
-            onSubmit={(body, reset) => post.mutate(body, { onSuccess: reset })}
+            onSubmit={(body, reset, internal) => post.mutate({ body, internal }, { onSuccess: reset })}
           />
         )}
         {promoting && (
@@ -85,6 +95,7 @@ export function CaseDiscussion() {
             source={{ kind: "discussion_message", id: promoting.id }}
             occurredAt={promoting.postedAt}
             body={typedText(promoting.body ?? "", promoting.mentions)}
+            internal={promoting.internal}
             onClose={() => setPromoting(null)}
           />
         )}
@@ -97,13 +108,20 @@ function Message({
   number,
   message: m,
   readOnly,
+  participating,
+  canMark,
   promoted,
   onEdit,
   onPromote,
 }: {
   number: number;
   message: MessageView;
+  /** The viewer can't change the Case beyond taking part (a Guest), or it's Closed. */
   readOnly: boolean;
+  /** The viewer can post, edit and retract their own messages. */
+  participating: boolean;
+  /** The viewer can mark it Internal or show it to Guests. */
+  canMark: boolean;
   /** On the Timeline already. */
   promoted: boolean;
   onEdit: () => void;
@@ -127,6 +145,16 @@ function Message({
         </time>
         {m.editedAt && !m.retractedAt && <span className="text-xs text-muted-foreground">· edited</span>}
         {promoted && <span className="text-xs text-muted-foreground">· on the Timeline</span>}
+        {(m.internal || canMark) && m.body !== null && (
+          <Visibility
+            number={number}
+            item={{ kind: "discussion_message", id: m.id }}
+            internal={m.internal}
+            label={`message from ${m.author.name}`}
+            canMark={canMark}
+            showVisible={false}
+          />
+        )}
       </div>
       {m.body === null ? (
         <p className="text-sm text-muted-foreground italic">Retracted by {m.author.name}. The original is kept in the Audit Log.</p>
@@ -143,9 +171,9 @@ function Message({
           )}
         </p>
       )}
-      {!readOnly && m.body !== null && (
+      {participating && m.body !== null && (
         <div className="flex gap-2">
-          {!promoted && (
+          {!readOnly && !promoted && (
             <Button variant="outline" size="sm" onClick={onPromote}>
               Promote to Timeline
             </Button>
@@ -198,7 +226,8 @@ function EditMessage({ number, message, onDone }: { number: number; message: Mes
       number={number}
       label="Edit message"
       submitLabel="Save"
-      initial={{ text: typedText(message.body ?? "", message.mentions), picked: message.mentions }}
+      initial={{ text: typedText(message.body ?? "", message.mentions), picked: message.mentions, internal: message.internal }}
+      offerInternal={false}
       pending={edit.isPending}
       error={edit.error?.message}
       onSubmit={(body) => edit.mutate(body)}
@@ -211,14 +240,16 @@ function EditMessage({ number, message, onDone }: { number: number; message: Mes
 const mentionQuery = (text: string, caret: number) => /(?:^|\s)@([^\s@<>]*)$/.exec(text.slice(0, caret))?.[1] ?? null;
 
 /**
- * A message box. Typing "@" offers the people who can see the Case; picking one writes "@Name",
- * which becomes a mention when the message is sent.
+ * A message box. Typing "@" offers the people who can see the Case (no Guests on an Internal
+ * message); picking one writes "@Name", which becomes a mention when the message is sent. With
+ * `offerInternal`, the message can be sent as Internal.
  */
 function Composer({
   number,
   label,
   submitLabel,
-  initial = { text: "", picked: [] },
+  initial = { text: "", picked: [], internal: false },
+  offerInternal,
   pending,
   error,
   onSubmit,
@@ -227,14 +258,16 @@ function Composer({
   number: number;
   label: string;
   submitLabel: string;
-  initial?: { text: string; picked: readonly Person[] };
+  initial?: { text: string; picked: readonly Person[]; internal: boolean };
+  offerInternal: boolean;
   pending: boolean;
   error?: string;
-  onSubmit: (body: string, reset: () => void) => void;
+  onSubmit: (body: string, reset: () => void, internal: boolean) => void;
   onCancel?: () => void;
 }) {
   const [text, setText] = useState(initial.text);
   const [picked, setPicked] = useState<readonly Person[]>(initial.picked);
+  const [internal, setInternal] = useState(initial.internal);
   const [query, setQuery] = useState<string | null>(null);
   const [highlight, setHighlight] = useState(0);
   const box = useRef<HTMLTextAreaElement>(null);
@@ -244,7 +277,9 @@ function Composer({
   const offered =
     query === null
       ? []
-      : (people.data ?? []).filter((p) => p.name.toLowerCase().split(/\s+/).some((word) => word.startsWith(query.toLowerCase())));
+      : (people.data ?? [])
+          .filter((p) => !internal || p.role !== "guest")
+          .filter((p) => p.name.toLowerCase().split(/\s+/).some((word) => word.startsWith(query.toLowerCase())));
 
   const track = (value: string, caret: number) => {
     setText(value);
@@ -269,10 +304,15 @@ function Composer({
 
   const submit = () => {
     if (!text.trim() || pending) return;
-    onSubmit(messageBody(text, picked), () => {
-      setText("");
-      setPicked([]);
-    });
+    onSubmit(
+      messageBody(text, picked),
+      () => {
+        setText("");
+        setPicked([]);
+        setInternal(false);
+      },
+      internal,
+    );
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -334,7 +374,7 @@ function Composer({
                 pick(p);
               }}
             >
-              @{p.name} <span className="text-muted-foreground">· {roleLabel[p.role]}</span>
+              @{p.name} <span className="text-muted-foreground">· {personRoleLabel[p.role]}</span>
             </li>
           ))}
         </ul>
@@ -344,7 +384,14 @@ function Composer({
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      <div className="flex justify-end gap-2">
+      <div className="flex items-center justify-end gap-2">
+        {offerInternal && (
+          <div className="mr-auto flex items-center gap-2">
+            <Checkbox id={`${label}-internal`} checked={internal} onCheckedChange={(checked) => setInternal(checked === true)} />
+            <Label htmlFor={`${label}-internal`}>Internal</Label>
+            <span className="text-xs text-muted-foreground">Hidden from Guests</span>
+          </div>
+        )}
         {onCancel && (
           <Button type="button" variant="ghost" onClick={onCancel}>
             Cancel

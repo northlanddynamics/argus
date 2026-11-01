@@ -8,12 +8,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api, errorMessage } from "@/lib/api";
-import { caseKey, caseQuery, isReadOnly } from "@/lib/cases";
+import { Visibility } from "@/components/visibility";
+import { canMarkInternal, canParticipate, caseKey, caseQuery, isReadOnly } from "@/lib/cases";
 import { type TaskView, tasksKey, tasksQuery } from "@/lib/tasks";
 import { useCaseNumber } from "@/routes/cases/case-layout";
 import { TaskDialog } from "@/routes/cases/task-dialog";
 
-/** Case · Tasks: who owns what, when it's due, and what's done. */
+/** Case · Tasks: who owns what, when it's due, what's done, and (for Members) what Guests can see. */
 export function CaseTasksPage() {
   const { me } = useRouteContext({ from: "/cases/$number" });
   const number = useCaseNumber();
@@ -36,6 +37,10 @@ export function CaseTasksPage() {
 
   if (!c) return null;
   const readOnly = isReadOnly(c);
+  const participating = canParticipate(c);
+  /** Guests see only what isn't Internal, so they get no Visibility column. */
+  const membersView = c.can.markInternal;
+  const columns = membersView ? 6 : 5;
   const list = tasks.data ?? [];
   return (
     <Card>
@@ -61,6 +66,7 @@ export function CaseTasksPage() {
               <TableHead>Task</TableHead>
               <TableHead>Owner</TableHead>
               <TableHead>Due</TableHead>
+              {membersView && <TableHead>Visibility</TableHead>}
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -71,7 +77,7 @@ export function CaseTasksPage() {
                   <Checkbox
                     aria-label={`${t.title} done`}
                     checked={t.done}
-                    disabled={readOnly || setDone.isPending}
+                    disabled={!participating || setDone.isPending}
                     onCheckedChange={(checked) => setDone.mutate({ id: t.id, done: checked === true })}
                   />
                 </TableCell>
@@ -79,7 +85,7 @@ export function CaseTasksPage() {
                   <div className="font-medium">{t.title}</div>
                   {t.description && <div className="text-xs text-muted-foreground">{t.description}</div>}
                 </TableCell>
-                <TableCell>{t.owner.name}</TableCell>
+                <TableCell>{t.owner.name}{t.owner.id === me.user.id && me.guest ? " (you)" : ""}</TableCell>
                 <TableCell>
                   {t.overdue ? (
                     <Badge variant="outline" className="border-red-300 text-red-700">
@@ -89,6 +95,17 @@ export function CaseTasksPage() {
                     (t.dueDate ?? "—")
                   )}
                 </TableCell>
+                {membersView && (
+                  <TableCell>
+                    <Visibility
+                      number={number}
+                      item={{ kind: "task", id: t.id }}
+                      internal={t.internal}
+                      label={t.title}
+                      canMark={canMarkInternal(c)}
+                    />
+                  </TableCell>
+                )}
                 <TableCell className="text-right">
                   {!readOnly && (
                     <Button variant="outline" size="sm" aria-label={`Edit ${t.title}`} onClick={() => setEditing(t)}>
@@ -100,7 +117,7 @@ export function CaseTasksPage() {
             ))}
             {tasks.data?.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="text-muted-foreground">
+                <TableCell colSpan={columns} className="text-muted-foreground">
                   No Tasks yet.
                 </TableCell>
               </TableRow>

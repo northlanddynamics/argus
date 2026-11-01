@@ -135,6 +135,7 @@ describe("Posting messages", () => {
       postedAt: "2026-01-01T09:00:00.000Z",
       editedAt: null,
       retractedAt: null,
+      internal: false,
       can: { edit: true, retract: true },
     });
     const { status, body } = await list(owner, number);
@@ -223,6 +224,7 @@ describe("Editing and retracting messages", () => {
       postedAt: posted.postedAt,
       editedAt: null,
       retractedAt: "2026-01-01T09:01:00.000Z",
+      internal: false,
       can: { edit: false, retract: false },
     };
     expect("message" in body && body.message).toEqual(retracted);

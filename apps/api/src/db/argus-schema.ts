@@ -225,6 +225,8 @@ export const tasks = pgTable(
       .references(() => user.id, { onDelete: "restrict" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+    /** Hidden from Guests on the Case (`access/policy.ts`). */
+    internal: boolean("internal").notNull().default(false),
   },
   (t) => [
     index("tasks_case_idx").on(t.caseId, t.createdAt),
@@ -259,6 +261,8 @@ export const discussionMessages = pgTable(
     postedAt: timestamp("posted_at", { withTimezone: true }).notNull(),
     editedAt: timestamp("edited_at", { withTimezone: true }),
     retractedAt: timestamp("retracted_at", { withTimezone: true }),
+    /** Hidden from Guests on the Case (`access/policy.ts`). */
+    internal: boolean("internal").notNull().default(false),
   },
   (t) => [index("discussion_messages_case_idx").on(t.caseId, t.seq)],
 );
@@ -334,6 +338,8 @@ export const timelineEntries = pgTable(
     retractedById: text("retracted_by_id").references(() => user.id, { onDelete: "restrict" }),
     retractedAt: timestamp("retracted_at", { withTimezone: true }),
     retractionReason: text("retraction_reason"),
+    /** Hidden from Guests on the Case (`access/policy.ts`). */
+    internal: boolean("internal").notNull().default(false),
   },
   (t) => [
     index("timeline_entries_case_idx").on(t.caseId, t.occurredStart),
@@ -357,8 +363,9 @@ export const timelineEntries = pgTable(
 /**
  * Evidence: a file added to a Case. Its bytes are in Evidence storage under `storage_key`
  * (`evidence/storage.ts`); `sha256` is their fingerprint, computed as they arrived. Never altered or
- * deleted (ADR 0003): migration 0013 makes UPDATE, DELETE and TRUNCATE fail at the database. Every
- * view and download is recorded in the Case Audit Log.
+ * deleted (ADR 0003): migration 0013 makes UPDATE, DELETE and TRUNCATE fail at the database, and
+ * migration 0019 lets only its Internal marking change. Every view and download is recorded in the
+ * Case Audit Log.
  */
 export const evidence = pgTable(
   "evidence",
@@ -384,6 +391,8 @@ export const evidence = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "restrict" }),
     addedAt: timestamp("added_at", { withTimezone: true }).notNull(),
+    /** Hidden from Guests on the Case (`access/policy.ts`); the one column that can change (migration 0019). */
+    internal: boolean("internal").notNull().default(false),
   },
   (t) => [
     index("evidence_case_idx").on(t.caseId, t.seq),
@@ -687,6 +696,8 @@ export const alerts = pgTable(
     dismissalComment: text("dismissal_comment"),
     dismissedById: text("dismissed_by_id").references(() => user.id, { onDelete: "restrict" }),
     dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
+    /** Hidden from Guests on the Case it is attached to; every attachment makes it Internal again. */
+    internal: boolean("internal").notNull().default(true),
   },
   (t) => [
     uniqueIndex("alerts_integration_external_idx").on(t.integrationId, t.externalId),

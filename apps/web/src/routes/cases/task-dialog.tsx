@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,8 +10,8 @@ import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { Textarea } from "@/components/ui/textarea";
 import { api, errorMessage } from "@/lib/api";
 import { caseKey } from "@/lib/cases";
+import { mentionableQuery } from "@/lib/discussion";
 import { type TaskView, tasksKey } from "@/lib/tasks";
-import { membersKey } from "@/routes/settings/members";
 
 type Fields = { title: string; description: string; ownerId: string; dueDate: string };
 
@@ -44,17 +45,19 @@ export function TaskDialog({
   /** The Task as it was when editing started (or last reloaded). */
   const [base, setBase] = useState<TaskView | null>(task);
   const [conflict, setConflict] = useState<TaskView | null>(null);
-  const members = useQuery({
-    queryKey: membersKey,
-    queryFn: async () => (await api.organization.members.$get()).json(),
-  });
+  /** A new Task hidden from Guests; an existing one's marking changes from the Tasks table. */
+  const [internal, setInternal] = useState(false);
+  /** Who can own it: the people who can see the Case, Guests included unless it's Internal. */
+  const people = useQuery(mentionableQuery(number));
+  const hidden = base ? base.internal : internal;
+  const owners = (people.data ?? []).filter((p) => !hidden || p.role !== "guest");
 
   const save = useMutation({
     mutationFn: async (f: Fields) => {
       const param = { number: String(number) };
       const dueDate = f.dueDate || null;
       if (!base) {
-        const res = await api.cases[":number"].tasks.$post({ param, json: { ...f, dueDate } });
+        const res = await api.cases[":number"].tasks.$post({ param, json: { ...f, dueDate, internal } });
         if (!res.ok) throw new Error(await errorMessage(res, "Could not create the Task"));
         return { kind: "saved" } as const;
       }
@@ -104,7 +107,7 @@ export function TaskDialog({
   };
 
   const set = (patch: Partial<Fields>) => setFields((f) => ({ ...f, ...patch }));
-  const ownerKnown = members.data?.members.some((m) => m.userId === fields.ownerId);
+  const ownerKnown = owners.some((p) => p.id === fields.ownerId);
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
@@ -140,13 +143,14 @@ export function TaskDialog({
             <div className="grid gap-2">
               <Label htmlFor="task-owner">Owner</Label>
               <NativeSelect id="task-owner" value={fields.ownerId} onChange={(e) => set({ ownerId: e.target.value })} required>
-                {/* A former Member stays selectable until someone changes it. */}
+                {/* Someone who can no longer see the Case stays selectable until someone changes it. */}
                 {base && !ownerKnown && fields.ownerId === base.owner.id && (
                   <NativeSelectOption value={base.owner.id}>{base.owner.name}</NativeSelectOption>
                 )}
-                {members.data?.members.map((m) => (
-                  <NativeSelectOption key={m.userId} value={m.userId}>
-                    {m.name}
+                {!base && !ownerKnown && <NativeSelectOption value="">Choose an owner</NativeSelectOption>}
+                {owners.map((p) => (
+                  <NativeSelectOption key={p.id} value={p.id}>
+                    {p.role === "guest" ? `${p.name} (Guest)` : p.name}
                   </NativeSelectOption>
                 ))}
               </NativeSelect>
@@ -156,6 +160,21 @@ export function TaskDialog({
               <Input id="task-due" type="date" value={fields.dueDate} onChange={(e) => set({ dueDate: e.target.value })} />
             </div>
           </div>
+          {!base && (
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="task-internal"
+                checked={internal}
+                onCheckedChange={(checked) => {
+                  setInternal(checked === true);
+                  // A Guest can't own an Internal Task: hand it back to whoever is creating it.
+                  if (checked === true && people.data?.find((p) => p.id === fields.ownerId)?.role === "guest") set({ ownerId: defaultOwnerId });
+                }}
+              />
+              <Label htmlFor="task-internal">Internal</Label>
+              <span className="text-sm text-muted-foreground">Hidden from Guests; a Guest can't own it.</span>
+            </div>
+          )}
           {save.error && (
             <Alert variant="destructive">
               <AlertDescription>{save.error.message}</AlertDescription>
