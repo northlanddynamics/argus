@@ -158,6 +158,47 @@ export async function closeLocked(tx: Tx, me: Membership, current: { id: string;
   });
 }
 
+/**
+ * Opens a Case in `tx`: numbers it, records it in its Audit Log and publishes its signal. Returns its id
+ * and number.
+ */
+export async function insertCase(tx: Tx, me: Membership, input: OpenCaseInput, now: Date) {
+  // Serialises numbering within the Organization.
+  await tx.select({ id: organization.id }).from(organization).where(eq(organization.id, me.organizationId)).for("update");
+  const [{ last }] = (await tx
+    .select({ last: sql<number>`coalesce(max(${cases.number}), 0)::int` })
+    .from(cases)
+    .where(eq(cases.organizationId, me.organizationId))) as [{ last: number }];
+  const id = secureId();
+  await tx.insert(cases).values({
+    id,
+    organizationId: me.organizationId,
+    number: last + 1,
+    title: input.title,
+    status: "new",
+    severity: input.severity,
+    caseType: input.caseType,
+    assigneeId: null,
+    summary: input.summary ?? emptySummary(),
+    summaryVersion: 1,
+    summaryUpdatedById: me.userId,
+    summaryUpdatedAt: now,
+    openedById: me.userId,
+    openedAt: now,
+    updatedAt: now,
+  });
+  await recordCaseAudit(tx, {
+    organizationId: me.organizationId,
+    caseId: id,
+    occurredAt: now,
+    actor: actorOf(me),
+    action: "case.opened",
+    after: input.title,
+  });
+  await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: id });
+  return { id, number: last + 1 };
+}
+
 export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
   /** The Case's internal id, or throws `CaseNotFound` when `me` can't see it. */
   const findId = async (me: Actor, number: number) => {
@@ -219,43 +260,7 @@ export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
     view,
 
     async open(me: Membership, input: OpenCaseInput) {
-      const now = clock.now();
-      const number = await db.transaction(async (tx) => {
-        // Serialises numbering within the Organization.
-        await tx.select({ id: organization.id }).from(organization).where(eq(organization.id, me.organizationId)).for("update");
-        const [{ last }] = (await tx
-          .select({ last: sql<number>`coalesce(max(${cases.number}), 0)::int` })
-          .from(cases)
-          .where(eq(cases.organizationId, me.organizationId))) as [{ last: number }];
-        const id = secureId();
-        await tx.insert(cases).values({
-          id,
-          organizationId: me.organizationId,
-          number: last + 1,
-          title: input.title,
-          status: "new",
-          severity: input.severity,
-          caseType: input.caseType,
-          assigneeId: null,
-          summary: input.summary ?? emptySummary(),
-          summaryVersion: 1,
-          summaryUpdatedById: me.userId,
-          summaryUpdatedAt: now,
-          openedById: me.userId,
-          openedAt: now,
-          updatedAt: now,
-        });
-        await recordCaseAudit(tx, {
-          organizationId: me.organizationId,
-          caseId: id,
-          occurredAt: now,
-          actor: actorOf(me),
-          action: "case.opened",
-          after: input.title,
-        });
-        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: id });
-        return last + 1;
-      });
+      const { number } = await db.transaction((tx) => insertCase(tx, me, input, clock.now()));
       return view(me, number);
     },
 

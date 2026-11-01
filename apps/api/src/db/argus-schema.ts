@@ -5,7 +5,7 @@ import { CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabula
 import { STORED_LINK_TYPES } from "../case-links/vocabulary";
 import { ASSET_TYPES, OBSERVABLE_TYPES } from "../observables/vocabulary";
 import { type Citation, PROMOTION_SOURCES } from "../timeline/vocabulary";
-import { ALERT_KINDS, ALERT_STATUSES, FALCON_CLOUDS, INTEGRATION_HEALTH } from "../alerts/vocabulary";
+import { ALERT_KINDS, ALERT_STATUSES, DISMISSAL_REASONS, FALCON_CLOUDS, INTEGRATION_HEALTH } from "../alerts/vocabulary";
 import { organization, session, user } from "./auth-schema";
 
 /**
@@ -650,6 +650,9 @@ export const integrations = pgTable(
  * per Integration, so a detection delivered again updates its Alert instead of adding another.
  * `payload` is the detection event as Falcon sent it last. `version` moves on whenever the Alert
  * changes. Never deleted (ADR 0003); migration 0017 refuses deletes.
+ *
+ * An Alert is on at most one Case: `case_id` is set exactly while its Status is Attached, and
+ * `dismissal_reason` exactly while it is Dismissed (`alerts_status`).
  */
 export const alerts = pgTable(
   "alerts",
@@ -677,9 +680,21 @@ export const alerts = pgTable(
     version: integer("version").notNull(),
     receivedAt: timestamp("received_at", { withTimezone: true }).notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+    caseId: text("case_id").references(() => cases.id, { onDelete: "restrict" }),
+    attachedById: text("attached_by_id").references(() => user.id, { onDelete: "restrict" }),
+    attachedAt: timestamp("attached_at", { withTimezone: true }),
+    dismissalReason: text("dismissal_reason", { enum: DISMISSAL_REASONS }),
+    dismissalComment: text("dismissal_comment"),
+    dismissedById: text("dismissed_by_id").references(() => user.id, { onDelete: "restrict" }),
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
   },
   (t) => [
     uniqueIndex("alerts_integration_external_idx").on(t.integrationId, t.externalId),
     index("alerts_org_received_idx").on(t.organizationId, t.receivedAt),
+    index("alerts_case_idx").on(t.caseId),
+    check(
+      "alerts_status",
+      sql`(${t.status} = 'attached') = (${t.caseId} IS NOT NULL) AND (${t.status} = 'dismissed') = (${t.dismissalReason} IS NOT NULL)`,
+    ),
   ],
 );

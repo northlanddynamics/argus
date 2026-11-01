@@ -3,7 +3,7 @@ import type { Db, Tx } from "../db/client";
 import { orgAuditLog } from "../db/schema";
 import { secureId } from "../ids";
 
-export const ORG_AUDIT_CATEGORIES = ["members", "case-roles", "sso", "integrations", "teams"] as const;
+export const ORG_AUDIT_CATEGORIES = ["members", "case-roles", "sso", "integrations", "alerts", "teams"] as const;
 export type OrgAuditCategory = (typeof ORG_AUDIT_CATEGORIES)[number];
 
 export type OrgAuditAction =
@@ -22,7 +22,8 @@ export type OrgAuditAction =
   | "integration.credentials_rotated"
   | "integration.paused"
   | "integration.resumed"
-  | "integration.stream_gap";
+  | "integration.stream_gap"
+  | "alert.dismissed";
 
 /** Who acted: a Member (or the Operator) by id and name at the time, or the system itself. */
 export type OrgAuditActor =
