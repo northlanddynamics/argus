@@ -5,7 +5,7 @@ import { CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabula
 import { STORED_LINK_TYPES } from "../case-links/vocabulary";
 import { ASSET_TYPES, OBSERVABLE_TYPES } from "../observables/vocabulary";
 import { type Citation, PROMOTION_SOURCES } from "../timeline/vocabulary";
-import { organization, user } from "./auth-schema";
+import { organization, session, user } from "./auth-schema";
 
 /**
  * The Organization Audit Log: who did what to the Organization's Members and configuration.
@@ -543,3 +543,53 @@ export const caseTags = pgTable(
     check("case_tags_removed", sql`(${t.removedAt} IS NULL) = (${t.removedById} IS NULL)`),
   ],
 );
+
+/**
+ * A Guest grant: a person from outside the Organization let into one Case, optionally until
+ * `expires_at`. Counts for visibility while it hasn't ended or expired (see `access/policy.ts`).
+ * Removing a Guest ends the grant and keeps the row (ADR 0003); migration 0016 refuses deletes.
+ */
+export const caseGuests = pgTable(
+  "case_guests",
+  {
+    id: text("id").primaryKey(),
+    seq: bigserial("seq", { mode: "number" }).notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    caseId: text("case_id")
+      .notNull()
+      .references(() => cases.id, { onDelete: "restrict" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    invitedById: text("invited_by_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    invitedAt: timestamp("invited_at", { withTimezone: true }).notNull(),
+    endedById: text("ended_by_id").references(() => user.id, { onDelete: "restrict" }),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("case_guests_active_idx").on(t.caseId, t.userId).where(sql`${t.endedAt} IS NULL`),
+    index("case_guests_user_idx").on(t.userId, t.caseId),
+    check("case_guests_ended", sql`(${t.endedAt} IS NULL) = (${t.endedById} IS NULL)`),
+  ],
+);
+
+/**
+ * A Guest's Better Auth session as Argus judges it: it ends at `expires_at` (about 12 hours after it
+ * started, by Argus's clock), and `organization_id` is the Organization the Guest is working in.
+ * Goes with the session when it is signed out.
+ */
+export const guestSessions = pgTable("guest_sessions", {
+  sessionId: text("session_id")
+    .primaryKey()
+    .references(() => session.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  organizationId: text("organization_id").references(() => organization.id, { onDelete: "set null" }),
+});

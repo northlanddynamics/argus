@@ -6,7 +6,7 @@ import type { Clock } from "../clock";
 import type { Db } from "../db/client";
 import { cases, caseTags } from "../db/schema";
 import { secureId } from "../ids";
-import type { Membership } from "../members/membership";
+import type { Membership, Participant } from "../members/membership";
 import { publish } from "../realtime/signals";
 import { normaliseTag, TAG_EXPECTED, tagLabel } from "./vocabulary";
 
@@ -41,7 +41,7 @@ export function tagStore({ db, clock }: { db: Db; clock: Clock }) {
 
   return {
     /** The Tags on Cases `me` can see, with how many of those Cases have each; for filtering the Case list. */
-    async inUse(me: Membership) {
+    async inUse(me: Participant) {
       return db
         .select({ tag: caseTags.tag, cases: count() })
         .from(caseTags)

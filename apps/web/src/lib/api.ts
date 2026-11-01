@@ -1,14 +1,14 @@
 import { passkeyClient } from "@better-auth/passkey/client";
 import { createApiClient } from "api/client";
 import { createAuthClient } from "better-auth/react";
-import { adminClient, organizationClient, twoFactorClient } from "better-auth/client/plugins";
+import { adminClient, magicLinkClient, organizationClient, twoFactorClient } from "better-auth/client/plugins";
 import { queryOptions } from "@tanstack/react-query";
 
 export const api = createApiClient(window.location.origin).api;
 
 export const authClient = createAuthClient({
   baseURL: `${window.location.origin}/api/auth`,
-  plugins: [adminClient(), organizationClient(), twoFactorClient(), passkeyClient()],
+  plugins: [adminClient(), organizationClient(), twoFactorClient(), passkeyClient(), magicLinkClient()],
 });
 
 export const meQuery = queryOptions({

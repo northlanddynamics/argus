@@ -4,7 +4,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { caseQuery } from "@/lib/cases";
+import { caseQuery, isReadOnly } from "@/lib/cases";
 import { evidenceKey, evidenceQuery, evidenceUrl, formatBytes, shortHash, uploadEvidence } from "@/lib/evidence";
 import { cn } from "@/lib/utils";
 import { useCaseNumber } from "@/routes/cases/case-layout";
@@ -45,7 +45,7 @@ export function CaseEvidencePage() {
   };
 
   if (!c) return null;
-  const readOnly = c.status === "closed";
+  const readOnly = isReadOnly(c);
   const list = evidence.data ?? [];
   return (
     <Card>

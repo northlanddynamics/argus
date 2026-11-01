@@ -7,7 +7,7 @@ import type { Clock } from "../clock";
 import type { Db, Tx } from "../db/client";
 import { caseLinks, cases, user } from "../db/schema";
 import { secureId } from "../ids";
-import type { Membership } from "../members/membership";
+import type { Membership, Participant } from "../members/membership";
 import { publish } from "../realtime/signals";
 import { type LinkSide, linkSideLabel, type LinkType, sideOf, type StoredLinkType, storedLink } from "./vocabulary";
 
@@ -84,7 +84,7 @@ async function recordOnBoth(
 
 export function caseLinkStore({ db, clock }: { db: Db; clock: Clock }) {
   /** The Case's links to Cases `me` can see, oldest first. */
-  async function linksOf(me: Membership, caseId: string): Promise<CaseLinkView[]> {
+  async function linksOf(me: Participant, caseId: string): Promise<CaseLinkView[]> {
     const rows = await db
       .select({
         id: caseLinks.id,
@@ -121,7 +121,7 @@ export function caseLinkStore({ db, clock }: { db: Db; clock: Clock }) {
     });
   }
 
-  async function visibleCaseId(me: Membership, number: number) {
+  async function visibleCaseId(me: Participant, number: number) {
     const [found] = await db
       .select({ id: cases.id })
       .from(cases)
@@ -133,7 +133,7 @@ export function caseLinkStore({ db, clock }: { db: Db; clock: Clock }) {
 
   return {
     /** Case `number`'s links. Throws `CaseNotFound` if `me` can't see it. */
-    async list(me: Membership, number: number) {
+    async list(me: Participant, number: number) {
       return linksOf(me, await visibleCaseId(me, number));
     },
 

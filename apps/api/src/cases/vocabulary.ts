@@ -88,6 +88,8 @@ export const CASE_AUDIT_ACTIONS = [
   "evidence.added",
   "evidence.viewed",
   "evidence.downloaded",
+  "guest.invited",
+  "guest.removed",
   "observable.linked",
   "observable.unlinked",
   "asset.linked",

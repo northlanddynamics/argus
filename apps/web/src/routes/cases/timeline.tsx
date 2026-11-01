@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { api, errorMessage } from "@/lib/api";
-import { caseQuery } from "@/lib/cases";
+import { caseQuery, isReadOnly } from "@/lib/cases";
 import { describeOccurredAt, occurredKindLabel, precisionLabel, type TimelineEntryView, timelineKey, timelineQuery, utc } from "@/lib/timeline";
 import { actionLabel } from "@/routes/cases/audit-log";
 import { useCaseNumber } from "@/routes/cases/case-layout";
@@ -30,7 +30,7 @@ function CaseTimeline() {
   const entries = useQuery(timelineQuery(number));
   const [editing, setEditing] = useState<string | null>(null);
   if (!c) return null;
-  const readOnly = c.status === "closed";
+  const readOnly = isReadOnly(c);
   return (
     <section className="grid gap-4" aria-label="Timeline">
       <div className="flex items-baseline justify-between">

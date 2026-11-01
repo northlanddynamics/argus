@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Outlet, useNavigate, useParams, useRouteContext } from "@tanstack/react-router";
 import { LockIcon } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
+import { GuestNav } from "@/components/guest-nav";
 import { OrgNav } from "@/components/org-nav";
 import { PresenceAvatars } from "@/components/presence-avatars";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -19,6 +20,7 @@ import {
   caseRef,
   caseTypeLabel,
   casesKey,
+  isReadOnly,
   SEVERITIES,
   type Severity,
   severityLabel,
@@ -53,6 +55,7 @@ export function CaseLayout() {
   const members = useQuery({
     queryKey: membersKey,
     queryFn: async () => (await api.organization.members.$get()).json(),
+    enabled: !me.guest,
   });
 
   const change = useMutation({
@@ -90,21 +93,30 @@ export function CaseLayout() {
   });
 
   const c = found.data;
-  /** A Closed Case is read-only until an Admin reopens it. */
-  const locked = change.isPending || c?.status === "closed";
+  /** A Closed Case is read-only until an Admin reopens it; Guests change nothing. */
+  const locked = change.isPending || !c || isReadOnly(c);
   return (
     <div className="min-h-svh bg-muted">
-      <AppHeader email={me.user.email} badge={<OrgNav me={me} />} live />
+      <AppHeader
+        email={me.user.email}
+        badge={me.guest ? <GuestNav guest={me.guest} /> : <OrgNav me={me} />}
+        passkeys={!me.guest}
+        live
+      />
       <main className="mx-auto grid max-w-6xl gap-4 p-6">
         <nav className="text-sm text-muted-foreground" aria-label="Breadcrumb">
           <Link to="/" className="text-primary underline">
-            Cases
+            {me.guest ? "Your Cases" : "Cases"}
           </Link>{" "}
           / <span className="font-mono">{caseRef(number)}</span>
         </nav>
         {found.data === null && (
           <Alert>
-            <AlertDescription>There is no Case {caseRef(number)} in your Organization.</AlertDescription>
+            <AlertDescription>
+              {me.guest
+                ? `You don't have access to ${caseRef(number)} in ${me.guest.organization?.name ?? "this Organization"}.`
+                : `There is no Case ${caseRef(number)} in your Organization.`}
+            </AlertDescription>
           </Alert>
         )}
         {c && (
@@ -125,7 +137,7 @@ export function CaseLayout() {
                   </div>
                   <div className="flex items-center gap-4">
                     <PresenceAvatars number={c.number} />
-                    {c.status !== "closed" && <CloseCaseDialog number={c.number} />}
+                    {!isReadOnly(c) && <CloseCaseDialog number={c.number} />}
                   </div>
                 </div>
                 {c.closed && c.resolution && (
@@ -245,9 +257,11 @@ export function CaseLayout() {
               <Link to="/cases/$number/observables" params={{ number: String(number) }} className={tabLink}>
                 Observables &amp; Assets
               </Link>
-              <Link to="/cases/$number/audit-log" params={{ number: String(number) }} className={tabLink}>
-                Audit Log
-              </Link>
+              {c.can.readAuditLog && (
+                <Link to="/cases/$number/audit-log" params={{ number: String(number) }} className={tabLink}>
+                  Audit Log
+                </Link>
+              )}
             </nav>
             <Outlet />
           </>

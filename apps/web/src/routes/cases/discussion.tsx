@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { api, errorMessage } from "@/lib/api";
-import { caseQuery } from "@/lib/cases";
+import { caseQuery, isReadOnly } from "@/lib/cases";
 import {
   discussionKey,
   discussionQuery,
@@ -42,7 +42,7 @@ export function CaseDiscussion() {
   });
 
   if (!c) return null;
-  const readOnly = c.status === "closed";
+  const readOnly = isReadOnly(c);
   return (
     <Card>
       <CardHeader>

@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api, errorMessage } from "@/lib/api";
-import { caseKey, caseQuery } from "@/lib/cases";
+import { caseKey, caseQuery, isReadOnly } from "@/lib/cases";
 import { type TaskView, tasksKey, tasksQuery } from "@/lib/tasks";
 import { useCaseNumber } from "@/routes/cases/case-layout";
 import { TaskDialog } from "@/routes/cases/task-dialog";
@@ -35,7 +35,7 @@ export function CaseTasksPage() {
   });
 
   if (!c) return null;
-  const readOnly = c.status === "closed";
+  const readOnly = isReadOnly(c);
   const list = tasks.data ?? [];
   return (
     <Card>

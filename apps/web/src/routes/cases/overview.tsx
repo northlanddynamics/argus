@@ -5,9 +5,10 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api, errorMessage } from "@/lib/api";
-import { type CaseSummary, type CaseView, caseKey, caseQuery, casesKey, resolutionLabel } from "@/lib/cases";
+import { type CaseSummary, type CaseView, caseKey, caseQuery, casesKey, resolutionLabel, isReadOnly } from "@/lib/cases";
 import { useCaseNumber } from "@/routes/cases/case-layout";
 import { CaseRolesPanel } from "@/routes/cases/case-roles-panel";
+import { GuestsPanel } from "@/routes/cases/guests-panel";
 import { LinkedCasesPanel } from "@/routes/cases/linked-cases-panel";
 import { TagsPanel } from "@/routes/cases/tags-panel";
 
@@ -24,7 +25,7 @@ export function CaseOverviewPage() {
   if (!c) return null;
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
-      <CaseSummaryCard number={number} summary={c.summary} readOnly={c.status === "closed"} />
+      <CaseSummaryCard number={number} summary={c.summary} readOnly={isReadOnly(c)} />
       <div className="grid content-start gap-4">
       <Card>
         <CardHeader>
@@ -51,9 +52,10 @@ export function CaseOverviewPage() {
           </dl>
         </CardContent>
       </Card>
-      <CaseRolesPanel number={number} caseRoles={c.caseRoles} readOnly={c.status === "closed"} />
-      <LinkedCasesPanel number={number} readOnly={c.status === "closed"} />
-      <TagsPanel number={number} tags={c.tags} readOnly={c.status === "closed"} />
+      <CaseRolesPanel number={number} caseRoles={c.caseRoles} readOnly={isReadOnly(c)} />
+      <LinkedCasesPanel number={number} readOnly={isReadOnly(c)} />
+      <TagsPanel number={number} tags={c.tags} readOnly={isReadOnly(c)} />
+      {c.can.work && <GuestsPanel c={c} />}
       </div>
     </div>
   );

@@ -684,3 +684,77 @@ test("an Analyst tags a Case, filters the list by Tag, links Cases and marks one
     await stop();
   }
 }, 60_000);
+
+test("the Owner invites a Guest to a Case; the Guest signs in by email link, reads the Case, switches Organization, and loses access when removed", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    await owner.api.cases.$post({ json: { title: "Suspicious PowerShell on FIN-LT-0231", caseType: "malware", severity: "critical" } });
+    await owner.api.cases.$post({ json: { title: "Not for outsiders", caseType: "phishing", severity: "low" } });
+    await owner.api.cases[":number"].discussion.$post({ param: { number: "1" }, json: { body: "Contained at 10:02." } });
+    await t.inviteOwner("Globex", "owner@globex.example");
+    const globex = await t.acceptInvite("owner@globex.example", PASSWORD, "Gus Globex");
+    await globex.api.cases.$post({ json: { title: "Vendor email compromise", caseType: "phishing", severity: "high" } });
+
+    // The Owner invites outside counsel from the Case page.
+    const ownerPage = await browser.newPage();
+    await signIn(ownerPage, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
+    await ownerPage.goto(`${baseUrl}/cases/1`);
+    await ownerPage.getByRole("button", { name: "+ Invite" }).click();
+    const dialog = ownerPage.getByRole("dialog", { name: "Invite a Guest to C-1" });
+    await dialog.getByLabel("Email").fill("k.patel@lawfirm.example");
+    await dialog.getByLabel("Name (optional)").fill("Kim Patel");
+    await dialog.getByLabel("Access expires (optional)").fill("2026-12-01");
+    await dialog.getByRole("button", { name: "Send invite" }).click();
+    await ownerPage.getByText("k.patel@lawfirm.example").waitFor();
+    await ownerPage.getByText(`Access until ${new Date("2026-12-01T23:59:59").toLocaleDateString()}`).waitFor();
+    // Globex invites them too.
+    await globex.api.cases[":number"].guests.$post({ param: { number: "1" }, json: { email: "k.patel@lawfirm.example" } });
+
+    // Counsel follows the invite email and asks for a sign-in link.
+    const invite = t.outbox.messages.findLast((m) => m.to === "k.patel@lawfirm.example")!;
+    const signInUrl = invite.text.match(/https?:\/\/\S+guest\/sign-in\S*/)![0];
+    const page = await browser.newPage();
+    await page.goto(signInUrl);
+    expect(await page.getByLabel("Email").inputValue()).toBe("k.patel@lawfirm.example");
+    await page.getByRole("button", { name: "Email me a sign-in link" }).click();
+    await page.getByText("a sign-in link is on its way").waitFor();
+    await page.goto(t.magicLinkFor("k.patel@lawfirm.example")!);
+
+    // Their Cases, from both Organizations.
+    await page.getByRole("heading", { name: "Your Cases" }).waitFor();
+    await page.getByText("Guest access").waitFor();
+    await page.getByText(/Session ends in 1[12] h/).waitFor();
+    await page.getByText("One Guest account, invited by 2 Organizations.").waitFor();
+    await page.getByRole("button", { name: /Suspicious PowerShell on FIN-LT-0231/ }).click();
+    await page.getByRole("heading", { name: "Suspicious PowerShell on FIN-LT-0231" }).waitFor();
+    for (const field of ["Status", "Severity", "Case Type", "Assignee"]) expect(await page.getByLabel(field).isDisabled()).toBe(true);
+    expect(await page.getByRole("link", { name: "Audit Log" }).count()).toBe(0);
+    expect(await page.getByRole("button", { name: "Close Case" }).count()).toBe(0);
+    expect(await page.getByRole("button", { name: "Edit" }).count()).toBe(0);
+    await page.getByRole("link", { name: "Timeline & Discussion" }).click();
+    await page.getByText("Contained at 10:02.").waitFor();
+    await page.goto(`${baseUrl}/cases/2`);
+    await page.getByText("You don't have access to C-2 in Acme Security.").waitFor();
+
+    // Over to the other Organization's Case.
+    await page.getByRole("link", { name: "Your Cases" }).first().click();
+    await page.getByRole("button", { name: /Vendor email compromise/ }).click();
+    await page.getByRole("heading", { name: "Vendor email compromise" }).waitFor();
+    await page.getByText("Globex", { exact: true }).waitFor();
+
+    // Removed from the Acme Case, it disappears from their list.
+    await ownerPage.getByRole("button", { name: "Remove Kim Patel" }).click();
+    await ownerPage.getByText("No Guests on this Case.").waitFor();
+    await page.getByRole("link", { name: "Your Cases" }).first().click();
+    await page.getByRole("button", { name: /Vendor email compromise/ }).waitFor();
+    expect(await page.getByRole("button", { name: /Suspicious PowerShell/ }).count()).toBe(0);
+
+    await ownerPage.getByRole("link", { name: "Audit Log" }).click();
+    await ownerPage.getByRole("cell", { name: "Invited Guest" }).waitFor();
+    await ownerPage.getByRole("cell", { name: "Removed Guest" }).waitFor();
+  } finally {
+    await stop();
+  }
+}, 60_000);

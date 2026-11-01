@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, inArray, isNull, ne } from "drizzle-orm";
-import { visibleCases } from "../access/policy";
+import { casePolicy, visibleCases } from "../access/policy";
 import { actorOf, CaseNotFound, lockCase } from "../cases/cases";
 import { recordCaseAudit } from "../cases/case-audit-log";
 import type { CaseAuditAction } from "../cases/vocabulary";
@@ -7,7 +7,7 @@ import type { Clock } from "../clock";
 import type { Db, Tx } from "../db/client";
 import { assets, caseAssets, caseObservables, cases, observables, user } from "../db/schema";
 import { secureId } from "../ids";
-import type { Membership } from "../members/membership";
+import type { Membership, Participant } from "../members/membership";
 import { publish } from "../realtime/signals";
 import {
   type AssetType,
@@ -76,7 +76,7 @@ function heldOnceStore<Type extends string>({ db, clock }: { db: Db; clock: Cloc
 
   const describe = (type: Type, value: string) => `${kind.label(type)} ${value}`;
 
-  async function visibleCaseId(me: Membership, number: number) {
+  async function visibleCaseId(me: Participant, number: number) {
     const [found] = await db
       .select({ id: cases.id })
       .from(cases)
@@ -87,7 +87,7 @@ function heldOnceStore<Type extends string>({ db, clock }: { db: Db; clock: Cloc
   }
 
   /** What is linked to Case `number`, in the order it was linked. Throws `CaseNotFound` if `me` can't see it. */
-  async function list(me: Membership, number: number): Promise<LinkedView<Type>[]> {
+  async function list(me: Participant, number: number): Promise<LinkedView<Type>[]> {
       const id = await visibleCaseId(me, number);
       const rows = await db
         .select({
@@ -103,7 +103,8 @@ function heldOnceStore<Type extends string>({ db, clock }: { db: Db; clock: Cloc
         .innerJoin(user, eq(links.linkedById, user.id))
         .where(and(eq(links.caseId, id), isNull(links.unlinkedAt)))
         .orderBy(asc(links.linkedAt), asc(links.seq));
-      const seen = rows.length
+      // Guests never learn which other Cases an item is on.
+      const seen = rows.length && casePolicy.canSeeCorrelation(me)
         ? await db
             .select({ itemId: links.itemId, number: cases.number, title: cases.title })
             .from(links)

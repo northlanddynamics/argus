@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
 import { AuthCard } from "@/components/sign-in/auth-card";
 import { ErrorAlert } from "@/components/sign-in/error-alert";
@@ -86,6 +86,12 @@ export function SignInPage() {
           Sign in with a passkey
         </Button>
         <p className="text-sm text-muted-foreground">No self-serve sign-up. Ask your Organization's Admin for an invite.</p>
+        <p className="text-sm text-muted-foreground">
+          Invited to a Case as a Guest?{" "}
+          <Link to="/guest/sign-in" className="text-primary underline">
+            Sign in with an email link
+          </Link>
+        </p>
       </form>
     </AuthCard>
   );

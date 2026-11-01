@@ -4,8 +4,8 @@ import { caseAuditLog } from "../db/schema";
 import { secureId } from "../ids";
 import type { CaseAuditAction } from "./vocabulary";
 
-/** Who acted on a Case. Guests, CrowdStrike and the system arrive with later work. */
-export type CaseActor = { type: "member"; id: string; name: string };
+/** Who acted on a Case. CrowdStrike and the system arrive with later work. */
+export type CaseActor = { type: "member" | "guest"; id: string; name: string };
 
 export type CaseAuditEntry = {
   organizationId: string;

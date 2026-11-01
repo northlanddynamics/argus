@@ -22,7 +22,7 @@ export type Signal =
       kind: "case";
       organizationId: string;
       caseId: string;
-      before?: Partial<Pick<CaseAccessFacts, "restricted" | "assigneeId" | "caseRoleHolderIds">>;
+      before?: Partial<Pick<CaseAccessFacts, "restricted" | "assigneeId" | "caseRoleHolderIds" | "guests">>;
     }
   /** Who is viewing a Case changed. */
   | { kind: "presence"; organizationId: string; caseId: string }
