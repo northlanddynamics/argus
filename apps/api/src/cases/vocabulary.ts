@@ -92,6 +92,10 @@ export const CASE_AUDIT_ACTIONS = [
   "observable.unlinked",
   "asset.linked",
   "asset.unlinked",
+  "case_link.added",
+  "case_link.removed",
+  "tag.added",
+  "tag.removed",
 ] as const;
 export type CaseAuditAction = (typeof CASE_AUDIT_ACTIONS)[number];
 

@@ -1,3 +1,4 @@
+import { caseLinkStore } from "./case-links/case-links";
 import { caseRoleStore } from "./case-roles/case-roles";
 import { caseStore } from "./cases/cases";
 import type { Deps } from "./deps";
@@ -7,6 +8,7 @@ import { assetStore, observableStore } from "./observables/observables";
 import { invitationStore } from "./invitations/invitations";
 import { memberStore } from "./members/members";
 import { organizationStore } from "./organizations/organizations";
+import { tagStore } from "./tags/tags";
 import { taskStore } from "./tasks/tasks";
 import { timelineStore } from "./timeline/timeline";
 
@@ -24,6 +26,8 @@ export function createModules(deps: Deps) {
     evidence: evidenceStore(deps),
     observables: observableStore(deps),
     assets: assetStore(deps),
+    caseLinks: caseLinkStore(deps),
+    tags: tagStore(deps),
     members: memberStore(deps),
     invitations: invitationStore(deps),
     organizations: organizationStore(deps),

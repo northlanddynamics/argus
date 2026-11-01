@@ -1,6 +1,8 @@
 import { zValidator } from "@hono/zod-validator";
 import { type Context, Hono } from "hono";
 import { z } from "zod";
+import { AlreadyLinked, LinkNotFound, LinkToSelf, TargetNotFound } from "../case-links/case-links";
+import { LINK_TYPES } from "../case-links/vocabulary";
 import { caseSummarySchema } from "../cases/case-summary";
 import {
   AssignmentNotFound,
@@ -17,6 +19,8 @@ import { type MemberEnv, requireMember } from "../members/membership";
 import { InvalidValue, NotLinked } from "../observables/observables";
 import { ASSET_TYPES, OBSERVABLE_TYPES } from "../observables/vocabulary";
 import type { Modules } from "../modules";
+import { InvalidTag, TagNotFound } from "../tags/tags";
+import { normaliseTag, TAG_EXPECTED } from "../tags/vocabulary";
 import { OwnerCannotSeeCase, StaleTask, TaskNotFound } from "../tasks/tasks";
 import {
   AlreadyPromoted,
@@ -45,6 +49,12 @@ const listQuery = z.object({
   status: z.enum(STATUSES).optional(),
   severity: z.enum(SEVERITIES).optional(),
   caseType: z.enum(CASE_TYPES).optional(),
+  /** "#BEC" and "bec" are the same Tag. */
+  tag: z
+    .string()
+    .refine((t) => normaliseTag(t) !== null, TAG_EXPECTED)
+    .transform((t) => normaliseTag(t) ?? t)
+    .optional(),
 });
 
 const changeBody = z.object({
@@ -147,6 +157,13 @@ const linkedParam = numberParam.extend({ id: z.string().min(1) });
 const observableBody = z.object({ type: z.enum(OBSERVABLE_TYPES), value: z.string().trim().min(1).max(2048) });
 const assetBody = z.object({ type: z.enum(ASSET_TYPES), value: z.string().trim().min(1).max(300) });
 
+const linkParam = numberParam.extend({ id: z.string().min(1) });
+/** Links this Case to Case `case` (its number). */
+const linkBody = z.object({ type: z.enum(LINK_TYPES), case: z.number().int().positive() });
+/** "#BEC" and "bec" are the same Tag; the module normalises it. */
+const tagBody = z.object({ tag: z.string().max(200) });
+const tagParam = numberParam.extend({ tag: z.string().min(1).max(200) });
+
 const notFound = { error: "Case not found" } as const;
 
 /** The result, or null if the Member can't see the Case (another Organization's, or Restricted). */
@@ -164,9 +181,12 @@ const closedConflict = (e: unknown) => {
 
 /**
  * Cases: open, list, view, change, close, reopen, the Case Summary, Tasks, Case Role assignments, the
- * Discussion, the Timeline, Evidence, Observables and Assets, and the Case Audit Log.
+ * Discussion, the Timeline, Evidence, Observables and Assets, Case Links, Tags, and the Case Audit Log.
  */
-export const caseRoutes = (deps: Deps, { cases: store, tasks, caseRoles, discussion, timeline, evidence, observables, assets }: Modules) => {
+export const caseRoutes = (
+  deps: Deps,
+  { cases: store, tasks, caseRoles, discussion, timeline, evidence, observables, assets, caseLinks, tags }: Modules,
+) => {
   const origin = new URL(deps.baseUrl).origin;
 
   /** Streams Evidence to view or download, once its access is recorded. */
@@ -191,6 +211,9 @@ export const caseRoutes = (deps: Deps, { cases: store, tasks, caseRoles, discuss
     })
     .get("/", zValidator("query", listQuery), async (c) => {
       return c.json(await store.list(c.get("membership"), c.req.valid("query")), 200);
+    })
+    .get("/tags", async (c) => {
+      return c.json({ tags: await tags.inUse(c.get("membership")) }, 200);
     })
     .get("/:number", zValidator("param", numberParam), async (c) => {
       const found = await unlessNotFound(store.view(c.get("membership"), c.req.valid("param").number));
@@ -480,6 +503,56 @@ export const caseRoutes = (deps: Deps, { cases: store, tasks, caseRoles, discuss
         return c.json({ assets: linked }, 200);
       } catch (e) {
         if (e instanceof NotLinked) return c.json({ error: e.message }, 404);
+        return c.json(closedConflict(e), 409);
+      }
+    })
+    .get("/:number/links", zValidator("param", numberParam), async (c) => {
+      const links = await unlessNotFound(caseLinks.list(c.get("membership"), c.req.valid("param").number));
+      if (!links) return c.json(notFound, 404);
+      return c.json({ links }, 200);
+    })
+    .post("/:number/links", zValidator("param", numberParam), zValidator("json", linkBody), async (c) => {
+      const { type, case: targetNumber } = c.req.valid("json");
+      try {
+        const done = await unlessNotFound(caseLinks.link(c.get("membership"), c.req.valid("param").number, { type, targetNumber }));
+        if (!done) return c.json(notFound, 404);
+        return c.json(done, 201);
+      } catch (e) {
+        if (e instanceof TargetNotFound || e instanceof LinkToSelf) return c.json({ error: e.message }, 400);
+        if (e instanceof AlreadyLinked) return c.json({ error: e.message }, 409);
+        return c.json(closedConflict(e), 409);
+      }
+    })
+    .delete("/:number/links/:id", zValidator("param", linkParam), async (c) => {
+      const { number, id } = c.req.valid("param");
+      try {
+        const links = await unlessNotFound(caseLinks.unlink(c.get("membership"), number, id));
+        if (!links) return c.json(notFound, 404);
+        return c.json({ links }, 200);
+      } catch (e) {
+        if (e instanceof LinkNotFound) return c.json({ error: e.message }, 404);
+        return c.json(closedConflict(e), 409);
+      }
+    })
+    .post("/:number/tags", zValidator("param", numberParam), zValidator("json", tagBody), async (c) => {
+      try {
+        const done = await unlessNotFound(tags.add(c.get("membership"), c.req.valid("param").number, c.req.valid("json").tag));
+        if (!done) return c.json(notFound, 404);
+        // 200 when the Case already had it.
+        return c.json({ tags: done.tags }, done.added ? 201 : 200);
+      } catch (e) {
+        if (e instanceof InvalidTag) return c.json({ error: e.message }, 400);
+        return c.json(closedConflict(e), 409);
+      }
+    })
+    .delete("/:number/tags/:tag", zValidator("param", tagParam), async (c) => {
+      const { number, tag } = c.req.valid("param");
+      try {
+        const left = await unlessNotFound(tags.remove(c.get("membership"), number, tag));
+        if (!left) return c.json(notFound, 404);
+        return c.json({ tags: left }, 200);
+      } catch (e) {
+        if (e instanceof TagNotFound) return c.json({ error: e.message }, 404);
         return c.json(closedConflict(e), 409);
       }
     })

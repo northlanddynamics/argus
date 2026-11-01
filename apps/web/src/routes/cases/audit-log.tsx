@@ -60,6 +60,10 @@ export const actionLabel: Record<CaseAuditAction, string> = {
   "observable.unlinked": "Unlinked Observable",
   "asset.linked": "Added Asset",
   "asset.unlinked": "Unlinked Asset",
+  "case_link.added": "Linked Case",
+  "case_link.removed": "Unlinked Case",
+  "tag.added": "Added Tag",
+  "tag.removed": "Removed Tag",
 };
 
 /** A recorded value as people read it: "In Progress" rather than "in_progress". */

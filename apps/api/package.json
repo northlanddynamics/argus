@@ -8,7 +8,9 @@
     "./cases/case-summary": "./src/cases/case-summary.ts",
     "./realtime/messages": "./src/realtime/messages.ts",
     "./timeline/occurred-at": "./src/timeline/occurred-at.ts",
-    "./observables/vocabulary": "./src/observables/vocabulary.ts"
+    "./observables/vocabulary": "./src/observables/vocabulary.ts",
+    "./case-links/vocabulary": "./src/case-links/vocabulary.ts",
+    "./tags/vocabulary": "./src/tags/vocabulary.ts"
   },
   "scripts": {
     "dev": "bun --watch src/server.ts",

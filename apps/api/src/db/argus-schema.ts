@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { bigint, bigserial, boolean, check, date, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import type { CaseSummary } from "../cases/case-summary";
 import { CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabulary";
+import { STORED_LINK_TYPES } from "../case-links/vocabulary";
 import { ASSET_TYPES, OBSERVABLE_TYPES } from "../observables/vocabulary";
 import { type Citation, PROMOTION_SOURCES } from "../timeline/vocabulary";
 import { organization, user } from "./auth-schema";
@@ -463,4 +464,82 @@ export const { items: observables, links: caseObservables } = heldOncePerOrganiz
 export const { items: assets, links: caseAssets } = heldOncePerOrganization(
   { items: "assets", links: "case_assets", itemId: "asset_id" },
   ASSET_TYPES,
+);
+
+/**
+ * Case Links: a typed relationship from one Case (`source`) to another (`target`) in the same
+ * Organization, stored once and read from either side (`case-links/vocabulary.ts`). Two Cases have at
+ * most one link at a time. Removing a link ends it and keeps the row (ADR 0003).
+ */
+export const caseLinks = pgTable(
+  "case_links",
+  {
+    id: text("id").primaryKey(),
+    /** Insertion order, to sort links made at the same instant. */
+    seq: bigserial("seq", { mode: "number" }).notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    sourceCaseId: text("source_case_id")
+      .notNull()
+      .references(() => cases.id, { onDelete: "restrict" }),
+    targetCaseId: text("target_case_id")
+      .notNull()
+      .references(() => cases.id, { onDelete: "restrict" }),
+    type: text("type", { enum: STORED_LINK_TYPES }).notNull(),
+    linkedById: text("linked_by_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    linkedAt: timestamp("linked_at", { withTimezone: true }).notNull(),
+    unlinkedById: text("unlinked_by_id").references(() => user.id, { onDelete: "restrict" }),
+    unlinkedAt: timestamp("unlinked_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("case_links_active_pair_idx")
+      .on(sql`least(${t.sourceCaseId}, ${t.targetCaseId})`, sql`greatest(${t.sourceCaseId}, ${t.targetCaseId})`)
+      .where(sql`${t.unlinkedAt} IS NULL`),
+    index("case_links_source_idx")
+      .on(t.sourceCaseId)
+      .where(sql`${t.unlinkedAt} IS NULL`),
+    index("case_links_target_idx")
+      .on(t.targetCaseId)
+      .where(sql`${t.unlinkedAt} IS NULL`),
+    check("case_links_not_self", sql`${t.sourceCaseId} <> ${t.targetCaseId}`),
+    check("case_links_type", sql`${t.type} IN (${sql.raw(STORED_LINK_TYPES.map((x) => `'${x}'`).join(", "))})`),
+    check("case_links_unlinked", sql`(${t.unlinkedAt} IS NULL) = (${t.unlinkedById} IS NULL)`),
+  ],
+);
+
+/**
+ * Tags on Cases. `tag` is in its stored form (`tags/vocabulary.ts`). Removing a Tag ends the row
+ * and keeps it (ADR 0003); adding it again adds a new one.
+ */
+export const caseTags = pgTable(
+  "case_tags",
+  {
+    id: text("id").primaryKey(),
+    seq: bigserial("seq", { mode: "number" }).notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    caseId: text("case_id")
+      .notNull()
+      .references(() => cases.id, { onDelete: "restrict" }),
+    tag: text("tag").notNull(),
+    addedById: text("added_by_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    addedAt: timestamp("added_at", { withTimezone: true }).notNull(),
+    removedById: text("removed_by_id").references(() => user.id, { onDelete: "restrict" }),
+    removedAt: timestamp("removed_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("case_tags_active_idx")
+      .on(t.caseId, t.tag)
+      .where(sql`${t.removedAt} IS NULL`),
+    index("case_tags_org_tag_idx")
+      .on(t.organizationId, t.tag)
+      .where(sql`${t.removedAt} IS NULL`),
+    check("case_tags_removed", sql`(${t.removedAt} IS NULL) = (${t.removedById} IS NULL)`),
+  ],
 );

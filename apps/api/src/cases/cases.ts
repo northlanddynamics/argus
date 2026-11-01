@@ -10,6 +10,7 @@ import type { Membership } from "../members/membership";
 import { memberName } from "../members/members";
 import { publish } from "../realtime/signals";
 import { taskCounts } from "../tasks/task-counts";
+import { hasTag, tagsOfCase } from "../tags/case-tags";
 import { type CaseActor, type CaseAuditEntry, listCaseAudit, recordCaseAudit, type CaseAuditFilter } from "./case-audit-log";
 import { type CaseSummary, emptySummary } from "./case-summary";
 import { type CaseType, REOPENED_STATUS, type Resolution, type Severity, type Status } from "./vocabulary";
@@ -28,7 +29,8 @@ export type CaseChanges = {
   restricted?: boolean;
 };
 export type CaseListView = "open" | "mine" | "unassigned" | "closed";
-export type CaseListFilter = { view?: CaseListView; status?: Status; severity?: Severity; caseType?: CaseType };
+/** `tag` in its stored form (`tags/vocabulary.ts`). */
+export type CaseListFilter = { view?: CaseListView; status?: Status; severity?: Severity; caseType?: CaseType; tag?: string };
 
 export class CaseNotFound extends Error {}
 export class NotAMember extends Error {}
@@ -73,6 +75,7 @@ const listColumns = {
   assigneeName: assignee.name,
   openedAt: cases.openedAt,
   updatedAt: cases.updatedAt,
+  tags: tagsOfCase,
 };
 
 type ListRow = {
@@ -87,6 +90,7 @@ type ListRow = {
   assigneeName: string | null;
   openedAt: Date;
   updatedAt: Date;
+  tags: string[];
 };
 
 const listItem = (row: ListRow) => ({
@@ -100,6 +104,7 @@ const listItem = (row: ListRow) => ({
   assignee: row.assigneeId ? { id: row.assigneeId, name: row.assigneeName ?? "" } : null,
   openedAt: row.openedAt.toISOString(),
   updatedAt: row.updatedAt.toISOString(),
+  tags: row.tags,
 });
 
 /** The acting Member as the Case Audit Log records them. */
@@ -131,6 +136,26 @@ export const lockCase = async (tx: Tx, me: Membership, number: number, closed: "
   if (closed === "refuse" && current.status === "closed") throw new CaseClosed();
   return { ...current, caseRoleHolderIds: await caseRoleHolderIds(tx, current.id) };
 };
+
+/**
+ * Closes a Case locked by `lockCase` with `resolution`, recording it in its Audit Log. The caller
+ * publishes the Case's signal.
+ */
+export async function closeLocked(tx: Tx, me: Membership, current: { id: string; status: Status }, resolution: Resolution, now: Date) {
+  await tx
+    .update(cases)
+    .set({ status: "closed", resolution, closedById: me.userId, closedAt: now, updatedAt: now })
+    .where(eq(cases.id, current.id));
+  await recordCaseAudit(tx, {
+    organizationId: me.organizationId,
+    caseId: current.id,
+    occurredAt: now,
+    actor: actorOf(me),
+    action: "case.closed",
+    before: current.status,
+    after: resolution,
+  });
+}
 
 export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
   /** The Case's internal id, or throws `CaseNotFound` when `me` can't see it. */
@@ -254,6 +279,7 @@ export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
             filter.status ? eq(cases.status, filter.status) : undefined,
             filter.severity ? eq(cases.severity, filter.severity) : undefined,
             filter.caseType ? eq(cases.caseType, filter.caseType) : undefined,
+            filter.tag ? hasTag(filter.tag) : undefined,
           ),
         )
         .orderBy(desc(cases.updatedAt), desc(cases.number))
@@ -359,19 +385,7 @@ export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
       const now = clock.now();
       await db.transaction(async (tx) => {
         const current = await lockCase(tx, me, number);
-        await tx
-          .update(cases)
-          .set({ status: "closed", resolution, closedById: me.userId, closedAt: now, updatedAt: now })
-          .where(eq(cases.id, current.id));
-        await recordCaseAudit(tx, {
-          organizationId: me.organizationId,
-          caseId: current.id,
-          occurredAt: now,
-          actor: actorOf(me),
-          action: "case.closed",
-          before: current.status,
-          after: resolution,
-        });
+        await closeLocked(tx, me, current, resolution, now);
         await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id });
       });
       return view(me, number);
