@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { visibleCases } from "../access/policy";
+import { casePolicy, visibleCases } from "../access/policy";
 import { actorOf, CaseNotFound, lockCase } from "../cases/cases";
 import { recordCaseAudit } from "../cases/case-audit-log";
 import type { CaseAuditAction } from "../cases/vocabulary";
@@ -8,7 +8,7 @@ import type { Clock } from "../clock";
 import type { Db, Tx } from "../db/client";
 import { caseAuditLog, cases, discussionMessages, tasks, timelineEntries, user } from "../db/schema";
 import { secureId } from "../ids";
-import type { Membership } from "../members/membership";
+import type { Membership, Participant } from "../members/membership";
 import { publish } from "../realtime/signals";
 import { describeOccurredAt, type OccurredAt } from "./occurred-at";
 import type { Citation, PromotionSource } from "./vocabulary";
@@ -205,7 +205,7 @@ const SOURCE_NAMES = { discussion_message: "from Discussion message", audit_log_
 
 export function timelineStore({ db, clock }: { db: Db; clock: Clock }) {
   /** The id of Case `number`, or `CaseNotFound` when `me` can't see it. */
-  const findCase = async (me: Membership, number: number) => {
+  const findCase = async (me: Participant, number: number) => {
     const [found] = await db
       .select({ id: cases.id })
       .from(cases)
@@ -292,7 +292,7 @@ export function timelineStore({ db, clock }: { db: Db; clock: Clock }) {
     return views;
   };
 
-  const view = async (me: Membership, number: number, id: string) => {
+  const view = async (me: Participant, number: number, id: string) => {
     const [entry] = await select(await findCase(me, number), id);
     if (!entry) throw new TimelineEntryNotFound();
     return entry;
@@ -300,7 +300,12 @@ export function timelineStore({ db, clock }: { db: Db; clock: Clock }) {
 
   return {
     /** The Case's Timeline, ordered by when things happened; retracted entries included. */
-    list: async (me: Membership, number: number) => select(await findCase(me, number)),
+    async list(me: Participant, number: number) {
+      const entries = await select(await findCase(me, number));
+      if (casePolicy.canReadAuditLog(me)) return entries;
+      // Guests never see the Audit Log, so not the entry of it a Timeline Entry was Promoted from either.
+      return entries.map((e) => (e.source?.kind === "audit_log_entry" ? { ...e, source: null } : e));
+    },
 
     /** Adds an entry; with `source`, Promotes that Discussion message or Audit Log entry into it. */
     async add(me: Membership, number: number, input: TimelineEntryInput, source?: PromotionSource) {

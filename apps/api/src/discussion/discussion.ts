@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { discussionPolicy, NotPermitted, visibleCases } from "../access/policy";
 import { caseRoleHolderIds } from "../case-roles/holders";
+import { guestGrantsOf } from "../guests/grants";
 import { actorOf, CaseNotFound, lockCase } from "../cases/cases";
 import { recordCaseAudit } from "../cases/case-audit-log";
 import { peopleWhoCanSee } from "../cases/people";
@@ -8,7 +9,7 @@ import type { Clock } from "../clock";
 import type { Db, Tx } from "../db/client";
 import { cases, discussionMentions, discussionMessages, user } from "../db/schema";
 import { secureId } from "../ids";
-import type { Membership } from "../members/membership";
+import type { Membership, Participant } from "../members/membership";
 import { publish } from "../realtime/signals";
 import { mentionedIds, withNames } from "./mentions";
 
@@ -100,7 +101,7 @@ const recordMentions = async (tx: Tx, me: Membership, caseId: string, messageId:
 
 export function discussionStore({ db, clock }: { db: Db; clock: Clock }) {
   /** The Case's messages (or just `id`) as `me` sees them, oldest first. */
-  const select = async (me: Membership, number: number, id?: string): Promise<MessageView[]> => {
+  const select = async (me: Participant, number: number, id?: string): Promise<MessageView[]> => {
     const [found] = await db
       .select({ id: cases.id })
       .from(cases)
@@ -139,7 +140,7 @@ export function discussionStore({ db, clock }: { db: Db; clock: Clock }) {
     });
   };
 
-  const view = async (me: Membership, number: number, id: string) => {
+  const view = async (me: Participant, number: number, id: string) => {
     const [message] = await select(me, number, id);
     if (!message) throw new MessageNotFound();
     return message;
@@ -147,7 +148,7 @@ export function discussionStore({ db, clock }: { db: Db; clock: Clock }) {
 
   return {
     /** The Case's messages, oldest first; throws `CaseNotFound` when `me` can't see it. */
-    list: (me: Membership, number: number) => select(me, number),
+    list: (me: Participant, number: number) => select(me, number),
 
     /** The people `me` may mention on the Case: everyone who can see it. */
     async mentionable(me: Membership, number: number) {
@@ -157,7 +158,7 @@ export function discussionStore({ db, clock }: { db: Db; clock: Clock }) {
         .where(and(visibleCases(me), eq(cases.number, number)))
         .limit(1);
       if (!found) throw new CaseNotFound();
-      return peopleWhoCanSee(db, { ...found, caseRoleHolderIds: await caseRoleHolderIds(db, found.id) });
+      return peopleWhoCanSee(db, { ...found, caseRoleHolderIds: await caseRoleHolderIds(db, found.id), guests: await guestGrantsOf(db, found.id) });
     },
 
     async post(me: Membership, number: number, body: string) {

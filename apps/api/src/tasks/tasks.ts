@@ -7,7 +7,7 @@ import type { Clock } from "../clock";
 import type { Db, Tx } from "../db/client";
 import { cases, tasks, user } from "../db/schema";
 import { secureId } from "../ids";
-import type { Membership } from "../members/membership";
+import type { Membership, Participant } from "../members/membership";
 import { memberOf } from "../members/members";
 import { publish } from "../realtime/signals";
 
@@ -130,7 +130,7 @@ export function taskStore({ db, clock }: { db: Db; clock: Clock }) {
   });
 
   /** The Task on Case `number`, as `me` sees it; throws `TaskNotFound` (also when they can't see the Case). */
-  const view = async (me: Membership, number: number, id: string) => {
+  const view = async (me: Participant, number: number, id: string) => {
     const [row] = await select()
       .innerJoin(cases, eq(tasks.caseId, cases.id))
       .where(and(visibleCases(me), eq(cases.number, number), eq(tasks.id, id)))
@@ -141,7 +141,7 @@ export function taskStore({ db, clock }: { db: Db; clock: Clock }) {
 
   return {
     /** The Case's Tasks, oldest first. */
-    async list(me: Membership, number: number) {
+    async list(me: Participant, number: number) {
       // Throws `CaseNotFound` when `me` can't see it.
       const [found] = await db
         .select({ id: cases.id })

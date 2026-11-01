@@ -235,9 +235,10 @@ describe("Marking a Case Restricted", () => {
       const { body } = await a.view(as, number);
       return "case" in body ? body.case.can : null;
     };
-    expect(await can(a.owner)).toEqual({ restrict: true, reopen: true });
-    expect(await can(a.admin)).toEqual({ restrict: true, reopen: true });
-    expect(await can(a.ana)).toEqual({ restrict: true, reopen: false });
-    expect(await can(a.ben)).toEqual({ restrict: false, reopen: false });
+    const all = { work: true, readAuditLog: true };
+    expect(await can(a.owner)).toEqual({ ...all, restrict: true, reopen: true, manageGuests: true });
+    expect(await can(a.admin)).toEqual({ ...all, restrict: true, reopen: true, manageGuests: true });
+    expect(await can(a.ana)).toEqual({ ...all, restrict: true, reopen: false, manageGuests: true });
+    expect(await can(a.ben)).toEqual({ ...all, restrict: false, reopen: false, manageGuests: false });
   });
 });

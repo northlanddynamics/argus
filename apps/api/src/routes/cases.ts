@@ -13,9 +13,10 @@ import {
 import { CaseClosed, CaseNotClosed, CaseNotFound, NotAMember, NotPermitted, StaleSummary } from "../cases/cases";
 import { CASE_AUDIT_ACTIONS, CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabulary";
 import type { Deps } from "../deps";
+import { AlreadyGuest, ExpiryPassed, GuestNotFound, NotAGuest } from "../guests/guests";
 import { MentionCannotSeeCase, MessageNotFound, MessageRetracted } from "../discussion/discussion";
 import { type EvidenceAccess, EvidenceEmpty, EvidenceNotFound, EvidenceTooLarge } from "../evidence/evidence";
-import { type MemberEnv, requireMember } from "../members/membership";
+import { membersOnly, type ParticipantEnv, requireParticipant } from "../members/membership";
 import { InvalidValue, NotLinked } from "../observables/observables";
 import { ASSET_TYPES, OBSERVABLE_TYPES } from "../observables/vocabulary";
 import type { Modules } from "../modules";
@@ -164,6 +165,16 @@ const linkBody = z.object({ type: z.enum(LINK_TYPES), case: z.number().int().pos
 const tagBody = z.object({ tag: z.string().max(200) });
 const tagParam = numberParam.extend({ tag: z.string().min(1).max(200) });
 
+const guestParam = numberParam.extend({ id: z.string().min(1) });
+const guestBody = z.object({
+  email: z.email().max(320),
+  /** What to call them, if they're new to Argus; otherwise their account keeps its name. */
+  name: z.string().trim().max(200).optional(),
+  /** When their access ends; null for no expiry. */
+  expiresAt: instant.nullable().default(null),
+});
+const GUESTS_REFUSED = "Only an Admin or the Assignee can invite or remove Guests";
+
 const notFound = { error: "Case not found" } as const;
 
 /** The result, or null if the Member can't see the Case (another Organization's, or Restricted). */
@@ -181,19 +192,20 @@ const closedConflict = (e: unknown) => {
 
 /**
  * Cases: open, list, view, change, close, reopen, the Case Summary, Tasks, Case Role assignments, the
- * Discussion, the Timeline, Evidence, Observables and Assets, Case Links, Tags, and the Case Audit Log.
+ * Discussion, the Timeline, Evidence, Observables and Assets, Case Links, Tags, Guests, and the Case
+ * Audit Log. Guests may use only the reads (`GET`) not marked `membersOnly`, and see what the modules let them.
  */
 export const caseRoutes = (
   deps: Deps,
-  { cases: store, tasks, caseRoles, discussion, timeline, evidence, observables, assets, caseLinks, tags }: Modules,
+  { cases: store, tasks, caseRoles, discussion, timeline, evidence, observables, assets, caseLinks, tags, guests }: Modules,
 ) => {
   const origin = new URL(deps.baseUrl).origin;
 
   /** Streams Evidence to view or download, once its access is recorded. */
   const openEvidence = (access: EvidenceAccess) =>
-    async function (c: Context<MemberEnv>, { number, id }: z.infer<typeof evidenceParam>) {
+    async function (c: Context<ParticipantEnv>, { number, id }: z.infer<typeof evidenceParam>) {
       try {
-        const opened = await unlessNotFound(evidence.open(c.get("membership"), number, id, access));
+        const opened = await unlessNotFound(evidence.open(c.get("participant"), number, id, access));
         if (!opened) return c.json(notFound, 404);
         const headers = access === "view" ? viewHeaders(opened.evidence) : downloadHeaders(opened.evidence);
         return c.body(opened.body, 200, headers);
@@ -203,24 +215,24 @@ export const caseRoutes = (
       }
     };
 
-  return new Hono<MemberEnv>()
-    .use(requireMember(deps.db))
-    .post("/", zValidator("json", openBody), async (c) => {
+  return new Hono<ParticipantEnv>()
+    .use(requireParticipant(deps))
+    .post("/", membersOnly, zValidator("json", openBody), async (c) => {
       const opened = await store.open(c.get("membership"), c.req.valid("json"));
       return c.json({ case: opened }, 201);
     })
     .get("/", zValidator("query", listQuery), async (c) => {
-      return c.json(await store.list(c.get("membership"), c.req.valid("query")), 200);
+      return c.json(await store.list(c.get("participant"), c.req.valid("query")), 200);
     })
     .get("/tags", async (c) => {
-      return c.json({ tags: await tags.inUse(c.get("membership")) }, 200);
+      return c.json({ tags: await tags.inUse(c.get("participant")) }, 200);
     })
     .get("/:number", zValidator("param", numberParam), async (c) => {
-      const found = await unlessNotFound(store.view(c.get("membership"), c.req.valid("param").number));
+      const found = await unlessNotFound(store.view(c.get("participant"), c.req.valid("param").number));
       if (!found) return c.json(notFound, 404);
       return c.json({ case: found }, 200);
     })
-    .patch("/:number", zValidator("param", numberParam), zValidator("json", changeBody), async (c) => {
+    .patch("/:number", membersOnly, zValidator("param", numberParam), zValidator("json", changeBody), async (c) => {
       try {
         const changed = await store.change(c.get("membership"), c.req.valid("param").number, c.req.valid("json"));
         // The change went through, but left the Member unable to see the Case.
@@ -233,7 +245,7 @@ export const caseRoutes = (
         return c.json(closedConflict(e), 409);
       }
     })
-    .post("/:number/close", zValidator("param", numberParam), zValidator("json", closeBody), async (c) => {
+    .post("/:number/close", membersOnly, zValidator("param", numberParam), zValidator("json", closeBody), async (c) => {
       try {
         const closed = await unlessNotFound(store.close(c.get("membership"), c.req.valid("param").number, c.req.valid("json").resolution));
         if (!closed) return c.json(notFound, 404);
@@ -242,7 +254,7 @@ export const caseRoutes = (
         return c.json(closedConflict(e), 409);
       }
     })
-    .post("/:number/reopen", zValidator("param", numberParam), async (c) => {
+    .post("/:number/reopen", membersOnly, zValidator("param", numberParam), async (c) => {
       try {
         const reopened = await unlessNotFound(store.reopen(c.get("membership"), c.req.valid("param").number));
         if (!reopened) return c.json(notFound, 404);
@@ -252,7 +264,7 @@ export const caseRoutes = (
         return c.json(closedConflict(e), 409);
       }
     })
-    .put("/:number/summary", zValidator("param", numberParam), zValidator("json", summaryBody), async (c) => {
+    .put("/:number/summary", membersOnly, zValidator("param", numberParam), zValidator("json", summaryBody), async (c) => {
       const { summary, version } = c.req.valid("json");
       try {
         const saved = await unlessNotFound(store.saveSummary(c.get("membership"), c.req.valid("param").number, summary, version));
@@ -264,11 +276,11 @@ export const caseRoutes = (
       }
     })
     .get("/:number/tasks", zValidator("param", numberParam), async (c) => {
-      const found = await unlessNotFound(tasks.list(c.get("membership"), c.req.valid("param").number));
+      const found = await unlessNotFound(tasks.list(c.get("participant"), c.req.valid("param").number));
       if (!found) return c.json(notFound, 404);
       return c.json({ tasks: found }, 200);
     })
-    .post("/:number/tasks", zValidator("param", numberParam), zValidator("json", newTaskBody), async (c) => {
+    .post("/:number/tasks", membersOnly, zValidator("param", numberParam), zValidator("json", newTaskBody), async (c) => {
       try {
         const created = await unlessNotFound(tasks.create(c.get("membership"), c.req.valid("param").number, c.req.valid("json")));
         if (!created) return c.json(notFound, 404);
@@ -278,7 +290,7 @@ export const caseRoutes = (
         return c.json(closedConflict(e), 409);
       }
     })
-    .patch("/:number/tasks/:id", zValidator("param", taskParam), zValidator("json", taskEditBody), async (c) => {
+    .patch("/:number/tasks/:id", membersOnly, zValidator("param", taskParam), zValidator("json", taskEditBody), async (c) => {
       const { number, id } = c.req.valid("param");
       const { version, ...changes } = c.req.valid("json");
       try {
@@ -292,7 +304,7 @@ export const caseRoutes = (
         return c.json(closedConflict(e), 409);
       }
     })
-    .put("/:number/tasks/:id/done", zValidator("param", taskParam), zValidator("json", doneBody), async (c) => {
+    .put("/:number/tasks/:id/done", membersOnly, zValidator("param", taskParam), zValidator("json", doneBody), async (c) => {
       const { number, id } = c.req.valid("param");
       try {
         const task = await unlessNotFound(tasks.setDone(c.get("membership"), number, id, c.req.valid("json").done));
@@ -303,7 +315,7 @@ export const caseRoutes = (
         return c.json(closedConflict(e), 409);
       }
     })
-    .post("/:number/case-roles", zValidator("param", numberParam), zValidator("json", assignBody), async (c) => {
+    .post("/:number/case-roles", membersOnly, zValidator("param", numberParam), zValidator("json", assignBody), async (c) => {
       try {
         const assignments = await unlessNotFound(caseRoles.assign(c.get("membership"), c.req.valid("param").number, c.req.valid("json")));
         if (!assignments) return c.json(notFound, 404);
@@ -315,7 +327,7 @@ export const caseRoutes = (
         return c.json(closedConflict(e), 409);
       }
     })
-    .delete("/:number/case-roles/:assignmentId", zValidator("param", assignmentParam), async (c) => {
+    .delete("/:number/case-roles/:assignmentId", membersOnly, zValidator("param", assignmentParam), async (c) => {
       const { number, assignmentId } = c.req.valid("param");
       try {
         const assignments = await caseRoles.unassign(c.get("membership"), number, assignmentId);
@@ -328,16 +340,16 @@ export const caseRoutes = (
       }
     })
     .get("/:number/discussion", zValidator("param", numberParam), async (c) => {
-      const messages = await unlessNotFound(discussion.list(c.get("membership"), c.req.valid("param").number));
+      const messages = await unlessNotFound(discussion.list(c.get("participant"), c.req.valid("param").number));
       if (!messages) return c.json(notFound, 404);
       return c.json({ messages }, 200);
     })
-    .get("/:number/discussion/mentionable", zValidator("param", numberParam), async (c) => {
+    .get("/:number/discussion/mentionable", membersOnly, zValidator("param", numberParam), async (c) => {
       const people = await unlessNotFound(discussion.mentionable(c.get("membership"), c.req.valid("param").number));
       if (!people) return c.json(notFound, 404);
       return c.json({ people }, 200);
     })
-    .post("/:number/discussion", zValidator("param", numberParam), zValidator("json", messageBody), async (c) => {
+    .post("/:number/discussion", membersOnly, zValidator("param", numberParam), zValidator("json", messageBody), async (c) => {
       try {
         const message = await unlessNotFound(discussion.post(c.get("membership"), c.req.valid("param").number, c.req.valid("json").body));
         if (!message) return c.json(notFound, 404);
@@ -347,7 +359,7 @@ export const caseRoutes = (
         return c.json(closedConflict(e), 409);
       }
     })
-    .patch("/:number/discussion/:id", zValidator("param", messageParam), zValidator("json", messageBody), async (c) => {
+    .patch("/:number/discussion/:id", membersOnly, zValidator("param", messageParam), zValidator("json", messageBody), async (c) => {
       const { number, id } = c.req.valid("param");
       try {
         const message = await unlessNotFound(discussion.edit(c.get("membership"), number, id, c.req.valid("json").body));
@@ -361,7 +373,7 @@ export const caseRoutes = (
         return c.json(closedConflict(e), 409);
       }
     })
-    .post("/:number/discussion/:id/retract", zValidator("param", messageParam), async (c) => {
+    .post("/:number/discussion/:id/retract", membersOnly, zValidator("param", messageParam), async (c) => {
       const { number, id } = c.req.valid("param");
       try {
         const message = await unlessNotFound(discussion.retract(c.get("membership"), number, id));
@@ -375,11 +387,11 @@ export const caseRoutes = (
       }
     })
     .get("/:number/timeline", zValidator("param", numberParam), async (c) => {
-      const entries = await unlessNotFound(timeline.list(c.get("membership"), c.req.valid("param").number));
+      const entries = await unlessNotFound(timeline.list(c.get("participant"), c.req.valid("param").number));
       if (!entries) return c.json(notFound, 404);
       return c.json({ entries }, 200);
     })
-    .post("/:number/timeline", zValidator("param", numberParam), zValidator("json", newTimelineEntryBody), async (c) => {
+    .post("/:number/timeline", membersOnly, zValidator("param", numberParam), zValidator("json", newTimelineEntryBody), async (c) => {
       const { source, ...input } = c.req.valid("json");
       try {
         const entry = await unlessNotFound(timeline.add(c.get("membership"), c.req.valid("param").number, input, source));
@@ -392,7 +404,7 @@ export const caseRoutes = (
         return c.json(closedConflict(e), 409);
       }
     })
-    .patch("/:number/timeline/:id", zValidator("param", entryParam), zValidator("json", timelineEntryEditBody), async (c) => {
+    .patch("/:number/timeline/:id", membersOnly, zValidator("param", entryParam), zValidator("json", timelineEntryEditBody), async (c) => {
       const { number, id } = c.req.valid("param");
       const { version, ...input } = c.req.valid("json");
       try {
@@ -407,7 +419,7 @@ export const caseRoutes = (
         return c.json(closedConflict(e), 409);
       }
     })
-    .post("/:number/timeline/:id/retract", zValidator("param", entryParam), zValidator("json", retractEntryBody), async (c) => {
+    .post("/:number/timeline/:id/retract", membersOnly, zValidator("param", entryParam), zValidator("json", retractEntryBody), async (c) => {
       const { number, id } = c.req.valid("param");
       try {
         const entry = await unlessNotFound(timeline.retract(c.get("membership"), number, id, c.req.valid("json").reason || null));
@@ -420,11 +432,11 @@ export const caseRoutes = (
       }
     })
     .get("/:number/evidence", zValidator("param", numberParam), async (c) => {
-      const files = await unlessNotFound(evidence.list(c.get("membership"), c.req.valid("param").number));
+      const files = await unlessNotFound(evidence.list(c.get("participant"), c.req.valid("param").number));
       if (!files) return c.json(notFound, 404);
       return c.json({ evidence: files }, 200);
     })
-    .post("/:number/evidence", zValidator("param", numberParam), zValidator("query", evidenceQuery), async (c) => {
+    .post("/:number/evidence", membersOnly, zValidator("param", numberParam), zValidator("query", evidenceQuery), async (c) => {
       // The body isn't JSON, so a cross-site form could send it; only our own pages may.
       if (c.req.header("origin") !== origin) return c.json({ error: "Cross-origin uploads are not allowed" }, 403);
       const declared = Number(c.req.header("content-length"));
@@ -452,11 +464,11 @@ export const caseRoutes = (
       openEvidence("download")(c, c.req.valid("param")),
     )
     .get("/:number/observables", zValidator("param", numberParam), async (c) => {
-      const linked = await unlessNotFound(observables.list(c.get("membership"), c.req.valid("param").number));
+      const linked = await unlessNotFound(observables.list(c.get("participant"), c.req.valid("param").number));
       if (!linked) return c.json(notFound, 404);
       return c.json({ observables: linked }, 200);
     })
-    .post("/:number/observables", zValidator("param", numberParam), zValidator("json", observableBody), async (c) => {
+    .post("/:number/observables", membersOnly, zValidator("param", numberParam), zValidator("json", observableBody), async (c) => {
       const { type, value } = c.req.valid("json");
       try {
         const done = await unlessNotFound(observables.link(c.get("membership"), c.req.valid("param").number, type, value));
@@ -468,7 +480,7 @@ export const caseRoutes = (
         return c.json(closedConflict(e), 409);
       }
     })
-    .delete("/:number/observables/:id", zValidator("param", linkedParam), async (c) => {
+    .delete("/:number/observables/:id", membersOnly, zValidator("param", linkedParam), async (c) => {
       const { number, id } = c.req.valid("param");
       try {
         const linked = await unlessNotFound(observables.unlink(c.get("membership"), number, id));
@@ -480,11 +492,11 @@ export const caseRoutes = (
       }
     })
     .get("/:number/assets", zValidator("param", numberParam), async (c) => {
-      const linked = await unlessNotFound(assets.list(c.get("membership"), c.req.valid("param").number));
+      const linked = await unlessNotFound(assets.list(c.get("participant"), c.req.valid("param").number));
       if (!linked) return c.json(notFound, 404);
       return c.json({ assets: linked }, 200);
     })
-    .post("/:number/assets", zValidator("param", numberParam), zValidator("json", assetBody), async (c) => {
+    .post("/:number/assets", membersOnly, zValidator("param", numberParam), zValidator("json", assetBody), async (c) => {
       const { type, value } = c.req.valid("json");
       try {
         const done = await unlessNotFound(assets.link(c.get("membership"), c.req.valid("param").number, type, value));
@@ -495,7 +507,7 @@ export const caseRoutes = (
         return c.json(closedConflict(e), 409);
       }
     })
-    .delete("/:number/assets/:id", zValidator("param", linkedParam), async (c) => {
+    .delete("/:number/assets/:id", membersOnly, zValidator("param", linkedParam), async (c) => {
       const { number, id } = c.req.valid("param");
       try {
         const linked = await unlessNotFound(assets.unlink(c.get("membership"), number, id));
@@ -507,11 +519,11 @@ export const caseRoutes = (
       }
     })
     .get("/:number/links", zValidator("param", numberParam), async (c) => {
-      const links = await unlessNotFound(caseLinks.list(c.get("membership"), c.req.valid("param").number));
+      const links = await unlessNotFound(caseLinks.list(c.get("participant"), c.req.valid("param").number));
       if (!links) return c.json(notFound, 404);
       return c.json({ links }, 200);
     })
-    .post("/:number/links", zValidator("param", numberParam), zValidator("json", linkBody), async (c) => {
+    .post("/:number/links", membersOnly, zValidator("param", numberParam), zValidator("json", linkBody), async (c) => {
       const { type, case: targetNumber } = c.req.valid("json");
       try {
         const done = await unlessNotFound(caseLinks.link(c.get("membership"), c.req.valid("param").number, { type, targetNumber }));
@@ -523,7 +535,7 @@ export const caseRoutes = (
         return c.json(closedConflict(e), 409);
       }
     })
-    .delete("/:number/links/:id", zValidator("param", linkParam), async (c) => {
+    .delete("/:number/links/:id", membersOnly, zValidator("param", linkParam), async (c) => {
       const { number, id } = c.req.valid("param");
       try {
         const links = await unlessNotFound(caseLinks.unlink(c.get("membership"), number, id));
@@ -534,7 +546,7 @@ export const caseRoutes = (
         return c.json(closedConflict(e), 409);
       }
     })
-    .post("/:number/tags", zValidator("param", numberParam), zValidator("json", tagBody), async (c) => {
+    .post("/:number/tags", membersOnly, zValidator("param", numberParam), zValidator("json", tagBody), async (c) => {
       try {
         const done = await unlessNotFound(tags.add(c.get("membership"), c.req.valid("param").number, c.req.valid("json").tag));
         if (!done) return c.json(notFound, 404);
@@ -545,7 +557,7 @@ export const caseRoutes = (
         return c.json(closedConflict(e), 409);
       }
     })
-    .delete("/:number/tags/:tag", zValidator("param", tagParam), async (c) => {
+    .delete("/:number/tags/:tag", membersOnly, zValidator("param", tagParam), async (c) => {
       const { number, tag } = c.req.valid("param");
       try {
         const left = await unlessNotFound(tags.remove(c.get("membership"), number, tag));
@@ -556,16 +568,57 @@ export const caseRoutes = (
         return c.json(closedConflict(e), 409);
       }
     })
+    .get("/:number/guests", membersOnly, zValidator("param", numberParam), async (c) => {
+      const found = await unlessNotFound(guests.list(c.get("membership"), c.req.valid("param").number));
+      if (!found) return c.json(notFound, 404);
+      return c.json({ guests: found }, 200);
+    })
+    .post("/:number/guests", membersOnly, zValidator("param", numberParam), zValidator("json", guestBody), async (c) => {
+      const { email, name, expiresAt } = c.req.valid("json");
+      try {
+        const found = await unlessNotFound(
+          guests.invite(c.get("membership"), c.req.valid("param").number, {
+            email,
+            name,
+            expiresAt: expiresAt ? new Date(expiresAt) : null,
+          }),
+        );
+        if (!found) return c.json(notFound, 404);
+        return c.json({ guests: found }, 201);
+      } catch (e) {
+        if (e instanceof NotPermitted) return c.json({ error: GUESTS_REFUSED }, 403);
+        if (e instanceof NotAGuest || e instanceof ExpiryPassed) return c.json({ error: e.message }, 400);
+        if (e instanceof AlreadyGuest) return c.json({ error: e.message }, 409);
+        return c.json(closedConflict(e), 409);
+      }
+    })
+    .delete("/:number/guests/:id", membersOnly, zValidator("param", guestParam), async (c) => {
+      const { number, id } = c.req.valid("param");
+      try {
+        const found = await unlessNotFound(guests.remove(c.get("membership"), number, id));
+        if (!found) return c.json(notFound, 404);
+        return c.json({ guests: found }, 200);
+      } catch (e) {
+        if (e instanceof NotPermitted) return c.json({ error: GUESTS_REFUSED }, 403);
+        if (e instanceof GuestNotFound) return c.json({ error: e.message }, 404);
+        throw e;
+      }
+    })
     .get("/:number/audit-log", zValidator("param", numberParam), zValidator("query", auditQuery), async (c) => {
       const { actor, action, from } = c.req.valid("query");
-      const entries = await unlessNotFound(
-        store.auditLog(c.get("membership"), c.req.valid("param").number, {
-          actorId: actor,
-          action,
-          from: from ? new Date(from) : undefined,
-        }),
-      );
-      if (!entries) return c.json(notFound, 404);
-      return c.json({ entries }, 200);
+      try {
+        const entries = await unlessNotFound(
+          store.auditLog(c.get("participant"), c.req.valid("param").number, {
+            actorId: actor,
+            action,
+            from: from ? new Date(from) : undefined,
+          }),
+        );
+        if (!entries) return c.json(notFound, 404);
+        return c.json({ entries }, 200);
+      } catch (e) {
+        if (e instanceof NotPermitted) return c.json({ error: "Guests can't see the Audit Log" }, 403);
+        throw e;
+      }
     });
 };

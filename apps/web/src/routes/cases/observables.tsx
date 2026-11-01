@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api, errorMessage } from "@/lib/api";
-import { caseQuery, caseRef } from "@/lib/cases";
+import { caseQuery, caseRef, isReadOnly } from "@/lib/cases";
 import { shortHash } from "@/lib/evidence";
 import {
   ASSET_TYPES,
@@ -32,7 +32,7 @@ export function CaseObservablesPage() {
   const observables = useQuery(observablesQuery(number));
   const assets = useQuery(assetsQuery(number));
   if (!c) return null;
-  const readOnly = c.status === "closed";
+  const readOnly = isReadOnly(c);
   const n = String(number);
   return (
     <>

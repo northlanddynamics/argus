@@ -2,6 +2,7 @@ import type { Auth } from "./auth/auth";
 import type { Clock } from "./clock";
 import type { Db } from "./db/client";
 import type { EvidenceStorage } from "./evidence/storage";
+import type { GuestSession } from "./guests/guest-sessions";
 import type { Mailer } from "./mail";
 import type { SignalSource } from "./realtime/signals";
 
@@ -28,5 +29,7 @@ export type Env = {
     user: SessionUser | null;
     /** Signed in with a password, but TOTP enrollment is not done yet. */
     totpEnrollmentPending: boolean;
+    /** The signed-in person's Guest session, when they are a Guest. */
+    guestSession: GuestSession | null;
   };
 };

@@ -6,7 +6,7 @@ import { member, user } from "../db/schema";
 
 /**
  * The Members who can see a Case, by name: who can be mentioned on it or given work on it.
- * Guests arrive with later work.
+ * Guests are not offered yet: they get Tasks and mentions with later work.
  */
 export async function peopleWhoCanSee(db: Db | Tx, theCase: CaseAccessFacts) {
   const rows = await db

@@ -7,7 +7,7 @@ import type { Db } from "../db/client";
 import { cases, evidence, user } from "../db/schema";
 import type { EvidenceConfig } from "../deps";
 import { secureId } from "../ids";
-import type { Membership } from "../members/membership";
+import type { Membership, Participant } from "../members/membership";
 import { publish } from "../realtime/signals";
 
 /**
@@ -93,7 +93,7 @@ export function evidenceStore({ db, clock, evidence: config }: { db: Db; clock: 
     addedAt: evidence.addedAt,
   };
   /** The Case's Evidence (or just `id`) as `me` sees it, oldest first; throws `CaseNotFound` when they can't see the Case. */
-  const select = async (me: Membership, number: number, id?: string) => {
+  const select = async (me: Participant, number: number, id?: string) => {
     const [found] = await db
       .select({ id: cases.id })
       .from(cases)
@@ -120,7 +120,7 @@ export function evidenceStore({ db, clock, evidence: config }: { db: Db; clock: 
 
   return {
     /** The Case's Evidence, oldest first; throws `CaseNotFound` when `me` can't see the Case. */
-    list: async (me: Membership, number: number) => (await select(me, number)).map(toView),
+    list: async (me: Participant, number: number) => (await select(me, number)).map(toView),
 
     /**
      * Adds a file as Evidence, streaming it to storage while fingerprinting it. The Case is checked
@@ -180,7 +180,7 @@ export function evidenceStore({ db, clock, evidence: config }: { db: Db; clock: 
      * Opens Evidence to view or download: records the access in the Case Audit Log, then returns
      * the file with its bytes. Allowed on a Closed Case, which stays readable.
      */
-    async open(me: Membership, number: number, id: string, access: EvidenceAccess) {
+    async open(me: Participant, number: number, id: string, access: EvidenceAccess) {
       const now = clock.now();
       const row = await db.transaction(async (tx) => {
         const current = await lockCase(tx, me, number, "allow");

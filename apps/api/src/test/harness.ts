@@ -1,7 +1,7 @@
 import { passkeyClient } from "@better-auth/passkey/client";
 import { websocket } from "@hono/bun";
 import { createAuthClient } from "better-auth/client";
-import { adminClient, organizationClient, twoFactorClient } from "better-auth/client/plugins";
+import { adminClient, magicLinkClient, organizationClient, twoFactorClient } from "better-auth/client/plugins";
 import { createApi } from "../app";
 import { createAuth } from "../auth/auth";
 import { OPERATOR_ROLE } from "../auth/roles";
@@ -51,7 +51,7 @@ export async function buildTestApp({
   const clock = fakeClock();
   const outbox = captureOutbox();
   const authSecret = "test-secret-test-secret-test-secret";
-  const auth = createAuth({ db, baseUrl: BASE_URL, secret: authSecret });
+  const auth = createAuth({ db, baseUrl: BASE_URL, secret: authSecret, mailer: outbox.mailer, clock });
   const evidence = memoryEvidenceStorage();
   const deps: Deps = {
     db,
@@ -150,7 +150,7 @@ export async function buildTestApp({
   const anotherInstance = async () => {
     const other = createDb(url);
     cleanups.push(other.close);
-    const otherAuth = createAuth({ db: other.db, baseUrl: BASE_URL, secret: authSecret });
+    const otherAuth = createAuth({ db: other.db, baseUrl: BASE_URL, secret: authSecret, mailer: outbox.mailer, clock });
     return startInstance({ ...deps, db: other.db, auth: otherAuth, signals: postgresSignals(other.sql) });
   };
 
@@ -178,7 +178,7 @@ export async function buildTestApp({
     const authClient = createAuthClient({
       baseURL: `${BASE_URL}/api/auth`,
       fetchOptions: { customFetchImpl: fetch },
-      plugins: [adminClient(), organizationClient(), twoFactorClient(), passkeyClient()],
+      plugins: [adminClient(), organizationClient(), twoFactorClient(), passkeyClient(), magicLinkClient()],
     });
     /** Email and password only; a Member enrolled in TOTP gets `twoFactorRedirect` and no session yet. */
     const signIn = async (email: string, password: string) => {
@@ -197,7 +197,7 @@ export async function buildTestApp({
     };
     /** The session's cookies, as a browser would send them. */
     const cookieHeader = () => [...cookies].map(([k, v]) => `${k}=${v}`).join("; ");
-    return { api, auth: authClient, signIn, enrollTotp, cookieHeader };
+    return { api, auth: authClient, signIn, enrollTotp, cookieHeader, fetch };
   };
 
   /** The current code for a TOTP secret, as the Member's authenticator app shows it. */
@@ -211,6 +211,25 @@ export async function buildTestApp({
     await s.signIn(email, password);
     const totp = await s.enrollTotp(password);
     return { ...s, totp };
+  };
+
+  /** The magic link in the latest sign-in email sent to `email`, or null if none was sent. */
+  const magicLinkFor = (email: string) =>
+    outbox.messages.findLast((m) => m.to === email && m.subject === "Your Argus sign-in link")?.text.match(/https?:\/\/\S+/)?.[0] ?? null;
+
+  /** A Guest signing in: asks for a magic link, then follows it from their email. */
+  const guestSignIn = async (email: string) => {
+    const s = session();
+    const before = magicLinkFor(email);
+    const asked = await s.auth.signIn.magicLink({ email, callbackURL: "/" });
+    if (asked.error) throw new Error(`Could not ask for a magic link for ${email}: ${asked.error.message}`);
+    const link = magicLinkFor(email);
+    if (!link || link === before) throw new Error(`No magic link sent to ${email}`);
+    const res = await s.fetch(link);
+    if (res.status !== 302 || new URL(res.headers.get("location") ?? "", BASE_URL).searchParams.has("error")) {
+      throw new Error(`The magic link for ${email} didn't sign in: ${res.status} ${res.headers.get("location")}`);
+    }
+    return s;
   };
 
   /** Creates an Operator directly, the way `bun run operator:create` does. */
@@ -254,6 +273,8 @@ export async function buildTestApp({
     inviteIdFor,
     inviteOwner,
     acceptInvite,
+    magicLinkFor,
+    guestSignIn,
     totpCode,
   };
 }

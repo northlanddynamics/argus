@@ -4,9 +4,10 @@ import type { Clock } from "../clock";
 import type { Db, Tx } from "../db/client";
 import { type Actor, canSeeCase, casePermissions, casePolicy, NotPermitted, visibleCases } from "../access/policy";
 import { caseRoleAssignmentsOf, caseRoleHolderIds } from "../case-roles/holders";
+import { guestGrantsOf } from "../guests/grants";
 import { cases, organization, user } from "../db/schema";
 import { secureId } from "../ids";
-import type { Membership } from "../members/membership";
+import type { Membership, Participant } from "../members/membership";
 import { memberName } from "../members/members";
 import { publish } from "../realtime/signals";
 import { taskCounts } from "../tasks/task-counts";
@@ -107,15 +108,15 @@ const listItem = (row: ListRow) => ({
   tags: row.tags,
 });
 
-/** The acting Member as the Case Audit Log records them. */
-export const actorOf = (me: Membership): CaseActor => ({ type: "member", id: me.userId, name: me.name });
+/** The acting Member or Guest as the Case Audit Log records them. */
+export const actorOf = (me: Participant): CaseActor => ({ type: me.role === "guest" ? "guest" : "member", id: me.userId, name: me.name });
 
 /**
  * Locks the Case's row for the rest of `tx` and returns its current values, with who holds Case Roles
- * on it. Throws `CaseNotFound` when the Member can't see it, and `CaseClosed` when it's Closed unless
- * `closed` is "allow". Anything that changes a Case, or something on it, starts here.
+ * and Guest grants on it. Throws `CaseNotFound` when `me` can't see it, and `CaseClosed` when it's
+ * Closed unless `closed` is "allow". Anything that changes a Case, or something on it, starts here.
  */
-export const lockCase = async (tx: Tx, me: Membership, number: number, closed: "refuse" | "allow" = "refuse") => {
+export const lockCase = async (tx: Tx, me: Participant, number: number, closed: "refuse" | "allow" = "refuse") => {
   const [current] = await tx
     .select({
       id: cases.id,
@@ -134,7 +135,7 @@ export const lockCase = async (tx: Tx, me: Membership, number: number, closed: "
     .for("update");
   if (!current) throw new CaseNotFound();
   if (closed === "refuse" && current.status === "closed") throw new CaseClosed();
-  return { ...current, caseRoleHolderIds: await caseRoleHolderIds(tx, current.id) };
+  return { ...current, caseRoleHolderIds: await caseRoleHolderIds(tx, current.id), guests: await guestGrantsOf(tx, current.id) };
 };
 
 /**
@@ -416,8 +417,11 @@ export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
       return view(me, number);
     },
 
+    /** The Case's Audit Log; Guests are refused (`NotPermitted`) once the Case is known to be theirs. */
     async auditLog(me: Actor, number: number, filter: CaseAuditFilter) {
-      return listCaseAudit(db, await findId(me, number), filter);
+      const id = await findId(me, number);
+      if (!casePolicy.canReadAuditLog(me)) throw new NotPermitted();
+      return listCaseAudit(db, id, filter);
     },
   };
 }

@@ -37,10 +37,10 @@ function evidenceFromEnv(): EvidenceConfig {
 export function depsFromEnv(): Deps & { close: () => Promise<void> } {
   const baseUrl = process.env.BASE_URL ?? "http://localhost:3000";
   const { db, sql, close } = createDb(required("DATABASE_URL"));
-  const auth = createAuth({ db, baseUrl, secret: required("BETTER_AUTH_SECRET") });
   const mailer = process.env.SMTP_URL
     ? smtpMailer(process.env.SMTP_URL, process.env.MAIL_FROM ?? "Argus <no-reply@argus.local>")
     : consoleMailer;
+  const auth = createAuth({ db, baseUrl, secret: required("BETTER_AUTH_SECRET"), mailer, clock: systemClock });
   return {
     db,
     auth,

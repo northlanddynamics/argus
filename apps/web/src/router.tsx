@@ -7,12 +7,14 @@ import { AcceptInvitePage } from "@/routes/accept-invite";
 import { OperatorConsolePage } from "@/routes/operator-console";
 import { CaseAuditLogPage } from "@/routes/cases/audit-log";
 import { CaseLayout } from "@/routes/cases/case-layout";
-import { CasesPage, validateCaseListSearch } from "@/routes/cases/list";
+import { validateCaseListSearch } from "@/routes/cases/list";
 import { CaseOverviewPage } from "@/routes/cases/overview";
 import { CaseEvidencePage } from "@/routes/cases/evidence";
 import { CaseObservablesPage } from "@/routes/cases/observables";
 import { CaseTasksPage } from "@/routes/cases/tasks";
 import { CaseTimelinePage } from "@/routes/cases/timeline";
+import { HomePage } from "@/routes/guest-home";
+import { GuestSignInPage, validateGuestSignInSearch } from "@/routes/guest-sign-in";
 import { OrgAuditLogPage } from "@/routes/settings/audit-log";
 import { SettingsLayout } from "@/routes/settings/layout";
 import { MembersPage } from "@/routes/settings/members";
@@ -24,8 +26,8 @@ const rootRoute = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   component: Outlet,
 });
 
-/** Signed-in Members only; Operators go to their console. */
-const requireMember = async ({ context }: { context: { queryClient: QueryClient } }) => {
+/** Signed-in Members and Guests only; Operators go to their console. */
+const requireParticipant = async ({ context }: { context: { queryClient: QueryClient } }) => {
   const me = await context.queryClient.fetchQuery(meQuery);
   if (!me) throw redirect({ to: "/sign-in" });
   if (me.isOperator) throw redirect({ to: "/operator" });
@@ -36,14 +38,14 @@ const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   validateSearch: validateCaseListSearch,
-  beforeLoad: requireMember,
-  component: CasesPage,
+  beforeLoad: requireParticipant,
+  component: HomePage,
 });
 
 const caseRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/cases/$number",
-  beforeLoad: requireMember,
+  beforeLoad: requireParticipant,
   component: CaseLayout,
 });
 
@@ -133,6 +135,13 @@ const signInRoute = createRoute({
   component: SignInPage,
 });
 
+const guestSignInRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/guest/sign-in",
+  validateSearch: validateGuestSignInSearch,
+  component: GuestSignInPage,
+});
+
 const inviteRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/invite/$invitationId",
@@ -146,6 +155,7 @@ export const router = createRouter({
     operatorRoute,
     settingsRoute.addChildren([settingsIndexRoute, membersRoute, orgAuditLogRoute]),
     signInRoute,
+    guestSignInRoute,
     inviteRoute,
   ]),
   context: { queryClient },

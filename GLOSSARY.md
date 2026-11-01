@@ -34,6 +34,10 @@ _Avoid_: Responder, investigator, agent
 A person from outside the Organization (e.g. outside counsel, insurer, external IR firm) granted access to specific Cases only, never to the Organization as a whole.
 _Avoid_: External user, collaborator, contractor, viewer
 
+**Guest grant**:
+What lets a Guest into one Case: given by an Admin or the Case's Assignee, optionally until an expiry, and ended when the Guest is removed.
+_Avoid_: Share, invitation, access token
+
 ### Cases
 
 **Case**:

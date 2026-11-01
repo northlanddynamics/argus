@@ -5,16 +5,18 @@ import type { OrgRole } from "../auth/roles";
 import type { Clock } from "../clock";
 import type { Db } from "../db/client";
 import { caseRoleHolderIds } from "../case-roles/holders";
+import { guestCasesOf, guestGrantsOf } from "../guests/grants";
 import { cases, caseViewers, member, organization, user } from "../db/schema";
 import { secureId } from "../ids";
 import type { ClientMessage, ServerMessage, Viewer } from "./messages";
 import { publish, type Signal, type SignalSource } from "./signals";
 
 /**
- * The live hub of one `web` process: its Members' sockets, and the signals forwarded to them.
+ * The live hub of one `web` process: its Members' and Guests' sockets, and the signals forwarded to them.
  *
  * Every signal, local or not, arrives through Postgres (`signals.ts`) and is forwarded only to
- * sockets whose Member can see the Case, as the access policy decides it at that moment.
+ * sockets whose person can see the Case, as the access policy decides it at that moment. A Guest's
+ * socket belongs to the Organization they were working in when they opened it.
  * Signals are handled one at a time, in commit order.
  *
  * Presence lives in `case_viewers`, shared by all processes. Each process refreshes its own rows
@@ -31,8 +33,11 @@ export const CLOSE_NOT_A_MEMBER = 4403;
 /** What the hub needs from a socket. */
 export type Transport = { send(data: string): void; close(code: number, reason: string): void };
 
-/** The Member a socket belongs to, kept current as their role changes. */
-export type SocketMember = Actor & { name: string };
+/**
+ * The person a socket belongs to, kept current as their role changes. A Guest's socket closes when
+ * their session ends (`until`).
+ */
+export type SocketMember = Actor & { name: string; until?: Date };
 
 type Socket = {
   id: string;
@@ -65,7 +70,7 @@ export function createLive({ db, clock, signals }: { db: Db; clock: Clock; signa
       .from(cases)
       .where(eq(cases.id, caseId))
       .limit(1);
-    return row ? { ...row, caseRoleHolderIds: await caseRoleHolderIds(db, caseId) } : null;
+    return row ? { ...row, caseRoleHolderIds: await caseRoleHolderIds(db, caseId), guests: await guestGrantsOf(db, caseId) } : null;
   };
 
   /** Who is viewing the Case, once each, by name. */
@@ -89,6 +94,7 @@ export function createLive({ db, clock, signals }: { db: Db; clock: Clock; signa
     if (s.viewing?.number === number) return;
     await stopViewing(s);
     if (number === null) return;
+    if (s.member.role === "guest") s.member = { ...s.member, at: clock.now() };
     const [found] = await db
       .select({ id: cases.id })
       .from(cases)
@@ -109,9 +115,29 @@ export function createLive({ db, clock, signals }: { db: Db; clock: Clock; signa
 
   /**
    * Re-reads the Members behind `local` sockets: closes those who are no longer Members and updates
-   * roles. Returns the sockets still open, and those whose role changed.
+   * roles. Guests' sockets close once their session has ended or no grant of theirs in the
+   * Organization counts. Returns the sockets still open, and those whose role changed.
    */
-  const refreshMembers = async (organizationId: string, local: Socket[]) => {
+  const refreshMembers = async (organizationId: string, inOrg: Socket[]) => {
+    const now = clock.now();
+    const open: Socket[] = [];
+    const roleChanged: Socket[] = [];
+    const local: Socket[] = [];
+    for (const s of inOrg) {
+      if (s.member.role !== "guest") {
+        local.push(s);
+        continue;
+      }
+      const granted = s.member.until && s.member.until > now ? await guestCasesOf(db, s.member.userId, now) : [];
+      if (!granted.some((c) => c.organization.id === organizationId)) {
+        await disconnect(s);
+        s.transport.close(CLOSE_NOT_A_MEMBER, "No longer a Guest on any Case here");
+        continue;
+      }
+      s.member = { ...s.member, at: now };
+      open.push(s);
+    }
+    if (!local.length) return { open, roleChanged };
     const rows = await db
       .select({ userId: member.userId, role: member.role })
       .from(member)
@@ -124,8 +150,6 @@ export function createLive({ db, clock, signals }: { db: Db; clock: Clock; signa
         ),
       );
     const roles = new Map(rows.map((r) => [r.userId, r.role as OrgRole]));
-    const open: Socket[] = [];
-    const roleChanged: Socket[] = [];
     for (const s of local) {
       const role = roles.get(s.member.userId);
       if (!role) {

@@ -38,6 +38,9 @@ export const caseQuery = (number: number) =>
 
 export type CaseView = NonNullable<Awaited<ReturnType<ReturnType<typeof caseQuery>["queryFn"] & {}>>>;
 
+/** Nothing on the Case can be changed: it's Closed, or the viewer is a Guest. */
+export const isReadOnly = (c: Pick<CaseView, "status" | "can">) => c.status === "closed" || !c.can.work;
+
 export const emptySummary = (): CaseSummary => ({ type: "doc", content: [] });
 
 /** The Case Summary's words without formatting, one block per line. */
