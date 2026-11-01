@@ -53,6 +53,9 @@ export const actionLabel: Record<CaseAuditAction, string> = {
   "timeline.entry_promoted": "Promoted to Timeline",
   "timeline.entry_edited": "Edited Timeline Entry",
   "timeline.entry_retracted": "Retracted Timeline Entry",
+  "evidence.added": "Added Evidence",
+  "evidence.viewed": "Viewed Evidence",
+  "evidence.downloaded": "Downloaded Evidence",
 };
 
 /** A recorded value as people read it: "In Progress" rather than "in_progress". */

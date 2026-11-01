@@ -520,3 +520,47 @@ test("an Analyst writes the Timeline: exact, range and approximate entries, cita
     await stop();
   }
 }, 90_000);
+
+test("an Analyst adds Evidence, sees its SHA-256, views and downloads it, and finds each access in the Audit Log", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    await owner.api.organization.invitations.$post({ json: { email: "ana@acme.example", role: "analyst" } });
+    const ana = await t.acceptInvite("ana@acme.example", PASSWORD, "Ana Analyst");
+    await ana.api.cases.$post({ json: { title: "Invoice phish", caseType: "phishing", severity: "high" } });
+
+    const page = await browser.newPage({ acceptDownloads: true });
+    await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
+    await page.goto(`${baseUrl}/cases/1`);
+    await page.getByRole("link", { name: "Evidence" }).click();
+    await page.getByText("No Evidence yet.").waitFor();
+
+    // Add a file; its fingerprint shows.
+    const eml = "From: billing@invoice-portal.biz\r\nSubject: Invoice 4471\r\n\r\n<script>alert(1)</script>\r\n";
+    const sha256 = new Bun.CryptoHasher("sha256").update(eml).digest("hex");
+    await page.getByLabel("Evidence files").setInputFiles({ name: "invoice-4471.eml", mimeType: "message/rfc822", buffer: Buffer.from(eml) });
+    const row = page.getByTestId("evidence-invoice-4471.eml");
+    await row.getByText(`${sha256.slice(0, 4)}…${sha256.slice(-4)}`).waitFor();
+    expect(await row.locator("code").getAttribute("title")).toBe(sha256);
+    expect(await page.getByRole("button", { name: /delete|replace/i }).count()).toBe(0);
+
+    // View opens it in a new tab, as text; Download saves it under its own name.
+    const [viewer] = await Promise.all([page.waitForEvent("popup"), row.getByRole("link", { name: "View invoice-4471.eml" }).click()]);
+    await viewer.waitForLoadState();
+    expect(await viewer.locator("body").textContent()).toContain("<script>alert(1)</script>");
+    await viewer.close();
+    const [download] = await Promise.all([page.waitForEvent("download"), row.getByRole("link", { name: "Download invoice-4471.eml" }).click()]);
+    expect(download.suggestedFilename()).toBe("invoice-4471.eml");
+    expect(await Bun.file((await download.path())!).text()).toBe(eml);
+
+    // Each is in the Audit Log.
+    await page.getByRole("link", { name: "Audit Log" }).click();
+    for (const action of ["Added Evidence", "Viewed Evidence", "Downloaded Evidence"]) {
+      await page.getByRole("cell", { name: action }).first().waitFor();
+    }
+    await page.getByText(`SHA-256 ${sha256}`).waitFor();
+  } finally {
+    await stop();
+  }
+}, 60_000);

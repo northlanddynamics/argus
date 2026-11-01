@@ -239,6 +239,9 @@ export function CaseLayout() {
               <Link to="/cases/$number/tasks" params={{ number: String(number) }} className={tabLink}>
                 Tasks ({c.tasks.done}/{c.tasks.total})
               </Link>
+              <Link to="/cases/$number/evidence" params={{ number: String(number) }} className={tabLink}>
+                Evidence
+              </Link>
               <Link to="/cases/$number/audit-log" params={{ number: String(number) }} className={tabLink}>
                 Audit Log
               </Link>

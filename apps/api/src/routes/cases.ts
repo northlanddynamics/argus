@@ -1,5 +1,5 @@
 import { zValidator } from "@hono/zod-validator";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { z } from "zod";
 import { caseSummarySchema } from "../cases/case-summary";
 import {
@@ -12,6 +12,7 @@ import { CaseClosed, CaseNotClosed, CaseNotFound, NotAMember, NotPermitted, Stal
 import { CASE_AUDIT_ACTIONS, CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabulary";
 import type { Deps } from "../deps";
 import { MentionCannotSeeCase, MessageNotFound, MessageRetracted } from "../discussion/discussion";
+import { type EvidenceAccess, EvidenceEmpty, EvidenceNotFound, EvidenceTooLarge } from "../evidence/evidence";
 import { type MemberEnv, requireMember } from "../members/membership";
 import type { Modules } from "../modules";
 import { OwnerCannotSeeCase, StaleTask, TaskNotFound } from "../tasks/tasks";
@@ -25,6 +26,7 @@ import {
   TimelineEntryRetracted,
 } from "../timeline/timeline";
 import { CITATION_KINDS, PROMOTION_SOURCES } from "../timeline/vocabulary";
+import { downloadHeaders, mediaType, viewHeaders } from "./evidence-http";
 
 const numberParam = z.object({ number: z.coerce.number().int().positive() });
 const isoDate = z.string().refine((s) => !Number.isNaN(Date.parse(s)), "Not a date");
@@ -124,6 +126,20 @@ const timelineEntryEditBody = z.object({ ...timelineEntryFields, version: z.numb
 const retractEntryBody = z.object({ reason: z.string().trim().max(500).nullable().default(null) });
 const entryParam = numberParam.extend({ id: z.string().min(1) });
 
+const evidenceParam = numberParam.extend({ id: z.string().min(1) });
+/** The file's own name; the file itself is the request body, so any size streams straight through. */
+const evidenceQuery = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(255)
+    .refine(
+      (n) => ![...n].some((ch) => ch === "/" || ch === "\\" || ch.charCodeAt(0) < 0x20 || ch.charCodeAt(0) === 0x7f),
+      "A file name can't contain slashes or control characters",
+    ),
+});
+
 const notFound = { error: "Case not found" } as const;
 
 /** The result, or null if the Member can't see the Case (another Organization's, or Restricted). */
@@ -141,9 +157,25 @@ const closedConflict = (e: unknown) => {
 
 /**
  * Cases: open, list, view, change, close, reopen, the Case Summary, Tasks, Case Role assignments, the
- * Discussion, the Timeline and the Case Audit Log.
+ * Discussion, the Timeline, Evidence and the Case Audit Log.
  */
-export const caseRoutes = (deps: Deps, { cases: store, tasks, caseRoles, discussion, timeline }: Modules) => {
+export const caseRoutes = (deps: Deps, { cases: store, tasks, caseRoles, discussion, timeline, evidence }: Modules) => {
+  const origin = new URL(deps.baseUrl).origin;
+
+  /** Streams Evidence to view or download, once its access is recorded. */
+  const openEvidence = (access: EvidenceAccess) =>
+    async function (c: Context<MemberEnv>, { number, id }: z.infer<typeof evidenceParam>) {
+      try {
+        const opened = await unlessNotFound(evidence.open(c.get("membership"), number, id, access));
+        if (!opened) return c.json(notFound, 404);
+        const headers = access === "view" ? viewHeaders(opened.evidence) : downloadHeaders(opened.evidence);
+        return c.body(opened.body, 200, headers);
+      } catch (e) {
+        if (e instanceof EvidenceNotFound) return c.json({ error: e.message }, 404);
+        throw e;
+      }
+    };
+
   return new Hono<MemberEnv>()
     .use(requireMember(deps.db))
     .post("/", zValidator("json", openBody), async (c) => {
@@ -357,6 +389,38 @@ export const caseRoutes = (deps: Deps, { cases: store, tasks, caseRoles, discuss
         return c.json(closedConflict(e), 409);
       }
     })
+    .get("/:number/evidence", zValidator("param", numberParam), async (c) => {
+      const files = await unlessNotFound(evidence.list(c.get("membership"), c.req.valid("param").number));
+      if (!files) return c.json(notFound, 404);
+      return c.json({ evidence: files }, 200);
+    })
+    .post("/:number/evidence", zValidator("param", numberParam), zValidator("query", evidenceQuery), async (c) => {
+      // The body isn't JSON, so a cross-site form could send it; only our own pages may.
+      if (c.req.header("origin") !== origin) return c.json({ error: "Cross-origin uploads are not allowed" }, 403);
+      const declared = Number(c.req.header("content-length"));
+      if (declared > deps.evidence.maxBytes) return c.json({ error: new EvidenceTooLarge(deps.evidence.maxBytes).message }, 413);
+      const body = c.req.raw.body;
+      if (!body) return c.json({ error: new EvidenceEmpty().message }, 400);
+      try {
+        const added = await unlessNotFound(
+          evidence.add(c.get("membership"), c.req.valid("param").number, {
+            name: c.req.valid("query").name,
+            contentType: mediaType(c.req.header("content-type")),
+            body,
+          }),
+        );
+        if (!added) return c.json(notFound, 404);
+        return c.json({ evidence: added }, 201);
+      } catch (e) {
+        if (e instanceof EvidenceTooLarge) return c.json({ error: e.message }, 413);
+        if (e instanceof EvidenceEmpty) return c.json({ error: e.message }, 400);
+        return c.json(closedConflict(e), 409);
+      }
+    })
+    .get("/:number/evidence/:id/view", zValidator("param", evidenceParam), (c) => openEvidence("view")(c, c.req.valid("param")))
+    .get("/:number/evidence/:id/download", zValidator("param", evidenceParam), (c) =>
+      openEvidence("download")(c, c.req.valid("param")),
+    )
     .get("/:number/audit-log", zValidator("param", numberParam), zValidator("query", auditQuery), async (c) => {
       const { actor, action, from } = c.req.valid("query");
       const entries = await unlessNotFound(
