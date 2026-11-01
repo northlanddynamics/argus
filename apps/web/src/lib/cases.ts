@@ -41,6 +41,12 @@ export type CaseView = NonNullable<Awaited<ReturnType<ReturnType<typeof caseQuer
 /** Nothing on the Case can be changed: it's Closed, or the viewer is a Guest. */
 export const isReadOnly = (c: Pick<CaseView, "status" | "can">) => c.status === "closed" || !c.can.work;
 
+/** The viewer can post in the Discussion, complete Tasks and add Evidence: Members and Guests, until it's Closed. */
+export const canParticipate = (c: Pick<CaseView, "status" | "can">) => c.status !== "closed" && c.can.participate;
+
+/** The viewer can mark items Internal or show them to Guests: Members, until it's Closed. */
+export const canMarkInternal = (c: Pick<CaseView, "status" | "can">) => c.status !== "closed" && c.can.markInternal;
+
 export const emptySummary = (): CaseSummary => ({ type: "doc", content: [] });
 
 /** The Case Summary's words without formatting, one block per line. */

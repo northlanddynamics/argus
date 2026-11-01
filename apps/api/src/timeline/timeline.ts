@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { casePolicy, visibleCases } from "../access/policy";
+import { type Actor, casePolicy, visibleCases, visibleItems } from "../access/policy";
 import { actorOf, CaseNotFound, lockCase } from "../cases/cases";
 import { recordCaseAudit } from "../cases/case-audit-log";
 import type { CaseAuditAction } from "../cases/vocabulary";
@@ -21,10 +21,16 @@ import type { Citation, PromotionSource } from "./vocabulary";
  *
  * Promotion turns a Discussion message or a Case Audit Log entry into a Timeline Entry that links
  * back to it. A source is Promoted into at most one entry at a time (retracting that entry frees it).
+ *
+ * Internal entries are hidden from Guests, and so are an entry's citations of Internal Tasks and
+ * its link to an Internal message. Promoting an Internal message makes an Internal entry unless
+ * the Member says otherwise.
  */
 
 export type { Citation, OccurredAt, PromotionSource };
 export type TimelineEntryInput = { occurredAt: OccurredAt; body: string; citations: Citation[] };
+/** A new entry; `internal` hides it from Guests (by default only when Promoting an Internal message). */
+export type NewTimelineEntry = TimelineEntryInput & { internal?: boolean };
 
 export class TimelineEntryNotFound extends Error {
   constructor() {
@@ -76,6 +82,8 @@ export type TimelineEntryView = {
   citations: CitationView[];
   /** What it was Promoted from, if anything. */
   source: SourceView | null;
+  /** Hidden from Guests. */
+  internal: boolean;
   version: number;
   recordedBy: Person;
   recordedAt: string;
@@ -133,15 +141,18 @@ const distinct = (citations: readonly Citation[]): Citation[] => {
     .map((c) => ({ kind: c.kind, id: c.id }));
 };
 
-/** "Task: Contain host" for each cited item on Case `caseId`, keyed "kind:id". Joins `tx`. */
-async function citationLabels(db: Db | Tx, caseId: string, citations: readonly Citation[]) {
+/**
+ * "Task: Contain host" for each cited item on Case `caseId`, keyed "kind:id"; with `viewer`, only
+ * the items they can see. Joins `tx`.
+ */
+async function citationLabels(db: Db | Tx, caseId: string, citations: readonly Citation[], viewer?: Actor) {
   const labels = new Map<string, string>();
   const taskIds = citations.filter((c) => c.kind === "task").map((c) => c.id);
   if (taskIds.length) {
     const rows = await db
       .select({ id: tasks.id, title: tasks.title })
       .from(tasks)
-      .where(and(eq(tasks.caseId, caseId), inArray(tasks.id, taskIds)));
+      .where(and(eq(tasks.caseId, caseId), inArray(tasks.id, taskIds), viewer ? visibleItems(viewer, tasks.internal) : undefined));
     for (const r of rows) labels.set(`task:${r.id}`, `Task: ${r.title}`);
   }
   return labels;
@@ -171,15 +182,20 @@ const checkCitations = async (tx: Tx, caseId: string, citations: readonly Citati
   return labels;
 };
 
-/** Throws unless `source` is on Case `caseId`, can be Promoted, and isn't on the Timeline already. */
+/**
+ * Throws unless `source` is on Case `caseId`, can be Promoted, and isn't on the Timeline already.
+ * Returns whether it is Internal.
+ */
 const checkSource = async (tx: Tx, caseId: string, source: PromotionSource) => {
+  let internal = false;
   if (source.kind === "discussion_message") {
     const [message] = await tx
-      .select({ retractedAt: discussionMessages.retractedAt })
+      .select({ retractedAt: discussionMessages.retractedAt, internal: discussionMessages.internal })
       .from(discussionMessages)
       .where(and(eq(discussionMessages.id, source.id), eq(discussionMessages.caseId, caseId)));
     if (!message) throw new SourceNotFound();
     if (message.retractedAt) throw new SourceRetracted();
+    internal = message.internal;
   } else {
     const [entry] = await tx
       .select({ id: caseAuditLog.id })
@@ -199,6 +215,7 @@ const checkSource = async (tx: Tx, caseId: string, source: PromotionSource) => {
       ),
     );
   if (existing) throw new AlreadyPromoted(existing.id);
+  return internal;
 };
 
 const SOURCE_NAMES = { discussion_message: "from Discussion message", audit_log_entry: "from Audit Log entry" } as const;
@@ -215,8 +232,8 @@ export function timelineStore({ db, clock }: { db: Db; clock: Clock }) {
     return found.id;
   };
 
-  /** The Case's entries (or just `id`), in Timeline order. */
-  const select = async (caseId: string, id?: string): Promise<TimelineEntryView[]> => {
+  /** The Case's entries (or just `id`) that `me` can see, in Timeline order. */
+  const select = async (me: Actor, caseId: string, id?: string): Promise<TimelineEntryView[]> => {
     const rows = await db
       .select({
         entry: timelineEntries,
@@ -226,7 +243,7 @@ export function timelineStore({ db, clock }: { db: Db; clock: Clock }) {
       .from(timelineEntries)
       .innerJoin(recordedBy, eq(timelineEntries.recordedById, recordedBy.id))
       .leftJoin(retractedBy, eq(timelineEntries.retractedById, retractedBy.id))
-      .where(and(eq(timelineEntries.caseId, caseId), id ? eq(timelineEntries.id, id) : undefined))
+      .where(and(eq(timelineEntries.caseId, caseId), id ? eq(timelineEntries.id, id) : undefined, visibleItems(me, timelineEntries.internal)))
       .orderBy(
         asc(timelineEntries.occurredStart),
         sql`${timelineEntries.occurredEnd} asc nulls first`,
@@ -234,14 +251,19 @@ export function timelineStore({ db, clock }: { db: Db; clock: Clock }) {
         asc(timelineEntries.seq),
       );
     const entries = rows.map((r) => r.entry);
-    const labels = await citationLabels(db, caseId, entries.flatMap((e) => e.citations));
-    const sources = await sourceViews(caseId, entries);
+    const labels = await citationLabels(db, caseId, entries.flatMap((e) => e.citations), me);
+    const sources = await sourceViews(me, caseId, entries);
+    const hidden = !casePolicy.canMarkInternal(me);
     return rows.map(({ entry: e, recordedByName, retractedByName }) => ({
       id: e.id,
       occurredAt: occurredAtOf(e),
       body: e.body,
-      citations: e.citations.map((c) => ({ ...c, label: labels.get(`${c.kind}:${c.id}`) ?? "(not found)" })),
+      citations: e.citations
+        // A Guest doesn't learn of the Internal items an entry cites.
+        .filter((c) => !hidden || labels.has(`${c.kind}:${c.id}`))
+        .map((c) => ({ ...c, label: labels.get(`${c.kind}:${c.id}`) ?? "(not found)" })),
       source: e.sourceId ? (sources.get(e.sourceId) ?? null) : null,
+      internal: e.internal,
       version: e.version,
       recordedBy: { id: e.recordedById, name: recordedByName },
       recordedAt: e.recordedAt.toISOString(),
@@ -253,8 +275,8 @@ export function timelineStore({ db, clock }: { db: Db; clock: Clock }) {
     }));
   };
 
-  /** What the entries were Promoted from, by source id. */
-  const sourceViews = async (caseId: string, entries: readonly Row[]) => {
+  /** What the entries were Promoted from, by source id; only the sources `me` can see. */
+  const sourceViews = async (me: Actor, caseId: string, entries: readonly Row[]) => {
     const ids = (kind: PromotionSource["kind"]) => entries.filter((e) => e.sourceKind === kind).map((e) => e.sourceId!);
     const views = new Map<string, SourceView>();
     const messageIds = ids("discussion_message");
@@ -263,7 +285,9 @@ export function timelineStore({ db, clock }: { db: Db; clock: Clock }) {
         .select({ id: discussionMessages.id, authorId: user.id, authorName: user.name, postedAt: discussionMessages.postedAt })
         .from(discussionMessages)
         .innerJoin(user, eq(discussionMessages.authorId, user.id))
-        .where(and(eq(discussionMessages.caseId, caseId), inArray(discussionMessages.id, messageIds)));
+        .where(
+          and(eq(discussionMessages.caseId, caseId), inArray(discussionMessages.id, messageIds), visibleItems(me, discussionMessages.internal)),
+        );
       for (const r of rows) {
         views.set(r.id, {
           kind: "discussion_message",
@@ -293,7 +317,7 @@ export function timelineStore({ db, clock }: { db: Db; clock: Clock }) {
   };
 
   const view = async (me: Participant, number: number, id: string) => {
-    const [entry] = await select(await findCase(me, number), id);
+    const [entry] = await select(me, await findCase(me, number), id);
     if (!entry) throw new TimelineEntryNotFound();
     return entry;
   };
@@ -301,21 +325,22 @@ export function timelineStore({ db, clock }: { db: Db; clock: Clock }) {
   return {
     /** The Case's Timeline, ordered by when things happened; retracted entries included. */
     async list(me: Participant, number: number) {
-      const entries = await select(await findCase(me, number));
+      const entries = await select(me, await findCase(me, number));
       if (casePolicy.canReadAuditLog(me)) return entries;
       // Guests never see the Audit Log, so not the entry of it a Timeline Entry was Promoted from either.
       return entries.map((e) => (e.source?.kind === "audit_log_entry" ? { ...e, source: null } : e));
     },
 
     /** Adds an entry; with `source`, Promotes that Discussion message or Audit Log entry into it. */
-    async add(me: Membership, number: number, input: TimelineEntryInput, source?: PromotionSource) {
+    async add(me: Membership, number: number, input: NewTimelineEntry, source?: PromotionSource) {
       const now = clock.now();
       const id = secureId();
       const citations = distinct(input.citations);
       await db.transaction(async (tx) => {
         const current = await lockCase(tx, me, number);
         const labels = await checkCitations(tx, current.id, citations);
-        if (source) await checkSource(tx, current.id, source);
+        const sourceInternal = source ? await checkSource(tx, current.id, source) : false;
+        const internal = input.internal ?? sourceInternal;
         const occurred = occurredColumns(input.occurredAt);
         await tx.insert(timelineEntries).values({
           id,
@@ -326,6 +351,7 @@ export function timelineStore({ db, clock }: { db: Db; clock: Clock }) {
           citations,
           sourceKind: source?.kind ?? null,
           sourceId: source?.id ?? null,
+          internal,
           version: 1,
           recordedById: me.userId,
           recordedAt: now,
@@ -336,10 +362,10 @@ export function timelineStore({ db, clock }: { db: Db; clock: Clock }) {
           occurredAt: now,
           actor: actorOf(me),
           action: source ? "timeline.entry_promoted" : "timeline.entry_added",
-          target: source ? SOURCE_NAMES[source.kind] : null,
+          target: [...(source ? [SOURCE_NAMES[source.kind]] : []), ...(internal ? ["Internal"] : [])].join(" · ") || null,
           after: describe(occurredAtOf(occurred), input.body, citations, labels),
         });
-        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id });
+        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id, membersOnly: internal });
       });
       return view(me, number, id);
     },
@@ -380,7 +406,7 @@ export function timelineStore({ db, clock }: { db: Db; clock: Clock }) {
           before: describe(before, entry.body, entry.citations, beforeLabels),
           after: describe(after, input.body, citations, labels),
         });
-        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id });
+        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id, membersOnly: entry.internal });
         return true;
       });
       const entry = await view(me, number, id);
@@ -408,7 +434,7 @@ export function timelineStore({ db, clock }: { db: Db; clock: Clock }) {
           before: describe(occurredAtOf(entry), entry.body, entry.citations, await citationLabels(tx, current.id, entry.citations)),
           after: reason,
         });
-        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id });
+        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id, membersOnly: entry.internal });
       });
       return view(me, number, id);
     },

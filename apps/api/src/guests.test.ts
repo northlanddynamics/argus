@@ -262,7 +262,7 @@ describe("Guest sign-in", () => {
 });
 
 describe("what Guests see and do", () => {
-  test("Guests read their Case but change nothing, and never see the Audit Log", async () => {
+  test("Guests read their Case and change nothing beyond taking part, and never see the Audit Log", async () => {
     const a = await acme();
     const number = await a.open();
     await a.owner.api.cases[":number"].discussion.$post({ param: param(number), json: { body: "Contained at 10:02." } });
@@ -270,7 +270,9 @@ describe("what Guests see and do", () => {
     const guest = await a.t.guestSignIn(COUNSEL);
 
     const { body } = await a.view(guest, number);
-    expect(body).toMatchObject({ case: { can: { work: false, restrict: false, reopen: false, manageGuests: false, readAuditLog: false } } });
+    expect(body).toMatchObject({
+      case: { can: { work: false, participate: true, markInternal: false, restrict: false, reopen: false, manageGuests: false, readAuditLog: false } },
+    });
     const messages = await (await guest.api.cases[":number"].discussion.$get({ param: param(number) })).json();
     expect(messages).toMatchObject({ messages: [{ body: "Contained at 10:02." }] });
     for (const read of [
@@ -286,8 +288,8 @@ describe("what Guests see and do", () => {
     const refused = [
       guest.api.cases.$post({ json: { title: "Mine", caseType: "malware", severity: "low" } }),
       guest.api.cases[":number"].$patch({ param: param(number), json: { status: "triage" } }),
-      guest.api.cases[":number"].discussion.$post({ param: param(number), json: { body: "Hello" } }),
-      guest.api.cases[":number"].discussion.mentionable.$get({ param: param(number) }),
+      guest.api.cases[":number"].tasks.$post({ param: param(number), json: { title: "Mine", ownerId: "anyone" } }),
+      guest.api.cases[":number"].timeline.$post({ param: param(number), json: { occurredAt: { kind: "exact", at: "2026-10-28T09:14:00Z" }, body: "Mine" } }),
       guest.api.cases[":number"].guests.$get({ param: param(number) }),
       guest.api.cases[":number"].guests.$post({ param: param(number), json: { email: "friend@lawfirm.example" } }),
       guest.api.cases[":number"]["audit-log"].$get({ param: param(number), query: {} }),

@@ -758,3 +758,65 @@ test("the Owner invites a Guest to a Case; the Guest signs in by email link, rea
     await stop();
   }
 }, 60_000);
+
+test("a Member hides a Task and a message from Guests; the Guest sees the rest, completes their Task and joins the Discussion", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    await owner.api.cases.$post({ json: { title: "Suspicious PowerShell on FIN-LT-0231", caseType: "malware", severity: "critical" } });
+    const invited = await owner.api.cases[":number"].guests.$post({ param: { number: "1" }, json: { email: "k.patel@lawfirm.example", name: "Kim Patel" } });
+    const { guests } = (await invited.json()) as { guests: { guest: { id: string } }[] };
+    const ownerId = ((await (await owner.api.me.$get()).json()) as { user: { id: string } }).user.id;
+    for (const [title, ownerId_] of [
+      ["Assess notification duty", guests[0]!.guest.id],
+      ["Capture memory image", ownerId],
+    ] as const) {
+      await owner.api.cases[":number"].tasks.$post({ param: { number: "1" }, json: { title, ownerId: ownerId_ } });
+    }
+    await owner.api.cases[":number"].discussion.$post({ param: { number: "1" }, json: { body: "Contained at 10:02." } });
+
+    // The Owner marks one Task Internal, and posts an Internal message.
+    const ownerPage = await browser.newPage();
+    await signIn(ownerPage, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
+    await ownerPage.goto(`${baseUrl}/cases/1/tasks`);
+    await ownerPage.getByRole("button", { name: "Mark Capture memory image Internal" }).click();
+    await ownerPage.getByTestId("task-Capture memory image").getByText("Internal").waitFor();
+    await ownerPage.getByTestId("task-Assess notification duty").getByText("Visible to Guests").waitFor();
+    await ownerPage.getByRole("link", { name: "Timeline & Discussion" }).click();
+    await ownerPage.getByLabel("Message", { exact: true }).fill("Ransom note found on the file share.");
+    await ownerPage.getByLabel("Internal", { exact: true }).last().check();
+    await ownerPage.getByRole("button", { name: "Send" }).click();
+    await ownerPage.getByRole("listitem", { name: "Message from Olive Owner" }).filter({ hasText: "Ransom note" }).getByText("Internal").waitFor();
+
+    // Counsel signs in and sees only what isn't Internal.
+    const page = await browser.newPage();
+    await page.goto(`${baseUrl}/guest/sign-in?email=k.patel%40lawfirm.example`);
+    await page.getByRole("button", { name: "Email me a sign-in link" }).click();
+    await page.getByText("a sign-in link is on its way").waitFor();
+    await page.goto(t.magicLinkFor("k.patel@lawfirm.example")!);
+    await page.getByRole("heading", { name: "Your Cases" }).waitFor();
+    await page.goto(`${baseUrl}/cases/1/tasks`);
+    await page.getByRole("link", { name: "Tasks (0/1)" }).waitFor();
+    await page.getByTestId("task-Assess notification duty").waitFor();
+    expect(await page.getByText("Capture memory image").count()).toBe(0);
+    expect(await page.getByRole("columnheader", { name: "Visibility" }).count()).toBe(0);
+
+    // They complete their Task; the Owner sees it live.
+    await page.getByRole("checkbox", { name: "Assess notification duty done" }).click();
+    await page.getByRole("link", { name: "Tasks (1/1)" }).waitFor();
+    await ownerPage.getByRole("link", { name: "Tasks (1/2)" }).waitFor();
+
+    // They read the Discussion without the Internal message, and post in it.
+    await page.getByRole("link", { name: "Timeline & Discussion" }).click();
+    await page.getByText("Contained at 10:02.").waitFor();
+    expect(await page.getByText("Ransom note").count()).toBe(0);
+    expect(await page.getByLabel("Internal", { exact: true }).count()).toBe(0);
+    await page.getByLabel("Message", { exact: true }).fill("Was customer data on the laptop?");
+    await page.getByRole("button", { name: "Send" }).click();
+    await page.getByRole("listitem", { name: "Message from Kim Patel" }).waitFor();
+    await ownerPage.getByText("Was customer data on the laptop?").waitFor();
+  } finally {
+    await stop();
+  }
+}, 60_000);

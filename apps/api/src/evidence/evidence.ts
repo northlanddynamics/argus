@@ -1,5 +1,5 @@
 import { and, asc, eq } from "drizzle-orm";
-import { visibleCases } from "../access/policy";
+import { canSeeItem, casePolicy, NotPermitted, visibleCases, visibleItems } from "../access/policy";
 import { actorOf, CaseClosed, CaseNotFound, lockCase } from "../cases/cases";
 import { recordCaseAudit } from "../cases/case-audit-log";
 import type { Clock } from "../clock";
@@ -7,12 +7,13 @@ import type { Db } from "../db/client";
 import { cases, evidence, user } from "../db/schema";
 import type { EvidenceConfig } from "../deps";
 import { secureId } from "../ids";
-import type { Membership, Participant } from "../members/membership";
+import type { Participant } from "../members/membership";
 import { publish } from "../realtime/signals";
 
 /**
- * A Case's Evidence. Anyone who can see the Case adds files while it isn't Closed; each is
- * fingerprinted with SHA-256 as its bytes arrive, and is never replaced or deleted (ADR 0003).
+ * A Case's Evidence. Anyone who can see the Case, Guests included, adds files while it isn't Closed;
+ * each is fingerprinted with SHA-256 as its bytes arrive, and is never replaced or deleted (ADR 0003).
+ * Members may add it as Internal, or mark it so later, hiding it from Guests.
  *
  * Its bytes go only through here, to people the access policy lets see the Case, and every view
  * and download is recorded in the Case Audit Log before the bytes are handed over. There are no
@@ -38,7 +39,7 @@ export class EvidenceEmpty extends Error {
 }
 export { CaseClosed, CaseNotFound };
 
-export type NewEvidence = { name: string; contentType: string; body: ReadableStream<Uint8Array> };
+export type NewEvidence = { name: string; contentType: string; body: ReadableStream<Uint8Array>; internal?: boolean };
 
 export type EvidenceView = {
   id: string;
@@ -49,6 +50,8 @@ export type EvidenceView = {
   sha256: string;
   addedBy: { id: string; name: string };
   addedAt: string;
+  /** Hidden from Guests. */
+  internal: boolean;
 };
 
 /** How someone opened Evidence; each is its own Case Audit Log action. */
@@ -91,6 +94,7 @@ export function evidenceStore({ db, clock, evidence: config }: { db: Db; clock: 
     addedById: evidence.addedById,
     addedByName: user.name,
     addedAt: evidence.addedAt,
+    internal: evidence.internal,
   };
   /** The Case's Evidence (or just `id`) as `me` sees it, oldest first; throws `CaseNotFound` when they can't see the Case. */
   const select = async (me: Participant, number: number, id?: string) => {
@@ -104,7 +108,7 @@ export function evidenceStore({ db, clock, evidence: config }: { db: Db; clock: 
       .select(columns)
       .from(evidence)
       .innerJoin(user, eq(evidence.addedById, user.id))
-      .where(and(eq(evidence.caseId, found.id), id ? eq(evidence.id, id) : undefined))
+      .where(and(eq(evidence.caseId, found.id), id ? eq(evidence.id, id) : undefined, visibleItems(me, evidence.internal)))
       .orderBy(asc(evidence.seq));
   };
 
@@ -116,6 +120,7 @@ export function evidenceStore({ db, clock, evidence: config }: { db: Db; clock: 
     sha256: r.sha256,
     addedBy: { id: r.addedById, name: r.addedByName },
     addedAt: r.addedAt.toISOString(),
+    internal: r.internal,
   });
 
   return {
@@ -125,9 +130,10 @@ export function evidenceStore({ db, clock, evidence: config }: { db: Db; clock: 
     /**
      * Adds a file as Evidence, streaming it to storage while fingerprinting it. The Case is checked
      * before the upload starts, so a refusal comes before the bytes are sent, and again as the
-     * Evidence is recorded.
+     * Evidence is recorded. Only Members add it as Internal.
      */
-    async add(me: Membership, number: number, file: NewEvidence) {
+    async add(me: Participant, number: number, file: NewEvidence) {
+      const internal = file.internal ?? false;
       const [target] = await db
         .select({ id: cases.id, status: cases.status })
         .from(cases)
@@ -135,6 +141,7 @@ export function evidenceStore({ db, clock, evidence: config }: { db: Db; clock: 
         .limit(1);
       if (!target) throw new CaseNotFound();
       if (target.status === "closed") throw new CaseClosed();
+      if (internal && !casePolicy.canMarkInternal(me)) throw new NotPermitted();
 
       const id = secureId();
       // Fresh for every file, so nothing already stored is ever written over.
@@ -159,6 +166,7 @@ export function evidenceStore({ db, clock, evidence: config }: { db: Db; clock: 
           storageKey,
           addedById: me.userId,
           addedAt: now,
+          internal,
         });
         await recordCaseAudit(tx, {
           organizationId: me.organizationId,
@@ -167,9 +175,9 @@ export function evidenceStore({ db, clock, evidence: config }: { db: Db; clock: 
           actor: actorOf(me),
           action: "evidence.added",
           target: file.name,
-          after: `SHA-256 ${sha256}`,
+          after: internal ? `SHA-256 ${sha256} · Internal` : `SHA-256 ${sha256}`,
         });
-        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id });
+        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id, membersOnly: internal });
       });
       const [added] = await select(me, number, id);
       if (!added) throw new EvidenceNotFound();
@@ -189,7 +197,7 @@ export function evidenceStore({ db, clock, evidence: config }: { db: Db; clock: 
           .from(evidence)
           .innerJoin(user, eq(evidence.addedById, user.id))
           .where(and(eq(evidence.id, id), eq(evidence.caseId, current.id)));
-        if (!found) throw new EvidenceNotFound();
+        if (!found || !canSeeItem(me, found)) throw new EvidenceNotFound();
         await recordCaseAudit(tx, {
           organizationId: me.organizationId,
           caseId: current.id,
@@ -198,7 +206,7 @@ export function evidenceStore({ db, clock, evidence: config }: { db: Db; clock: 
           action: accessAction[access],
           target: found.name,
         });
-        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id });
+        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id, membersOnly: found.internal });
         return found;
       });
       return { evidence: toView(row), body: await config.storage.get(row.storageKey) };

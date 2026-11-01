@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
-import { discussionPolicy, NotPermitted, visibleCases } from "../access/policy";
+import { canSeeItem, casePolicy, discussionPolicy, NotPermitted, visibleCases, visibleItems } from "../access/policy";
 import { caseRoleHolderIds } from "../case-roles/holders";
 import { guestGrantsOf } from "../guests/grants";
 import { actorOf, CaseNotFound, lockCase } from "../cases/cases";
@@ -9,16 +9,19 @@ import type { Clock } from "../clock";
 import type { Db, Tx } from "../db/client";
 import { cases, discussionMentions, discussionMessages, user } from "../db/schema";
 import { secureId } from "../ids";
-import type { Membership, Participant } from "../members/membership";
+import type { Participant } from "../members/membership";
 import { publish } from "../realtime/signals";
+import { GuestCannotSeeInternal } from "../internal/internal";
 import { mentionedIds, withNames } from "./mentions";
 
 /**
- * A Case's Discussion. Anyone who can see the Case posts while it isn't Closed; a message's author
- * edits or retracts it, and the Case Audit Log keeps every earlier text (ADR 0003).
+ * A Case's Discussion. Anyone who can see the Case, Guests included, posts while it isn't Closed; a
+ * message's author edits or retracts it, and the Case Audit Log keeps every earlier text (ADR 0003).
+ * Members may post Internal messages, which Guests never see.
  *
- * A message may mention only people who can see the Case, and mentioning someone never lets them
- * see it. Who was mentioned where is stored for notifications.
+ * A message may mention only people who can see it: people who can see the Case, and no Guests on
+ * an Internal message. Mentioning someone never lets them see it. Who was mentioned where is stored
+ * for notifications.
  */
 
 export class MessageNotFound extends Error {
@@ -51,6 +54,8 @@ export type MessageView = {
   postedAt: string;
   editedAt: string | null;
   retractedAt: string | null;
+  /** Hidden from Guests. */
+  internal: boolean;
   /** What the viewer may do to this message, while the Case isn't Closed. */
   can: { edit: boolean; retract: boolean };
 };
@@ -62,26 +67,30 @@ const namesOf = async (db: Db | Tx, ids: readonly string[]) => {
   return new Map(rows.map((r) => [r.id, r.name]));
 };
 
-/** Locks a message on the locked Case for the rest of `tx`, or throws `MessageNotFound`. */
-const lock = async (tx: Tx, caseId: string, id: string) => {
+/** Locks a message `me` can see on the locked Case for the rest of `tx`, or throws `MessageNotFound`. */
+const lock = async (tx: Tx, me: Participant, caseId: string, id: string) => {
   const [row] = await tx
     .select()
     .from(discussionMessages)
     .where(and(eq(discussionMessages.id, id), eq(discussionMessages.caseId, caseId)))
     .for("update");
-  if (!row) throw new MessageNotFound();
+  if (!row || !canSeeItem(me, row)) throw new MessageNotFound();
   return row;
 };
 
-/** Throws `MentionCannotSeeCase` unless everyone in `ids` can see the locked Case. */
-const checkMentions = async (tx: Tx, theCase: Awaited<ReturnType<typeof lockCase>>, ids: readonly string[]) => {
+/**
+ * Throws `MentionCannotSeeCase` unless everyone in `ids` can see the locked Case, and
+ * `GuestCannotSeeInternal` if the message is Internal and `ids` names a Guest.
+ */
+const checkMentions = async (tx: Tx, theCase: Awaited<ReturnType<typeof lockCase>>, ids: readonly string[], internal: boolean, at: Date) => {
   if (!ids.length) return;
-  const people = new Set((await peopleWhoCanSee(tx, theCase)).map((p) => p.id));
+  const people = new Map((await peopleWhoCanSee(tx, theCase, at)).map((p) => [p.id, p]));
   if (ids.some((id) => !people.has(id))) throw new MentionCannotSeeCase();
+  if (internal && ids.some((id) => people.get(id)?.role === "guest")) throw new GuestCannotSeeInternal();
 };
 
 /** Records the mentions in `ids` that message `messageId` doesn't have yet. */
-const recordMentions = async (tx: Tx, me: Membership, caseId: string, messageId: string, ids: readonly string[], at: Date) => {
+const recordMentions = async (tx: Tx, me: Participant, caseId: string, messageId: string, ids: readonly string[], at: Date) => {
   if (!ids.length) return;
   await tx
     .insert(discussionMentions)
@@ -117,10 +126,17 @@ export function discussionStore({ db, clock }: { db: Db; clock: Clock }) {
         postedAt: discussionMessages.postedAt,
         editedAt: discussionMessages.editedAt,
         retractedAt: discussionMessages.retractedAt,
+        internal: discussionMessages.internal,
       })
       .from(discussionMessages)
       .innerJoin(user, eq(discussionMessages.authorId, user.id))
-      .where(and(eq(discussionMessages.caseId, found.id), id ? eq(discussionMessages.id, id) : undefined))
+      .where(
+        and(
+          eq(discussionMessages.caseId, found.id),
+          id ? eq(discussionMessages.id, id) : undefined,
+          visibleItems(me, discussionMessages.internal),
+        ),
+      )
       .orderBy(asc(discussionMessages.seq));
     const live = rows.filter((r) => !r.retractedAt);
     const names = await namesOf(db, [...new Set(live.flatMap((r) => mentionedIds(r.body)))]);
@@ -135,6 +151,7 @@ export function discussionStore({ db, clock }: { db: Db; clock: Clock }) {
         postedAt: r.postedAt.toISOString(),
         editedAt: r.editedAt?.toISOString() ?? null,
         retractedAt: r.retractedAt?.toISOString() ?? null,
+        internal: r.internal,
         can: { edit: mine && !retracted, retract: mine && !retracted },
       };
     });
@@ -150,24 +167,27 @@ export function discussionStore({ db, clock }: { db: Db; clock: Clock }) {
     /** The Case's messages, oldest first; throws `CaseNotFound` when `me` can't see it. */
     list: (me: Participant, number: number) => select(me, number),
 
-    /** The people `me` may mention on the Case: everyone who can see it. */
-    async mentionable(me: Membership, number: number) {
+    /** The people `me` may mention on the Case: everyone who can see it (Members first, then Guests). */
+    async mentionable(me: Participant, number: number) {
       const [found] = await db
         .select({ id: cases.id, organizationId: cases.organizationId, restricted: cases.restricted, assigneeId: cases.assigneeId })
         .from(cases)
         .where(and(visibleCases(me), eq(cases.number, number)))
         .limit(1);
       if (!found) throw new CaseNotFound();
-      return peopleWhoCanSee(db, { ...found, caseRoleHolderIds: await caseRoleHolderIds(db, found.id), guests: await guestGrantsOf(db, found.id) });
+      const facts = { ...found, caseRoleHolderIds: await caseRoleHolderIds(db, found.id), guests: await guestGrantsOf(db, found.id) };
+      return peopleWhoCanSee(db, facts, clock.now());
     },
 
-    async post(me: Membership, number: number, body: string) {
+    /** Posts a message; with `internal` (Members only), hidden from Guests. */
+    async post(me: Participant, number: number, body: string, internal = false) {
       const now = clock.now();
       const id = secureId();
       await db.transaction(async (tx) => {
         const current = await lockCase(tx, me, number);
+        if (internal && !casePolicy.canMarkInternal(me)) throw new NotPermitted();
         const mentions = mentionedIds(body);
-        await checkMentions(tx, current, mentions);
+        await checkMentions(tx, current, mentions, internal, now);
         await tx.insert(discussionMessages).values({
           id,
           organizationId: me.organizationId,
@@ -175,6 +195,7 @@ export function discussionStore({ db, clock }: { db: Db; clock: Clock }) {
           authorId: me.userId,
           body,
           postedAt: now,
+          internal,
         });
         await recordMentions(tx, me, current.id, id, mentions, now);
         await recordCaseAudit(tx, {
@@ -183,29 +204,30 @@ export function discussionStore({ db, clock }: { db: Db; clock: Clock }) {
           occurredAt: now,
           actor: actorOf(me),
           action: "discussion.message_posted",
+          target: internal ? "Internal" : null,
           after: withNames(body, await namesOf(tx, mentions)),
         });
-        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id });
+        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id, membersOnly: internal });
       });
       return view(me, number, id);
     },
 
     /**
      * Replaces the message's text. Its author only. People it newly mentions must be able to see
-     * the Case; those it mentioned already stay, even if they no longer can.
+     * the message; those it mentioned already stay, even if they no longer can.
      */
-    async edit(me: Membership, number: number, id: string, body: string) {
+    async edit(me: Participant, number: number, id: string, body: string) {
       const now = clock.now();
       await db.transaction(async (tx) => {
         const current = await lockCase(tx, me, number);
-        const message = await lock(tx, current.id, id);
+        const message = await lock(tx, me, current.id, id);
         if (!discussionPolicy.canChangeMessage(me, message)) throw new NotPermitted();
         if (message.retractedAt) throw new MessageRetracted();
         if (body === message.body) return;
         const before = mentionedIds(message.body);
         const after = mentionedIds(body);
         const added = after.filter((m) => !before.includes(m));
-        await checkMentions(tx, current, added);
+        await checkMentions(tx, current, added, message.internal, now);
         await tx.update(discussionMessages).set({ body, editedAt: now }).where(eq(discussionMessages.id, id));
         await recordMentions(tx, me, current.id, id, added, now);
         const names = await namesOf(tx, [...new Set([...before, ...after])]);
@@ -218,17 +240,17 @@ export function discussionStore({ db, clock }: { db: Db; clock: Clock }) {
           before: withNames(message.body, names),
           after: withNames(body, names),
         });
-        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id });
+        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id, membersOnly: message.internal });
       });
       return view(me, number, id);
     },
 
     /** Withdraws the message: its text is no longer shown, and stays in the Audit Log. Its author only. */
-    async retract(me: Membership, number: number, id: string) {
+    async retract(me: Participant, number: number, id: string) {
       const now = clock.now();
       await db.transaction(async (tx) => {
         const current = await lockCase(tx, me, number);
-        const message = await lock(tx, current.id, id);
+        const message = await lock(tx, me, current.id, id);
         if (!discussionPolicy.canChangeMessage(me, message)) throw new NotPermitted();
         if (message.retractedAt) throw new MessageRetracted();
         await tx.update(discussionMessages).set({ retractedAt: now }).where(eq(discussionMessages.id, id));
@@ -240,7 +262,7 @@ export function discussionStore({ db, clock }: { db: Db; clock: Clock }) {
           action: "discussion.message_retracted",
           before: withNames(message.body, await namesOf(tx, mentionedIds(message.body))),
         });
-        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id });
+        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id, membersOnly: message.internal });
       });
       return view(me, number, id);
     },

@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { visibleCases } from "../access/policy";
+import { visibleCases, visibleItems } from "../access/policy";
 import { recordOrgAudit } from "../audit/org-audit-log";
 import { recordCaseAudit } from "../cases/case-audit-log";
 import { actorOf, CaseClosed, CaseNotFound, insertCase, type OpenCaseInput } from "../cases/cases";
@@ -10,13 +10,16 @@ import type { Db, Tx } from "../db/client";
 import { alerts, cases, integrations, user } from "../db/schema";
 import type { Deps } from "../deps";
 import { secureId } from "../ids";
-import type { Membership } from "../members/membership";
+import type { Membership, Participant } from "../members/membership";
 import { publish } from "../realtime/signals";
 import { alertLabel, type AlertStatus, type DismissalReason, dismissalReasonLabel } from "./vocabulary";
 
 /**
  * Alerts: detections received from the Organization's Integrations. Every Member sees the Alert
  * queue; Guests never do. Alerts arrive through the worker (`recordDetection`).
+ *
+ * Attaching an Alert to a Case makes it Internal, hidden from the Case's Guests, until a Member
+ * shows it to them (`internal/`). Guests see only the Alerts on their Case that aren't Internal.
  *
  * Members open a Case from Alerts, attach them to a Case, move them between Cases, detach them and
  * dismiss them with a Dismissal Reason. An Alert is on at most one Case at a time; attaching one
@@ -157,6 +160,7 @@ type LockedAlert = {
   severity: Severity;
   version: number;
   caseId: string | null;
+  internal: boolean;
   dismissedByName: string | null;
 };
 
@@ -174,6 +178,7 @@ async function lockAlerts(tx: Tx, me: Membership, ids: readonly string[]) {
       severity: alerts.severity,
       version: alerts.version,
       caseId: alerts.caseId,
+      internal: alerts.internal,
       dismissedById: alerts.dismissedById,
     })
     .from(alerts)
@@ -250,7 +255,7 @@ function attachRefusal(id: string, alert: LockedAlert | undefined, version: numb
 
 /**
  * Attaches the selected Alerts to `target` in `tx`, moving any on another Case, and records each in
- * both Cases' Audit Logs. Publishes the signals for whatever changed.
+ * both Cases' Audit Logs. Each becomes Internal on `target`. Publishes the signals for whatever changed.
  */
 async function attachIn(tx: Tx, me: Membership, target: { id: string; number: number }, selection: AlertSelection, now: Date) {
   const locked = await lockAlerts(tx, me, selection.map((s) => s.id));
@@ -258,6 +263,8 @@ async function attachIn(tx: Tx, me: Membership, target: { id: string; number: nu
   if (caseOf.get(target.id)?.status === "closed") throw new CaseClosed();
   const result: BulkResult = { applied: [], refused: [] };
   const touched = new Set<string>();
+  /** Cases that lost an Alert their Guests could see. */
+  const guestsSaw = new Set<string>();
   for (const { id, version } of selection) {
     if (result.applied.includes(id)) continue;
     const alert = locked.get(id);
@@ -274,6 +281,7 @@ async function attachIn(tx: Tx, me: Membership, target: { id: string; number: nu
         caseId: target.id,
         attachedById: me.userId,
         attachedAt: now,
+        internal: true,
         dismissalReason: null,
         dismissalComment: null,
         dismissedById: null,
@@ -305,6 +313,7 @@ async function attachIn(tx: Tx, me: Membership, target: { id: string; number: nu
         after: caseRef(target.number),
       });
       touched.add(from.id);
+      if (!alert.internal) guestsSaw.add(from.id);
     }
     touched.add(target.id);
     result.applied.push(id);
@@ -312,7 +321,9 @@ async function attachIn(tx: Tx, me: Membership, target: { id: string; number: nu
   if (result.applied.length) {
     await tx.update(cases).set({ updatedAt: now }).where(inArray(cases.id, [...touched]));
     await publish(tx, { kind: "alerts", organizationId: me.organizationId });
-    for (const caseId of touched) await publish(tx, { kind: "case", organizationId: me.organizationId, caseId });
+    for (const caseId of touched) {
+      await publish(tx, { kind: "case", organizationId: me.organizationId, caseId, membersOnly: !guestsSaw.has(caseId) });
+    }
   }
   return result;
 }
@@ -362,6 +373,7 @@ export function alertStore({ db, clock }: Pick<Deps, "db" | "clock">) {
           integrationId: integrations.id,
           integrationName: integrations.name,
           dismissalReason: alerts.dismissalReason,
+          internal: alerts.internal,
           caseNumber: cases.number,
           caseTitle: cases.title,
           caseVisible: sql<boolean | null>`(${visibleCases(me)})`,
@@ -390,6 +402,44 @@ export function alertStore({ db, clock }: Pick<Deps, "db" | "clock">) {
       }));
     },
 
+    /**
+     * The Alerts attached to Case `number` that `me` can see, newest first: all of them for
+     * Members, those that aren't Internal for its Guests. Throws `CaseNotFound` when `me` can't see it.
+     */
+    async onCase(me: Participant, number: number) {
+      const [found] = await db
+        .select({ id: cases.id })
+        .from(cases)
+        .where(and(visibleCases(me), eq(cases.number, number)))
+        .limit(1);
+      if (!found) throw new CaseNotFound();
+      const rows = await db
+        .select({
+          id: alerts.id,
+          externalId: alerts.externalId,
+          kind: alerts.kind,
+          severity: alerts.severity,
+          title: alerts.title,
+          host: alerts.host,
+          userName: alerts.userName,
+          detectedAt: alerts.detectedAt,
+          attachedAt: alerts.attachedAt,
+          version: alerts.version,
+          internal: alerts.internal,
+          integrationName: integrations.name,
+        })
+        .from(alerts)
+        .innerJoin(integrations, eq(alerts.integrationId, integrations.id))
+        .where(and(eq(alerts.caseId, found.id), visibleItems(me, alerts.internal)))
+        .orderBy(desc(alerts.attachedAt), desc(alerts.seq));
+      return rows.map(({ detectedAt, attachedAt, integrationName, ...row }) => ({
+        ...row,
+        integration: { name: integrationName },
+        detectedAt: detectedAt?.toISOString() ?? null,
+        attachedAt: attachedAt?.toISOString() ?? null,
+      }));
+    },
+
     /** One Alert in full, with its detection as Falcon sent it. */
     async get(me: Membership, id: string) {
       const [row] = await db
@@ -407,6 +457,7 @@ export function alertStore({ db, clock }: Pick<Deps, "db" | "clock">) {
           receivedAt: alerts.receivedAt,
           version: alerts.version,
           payload: alerts.payload,
+          internal: alerts.internal,
           integrationId: integrations.id,
           integrationName: integrations.name,
           caseNumber: cases.number,
@@ -445,6 +496,8 @@ export function alertStore({ db, clock }: Pick<Deps, "db" | "clock">) {
         receivedAt: row.receivedAt.toISOString(),
         version: row.version,
         payload: row.payload,
+        /** Hidden from the Guests on its Case. */
+        internal: row.internal,
         integration: { id: row.integrationId, name: row.integrationName },
         /** Set while it is Attached; `case` is null when that Case is one `me` can't see. */
         attached:
@@ -523,7 +576,7 @@ export function alertStore({ db, clock }: Pick<Deps, "db" | "clock">) {
         });
         await tx.update(cases).set({ updatedAt: now }).where(eq(cases.id, from.id));
         await publish(tx, { kind: "alerts", organizationId: me.organizationId });
-        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: from.id });
+        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: from.id, membersOnly: alert.internal });
       });
     },
 

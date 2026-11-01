@@ -199,6 +199,8 @@ export function createLive({ db, clock, signals }: { db: Db; clock: Clock; signa
     if (signal.kind === "case") {
       const before = signal.before && { ...facts, ...signal.before };
       for (const s of open) {
+        // Guests never hear about changes to Internal items alone.
+        if (signal.membersOnly && s.member.role === "guest") continue;
         if (canSeeCase(s.member, facts) || (before && canSeeCase(s.member, before))) send(s, { type: "case", number: facts.number });
       }
       await dropUnseen(open, signal.caseId, facts);

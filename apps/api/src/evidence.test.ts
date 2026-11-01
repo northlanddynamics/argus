@@ -107,6 +107,7 @@ describe("Adding Evidence", () => {
       sha256: sha256(PHISH),
       addedBy: { id: await userId(ana), name: "Ana Analyst" },
       addedAt: "2026-01-01T09:00:00.000Z",
+      internal: false,
     });
     const { status, body } = await list(owner, number);
     expect(status).toBe(200);

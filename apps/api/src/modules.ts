@@ -7,6 +7,7 @@ import { evidenceStore } from "./evidence/evidence";
 import { guestStore } from "./guests/guests";
 import { alertStore } from "./alerts/alerts";
 import { integrationStore } from "./integrations/integrations";
+import { internalStore } from "./internal/internal";
 import { assetStore, observableStore } from "./observables/observables";
 import { invitationStore } from "./invitations/invitations";
 import { memberStore } from "./members/members";
@@ -32,6 +33,7 @@ export function createModules(deps: Deps) {
     caseLinks: caseLinkStore(deps),
     tags: tagStore(deps),
     guests: guestStore(deps),
+    internal: internalStore(deps),
     members: memberStore(deps),
     invitations: invitationStore(deps),
     organizations: organizationStore(deps),

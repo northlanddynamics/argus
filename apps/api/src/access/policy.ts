@@ -1,4 +1,5 @@
 import { and, eq, exists, gt, isNull, or, sql, type SQL } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import type { OrgRole } from "../auth/roles";
 import { caseGuests, caseRoleAssignments, cases } from "../db/schema";
 
@@ -12,6 +13,9 @@ import { caseGuests, caseRoleAssignments, cases } from "../db/schema";
  * - Guests see only the Cases they hold a Guest grant for, until it ends or expires; Restricted makes
  *   no difference to them. They never see a Case's Audit Log or which other Cases an Observable or
  *   Asset is on.
+ * - Guests never see Internal items (Tasks, Discussion messages, Timeline Entries, Evidence and
+ *   attached Alerts marked Internal), nor hear about changes to them. On what they can see they
+ *   participate: they post in the Discussion, own and complete Tasks, and add Evidence.
  * - Nobody sees anything outside the Organization they are acting in.
  *
  * A Case the actor can't see is reported as not found, so its existence doesn't leak.
@@ -84,6 +88,19 @@ export function visibleCases(actor: Actor): SQL {
   return and(inOrganization, or(eq(cases.restricted, false), eq(cases.assigneeId, actor.userId), holdsCaseRole)) as SQL;
 }
 
+/** An item within a Case that can be marked Internal. */
+export type InternalFact = { internal: boolean };
+
+/** Whether `actor` can see an item on a Case they can see. Mirrors `visibleItems`. */
+export const canSeeItem = (actor: Pick<Actor, "role">, item: InternalFact) => !item.internal || actor.role !== "guest";
+
+/**
+ * The items `actor` can see on a Case they can see, as a condition on the item table's `internal`
+ * column (none for Members). Mirrors `canSeeItem`.
+ */
+export const visibleItems = (actor: Actor, internal: AnyPgColumn): SQL | undefined =>
+  isGuest(actor) ? eq(internal, false) : undefined;
+
 /** Case permissions, for a Case the actor can already see. */
 export const casePolicy = {
   /** Admins, the Owner and the Case's Assignee (not Case Role holders) mark a Case Restricted or lift it. */
@@ -96,8 +113,12 @@ export const casePolicy = {
   canReadAuditLog: (actor: Actor) => !isGuest(actor),
   /** Members only: Guests never learn which other Cases an Observable or Asset is on. */
   canSeeCorrelation: (actor: Actor) => !isGuest(actor),
-  /** Members only, for now: Guests read their Cases but change nothing on them. */
+  /** Members only: change the Case and everything on it beyond what Guests take part in. */
   canWork: (actor: Actor) => !isGuest(actor),
+  /** Everyone who can see the Case: post in the Discussion, complete Tasks, add Evidence. */
+  canParticipate: (_actor: Actor) => true,
+  /** Members only: mark items Internal, or show them to Guests again. */
+  canMarkInternal: (actor: Actor) => !isGuest(actor),
 };
 
 /** Discussion permissions, for a message on a Case the actor can already see. */
@@ -123,6 +144,9 @@ export const organizationPolicy = {
 export const casePermissions = (actor: Actor, c: Pick<CaseAccessFacts, "assigneeId">) => ({
   /** Change the Case and add to it (unless it's Closed). */
   work: casePolicy.canWork(actor),
+  /** Post in the Discussion, complete Tasks and add Evidence (unless it's Closed). */
+  participate: casePolicy.canParticipate(actor),
+  markInternal: casePolicy.canMarkInternal(actor),
   restrict: casePolicy.canRestrict(actor, c),
   reopen: casePolicy.canReopen(actor),
   manageGuests: casePolicy.canManageGuests(actor, c),

@@ -38,11 +38,13 @@ export const alertQuery = (id: string) =>
 export type AlertDetail = NonNullable<Awaited<ReturnType<ReturnType<typeof alertQuery>["queryFn"] & {}>>>;
 
 /** The Alerts attached to Case `number`. */
+/** The Alerts attached to a Case that the viewer can see (Guests: those that aren't Internal). */
 export const caseAlertsQuery = (number: number) =>
   queryOptions({
-    queryKey: [...alertsKey, "case", number],
+    // Under the Case's key, so its live signal refreshes them (Guests hear no Alert queue signals).
+    queryKey: ["cases", number, "alerts"],
     queryFn: async () => {
-      const res = await api.alerts.$get({ query: { case: String(number) } });
+      const res = await api.cases[":number"].alerts.$get({ param: { number: String(number) } });
       if (res.status === 404) return null;
       if (!res.ok) throw new Error("Could not load the Case's Alerts");
       return (await res.json()).alerts;

@@ -236,7 +236,7 @@ export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
       .where(and(visibleCases(me), eq(cases.number, number)))
       .limit(1);
     if (!row) throw new CaseNotFound();
-    const [caseRoles, tasks] = await Promise.all([caseRoleAssignmentsOf(db, row.id), taskCounts(db, row.id)]);
+    const [caseRoles, tasks] = await Promise.all([caseRoleAssignmentsOf(db, row.id), taskCounts(db, row.id, me)]);
     return {
       ...listItem(row),
       can: casePermissions(me, { assigneeId: row.assigneeId }),

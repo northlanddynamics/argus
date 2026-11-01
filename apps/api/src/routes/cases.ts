@@ -34,6 +34,7 @@ import {
 } from "../timeline/timeline";
 import { CITATION_KINDS, PROMOTION_SOURCES } from "../timeline/vocabulary";
 import { downloadHeaders, mediaType, viewHeaders } from "./evidence-http";
+import { GuestCannotSeeInternal, INTERNAL_ITEM_KINDS, ItemNotFound } from "../internal/internal";
 
 const numberParam = z.object({ number: z.coerce.number().int().positive() });
 const isoDate = z.string().refine((s) => !Number.isNaN(Date.parse(s)), "Not a date");
@@ -94,6 +95,8 @@ const newTaskBody = z.object({
   description: taskDescription.default(""),
   ownerId: z.string().min(1),
   dueDate: dueDate.nullable().default(null),
+  /** Hidden from Guests. */
+  internal: z.boolean().default(false),
 });
 
 const taskEditBody = z.object({
@@ -111,6 +114,8 @@ const assignBody = z.object({ caseRoleId: z.string().min(1), userId: z.string().
 const messageParam = numberParam.extend({ id: z.string().min(1) });
 /** Plain text; `<@userId>` mentions someone. */
 const messageBody = z.object({ body: z.string().trim().min(1).max(10_000) });
+/** `internal` hides it from Guests; Members only. */
+const newMessageBody = messageBody.extend({ internal: z.boolean().default(false) });
 
 const instant = z.iso.datetime({ offset: true });
 /** Up to a year either way. */
@@ -134,6 +139,8 @@ const newTimelineEntryBody = z.object({
   ...timelineEntryFields,
   /** Promotes this Discussion message or Case Audit Log entry. */
   source: z.object({ kind: z.enum(PROMOTION_SOURCES), id: z.string().min(1) }).optional(),
+  /** Hidden from Guests; by default only when Promoting an Internal message. */
+  internal: z.boolean().optional(),
 });
 const timelineEntryEditBody = z.object({ ...timelineEntryFields, version: z.number().int().positive() });
 const retractEntryBody = z.object({ reason: z.string().trim().max(500).nullable().default(null) });
@@ -151,6 +158,11 @@ const evidenceQuery = z.object({
       (n) => ![...n].some((ch) => ch === "/" || ch === "\\" || ch.charCodeAt(0) < 0x20 || ch.charCodeAt(0) === 0x7f),
       "A file name can't contain slashes or control characters",
     ),
+  /** "true" adds it as Internal, hidden from Guests; Members only. */
+  internal: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((v) => v === "true"),
 });
 
 const linkedParam = numberParam.extend({ id: z.string().min(1) });
@@ -174,6 +186,12 @@ const guestBody = z.object({
   expiresAt: instant.nullable().default(null),
 });
 const GUESTS_REFUSED = "Only an Admin or the Assignee can invite or remove Guests";
+const INTERNAL_REFUSED = "Only Members can mark items Internal";
+
+const internalBody = z.object({
+  item: z.object({ kind: z.enum(INTERNAL_ITEM_KINDS), id: z.string().min(1) }),
+  internal: z.boolean(),
+});
 
 const notFound = { error: "Case not found" } as const;
 
@@ -193,11 +211,12 @@ const closedConflict = (e: unknown) => {
 /**
  * Cases: open, list, view, change, close, reopen, the Case Summary, Tasks, Case Role assignments, the
  * Discussion, the Timeline, Evidence, Observables and Assets, Case Links, Tags, Guests, and the Case
- * Audit Log. Guests may use only the reads (`GET`) not marked `membersOnly`, and see what the modules let them.
+ * Audit Log, attached Alerts, and Internal markings. Guests may use the routes not marked
+ * `membersOnly`, and see and do what the modules let them.
  */
 export const caseRoutes = (
   deps: Deps,
-  { cases: store, tasks, caseRoles, discussion, timeline, evidence, observables, assets, caseLinks, tags, guests }: Modules,
+  { cases: store, tasks, caseRoles, discussion, timeline, evidence, observables, assets, caseLinks, tags, guests, alerts, internal }: Modules,
 ) => {
   const origin = new URL(deps.baseUrl).origin;
 
@@ -286,7 +305,7 @@ export const caseRoutes = (
         if (!created) return c.json(notFound, 404);
         return c.json({ task: created }, 201);
       } catch (e) {
-        if (e instanceof OwnerCannotSeeCase) return c.json({ error: e.message }, 400);
+        if (e instanceof OwnerCannotSeeCase || e instanceof GuestCannotSeeInternal) return c.json({ error: e.message }, 400);
         return c.json(closedConflict(e), 409);
       }
     })
@@ -299,15 +318,15 @@ export const caseRoutes = (
         return c.json({ task: edited }, 200);
       } catch (e) {
         if (e instanceof TaskNotFound) return c.json({ error: e.message }, 404);
-        if (e instanceof OwnerCannotSeeCase) return c.json({ error: e.message }, 400);
+        if (e instanceof OwnerCannotSeeCase || e instanceof GuestCannotSeeInternal) return c.json({ error: e.message }, 400);
         if (e instanceof StaleTask) return c.json({ error: e.message, current: e.current }, 409);
         return c.json(closedConflict(e), 409);
       }
     })
-    .put("/:number/tasks/:id/done", membersOnly, zValidator("param", taskParam), zValidator("json", doneBody), async (c) => {
+    .put("/:number/tasks/:id/done", zValidator("param", taskParam), zValidator("json", doneBody), async (c) => {
       const { number, id } = c.req.valid("param");
       try {
-        const task = await unlessNotFound(tasks.setDone(c.get("membership"), number, id, c.req.valid("json").done));
+        const task = await unlessNotFound(tasks.setDone(c.get("participant"), number, id, c.req.valid("json").done));
         if (!task) return c.json(notFound, 404);
         return c.json({ task }, 200);
       } catch (e) {
@@ -344,39 +363,41 @@ export const caseRoutes = (
       if (!messages) return c.json(notFound, 404);
       return c.json({ messages }, 200);
     })
-    .get("/:number/discussion/mentionable", membersOnly, zValidator("param", numberParam), async (c) => {
-      const people = await unlessNotFound(discussion.mentionable(c.get("membership"), c.req.valid("param").number));
+    .get("/:number/discussion/mentionable", zValidator("param", numberParam), async (c) => {
+      const people = await unlessNotFound(discussion.mentionable(c.get("participant"), c.req.valid("param").number));
       if (!people) return c.json(notFound, 404);
       return c.json({ people }, 200);
     })
-    .post("/:number/discussion", membersOnly, zValidator("param", numberParam), zValidator("json", messageBody), async (c) => {
+    .post("/:number/discussion", zValidator("param", numberParam), zValidator("json", newMessageBody), async (c) => {
+      const { body, internal: hidden } = c.req.valid("json");
       try {
-        const message = await unlessNotFound(discussion.post(c.get("membership"), c.req.valid("param").number, c.req.valid("json").body));
+        const message = await unlessNotFound(discussion.post(c.get("participant"), c.req.valid("param").number, body, hidden));
         if (!message) return c.json(notFound, 404);
         return c.json({ message }, 201);
       } catch (e) {
-        if (e instanceof MentionCannotSeeCase) return c.json({ error: e.message }, 400);
+        if (e instanceof NotPermitted) return c.json({ error: INTERNAL_REFUSED }, 403);
+        if (e instanceof MentionCannotSeeCase || e instanceof GuestCannotSeeInternal) return c.json({ error: e.message }, 400);
         return c.json(closedConflict(e), 409);
       }
     })
-    .patch("/:number/discussion/:id", membersOnly, zValidator("param", messageParam), zValidator("json", messageBody), async (c) => {
+    .patch("/:number/discussion/:id", zValidator("param", messageParam), zValidator("json", messageBody), async (c) => {
       const { number, id } = c.req.valid("param");
       try {
-        const message = await unlessNotFound(discussion.edit(c.get("membership"), number, id, c.req.valid("json").body));
+        const message = await unlessNotFound(discussion.edit(c.get("participant"), number, id, c.req.valid("json").body));
         if (!message) return c.json(notFound, 404);
         return c.json({ message }, 200);
       } catch (e) {
         if (e instanceof MessageNotFound) return c.json({ error: e.message }, 404);
         if (e instanceof NotPermitted) return c.json({ error: "Only its author can edit a message" }, 403);
-        if (e instanceof MentionCannotSeeCase) return c.json({ error: e.message }, 400);
+        if (e instanceof MentionCannotSeeCase || e instanceof GuestCannotSeeInternal) return c.json({ error: e.message }, 400);
         if (e instanceof MessageRetracted) return c.json({ error: e.message }, 409);
         return c.json(closedConflict(e), 409);
       }
     })
-    .post("/:number/discussion/:id/retract", membersOnly, zValidator("param", messageParam), async (c) => {
+    .post("/:number/discussion/:id/retract", zValidator("param", messageParam), async (c) => {
       const { number, id } = c.req.valid("param");
       try {
-        const message = await unlessNotFound(discussion.retract(c.get("membership"), number, id));
+        const message = await unlessNotFound(discussion.retract(c.get("participant"), number, id));
         if (!message) return c.json(notFound, 404);
         return c.json({ message }, 200);
       } catch (e) {
@@ -436,7 +457,7 @@ export const caseRoutes = (
       if (!files) return c.json(notFound, 404);
       return c.json({ evidence: files }, 200);
     })
-    .post("/:number/evidence", membersOnly, zValidator("param", numberParam), zValidator("query", evidenceQuery), async (c) => {
+    .post("/:number/evidence", zValidator("param", numberParam), zValidator("query", evidenceQuery), async (c) => {
       // The body isn't JSON, so a cross-site form could send it; only our own pages may.
       if (c.req.header("origin") !== origin) return c.json({ error: "Cross-origin uploads are not allowed" }, 403);
       const declared = Number(c.req.header("content-length"));
@@ -445,15 +466,17 @@ export const caseRoutes = (
       if (!body) return c.json({ error: new EvidenceEmpty().message }, 400);
       try {
         const added = await unlessNotFound(
-          evidence.add(c.get("membership"), c.req.valid("param").number, {
+          evidence.add(c.get("participant"), c.req.valid("param").number, {
             name: c.req.valid("query").name,
             contentType: mediaType(c.req.header("content-type")),
             body,
+            internal: c.req.valid("query").internal,
           }),
         );
         if (!added) return c.json(notFound, 404);
         return c.json({ evidence: added }, 201);
       } catch (e) {
+        if (e instanceof NotPermitted) return c.json({ error: INTERNAL_REFUSED }, 403);
         if (e instanceof EvidenceTooLarge) return c.json({ error: e.message }, 413);
         if (e instanceof EvidenceEmpty) return c.json({ error: e.message }, 400);
         return c.json(closedConflict(e), 409);
@@ -602,6 +625,24 @@ export const caseRoutes = (
         if (e instanceof NotPermitted) return c.json({ error: GUESTS_REFUSED }, 403);
         if (e instanceof GuestNotFound) return c.json({ error: e.message }, 404);
         throw e;
+      }
+    })
+    .get("/:number/alerts", zValidator("param", numberParam), async (c) => {
+      const found = await unlessNotFound(alerts.onCase(c.get("participant"), c.req.valid("param").number));
+      if (!found) return c.json(notFound, 404);
+      return c.json({ alerts: found }, 200);
+    })
+    .put("/:number/internal", membersOnly, zValidator("param", numberParam), zValidator("json", internalBody), async (c) => {
+      const { item, internal: hidden } = c.req.valid("json");
+      try {
+        const marked = await unlessNotFound(internal.mark(c.get("membership"), c.req.valid("param").number, item, hidden));
+        if (!marked) return c.json(notFound, 404);
+        return c.json(marked, 200);
+      } catch (e) {
+        if (e instanceof ItemNotFound) return c.json({ error: e.message }, 404);
+        if (e instanceof NotPermitted) return c.json({ error: INTERNAL_REFUSED }, 403);
+        if (e instanceof GuestCannotSeeInternal) return c.json({ error: e.message }, 400);
+        return c.json(closedConflict(e), 409);
       }
     })
     .get("/:number/audit-log", zValidator("param", numberParam), zValidator("query", auditQuery), async (c) => {

@@ -3,6 +3,7 @@ import { type FormEvent, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -81,12 +82,15 @@ function EntryForm({
   pending,
   error,
   disabled,
+  internal,
   onSubmit,
   onCancel,
 }: {
   number: number;
   /** Keeps field ids unique when more than one form is on the page. */
   idPrefix: string;
+  /** For a new entry: whether it's Internal, and a way to change that. */
+  internal?: { value: boolean; onChange: (internal: boolean) => void };
   initial: EntryFields;
   submitLabel: string;
   pending: boolean;
@@ -207,7 +211,14 @@ function EntryForm({
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      <div className="flex justify-end gap-2">
+      <div className="flex items-center justify-end gap-2">
+        {internal && (
+          <div className="mr-auto flex items-center gap-2">
+            <Checkbox id={id("internal")} checked={internal.value} onCheckedChange={(checked) => internal.onChange(checked === true)} />
+            <Label htmlFor={id("internal")}>Internal</Label>
+            <span className="text-xs text-muted-foreground">Hidden from Guests</span>
+          </div>
+        )}
         {onCancel && (
           <Button type="button" variant="outline" onClick={onCancel}>
             Cancel
@@ -226,6 +237,7 @@ export function NewEntryForm({
   number,
   initial = blankFields(),
   source,
+  defaultInternal = false,
   submitLabel = "Add entry",
   onDone,
   onCancel,
@@ -233,14 +245,17 @@ export function NewEntryForm({
   number: number;
   initial?: EntryFields;
   source?: PromotionSource;
+  /** Whether it starts out Internal: as the message it Promotes is. */
+  defaultInternal?: boolean;
   submitLabel?: string;
   onDone?: () => void;
   onCancel?: () => void;
 }) {
   const queryClient = useQueryClient();
+  const [internal, setInternal] = useState(defaultInternal);
   const add = useMutation({
     mutationFn: async (json: { occurredAt: OccurredAt; body: string; citations: Citation[] }) => {
-      const res = await api.cases[":number"].timeline.$post({ param: { number: String(number) }, json: { ...json, source } });
+      const res = await api.cases[":number"].timeline.$post({ param: { number: String(number) }, json: { ...json, source, internal } });
       if (!res.ok) throw new Error(await errorMessage(res, "Could not add the entry"));
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: timelineKey(number) }),
@@ -253,10 +268,12 @@ export function NewEntryForm({
       submitLabel={submitLabel}
       pending={add.isPending}
       error={add.error?.message}
+      internal={{ value: internal, onChange: setInternal }}
       onSubmit={(input, reset) =>
         add.mutate(input, {
           onSuccess: () => {
             reset();
+            setInternal(defaultInternal);
             onDone?.();
           },
         })
@@ -343,6 +360,7 @@ export function PromoteDialog({
   source,
   occurredAt,
   body,
+  internal = false,
   onClose,
 }: {
   number: number;
@@ -350,6 +368,8 @@ export function PromoteDialog({
   /** When the source happened (ISO), as the entry's starting point. */
   occurredAt: string;
   body: string;
+  /** The source is Internal, so the entry starts out Internal too. */
+  internal?: boolean;
   onClose: () => void;
 }) {
   return (
@@ -365,6 +385,7 @@ export function PromoteDialog({
         <NewEntryForm
           number={number}
           source={source}
+          defaultInternal={internal}
           initial={{ ...blankFields(), at: toUtcInput(occurredAt), body }}
           submitLabel="Promote"
           onDone={onClose}

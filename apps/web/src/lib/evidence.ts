@@ -41,11 +41,15 @@ export function formatBytes(bytes: number) {
 export const shortHash = (sha256: string) => `${sha256.slice(0, 4)}…${sha256.slice(-4)}`;
 
 /**
- * Uploads `file` as Evidence. The file is the request body, so a multi-gigabyte memory image streams
- * straight through; `onProgress` gets the fraction sent so far. Resolves with the Evidence as added.
+ * Uploads `file` as Evidence, `internal` to hide it from Guests. The file is the request body, so a
+ * multi-gigabyte memory image streams straight through; `onProgress` gets the fraction sent so far.
+ * Resolves with the Evidence as added.
  */
-export function uploadEvidence(number: number, file: File, onProgress: (fraction: number) => void) {
-  const url = api.cases[":number"].evidence.$url({ param: { number: String(number) }, query: { name: file.name } });
+export function uploadEvidence(number: number, file: File, internal: boolean, onProgress: (fraction: number) => void) {
+  const url = api.cases[":number"].evidence.$url({
+    param: { number: String(number) },
+    query: { name: file.name, ...(internal && { internal: "true" as const }) },
+  });
   return new Promise<EvidenceView>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", url.toString());
