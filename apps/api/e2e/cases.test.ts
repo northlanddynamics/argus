@@ -564,3 +564,53 @@ test("an Analyst adds Evidence, sees its SHA-256, views and downloads it, and fi
     await stop();
   }
 }, 60_000);
+
+test("an Analyst adds Observables and Assets, sees the other Cases they appear in, and unlinks one", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    await owner.api.organization.invitations.$post({ json: { email: "ana@acme.example", role: "analyst" } });
+    const ana = await t.acceptInvite("ana@acme.example", PASSWORD, "Ana Analyst");
+    await ana.api.cases.$post({ json: { title: "Invoice phish", caseType: "phishing", severity: "high" } });
+    await ana.api.cases.$post({ json: { title: "Beaconing host", caseType: "malware", severity: "critical" } });
+    await ana.api.cases[":number"].observables.$post({ param: { number: "1" }, json: { type: "domain", value: "invoice-portal.biz" } });
+
+    const page = await browser.newPage();
+    await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
+    await page.goto(`${baseUrl}/cases/2`);
+    await page.getByRole("link", { name: "Observables & Assets" }).click();
+    await page.getByText("No Observables yet.").waitFor();
+
+    // A defanged domain is the same Observable as C-1's, shown defanged, and C-1 is listed.
+    await page.getByLabel("Observable type").selectOption("domain");
+    await page.getByLabel("Observable value").fill("INVOICE-PORTAL[.]biz");
+    await page.getByRole("button", { name: "+ Add Observable" }).click();
+    const domain = page.getByTestId("observable-invoice-portal.biz");
+    await domain.getByText("invoice-portal[.]biz").waitFor();
+    await domain.getByRole("link", { name: "C-1" }).waitFor();
+
+    // An invalid value says why.
+    await page.getByLabel("Observable type").selectOption("ip");
+    await page.getByLabel("Observable value").fill("999.1.1.1");
+    await page.getByRole("button", { name: "+ Add Observable" }).click();
+    await page.getByText("IP must be an IPv4 or IPv6 address").waitFor();
+
+    await page.getByLabel("Asset type").selectOption("host");
+    await page.getByLabel("Asset identifier").fill("FIN-LT-0231");
+    await page.getByRole("button", { name: "+ Add Asset" }).click();
+    const host = page.getByTestId("asset-FIN-LT-0231");
+    await host.getByText("Added by Ana Analyst").waitFor();
+
+    await host.getByRole("button", { name: "Unlink Host FIN-LT-0231" }).click();
+    await page.getByText("No Assets yet.").waitFor();
+
+    await page.getByRole("link", { name: "Audit Log" }).click();
+    for (const action of ["Added Observable", "Added Asset", "Unlinked Asset"]) {
+      await page.getByRole("cell", { name: action }).first().waitFor();
+    }
+    await page.getByText("Host FIN-LT-0231").first().waitFor();
+  } finally {
+    await stop();
+  }
+}, 60_000);

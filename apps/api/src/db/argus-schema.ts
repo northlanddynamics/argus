@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { bigint, bigserial, boolean, check, date, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import type { CaseSummary } from "../cases/case-summary";
 import { CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabulary";
+import { ASSET_TYPES, OBSERVABLE_TYPES } from "../observables/vocabulary";
 import { type Citation, PROMOTION_SOURCES } from "../timeline/vocabulary";
 import { organization, user } from "./auth-schema";
 
@@ -388,4 +389,78 @@ export const evidence = pgTable(
     check("evidence_sha256", sql`${t.sha256} ~ '^[0-9a-f]{64}$'`),
     check("evidence_size", sql`${t.sizeBytes} > 0`),
   ],
+);
+
+/**
+ * Something held once per Organization and linked to every Case it appears in (an Observable or an
+ * Asset), with its links. Both are built here so they have the same shape, and `observables/` works
+ * on either.
+ *
+ * An item is never deleted (ADR 0003). `match_key` is its normalised value
+ * (`observables/vocabulary.ts`) and unique per Organization and type; `value` is how it is shown.
+ * Unlinking an item from a Case ends the link and keeps the row; linking it again adds a new one.
+ */
+function heldOncePerOrganization(names: { items: string; links: string; itemId: string }, types: readonly string[]) {
+  const items = pgTable(
+    names.items,
+    {
+      id: text("id").primaryKey(),
+      organizationId: text("organization_id")
+        .notNull()
+        .references(() => organization.id, { onDelete: "restrict" }),
+      type: text("type").notNull(),
+      value: text("value").notNull(),
+      matchKey: text("match_key").notNull(),
+      createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    },
+    (t) => [
+      uniqueIndex(`${names.items}_org_key_idx`).on(t.organizationId, t.type, t.matchKey),
+      check(`${names.items}_type`, sql`${t.type} IN (${sql.raw(types.map((x) => `'${x}'`).join(", "))})`),
+    ],
+  );
+  const links = pgTable(
+    names.links,
+    {
+      id: text("id").primaryKey(),
+      /** Insertion order, to sort items linked at the same instant. */
+      seq: bigserial("seq", { mode: "number" }).notNull(),
+      organizationId: text("organization_id")
+        .notNull()
+        .references(() => organization.id, { onDelete: "restrict" }),
+      caseId: text("case_id")
+        .notNull()
+        .references(() => cases.id, { onDelete: "restrict" }),
+      itemId: text(names.itemId)
+        .notNull()
+        .references(() => items.id, { onDelete: "restrict" }),
+      linkedById: text("linked_by_id")
+        .notNull()
+        .references(() => user.id, { onDelete: "restrict" }),
+      linkedAt: timestamp("linked_at", { withTimezone: true }).notNull(),
+      unlinkedById: text("unlinked_by_id").references(() => user.id, { onDelete: "restrict" }),
+      unlinkedAt: timestamp("unlinked_at", { withTimezone: true }),
+    },
+    (t) => [
+      uniqueIndex(`${names.links}_active_idx`)
+        .on(t.caseId, t.itemId)
+        .where(sql`${t.unlinkedAt} IS NULL`),
+      index(`${names.links}_item_idx`)
+        .on(t.itemId, t.caseId)
+        .where(sql`${t.unlinkedAt} IS NULL`),
+      check(`${names.links}_unlinked`, sql`(${t.unlinkedAt} IS NULL) = (${t.unlinkedById} IS NULL)`),
+    ],
+  );
+  return { items, links };
+}
+
+/** Observables (an IP, domain, URL, email address or hash) and the Cases they are linked to. */
+export const { items: observables, links: caseObservables } = heldOncePerOrganization(
+  { items: "observables", links: "case_observables", itemId: "observable_id" },
+  OBSERVABLE_TYPES,
+);
+
+/** Assets (a host or account) and the Cases they are linked to. */
+export const { items: assets, links: caseAssets } = heldOncePerOrganization(
+  { items: "assets", links: "case_assets", itemId: "asset_id" },
+  ASSET_TYPES,
 );

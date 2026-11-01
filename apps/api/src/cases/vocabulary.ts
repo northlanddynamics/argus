@@ -88,6 +88,10 @@ export const CASE_AUDIT_ACTIONS = [
   "evidence.added",
   "evidence.viewed",
   "evidence.downloaded",
+  "observable.linked",
+  "observable.unlinked",
+  "asset.linked",
+  "asset.unlinked",
 ] as const;
 export type CaseAuditAction = (typeof CASE_AUDIT_ACTIONS)[number];
 

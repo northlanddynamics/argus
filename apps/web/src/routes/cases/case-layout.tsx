@@ -242,6 +242,9 @@ export function CaseLayout() {
               <Link to="/cases/$number/evidence" params={{ number: String(number) }} className={tabLink}>
                 Evidence
               </Link>
+              <Link to="/cases/$number/observables" params={{ number: String(number) }} className={tabLink}>
+                Observables &amp; Assets
+              </Link>
               <Link to="/cases/$number/audit-log" params={{ number: String(number) }} className={tabLink}>
                 Audit Log
               </Link>
