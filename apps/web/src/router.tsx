@@ -29,13 +29,9 @@ const rootRoute = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   component: Outlet,
 });
 
-/**
- * Signed-in Members and Guests only; Operators go to their console. The layout route checks once;
- * pages whose content depends on `me` check again, since a layout's guard doesn't re-run when moving
- * between its pages. A `me` fetched in the last moment (by the layout, on the same navigation) is reused.
- */
+/** Signed-in Members and Guests only; Operators go to their console. Fetches `me` afresh. */
 const requireParticipant = async ({ context }: { context: { queryClient: QueryClient } }) => {
-  const me = await context.queryClient.fetchQuery({ ...meQuery, staleTime: 2_000 });
+  const me = await context.queryClient.fetchQuery(meQuery);
   if (!me) throw redirect({ to: "/sign-in" });
   if (me.isOperator) throw redirect({ to: "/operator" });
   return { me };
@@ -45,6 +41,8 @@ const requireParticipant = async ({ context }: { context: { queryClient: QueryCl
 const appRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "_app",
+  // Runs when entering the layout, not when moving between its pages, so pages whose content
+  // depends on `me` (Home, Case) check again.
   beforeLoad: requireParticipant,
   component: AppShell,
 });
