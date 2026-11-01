@@ -1,5 +1,5 @@
 // Renders every wireframe in ../src to ../png at 1280 px wide.
-// Usage: node docs/wireframes/render/render.mjs
+// Usage: node docs/wireframes/render/render.mjs [Name.dc.html ...]  (no names: all)
 import { readFileSync, writeFileSync, readdirSync, mkdtempSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -15,7 +15,8 @@ const { chromium } = createRequire(import.meta.url)('playwright');
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-for (const f of readdirSync(src).filter((f) => f.endsWith('.dc.html'))) {
+const only = process.argv.slice(2);
+for (const f of readdirSync(src).filter((f) => f.endsWith('.dc.html') && (!only.length || only.includes(f)))) {
   const html = readFileSync(join(src, f), 'utf8')
     .replace('<script src="./support.js"></script>', `<script src="file://${shim}"></script>`)
     .replace(/<sc-(for|if)\b/g, '<template data-sc="$1"')

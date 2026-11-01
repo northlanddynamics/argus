@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Case work (proposed)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#EDEDEA;color:#1C1C1A;font-family:Inter,system-ui,sans-serif;font-size:14px;line-height:1.45}
+a{color:#2448B8}a:hover{color:#16307F}
+*{box-sizing:border-box}
+h1,h2,h3,p{margin:0}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:8px 20px;padding:10px 24px;background:#1C1C1A;color:#F4F4F1}
+.top a{color:#F4F4F1;text-decoration:none;padding:6px 2px}
+.top a.on{border-bottom:2px solid #F4F4F1}
+.top nav{display:flex;flex-wrap:wrap;gap:16px}
+.brand{font-weight:700;letter-spacing:.06em}
+.org{color:#C9C9C4;font-size:13px}
+.search{flex:1 1 240px;display:flex}
+.search input{width:100%;border-color:#6A6A64;background:#2A2A27;color:#F4F4F1}
+.iconbtn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:44px;min-height:40px;background:transparent;border:1px solid #6A6A64;border-radius:6px;color:#F4F4F1;font:inherit}
+.live{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#C9C9C4}
+.live i{width:8px;height:8px;border-radius:50%;background:#7BD88F;display:inline-block}
+.wrap{max-width:1280px;margin:0 auto;padding:24px;display:flex;flex-direction:column;gap:16px}
+.card{background:#fff;border:1px solid #D2D2CC;border-radius:8px}
+.pad{padding:16px}
+.row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.between{justify-content:space-between}
+.stack{display:flex;flex-direction:column;gap:8px}
+.muted{color:#5E5E58}
+.small{font-size:12px}
+.mono{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12px}
+.btn{font:inherit;padding:8px 14px;border-radius:6px;border:1px solid #8E8E87;background:#fff;color:#1C1C1A;min-height:40px;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.btn.pri{background:#2448B8;border-color:#2448B8;color:#fff}
+.btn.sm{min-height:32px;padding:4px 10px;font-size:13px}
+.badge{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:1px 8px;border-radius:999px;border:1px solid #8E8E87;white-space:nowrap;background:#fff}
+.sev-Critical{background:#1C1C1A;color:#fff;border-color:#1C1C1A}
+.int{border-style:dashed}
+.tabs{display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid #D2D2CC}
+.tabs a{padding:10px 14px;text-decoration:none;color:#5E5E58}
+.tabs a.on{color:#1C1C1A;border-bottom:2px solid #1C1C1A;font-weight:600}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label,.lbl{font-size:12px;font-weight:600;color:#3F3F3B}
+input,select,textarea{font:inherit;padding:8px 10px;border:1px solid #8E8E87;border-radius:6px;background:#fff;color:#1C1C1A;min-height:40px}
+.note{background:#FFF6DA;border:1px solid #C9A23F;border-radius:6px;padding:12px 14px}
+.av{width:30px;height:30px;border-radius:50%;background:#D9D9D4;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;border:2px solid #fff;margin-left:-8px}
+.side h3{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#5E5E58}
+.kv{display:grid;grid-template-columns:110px 1fr;gap:6px 12px;font-size:13px}
+.kv dt{color:#5E5E58}.kv dd{margin:0}
+.page{position:relative}
+.top nav a{text-decoration:none}
+.pin{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#E8590C;color:#fff;font-size:12px;font-weight:700;flex:none;line-height:1;vertical-align:middle}
+.pin.abs{position:absolute;z-index:5;box-shadow:0 0 0 3px #fff}
+.rel{position:relative}
+.notes{background:#FFF;border:1px solid #D2D2CC;border-left:4px solid #E8590C;border-radius:8px;padding:16px 20px}
+.notes h2{font-size:15px;margin-bottom:10px}
+.notes ol{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:10px 28px}
+.notes li{display:flex;gap:10px;font-size:13px;align-items:flex-start}
+.notes li b{display:block}
+.notes .was{color:#5E5E58;font-size:12px;display:block;margin-top:2px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid #B5B5AE;border-radius:6px;background:#fff;font:inherit;font-size:13px;min-height:34px;color:#1C1C1A;white-space:nowrap}
+.chip .k{color:#5E5E58;font-size:12px}
+.chip.on{background:#E8EDFB;border-color:#2448B8}
+.chip .car{font-size:10px;color:#5E5E58}
+.pop{position:absolute;z-index:4;background:#fff;border:1px solid #8E8E87;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:6px;min-width:220px}
+.pop .opt{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;font-size:13px}
+.pop .opt.sel{background:#E8EDFB;font-weight:600}
+.pop .hint{font-size:11px;color:#5E5E58;padding:6px 10px 2px;border-top:1px solid #E6E6E1;margin-top:4px}
+.toast{position:absolute;right:24px;bottom:24px;z-index:6;background:#1C1C1A;color:#F4F4F1;border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:14px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.2)}
+.toast button{background:transparent;border:1px solid #6A6A64;color:#F4F4F1;border-radius:6px;padding:4px 10px;font:inherit}
+.seg{display:inline-flex;border:1px solid #8E8E87;border-radius:6px;overflow:hidden}
+.seg span{padding:5px 12px;font-size:13px;border-right:1px solid #8E8E87;background:#fff}
+.seg span:last-child{border-right:0}
+.seg span.on{background:#1C1C1A;color:#fff}
+.sticky{position:relative;background:#EDEDEA;border-bottom:1px solid #D2D2CC;box-shadow:0 2px 0 rgba(0,0,0,.03)}
+.hdr{max-width:1280px;margin:0 auto;padding:14px 24px 0;display:flex;flex-direction:column;gap:10px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-size:12px;font-weight:600;color:#3F3F3B;text-align:left;padding:8px 12px;border-bottom:1px solid #D2D2CC;white-space:nowrap}
+td{padding:9px 12px;border-bottom:1px solid #E6E6E1;vertical-align:middle}
+tr:last-child td{border-bottom:0}
+tr.hot td{background:#F2F6FF}
+.ibtn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid #B5B5AE;border-radius:6px;background:#fff;color:#1C1C1A;font-size:14px}
+.ghost{border-color:transparent;background:transparent}
+.sev{display:inline-block;width:4px;align-self:stretch;border-radius:2px;background:#D2D2CC}
+.sev.c{background:#1C1C1A}.sev.h{background:#5E5E58}
+.bar{height:6px;border-radius:3px;background:#E6E6E1;overflow:hidden;width:60px;display:inline-block;vertical-align:middle}
+.bar i{display:block;height:100%;background:#1C1C1A}
+.overdue{color:#B42318;font-weight:600}
+.badge.od{border-color:#E4A6A0;color:#B42318}
+.dashed{border:1px dashed #8E8E87}
+.hatch{background:repeating-linear-gradient(45deg,#F4F4F1,#F4F4F1 6px,#EBEBE6 6px,#EBEBE6 12px);border:1px dashed #B5B5AE;border-radius:6px;color:#5E5E58;font-size:12px;padding:8px 10px}
+.rail{position:relative;padding-left:0}
+.day{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#5E5E58;padding:6px 0}
+.ent{display:grid;grid-template-columns:112px 18px 1fr;gap:0 10px}
+.ent .t{text-align:right;font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12px;padding-top:12px;color:#3F3F3B}
+.ent .t small{display:block;color:#5E5E58;font-family:Inter,system-ui,sans-serif;font-size:11px}
+.ent .dot{position:relative}
+.ent .dot:before{content:"";position:absolute;left:8px;top:0;bottom:0;width:2px;background:#D2D2CC}
+.ent .dot:after{content:"";position:absolute;left:3px;top:15px;width:12px;height:12px;border-radius:50%;background:#fff;border:2px solid #1C1C1A}
+.ent .dot.range:after{border-radius:3px;height:22px}
+.ent .dot.approx:after{border-style:dashed}
+.ent .box{background:#fff;border:1px solid #D2D2CC;border-radius:8px;padding:10px 12px;margin:4px 0 8px;display:flex;flex-direction:column;gap:6px}
+.msg{display:grid;grid-template-columns:30px 1fr;gap:10px;padding:8px 10px;border-radius:6px}
+.msg .av{margin-left:0}
+.msg.hov{background:#F4F4F1}
+.mention{background:#E0EEFB;color:#14406B;border-radius:3px;padding:0 2px;font-weight:500}
+.kbd{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:11px;border:1px solid #B5B5AE;border-bottom-width:2px;border-radius:4px;padding:0 4px;background:#fff}
+</style>
+</helmet>
+<div class="page">
+<header class="top">
+  <span class="brand">ARGUS</span>
+  <span class="org">[Organization]</span>
+  <nav aria-label="Main">
+    <a href="CaseList2.dc.html" class="on">Cases</a>
+    <a href="AlertQueue.dc.html">Alerts</a>
+    <a href="Dashboard.dc.html">Dashboard</a>
+    <a href="Members.dc.html">Settings</a>
+  </nav>
+  <label class="search"><span style="position: absolute; left: -9999px">Search</span><input type="search" placeholder="Search Cases, Alerts, Observables, Assets"></label>
+  <span class="live"><i></i>Live</span>
+  <a class="iconbtn" href="Notifications.dc.html" aria-label="Notifications, 3 unread"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10 21h4"></path></svg>3</a>
+  <span class="badge" style="background: #3A3A36; color: #F4F4F1; border-color: #6A6A64">AR · Analyst</span>
+</header>
+<div class="sticky">
+  <div class="hdr">
+    <div class="row between">
+      <div class="row" style="gap: 10px"><span class="mono muted">C-1041</span><h1 style="font-size: 18px">Suspicious PowerShell on FIN-LT-0231</h1>
+        <button class="chip"><span class="k">Status</span> In Progress <span class="car">▼</span></button>
+        <button class="chip"><span class="k">Severity</span> <span class="badge sev-Critical">Critical</span> <span class="car">▼</span></button>
+        <button class="chip"><span class="k">Assignee</span> A. Rivera <span class="car">▼</span></button>
+      </div>
+      <div class="row"><button class="btn sm">More ▼</button><button class="btn sm pri">Mark Resolved</button></div>
+    </div>
+    <nav class="tabs" aria-label="Case sections" style="border-bottom: 0">
+      <a href="Case2.dc.html" >Overview</a>
+      <a href="Timeline2.dc.html" >Timeline (9) &amp; Discussion (24)</a>
+      <a href="CaseWork2.dc.html" class="on">Tasks 3/5 <span class="badge od">1 overdue</span></a>
+      <a href="CaseWork2.dc.html" >Evidence (4)</a>
+      <a href="CaseWork2.dc.html" >Audit Log</a>
+    </nav>
+  </div>
+</div>
+<p class="small muted" style="max-width:1280px;margin:8px auto 0;padding:0 24px">Header collapses to one line once scrolled; shown collapsed here.</p>
+
+<main class="wrap">
+  <p class="small muted">Tasks, Evidence and Audit Log shown stacked on one board for review.</p>
+
+  <!-- Tasks -->
+  <section class="card rel">
+    <div class="row between pad" style="border-bottom: 1px solid #E6E6E1">
+      <div class="row"><h2 style="font-size: 16px">Tasks</h2><span class="bar" style="width:90px"><i style="width:60%"></i></span><span class="small muted">3 of 5 done</span></div>
+      <div class="row rel">
+        <span class="pin abs" style="left: -30px; top: 6px">1</span>
+        <span class="seg"><span class="on">Open (2)</span><span>Done (3)</span><span>All</span></span>
+        <label class="row small" style="gap: 6px"><input type="checkbox" style="min-height:auto;width:16px;height:16px"> Only mine</label>
+        <button class="chip">Sort: Due date <span class="car">▼</span></button>
+      </div>
+    </div>
+    <div class="row pad rel" style="border-bottom: 1px solid #E6E6E1; flex-wrap: nowrap; background: #FAFAF8">
+      <span class="pin abs" style="left: -11px; top: 20px">2</span>
+      <input placeholder="+ Add a Task…" style="flex: 1">
+      <select style="width: 160px"><option>Owner: me</option></select>
+      <input type="date" style="width: 160px">
+      <button class="btn">Add</button>
+      <span class="small muted" style="flex:none">Description → open the Task</span>
+    </div>
+    <table>
+      <thead><tr><th style="width: 44px"></th><th>Task</th><th>Owner</th><th>Due</th><th style="width: 40px"></th></tr></thead>
+      <tbody>
+        <tr class="rel">
+          <td><input type="checkbox" style="min-height:auto;width:18px;height:18px"></td>
+          <td><b>Capture memory image</b><div class="small muted">Before reboot; upload as Evidence</div></td>
+          <td><span class="row" style="gap:6px"><span class="av" style="margin-left:0;width:22px;height:22px;font-size:9px;background:#D8E8D2">JO</span>J. Okafor</span></td>
+          <td><span class="badge od">Overdue · 2 d · 10-30</span></td>
+          <td class="muted">›</td>
+        </tr>
+        <tr>
+          <td><input type="checkbox" style="min-height:auto;width:18px;height:18px"></td>
+          <td><b>Assess notification duty</b><div class="small muted">Is payroll data in scope?</div></td>
+          <td><span class="row" style="gap:6px"><span class="av" style="margin-left:0;width:22px;height:22px;font-size:9px;background:#fff;border:2px dashed #8E8E87">KP</span>K. Patel <span class="badge">Guest</span></span></td>
+          <td>Tomorrow · 11-02</td>
+          <td class="muted">›</td>
+        </tr>
+        <tr class="hot">
+          <td><input type="checkbox" checked style="min-height:auto;width:18px;height:18px"></td>
+          <td><s class="muted">Block C2 IP at egress</s> <span class="pin">3</span><div class="small muted">Done just now — moves to Done in 5 s · <a href="#">Undo</a></div></td>
+          <td><span class="row" style="gap:6px"><span class="av" style="margin-left:0;width:22px;height:22px;font-size:9px;background:#C7D3F5">AR</span>A. Rivera</span></td>
+          <td class="muted">—</td>
+          <td class="muted">›</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- Evidence -->
+  <section class="card rel">
+    <div class="row between pad" style="border-bottom: 1px solid #E6E6E1">
+      <div class="row"><h2 style="font-size: 16px">Evidence</h2><span class="small muted">4 files · 16.3 GB</span></div>
+      <div class="row rel">
+        <span class="pin abs" style="left: -30px; top: 9px">4</span>
+        <span class="small muted">Drop files anywhere on this card, or</span>
+        <button class="btn">Add Evidence</button>
+      </div>
+    </div>
+    <table>
+      <thead><tr><th>File</th><th>Size</th><th>Added</th><th>SHA-256</th><th style="text-align:right">Open <span class="small muted" style="font-weight:400">(logged)</span></th></tr></thead>
+      <tbody>
+        <tr class="rel">
+          <td class="rel"><span class="pin abs" style="left: -11px; top: 12px">5</span>📄 <b>invoice-4471.eml</b></td>
+          <td>84 KB</td><td>A. Rivera · 10-28 10:10</td>
+          <td><span class="mono">3b9e…a01f</span> <button class="ibtn ghost" aria-label="Copy SHA-256">⧉</button></td>
+          <td style="text-align:right"><button class="ibtn" aria-label="View">👁</button> <button class="ibtn" aria-label="Download">⤓</button></td>
+        </tr>
+        <tr>
+          <td>📄 <b>netflow-0928.csv</b></td>
+          <td>2.1 MB</td><td>J. Okafor · 10-28 10:28</td>
+          <td><span class="mono">c41d…77e2</span> <button class="ibtn ghost">⧉</button></td>
+          <td style="text-align:right"><button class="ibtn">👁</button> <button class="ibtn">⤓</button></td>
+        </tr>
+        <tr>
+          <td>💾 <b>FIN-LT-0231.mem</b></td>
+          <td>16 GB</td><td>J. Okafor · 10-28 12:01</td>
+          <td><span class="mono">9f02…b6c4</span> <button class="ibtn ghost">⧉</button></td>
+          <td style="text-align:right"><span class="small muted">no preview</span> <button class="ibtn">⤓</button></td>
+        </tr>
+        <tr style="background:#FAFAF8" class="rel">
+          <td class="rel"><span class="pin abs" style="left: -11px; top: 12px">6</span>📄 <b>counsel-memo.pdf</b></td>
+          <td>210 KB</td><td colspan="2"><span class="bar" style="width: 220px"><i style="width:64%"></i></span> <span class="small">Adding · 64% · fingerprinting as it uploads</span></td>
+          <td style="text-align:right"><button class="btn sm">Cancel</button></td>
+        </tr>
+        <tr style="background:#FDECEA">
+          <td>📄 <b>screenshot.png</b></td>
+          <td>1.2 MB</td><td colspan="2" style="color:#B42318">Not added — connection lost at 40%</td>
+          <td style="text-align:right"><button class="btn sm">Retry</button> <button class="btn sm">Dismiss</button></td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="pad small muted" style="border-top: 1px solid #E6E6E1">Fingerprinted on upload · never altered or deleted · every view and download is recorded in the Audit Log under your name.</div>
+  </section>
+
+  <!-- Audit Log -->
+  <section class="card rel">
+    <div class="row between pad" style="border-bottom: 1px solid #E6E6E1">
+      <h2 style="font-size: 16px">Audit Log</h2>
+      <div class="row rel">
+        <span class="pin abs" style="left: -30px; top: 6px">7</span>
+        <button class="chip"><span class="k">Actor</span> Anyone <span class="car">▼</span></button>
+        <button class="chip on"><span class="k">Action</span> Evidence viewed, downloaded <span class="car">✕</span></button>
+        <button class="chip"><span class="k">When</span> 10-28 → today <span class="car">▼</span></button>
+        <button class="btn sm">Export CSV</button>
+      </div>
+    </div>
+    <table>
+      <thead><tr><th style="width: 90px">When</th><th>Actor</th><th>Action</th><th>Before → After</th><th style="width: 120px"></th></tr></thead>
+      <tbody>
+        <tr><td colspan="5" class="day" style="background:#FAFAF8;padding:6px 12px">Wed 29 Oct 2026</td></tr>
+        <tr><td class="mono">14:02</td><td>K. Patel <span class="badge">Guest</span></td><td>Evidence downloaded <b>counsel-memo.pdf</b></td><td class="mono muted">—</td><td><button class="ibtn ghost">⋯</button></td></tr>
+        <tr class="hot rel"><td class="mono">09:10</td><td>J. Okafor</td><td>Evidence viewed <b>netflow-0928.csv</b></td><td class="mono muted">—</td>
+          <td class="rel" style="white-space:nowrap"><span class="pin">8</span> <button class="ibtn">⋯</button>
+            <div class="pop" style="right: 0; top: 36px; min-width: 200px"><div class="opt">Promote to Timeline…</div><div class="opt">Copy link to entry</div></div>
+                      </td></tr>
+        <tr><td colspan="5" class="day" style="background:#FAFAF8;padding:6px 12px">Tue 28 Oct 2026</td></tr>
+        <tr><td class="mono">12:30</td><td>J. Okafor</td><td>Evidence downloaded <b>FIN-LT-0231.mem</b></td><td class="mono muted">—</td><td><a class="small" href="Timeline2.dc.html">On Timeline ↗</a></td></tr>
+      </tbody>
+    </table>
+    <div class="pad small muted" style="border-top: 1px solid #E6E6E1">Immutable · system-written · ordered by when it was done in Argus · 50 per page, <a href="#">older ↓</a></div>
+  </section>
+
+  <section class="notes">
+    <h2>What changes on Tasks, Evidence and the Audit Log, and why</h2>
+    <ol>
+      <li><span class="pin">1</span><span><b>Open / Done split, “Only mine”, sort by due date.</b>Done Tasks stay interleaved with open ones in creation order, so the list gets harder to scan as a Case matures.<span class="was">Now: tasks.tsx renders every Task in one table, no filter or sort.</span></span></li>
+      <li><span class="pin">2</span><span><b>Inline quick-add row.</b>Most Tasks are a title, an owner and maybe a date; the dialog stays for descriptions and edits, opened by clicking the row instead of a per-row Edit button.</span></li>
+      <li><span class="pin">3</span><span><b>Ticking a Task shows Undo and only that row waits.</b>Today one pending tick disables every checkbox in the table.<span class="was">Now: disabled={readOnly || setDone.isPending} on all rows.</span></span></li>
+      <li><span class="pin">4</span><span><b>Upload moves to a header button; the whole card is the drop target.</b>The dashed drop zone takes a permanent band above the files.</span></li>
+      <li><span class="pin">5</span><span><b>Icon actions; the column header says opening is logged.</b>Copy + View + Download are three outline buttons per row. Files that can't be previewed don't offer View.</span></li>
+      <li><span class="pin">6</span><span><b>Uploads in progress and failures show as rows in the table, with Cancel and Retry.</b>Today they stack as separate alerts and progress bars above the table, and a failure can only be dismissed.</span></li>
+      <li><span class="pin">7</span><span><b>Audit Log filters as chips with multi-select actions, a date range, and CSV export.</b>Today: one action at a time and a “From” date with no end.</span></li>
+      <li><span class="pin">8</span><span><b>Grouped by day; Promote in a row menu.</b>A “Promote to Timeline” button on every row is the loudest thing in the log. Long logs page; today the API stops at 1,000 entries without saying so.</span></li>
+    </ol>
+  </section>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1800}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

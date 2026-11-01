@@ -42,6 +42,19 @@ Sample names and numbers are illustrative only. Hatched boxes are placeholders f
 | Settings · Organization Audit Log | [png](png/OrgAudit.png) · [src](src/OrgAudit.dc.html) | #4 #16 |
 | Operator console | [png](png/Operator.png) · [src](src/Operator.dc.html) | #2 |
 
+## Proposed improvements to the built Case UIs
+
+A review of the Case screens as built (through #41, `apps/web/src/routes/cases/`), with wireframes of what to change. Orange numbered pins on each screen match the “What changes, and why” notes at its foot; each note says what the app does now and where.
+
+| Screen | Wireframe | Main changes |
+| --- | --- | --- |
+| Case list | [png](png/CaseList2.png) · [src](src/CaseList2.dc.html) | Text filter, one-line filter chips with Clear and Sort, title-first rows that are one link, Task progress, “Assign to me” |
+| Case page · Overview | [png](png/Case2.png) · [src](src/Case2.dc.html) | Property chips with Undo instead of instant-save selects, Status-driven primary action, pinned header and tabs with counts, Needs attention, “is editing” presence on the Case Summary, Restricted behind a confirm |
+| Case · Timeline & Discussion | [png](png/Timeline2.png) · [src](src/Timeline2.dc.html) | Collapsed entry composer, day-grouped rail, one time zone for both panes, scrolling Discussion with pinned composer and hover actions |
+| Case · Tasks, Evidence, Audit Log | [png](png/CaseWork2.png) · [src](src/CaseWork2.dc.html) | Open/Done split and quick-add for Tasks, upload rows with Retry, icon actions on Evidence, day-grouped Audit Log with Promote in a row menu and real paging |
+
+Render just these with `node docs/wireframes/render/render.mjs CaseList2.dc.html Case2.dc.html Timeline2.dc.html CaseWork2.dc.html`.
+
 ## Issues → screens
 
 | Issue | Screens |

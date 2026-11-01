@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Case list (proposed)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#EDEDEA;color:#1C1C1A;font-family:Inter,system-ui,sans-serif;font-size:14px;line-height:1.45}
+a{color:#2448B8}a:hover{color:#16307F}
+*{box-sizing:border-box}
+h1,h2,h3,p{margin:0}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:8px 20px;padding:10px 24px;background:#1C1C1A;color:#F4F4F1}
+.top a{color:#F4F4F1;text-decoration:none;padding:6px 2px}
+.top a.on{border-bottom:2px solid #F4F4F1}
+.top nav{display:flex;flex-wrap:wrap;gap:16px}
+.brand{font-weight:700;letter-spacing:.06em}
+.org{color:#C9C9C4;font-size:13px}
+.search{flex:1 1 240px;display:flex}
+.search input{width:100%;border-color:#6A6A64;background:#2A2A27;color:#F4F4F1}
+.iconbtn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:44px;min-height:40px;background:transparent;border:1px solid #6A6A64;border-radius:6px;color:#F4F4F1;font:inherit}
+.live{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#C9C9C4}
+.live i{width:8px;height:8px;border-radius:50%;background:#7BD88F;display:inline-block}
+.wrap{max-width:1280px;margin:0 auto;padding:24px;display:flex;flex-direction:column;gap:16px}
+.card{background:#fff;border:1px solid #D2D2CC;border-radius:8px}
+.pad{padding:16px}
+.row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.between{justify-content:space-between}
+.stack{display:flex;flex-direction:column;gap:8px}
+.muted{color:#5E5E58}
+.small{font-size:12px}
+.mono{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12px}
+.btn{font:inherit;padding:8px 14px;border-radius:6px;border:1px solid #8E8E87;background:#fff;color:#1C1C1A;min-height:40px;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.btn.pri{background:#2448B8;border-color:#2448B8;color:#fff}
+.btn.sm{min-height:32px;padding:4px 10px;font-size:13px}
+.badge{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:1px 8px;border-radius:999px;border:1px solid #8E8E87;white-space:nowrap;background:#fff}
+.sev-Critical{background:#1C1C1A;color:#fff;border-color:#1C1C1A}
+.int{border-style:dashed}
+.tabs{display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid #D2D2CC}
+.tabs a{padding:10px 14px;text-decoration:none;color:#5E5E58}
+.tabs a.on{color:#1C1C1A;border-bottom:2px solid #1C1C1A;font-weight:600}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label,.lbl{font-size:12px;font-weight:600;color:#3F3F3B}
+input,select,textarea{font:inherit;padding:8px 10px;border:1px solid #8E8E87;border-radius:6px;background:#fff;color:#1C1C1A;min-height:40px}
+.note{background:#FFF6DA;border:1px solid #C9A23F;border-radius:6px;padding:12px 14px}
+.av{width:30px;height:30px;border-radius:50%;background:#D9D9D4;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;border:2px solid #fff;margin-left:-8px}
+.side h3{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#5E5E58}
+.kv{display:grid;grid-template-columns:110px 1fr;gap:6px 12px;font-size:13px}
+.kv dt{color:#5E5E58}.kv dd{margin:0}
+.page{position:relative}
+.top nav a{text-decoration:none}
+.pin{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#E8590C;color:#fff;font-size:12px;font-weight:700;flex:none;line-height:1;vertical-align:middle}
+.pin.abs{position:absolute;z-index:5;box-shadow:0 0 0 3px #fff}
+.rel{position:relative}
+.notes{background:#FFF;border:1px solid #D2D2CC;border-left:4px solid #E8590C;border-radius:8px;padding:16px 20px}
+.notes h2{font-size:15px;margin-bottom:10px}
+.notes ol{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:10px 28px}
+.notes li{display:flex;gap:10px;font-size:13px;align-items:flex-start}
+.notes li b{display:block}
+.notes .was{color:#5E5E58;font-size:12px;display:block;margin-top:2px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid #B5B5AE;border-radius:6px;background:#fff;font:inherit;font-size:13px;min-height:34px;color:#1C1C1A;white-space:nowrap}
+.chip .k{color:#5E5E58;font-size:12px}
+.chip.on{background:#E8EDFB;border-color:#2448B8}
+.chip .car{font-size:10px;color:#5E5E58}
+.pop{position:absolute;z-index:4;background:#fff;border:1px solid #8E8E87;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:6px;min-width:220px}
+.pop .opt{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;font-size:13px}
+.pop .opt.sel{background:#E8EDFB;font-weight:600}
+.pop .hint{font-size:11px;color:#5E5E58;padding:6px 10px 2px;border-top:1px solid #E6E6E1;margin-top:4px}
+.toast{position:absolute;right:24px;bottom:24px;z-index:6;background:#1C1C1A;color:#F4F4F1;border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:14px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.2)}
+.toast button{background:transparent;border:1px solid #6A6A64;color:#F4F4F1;border-radius:6px;padding:4px 10px;font:inherit}
+.seg{display:inline-flex;border:1px solid #8E8E87;border-radius:6px;overflow:hidden}
+.seg span{padding:5px 12px;font-size:13px;border-right:1px solid #8E8E87;background:#fff}
+.seg span:last-child{border-right:0}
+.seg span.on{background:#1C1C1A;color:#fff}
+.sticky{position:relative;background:#EDEDEA;border-bottom:1px solid #D2D2CC;box-shadow:0 2px 0 rgba(0,0,0,.03)}
+.hdr{max-width:1280px;margin:0 auto;padding:14px 24px 0;display:flex;flex-direction:column;gap:10px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-size:12px;font-weight:600;color:#3F3F3B;text-align:left;padding:8px 12px;border-bottom:1px solid #D2D2CC;white-space:nowrap}
+td{padding:9px 12px;border-bottom:1px solid #E6E6E1;vertical-align:middle}
+tr:last-child td{border-bottom:0}
+tr.hot td{background:#F2F6FF}
+.ibtn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid #B5B5AE;border-radius:6px;background:#fff;color:#1C1C1A;font-size:14px}
+.ghost{border-color:transparent;background:transparent}
+.sev{display:inline-block;width:4px;align-self:stretch;border-radius:2px;background:#D2D2CC}
+.sev.c{background:#1C1C1A}.sev.h{background:#5E5E58}
+.bar{height:6px;border-radius:3px;background:#E6E6E1;overflow:hidden;width:60px;display:inline-block;vertical-align:middle}
+.bar i{display:block;height:100%;background:#1C1C1A}
+.overdue{color:#B42318;font-weight:600}
+.badge.od{border-color:#E4A6A0;color:#B42318}
+.dashed{border:1px dashed #8E8E87}
+.hatch{background:repeating-linear-gradient(45deg,#F4F4F1,#F4F4F1 6px,#EBEBE6 6px,#EBEBE6 12px);border:1px dashed #B5B5AE;border-radius:6px;color:#5E5E58;font-size:12px;padding:8px 10px}
+.rail{position:relative;padding-left:0}
+.day{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#5E5E58;padding:6px 0}
+.ent{display:grid;grid-template-columns:112px 18px 1fr;gap:0 10px}
+.ent .t{text-align:right;font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12px;padding-top:12px;color:#3F3F3B}
+.ent .t small{display:block;color:#5E5E58;font-family:Inter,system-ui,sans-serif;font-size:11px}
+.ent .dot{position:relative}
+.ent .dot:before{content:"";position:absolute;left:8px;top:0;bottom:0;width:2px;background:#D2D2CC}
+.ent .dot:after{content:"";position:absolute;left:3px;top:15px;width:12px;height:12px;border-radius:50%;background:#fff;border:2px solid #1C1C1A}
+.ent .dot.range:after{border-radius:3px;height:22px}
+.ent .dot.approx:after{border-style:dashed}
+.ent .box{background:#fff;border:1px solid #D2D2CC;border-radius:8px;padding:10px 12px;margin:4px 0 8px;display:flex;flex-direction:column;gap:6px}
+.msg{display:grid;grid-template-columns:30px 1fr;gap:10px;padding:8px 10px;border-radius:6px}
+.msg .av{margin-left:0}
+.msg.hov{background:#F4F4F1}
+.mention{background:#E0EEFB;color:#14406B;border-radius:3px;padding:0 2px;font-weight:500}
+.kbd{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:11px;border:1px solid #B5B5AE;border-bottom-width:2px;border-radius:4px;padding:0 4px;background:#fff}
+</style>
+</helmet>
+<div class="page">
+<header class="top">
+  <span class="brand">ARGUS</span>
+  <span class="org">[Organization]</span>
+  <nav aria-label="Main">
+    <a href="CaseList2.dc.html" class="on">Cases</a>
+    <a href="AlertQueue.dc.html">Alerts</a>
+    <a href="Dashboard.dc.html">Dashboard</a>
+    <a href="Members.dc.html">Settings</a>
+  </nav>
+  <label class="search"><span style="position: absolute; left: -9999px">Search</span><input type="search" placeholder="Search Cases, Alerts, Observables, Assets"></label>
+  <span class="live"><i></i>Live</span>
+  <a class="iconbtn" href="Notifications.dc.html" aria-label="Notifications, 3 unread"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10 21h4"></path></svg>3</a>
+  <span class="badge" style="background: #3A3A36; color: #F4F4F1; border-color: #6A6A64">AR · Analyst</span>
+</header>
+<main class="wrap">
+  <div class="row between">
+    <div class="row" style="gap: 14px">
+      <h1 style="font-size: 24px">Cases</h1>
+      <span class="badge" style="background: #F2F6FF; border-color: #2448B8">2 updated since you looked · Show</span>
+    </div>
+    <div class="row rel">
+      <span class="pin abs" style="left: -30px; top: 9px">1</span>
+      <input type="search" placeholder="Filter by title or C-number" style="width: 280px">
+      <a class="btn pri" href="CaseDialogs.dc.html">+ Open Case</a>
+    </div>
+  </div>
+
+  <nav class="tabs" aria-label="Case views">
+    <a href="#" class="on">My Cases (6)</a>
+    <a href="#">Unassigned (3)</a>
+    <a href="#">All open (23)</a>
+    <a href="#">Closed (412)</a>
+  </nav>
+
+  <!-- Compact filter bar -->
+  <div class="row between rel">
+    <span class="pin abs" style="left: -11px; top: -13px">2</span>
+    <div class="row" style="gap: 6px">
+      <button class="chip"><span class="k">Status</span> Any <span class="car">▼</span></button>
+      <button class="chip on"><span class="k">Severity</span> Critical, High <span class="car">✕</span></button>
+      <button class="chip"><span class="k">Case Type</span> Any <span class="car">▼</span></button>
+      <button class="chip"><span class="k">Assignee</span> Any <span class="car">▼</span></button>
+      <button class="chip"><span class="k">Tag</span> Any <span class="car">▼</span></button>
+      <a href="#" class="small" style="margin-left: 6px">Clear filters</a>
+    </div>
+    <div class="row small muted">Sort <button class="chip">Last activity <span class="car">▼</span></button></div>
+  </div>
+
+  <section class="card rel">
+    <span class="pin abs" style="left: -11px; top: -11px">3</span>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 10px"></th>
+          <th>Case</th>
+          <th>Status</th>
+          <th>Severity</th>
+          <th>Assignee</th>
+          <th>Tasks <span class="pin" style="width:18px;height:18px;font-size:10px;margin-left:4px">4</span></th>
+          <th>Last activity <span class="pin" style="width:18px;height:18px;font-size:10px;margin-left:4px">5</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="hot">
+          <td style="padding-right:0"><span class="sev c" style="display:block;height:34px"></span></td>
+          <td><a href="Case2.dc.html" style="font-weight:600;color:#1C1C1A">Suspicious PowerShell on FIN-LT-0231</a><div class="small muted"><span class="mono">C-1041</span> · Malware · 🔒 Restricted</div></td>
+          <td><span class="badge">In Progress</span></td>
+          <td><span class="badge sev-Critical">Critical</span></td>
+          <td><span class="row" style="gap:6px"><span class="av" style="margin-left:0;width:24px;height:24px;background:#C7D3F5">AR</span>A. Rivera</span></td>
+          <td><span class="bar"><i style="width:60%"></i></span> 3/5 <span class="badge od">1 overdue</span></td>
+          <td><div>just now</div><div class="small muted">M. Chen edited the Case Summary</div></td>
+        </tr>
+        <tr>
+          <td style="padding-right:0"><span class="sev c" style="display:block;height:34px"></span></td>
+          <td><a href="Case2.dc.html" style="font-weight:600;color:#1C1C1A">Finance invoice phishing wave</a><div class="small muted"><span class="mono">C-1042</span> · Phishing</div></td>
+          <td><span class="badge">Triage</span></td>
+          <td><span class="badge sev-Critical">Critical</span></td>
+          <td><span class="row" style="gap:6px"><span class="av" style="margin-left:0;width:24px;height:24px;background:#C7D3F5">AR</span>A. Rivera</span></td>
+          <td><span class="bar"><i style="width:0%"></i></span> 0/2</td>
+          <td><div>12 min ago</div><div class="small muted">3 Alerts attached</div></td>
+        </tr>
+        <tr>
+          <td style="padding-right:0"><span class="sev h" style="display:block;height:34px"></span></td>
+          <td><a href="Case2.dc.html" style="font-weight:600;color:#1C1C1A">svc-backup logging in from new ASN</a><div class="small muted"><span class="mono">C-1037</span> · Account Compromise</div></td>
+          <td><span class="badge">Awaiting Info</span></td>
+          <td><span class="badge" style="border:2px solid #1C1C1A;font-weight:600">High</span></td>
+          <td><span class="row" style="gap:6px"><span class="av" style="margin-left:0;width:24px;height:24px;background:#C7D3F5">AR</span>A. Rivera</span></td>
+          <td><span class="bar"><i style="width:75%"></i></span> 3/4</td>
+          <td><div>2 h ago</div><div class="small muted">K. Patel posted in the Discussion</div></td>
+        </tr>
+        <tr>
+          <td style="padding-right:0"><span class="sev h" style="display:block;height:34px"></span></td>
+          <td><a href="Case2.dc.html" style="font-weight:600;color:#1C1C1A">Contractor bulk-downloading SharePoint</a><div class="small muted"><span class="mono">C-1033</span> · Data Loss</div></td>
+          <td><span class="badge">Resolved</span> <span class="small muted">awaiting review</span></td>
+          <td><span class="badge" style="border:2px solid #1C1C1A;font-weight:600">High</span></td>
+          <td><span class="row" style="gap:6px"><span class="av" style="margin-left:0;width:24px;height:24px;background:#C7D3F5">AR</span>A. Rivera</span></td>
+          <td><span class="bar"><i style="width:100%"></i></span> 6/6</td>
+          <td><div>Yesterday</div><div class="small muted">Status → Resolved</div></td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="row between pad small muted" style="border-top: 1px solid #E6E6E1">
+      <span>4 of 6 match · Severity is Critical or High</span>
+      <span>Rows are one link each; <span class="kbd">j</span> <span class="kbd">k</span> move, <span class="kbd">Enter</span> opens</span>
+    </div>
+  </section>
+
+  <section class="card pad stack">
+    <div class="small muted">Unassigned view — a row offers the shortcut inline</div>
+    <table>
+      <tbody>
+        <tr>
+          <td style="padding-right:0;width:10px"><span class="sev" style="display:block;height:34px"></span></td>
+          <td><a href="Case2.dc.html" style="font-weight:600;color:#1C1C1A">User-reported QR code email</a><div class="small muted"><span class="mono">C-1044</span> · Phishing</div></td>
+          <td><span class="badge">New</span> <span class="small overdue">waiting 47 min</span></td>
+          <td><span class="badge">Medium</span></td>
+          <td class="rel"><span class="pin abs" style="left: -26px; top: 14px">6</span><button class="btn sm">Assign to me</button></td>
+          <td class="muted">—</td>
+          <td><div>47 min ago</div><div class="small muted">Opened from 1 Alert</div></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="notes">
+    <h2>What changes on the Case list, and why</h2>
+    <ol>
+      <li><span class="pin">1</span><span><b>Text filter beside “Open Case”, live-update pill instead of “Refreshes live”.</b>Finding a known Case today means leaving for global search. The pill says what changed rather than reshuffling rows under the cursor.<span class="was">Now: list.tsx header has only “Refreshes live” text and the button.</span></span></li>
+      <li><span class="pin">2</span><span><b>One-line filter chips with multi-select, Assignee, Tag and “Clear filters”; a Sort control.</b>Filters take a whole card of full-width selects, allow one value each and can't be reset in one click; the order can't be changed.<span class="was">Now: three NativeSelects in a Card; fixed sort.</span></span></li>
+      <li><span class="pin">3</span><span><b>Severity stripe and title-first rows; the whole row is one link.</b>Every row has two separate links (C-number and title). Case Type and Restricted move under the title to free columns.<span class="was">Now: Case / Title / … / Case Type columns, two links per row.</span></span></li>
+      <li><span class="pin">4</span><span><b>Tasks progress with overdue count.</b>Overdue Tasks are invisible until the Case is opened. Needs done/total/overdue on the list endpoint (only the single-Case view carries Task counts today).</span></li>
+      <li><span class="pin">5</span><span><b>Last activity says what happened and who.</b>“2 h ago” alone doesn't tell an Analyst whether to look. Closed also gets a count like the other views.</span></li>
+      <li><span class="pin">6</span><span><b>“Assign to me” on unassigned rows, and how long a New Case has waited.</b>Picking up work takes three steps today (open, find the select, pick yourself).</span></li>
+    </ol>
+  </section>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1180}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

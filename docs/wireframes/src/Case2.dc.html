@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Case overview (proposed)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#EDEDEA;color:#1C1C1A;font-family:Inter,system-ui,sans-serif;font-size:14px;line-height:1.45}
+a{color:#2448B8}a:hover{color:#16307F}
+*{box-sizing:border-box}
+h1,h2,h3,p{margin:0}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:8px 20px;padding:10px 24px;background:#1C1C1A;color:#F4F4F1}
+.top a{color:#F4F4F1;text-decoration:none;padding:6px 2px}
+.top a.on{border-bottom:2px solid #F4F4F1}
+.top nav{display:flex;flex-wrap:wrap;gap:16px}
+.brand{font-weight:700;letter-spacing:.06em}
+.org{color:#C9C9C4;font-size:13px}
+.search{flex:1 1 240px;display:flex}
+.search input{width:100%;border-color:#6A6A64;background:#2A2A27;color:#F4F4F1}
+.iconbtn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:44px;min-height:40px;background:transparent;border:1px solid #6A6A64;border-radius:6px;color:#F4F4F1;font:inherit}
+.live{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#C9C9C4}
+.live i{width:8px;height:8px;border-radius:50%;background:#7BD88F;display:inline-block}
+.wrap{max-width:1280px;margin:0 auto;padding:24px;display:flex;flex-direction:column;gap:16px}
+.card{background:#fff;border:1px solid #D2D2CC;border-radius:8px}
+.pad{padding:16px}
+.row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.between{justify-content:space-between}
+.stack{display:flex;flex-direction:column;gap:8px}
+.muted{color:#5E5E58}
+.small{font-size:12px}
+.mono{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12px}
+.btn{font:inherit;padding:8px 14px;border-radius:6px;border:1px solid #8E8E87;background:#fff;color:#1C1C1A;min-height:40px;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.btn.pri{background:#2448B8;border-color:#2448B8;color:#fff}
+.btn.sm{min-height:32px;padding:4px 10px;font-size:13px}
+.badge{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:1px 8px;border-radius:999px;border:1px solid #8E8E87;white-space:nowrap;background:#fff}
+.sev-Critical{background:#1C1C1A;color:#fff;border-color:#1C1C1A}
+.int{border-style:dashed}
+.tabs{display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid #D2D2CC}
+.tabs a{padding:10px 14px;text-decoration:none;color:#5E5E58}
+.tabs a.on{color:#1C1C1A;border-bottom:2px solid #1C1C1A;font-weight:600}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label,.lbl{font-size:12px;font-weight:600;color:#3F3F3B}
+input,select,textarea{font:inherit;padding:8px 10px;border:1px solid #8E8E87;border-radius:6px;background:#fff;color:#1C1C1A;min-height:40px}
+.note{background:#FFF6DA;border:1px solid #C9A23F;border-radius:6px;padding:12px 14px}
+.av{width:30px;height:30px;border-radius:50%;background:#D9D9D4;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;border:2px solid #fff;margin-left:-8px}
+.side h3{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#5E5E58}
+.kv{display:grid;grid-template-columns:110px 1fr;gap:6px 12px;font-size:13px}
+.kv dt{color:#5E5E58}.kv dd{margin:0}
+.page{position:relative}
+.top nav a{text-decoration:none}
+.pin{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#E8590C;color:#fff;font-size:12px;font-weight:700;flex:none;line-height:1;vertical-align:middle}
+.pin.abs{position:absolute;z-index:5;box-shadow:0 0 0 3px #fff}
+.rel{position:relative}
+.notes{background:#FFF;border:1px solid #D2D2CC;border-left:4px solid #E8590C;border-radius:8px;padding:16px 20px}
+.notes h2{font-size:15px;margin-bottom:10px}
+.notes ol{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:10px 28px}
+.notes li{display:flex;gap:10px;font-size:13px;align-items:flex-start}
+.notes li b{display:block}
+.notes .was{color:#5E5E58;font-size:12px;display:block;margin-top:2px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid #B5B5AE;border-radius:6px;background:#fff;font:inherit;font-size:13px;min-height:34px;color:#1C1C1A;white-space:nowrap}
+.chip .k{color:#5E5E58;font-size:12px}
+.chip.on{background:#E8EDFB;border-color:#2448B8}
+.chip .car{font-size:10px;color:#5E5E58}
+.pop{position:absolute;z-index:4;background:#fff;border:1px solid #8E8E87;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:6px;min-width:220px}
+.pop .opt{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;font-size:13px}
+.pop .opt.sel{background:#E8EDFB;font-weight:600}
+.pop .hint{font-size:11px;color:#5E5E58;padding:6px 10px 2px;border-top:1px solid #E6E6E1;margin-top:4px}
+.toast{position:absolute;right:24px;bottom:24px;z-index:6;background:#1C1C1A;color:#F4F4F1;border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:14px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.2)}
+.toast button{background:transparent;border:1px solid #6A6A64;color:#F4F4F1;border-radius:6px;padding:4px 10px;font:inherit}
+.seg{display:inline-flex;border:1px solid #8E8E87;border-radius:6px;overflow:hidden}
+.seg span{padding:5px 12px;font-size:13px;border-right:1px solid #8E8E87;background:#fff}
+.seg span:last-child{border-right:0}
+.seg span.on{background:#1C1C1A;color:#fff}
+.sticky{position:relative;background:#EDEDEA;border-bottom:1px solid #D2D2CC;box-shadow:0 2px 0 rgba(0,0,0,.03)}
+.hdr{max-width:1280px;margin:0 auto;padding:14px 24px 0;display:flex;flex-direction:column;gap:10px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-size:12px;font-weight:600;color:#3F3F3B;text-align:left;padding:8px 12px;border-bottom:1px solid #D2D2CC;white-space:nowrap}
+td{padding:9px 12px;border-bottom:1px solid #E6E6E1;vertical-align:middle}
+tr:last-child td{border-bottom:0}
+tr.hot td{background:#F2F6FF}
+.ibtn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid #B5B5AE;border-radius:6px;background:#fff;color:#1C1C1A;font-size:14px}
+.ghost{border-color:transparent;background:transparent}
+.sev{display:inline-block;width:4px;align-self:stretch;border-radius:2px;background:#D2D2CC}
+.sev.c{background:#1C1C1A}.sev.h{background:#5E5E58}
+.bar{height:6px;border-radius:3px;background:#E6E6E1;overflow:hidden;width:60px;display:inline-block;vertical-align:middle}
+.bar i{display:block;height:100%;background:#1C1C1A}
+.overdue{color:#B42318;font-weight:600}
+.badge.od{border-color:#E4A6A0;color:#B42318}
+.dashed{border:1px dashed #8E8E87}
+.hatch{background:repeating-linear-gradient(45deg,#F4F4F1,#F4F4F1 6px,#EBEBE6 6px,#EBEBE6 12px);border:1px dashed #B5B5AE;border-radius:6px;color:#5E5E58;font-size:12px;padding:8px 10px}
+.rail{position:relative;padding-left:0}
+.day{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#5E5E58;padding:6px 0}
+.ent{display:grid;grid-template-columns:112px 18px 1fr;gap:0 10px}
+.ent .t{text-align:right;font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12px;padding-top:12px;color:#3F3F3B}
+.ent .t small{display:block;color:#5E5E58;font-family:Inter,system-ui,sans-serif;font-size:11px}
+.ent .dot{position:relative}
+.ent .dot:before{content:"";position:absolute;left:8px;top:0;bottom:0;width:2px;background:#D2D2CC}
+.ent .dot:after{content:"";position:absolute;left:3px;top:15px;width:12px;height:12px;border-radius:50%;background:#fff;border:2px solid #1C1C1A}
+.ent .dot.range:after{border-radius:3px;height:22px}
+.ent .dot.approx:after{border-style:dashed}
+.ent .box{background:#fff;border:1px solid #D2D2CC;border-radius:8px;padding:10px 12px;margin:4px 0 8px;display:flex;flex-direction:column;gap:6px}
+.msg{display:grid;grid-template-columns:30px 1fr;gap:10px;padding:8px 10px;border-radius:6px}
+.msg .av{margin-left:0}
+.msg.hov{background:#F4F4F1}
+.mention{background:#E0EEFB;color:#14406B;border-radius:3px;padding:0 2px;font-weight:500}
+.kbd{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:11px;border:1px solid #B5B5AE;border-bottom-width:2px;border-radius:4px;padding:0 4px;background:#fff}
+</style>
+</helmet>
+<div class="page">
+<header class="top">
+  <span class="brand">ARGUS</span>
+  <span class="org">[Organization]</span>
+  <nav aria-label="Main">
+    <a href="CaseList2.dc.html" class="on">Cases</a>
+    <a href="AlertQueue.dc.html">Alerts</a>
+    <a href="Dashboard.dc.html">Dashboard</a>
+    <a href="Members.dc.html">Settings</a>
+  </nav>
+  <label class="search"><span style="position: absolute; left: -9999px">Search</span><input type="search" placeholder="Search Cases, Alerts, Observables, Assets"></label>
+  <span class="live"><i></i>Live</span>
+  <a class="iconbtn" href="Notifications.dc.html" aria-label="Notifications, 3 unread"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10 21h4"></path></svg>3</a>
+  <span class="badge" style="background: #3A3A36; color: #F4F4F1; border-color: #6A6A64">AR · Analyst</span>
+</header>
+<!-- Compact header that stays pinned while the page scrolls -->
+<div class="sticky">
+  <div class="hdr">
+    <div class="small muted"><a href="CaseList2.dc.html">Cases</a> / <span class="mono">C-1041</span></div>
+    <div class="row between" style="align-items: flex-start">
+      <div class="stack" style="gap: 4px; flex: 1 1 480px">
+        <div class="row small muted"><span class="mono">C-1041</span><span class="badge">🔒 Restricted</span><span>Opened 3 days ago by A. Rivera</span></div>
+        <h1 style="font-size: 22px">Suspicious PowerShell on FIN-LT-0231</h1>
+      </div>
+      <div class="row rel" style="gap: 10px">
+        <div class="row" aria-label="People viewing this Case now">
+          <span class="small muted" style="margin-right: 12px">Viewing now</span>
+          <span class="av" style="background: #C7D3F5">AR</span><span class="av" style="background: #E2D3C2">MC</span>
+        </div>
+        <button class="btn" title="Export Case Report, Invite Guest, Link a Case, Close Case">More <span class="car small">▼</span></button>
+        <span class="pin abs" style="right: -10px; top: -10px">2</span>
+        <button class="btn pri">Mark Resolved</button>
+      </div>
+    </div>
+
+    <!-- Properties as chips -->
+    <div class="row rel" style="gap: 6px; padding-bottom: 4px">
+      <span class="pin abs" style="left: -11px; top: -11px">1</span>
+      <button class="chip"><span class="k">Status</span> In Progress <span class="small muted">· 2 d</span> <span class="car">▼</span></button>
+      <span class="rel">
+        <button class="chip" style="border-color:#2448B8;box-shadow:0 0 0 2px #C7D3F5"><span class="k">Severity</span> <span class="badge sev-Critical">Critical</span> <span class="car">▼</span></button>
+        <div class="pop" style="left: 0; top: 40px">
+          <div class="opt sel"><span class="badge sev-Critical">Critical</span> ✓</div>
+          <div class="opt"><span class="badge" style="border:2px solid #1C1C1A;font-weight:600">High</span></div>
+          <div class="opt"><span class="badge">Medium</span></div>
+          <div class="opt"><span class="badge">Low</span></div>
+          <div class="opt"><span class="badge">Informational</span></div>
+          <div class="hint">Saves on pick · Undo for 10 s · recorded in the Audit Log</div>
+        </div>
+      </span>
+      <button class="chip"><span class="k">Case Type</span> Malware <span class="car">▼</span></button>
+      <button class="chip"><span class="k">Assignee</span> <span class="av" style="margin-left:0;width:20px;height:20px;font-size:9px;border:0;background:#C7D3F5">AR</span> A. Rivera <span class="car">▼</span></button>
+      <span class="small muted" style="margin-left: 8px">Unassigned? → “Assign to me” appears here</span>
+    </div>
+
+    <nav class="tabs rel" aria-label="Case sections" style="border-bottom: 0">
+      <a href="Case2.dc.html" class="on">Overview</a>
+      <a href="Timeline2.dc.html">Timeline (9) &amp; Discussion (24) <span class="badge" style="background:#2448B8;color:#fff;border-color:#2448B8">3 new</span></a>
+      <a href="CaseWork2.dc.html">Tasks 3/5 <span class="badge od">1 overdue</span></a>
+      <a href="CaseWork2.dc.html">Evidence (4)</a>
+      <a href="CaseWork2.dc.html">Audit Log</a>
+      <span class="pin" style="margin: 10px 0 0 6px">3</span>
+    </nav>
+  </div>
+</div>
+
+<main class="wrap">
+  <div class="row" style="align-items: flex-start; gap: 16px">
+    <section class="stack" style="flex: 999 1 560px; min-width: 0; gap: 16px">
+
+      <!-- Needs attention -->
+      <section class="card rel" style="border-color:#C9A23F">
+        <span class="pin abs" style="left: -11px; top: -11px">4</span>
+        <div class="row between pad" style="border-bottom: 1px solid #E6E6E1">
+          <h2 style="font-size: 15px">Needs attention</h2>
+          <span class="small muted">Only what's waiting on someone</span>
+        </div>
+        <div class="stack pad" style="gap: 10px; font-size: 13px">
+          <div class="row between"><span><span class="badge od">Overdue</span> <b>Capture memory image</b> · J. Okafor · due 2026-10-30</span><a href="CaseWork2.dc.html">Open Task</a></div>
+          <div class="row between"><span><span class="badge" style="background:#E0EEFB;border-color:#9BB7DE">@you</span> M. Chen mentioned you in the Discussion · 14 min ago</span><a href="Timeline2.dc.html">Reply</a></div>
+          <div class="row between"><span><span class="badge">Due tomorrow</span> <b>Assess notification duty</b> · K. Patel (Guest)</span><a href="CaseWork2.dc.html">Open Task</a></div>
+        </div>
+      </section>
+
+      <!-- Case Summary -->
+      <section class="card rel">
+        <span class="pin abs" style="left: -11px; top: -11px">5</span>
+        <div class="row between pad" style="border-bottom: 1px solid #E6E6E1">
+          <div class="row"><h2 style="font-size: 16px">Case Summary</h2><span class="small muted">v14 · M. Chen · 2 min ago</span></div>
+          <div class="row">
+            <span class="badge" style="background:#FFF6DA;border-color:#C9A23F"><span class="av" style="margin-left:0;width:18px;height:18px;font-size:8px;border:0;background:#E2D3C2">MC</span> M. Chen is editing</span>
+            <button class="btn sm" disabled style="opacity:.55">Edit</button>
+          </div>
+        </div>
+        <div class="pad stack" style="gap: 10px">
+          <p><strong>What we know:</strong> Falcon flagged encoded PowerShell launching from an Outlook child process on FIN-LT-0231 (user d.howe). Host network-contained at 10:02 from the Falcon console.</p>
+          <p><strong>Current hypothesis:</strong> macro-enabled invoice attachment from the finance phishing wave (see C-1042).</p>
+          <p><strong>Handover:</strong> awaiting memory image from Forensics; legal counsel added as Guest for notification assessment.</p>
+        </div>
+        <div class="pad small muted" style="border-top: 1px solid #E6E6E1">While editing: draft kept if you leave the tab · “Unsaved changes” guard on navigation · conflict view shows both versions side by side</div>
+      </section>
+
+      <!-- Latest on the Timeline -->
+      <section class="card rel">
+        <span class="pin abs" style="left: -11px; top: -11px">6</span>
+        <div class="row between pad" style="border-bottom: 1px solid #E6E6E1">
+          <h2 style="font-size: 15px">Latest on the Timeline</h2>
+          <a href="Timeline2.dc.html" class="small">Whole Timeline (9) →</a>
+        </div>
+        <div class="stack pad" style="gap: 8px; font-size: 13px">
+          <div class="row" style="gap: 12px; flex-wrap: nowrap"><span class="mono muted" style="width: 120px">10-28 10:02</span><span>Host network-contained from the Falcon console</span></div>
+          <div class="row" style="gap: 12px; flex-wrap: nowrap"><span class="mono muted" style="width: 120px">10-28 09:31</span><span>Encoded PowerShell spawned by OUTLOOK.EXE</span></div>
+          <div class="row" style="gap: 12px; flex-wrap: nowrap"><span class="mono muted" style="width: 120px">≈10-28 09:25</span><span>d.howe opens invoice-4471.eml attachment</span></div>
+        </div>
+      </section>
+    </section>
+
+    <!-- Sidebar -->
+    <aside class="stack side" style="flex: 1 1 300px; gap: 12px">
+      <section class="card pad stack">
+        <h3>Details</h3>
+        <dl class="kv">
+          <dt>Opened</dt><dd>2026-10-28 09:41 by A. Rivera</dd>
+          <dt>In Progress</dt><dd>since 10-29 08:15 (2 d)</dd>
+          <dt>Last activity</dt><dd>2 min ago</dd>
+          <dt>Resolution</dt><dd class="muted">— set on close</dd>
+        </dl>
+      </section>
+      <section class="card pad stack rel">
+        <span class="pin abs" style="left: -11px; top: -11px">7</span>
+        <div class="row between"><h3>People</h3><button class="btn sm">+ Case Role</button></div>
+        <div class="row between small"><span class="muted">Assignee</span><span>A. Rivera</span></div>
+        <div class="row between small"><span class="muted">Lead</span><span>A. Rivera</span></div>
+        <div class="row between small"><span class="muted">Forensics</span><span>J. Okafor</span></div>
+        <div class="row between small"><span class="muted">Legal</span><span>K. Patel <span class="badge">Guest</span></span></div>
+      </section>
+      <section class="card pad stack rel">
+        <span class="pin abs" style="left: -11px; top: -11px">8</span>
+        <div class="row between"><h3>Access</h3><button class="btn sm">Change…</button></div>
+        <div class="row small"><span class="badge">🔒 Restricted</span></div>
+        <div class="small">Seen by: Admins, the Assignee and 3 Case Role holders (5 people).</div>
+        <div class="small muted">Changing it shows who gains or loses access, and warns if you'd lose it yourself.</div>
+      </section>
+      <section class="card pad stack">
+        <div class="row between"><h3>Linked Cases</h3><button class="btn sm">+ Link</button></div>
+        <div class="row between small"><span>Related</span><a href="#" class="mono">C-1042</a></div>
+      </section>
+    </aside>
+  </div>
+
+  <section class="notes">
+    <h2>What changes on the Case page, and why</h2>
+    <ol>
+      <li><span class="pin">1</span><span><b>Properties as compact chips, with Undo.</b>Four full-width selects take half the header, and every pick PATCHes immediately with no confirmation or undo — a slip turns a Case Critical. Chips show the value as a badge, save on pick and offer Undo in a toast. Status shows how long it's been in that Status.<span class="was">Now: case-layout.tsx, four NativeSelects with onChange → change.mutate.</span></span></li>
+      <li><span class="pin">2</span><span><b>One primary action that follows the Status; the rest under “More”.</b>“Close Case” is the only action and it's an outline button. In Progress → “Mark Resolved”; Resolved → “Close Case…”; Closed → “Reopen” (Admins). Export, Invite Guest, Link sit under More as they arrive.</span></li>
+      <li><span class="pin">3</span><span><b>Header and tabs stay pinned; every tab carries a count or a signal.</b>On long Timelines and Audit Logs the tabs scroll away. Evidence and Timeline have no counts; new Discussion messages and overdue Tasks have no signal.</span></li>
+      <li><span class="pin">4</span><span><b>“Needs attention” at the top of the Overview.</b>Overdue Tasks, @mentions of you and Tasks due soon, each one click from the item. Today the Overview is a Summary and a near-empty Details card.</span></li>
+      <li><span class="pin">5</span><span><b>Show who is editing the Case Summary before you start.</b>The glossary says it is edited by one person at a time, but the app only finds out at Save (409 → conflict banner). Presence (ADR 0005) can say “M. Chen is editing” up front. Drafts survive leaving the tab; the conflict view compares side by side.<span class="was">Now: overview.tsx, conflict banner after a refused save; draft lost on navigation.</span></span></li>
+      <li><span class="pin">6</span><span><b>Latest Timeline Entries on the Overview.</b>A reader landing on the Case sees the newest facts without switching tabs.</span></li>
+      <li><span class="pin">7</span><span><b>Assignee and Case Roles together under People.</b>Removing a Case Role is an instant ✕ with no confirm; it asks first when it would remove someone's access to a Restricted Case.<span class="was">Now: case-roles-panel.tsx, unassign on click.</span></span></li>
+      <li><span class="pin">8</span><span><b>Restricted moves to an Access card with a confirm step.</b>Today a checkbox in the header flips it instantly; if that removes your own access the page silently navigates to the list. The dialog lists who gains or loses access first.<span class="was">Now: case-layout.tsx, Checkbox → change.mutate; onSuccess navigates to “/” when the Case vanishes.</span></span></li>
+    </ol>
+  </section>
+
+  <div class="toast"><span>Severity changed to Critical</span><button>Undo</button></div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1400}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

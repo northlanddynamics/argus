@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Case timeline (proposed)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#EDEDEA;color:#1C1C1A;font-family:Inter,system-ui,sans-serif;font-size:14px;line-height:1.45}
+a{color:#2448B8}a:hover{color:#16307F}
+*{box-sizing:border-box}
+h1,h2,h3,p{margin:0}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:8px 20px;padding:10px 24px;background:#1C1C1A;color:#F4F4F1}
+.top a{color:#F4F4F1;text-decoration:none;padding:6px 2px}
+.top a.on{border-bottom:2px solid #F4F4F1}
+.top nav{display:flex;flex-wrap:wrap;gap:16px}
+.brand{font-weight:700;letter-spacing:.06em}
+.org{color:#C9C9C4;font-size:13px}
+.search{flex:1 1 240px;display:flex}
+.search input{width:100%;border-color:#6A6A64;background:#2A2A27;color:#F4F4F1}
+.iconbtn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:44px;min-height:40px;background:transparent;border:1px solid #6A6A64;border-radius:6px;color:#F4F4F1;font:inherit}
+.live{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#C9C9C4}
+.live i{width:8px;height:8px;border-radius:50%;background:#7BD88F;display:inline-block}
+.wrap{max-width:1280px;margin:0 auto;padding:24px;display:flex;flex-direction:column;gap:16px}
+.card{background:#fff;border:1px solid #D2D2CC;border-radius:8px}
+.pad{padding:16px}
+.row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.between{justify-content:space-between}
+.stack{display:flex;flex-direction:column;gap:8px}
+.muted{color:#5E5E58}
+.small{font-size:12px}
+.mono{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12px}
+.btn{font:inherit;padding:8px 14px;border-radius:6px;border:1px solid #8E8E87;background:#fff;color:#1C1C1A;min-height:40px;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.btn.pri{background:#2448B8;border-color:#2448B8;color:#fff}
+.btn.sm{min-height:32px;padding:4px 10px;font-size:13px}
+.badge{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:1px 8px;border-radius:999px;border:1px solid #8E8E87;white-space:nowrap;background:#fff}
+.sev-Critical{background:#1C1C1A;color:#fff;border-color:#1C1C1A}
+.int{border-style:dashed}
+.tabs{display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid #D2D2CC}
+.tabs a{padding:10px 14px;text-decoration:none;color:#5E5E58}
+.tabs a.on{color:#1C1C1A;border-bottom:2px solid #1C1C1A;font-weight:600}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label,.lbl{font-size:12px;font-weight:600;color:#3F3F3B}
+input,select,textarea{font:inherit;padding:8px 10px;border:1px solid #8E8E87;border-radius:6px;background:#fff;color:#1C1C1A;min-height:40px}
+.note{background:#FFF6DA;border:1px solid #C9A23F;border-radius:6px;padding:12px 14px}
+.av{width:30px;height:30px;border-radius:50%;background:#D9D9D4;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;border:2px solid #fff;margin-left:-8px}
+.side h3{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#5E5E58}
+.kv{display:grid;grid-template-columns:110px 1fr;gap:6px 12px;font-size:13px}
+.kv dt{color:#5E5E58}.kv dd{margin:0}
+.page{position:relative}
+.top nav a{text-decoration:none}
+.pin{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#E8590C;color:#fff;font-size:12px;font-weight:700;flex:none;line-height:1;vertical-align:middle}
+.pin.abs{position:absolute;z-index:5;box-shadow:0 0 0 3px #fff}
+.rel{position:relative}
+.notes{background:#FFF;border:1px solid #D2D2CC;border-left:4px solid #E8590C;border-radius:8px;padding:16px 20px}
+.notes h2{font-size:15px;margin-bottom:10px}
+.notes ol{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:10px 28px}
+.notes li{display:flex;gap:10px;font-size:13px;align-items:flex-start}
+.notes li b{display:block}
+.notes .was{color:#5E5E58;font-size:12px;display:block;margin-top:2px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid #B5B5AE;border-radius:6px;background:#fff;font:inherit;font-size:13px;min-height:34px;color:#1C1C1A;white-space:nowrap}
+.chip .k{color:#5E5E58;font-size:12px}
+.chip.on{background:#E8EDFB;border-color:#2448B8}
+.chip .car{font-size:10px;color:#5E5E58}
+.pop{position:absolute;z-index:4;background:#fff;border:1px solid #8E8E87;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:6px;min-width:220px}
+.pop .opt{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;font-size:13px}
+.pop .opt.sel{background:#E8EDFB;font-weight:600}
+.pop .hint{font-size:11px;color:#5E5E58;padding:6px 10px 2px;border-top:1px solid #E6E6E1;margin-top:4px}
+.toast{position:absolute;right:24px;bottom:24px;z-index:6;background:#1C1C1A;color:#F4F4F1;border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:14px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.2)}
+.toast button{background:transparent;border:1px solid #6A6A64;color:#F4F4F1;border-radius:6px;padding:4px 10px;font:inherit}
+.seg{display:inline-flex;border:1px solid #8E8E87;border-radius:6px;overflow:hidden}
+.seg span{padding:5px 12px;font-size:13px;border-right:1px solid #8E8E87;background:#fff}
+.seg span:last-child{border-right:0}
+.seg span.on{background:#1C1C1A;color:#fff}
+.sticky{position:relative;background:#EDEDEA;border-bottom:1px solid #D2D2CC;box-shadow:0 2px 0 rgba(0,0,0,.03)}
+.hdr{max-width:1280px;margin:0 auto;padding:14px 24px 0;display:flex;flex-direction:column;gap:10px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-size:12px;font-weight:600;color:#3F3F3B;text-align:left;padding:8px 12px;border-bottom:1px solid #D2D2CC;white-space:nowrap}
+td{padding:9px 12px;border-bottom:1px solid #E6E6E1;vertical-align:middle}
+tr:last-child td{border-bottom:0}
+tr.hot td{background:#F2F6FF}
+.ibtn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid #B5B5AE;border-radius:6px;background:#fff;color:#1C1C1A;font-size:14px}
+.ghost{border-color:transparent;background:transparent}
+.sev{display:inline-block;width:4px;align-self:stretch;border-radius:2px;background:#D2D2CC}
+.sev.c{background:#1C1C1A}.sev.h{background:#5E5E58}
+.bar{height:6px;border-radius:3px;background:#E6E6E1;overflow:hidden;width:60px;display:inline-block;vertical-align:middle}
+.bar i{display:block;height:100%;background:#1C1C1A}
+.overdue{color:#B42318;font-weight:600}
+.badge.od{border-color:#E4A6A0;color:#B42318}
+.dashed{border:1px dashed #8E8E87}
+.hatch{background:repeating-linear-gradient(45deg,#F4F4F1,#F4F4F1 6px,#EBEBE6 6px,#EBEBE6 12px);border:1px dashed #B5B5AE;border-radius:6px;color:#5E5E58;font-size:12px;padding:8px 10px}
+.rail{position:relative;padding-left:0}
+.day{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#5E5E58;padding:6px 0}
+.ent{display:grid;grid-template-columns:112px 18px 1fr;gap:0 10px}
+.ent .t{text-align:right;font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12px;padding-top:12px;color:#3F3F3B}
+.ent .t small{display:block;color:#5E5E58;font-family:Inter,system-ui,sans-serif;font-size:11px}
+.ent .dot{position:relative}
+.ent .dot:before{content:"";position:absolute;left:8px;top:0;bottom:0;width:2px;background:#D2D2CC}
+.ent .dot:after{content:"";position:absolute;left:3px;top:15px;width:12px;height:12px;border-radius:50%;background:#fff;border:2px solid #1C1C1A}
+.ent .dot.range:after{border-radius:3px;height:22px}
+.ent .dot.approx:after{border-style:dashed}
+.ent .box{background:#fff;border:1px solid #D2D2CC;border-radius:8px;padding:10px 12px;margin:4px 0 8px;display:flex;flex-direction:column;gap:6px}
+.msg{display:grid;grid-template-columns:30px 1fr;gap:10px;padding:8px 10px;border-radius:6px}
+.msg .av{margin-left:0}
+.msg.hov{background:#F4F4F1}
+.mention{background:#E0EEFB;color:#14406B;border-radius:3px;padding:0 2px;font-weight:500}
+.kbd{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:11px;border:1px solid #B5B5AE;border-bottom-width:2px;border-radius:4px;padding:0 4px;background:#fff}
+</style>
+</helmet>
+<div class="page">
+<header class="top">
+  <span class="brand">ARGUS</span>
+  <span class="org">[Organization]</span>
+  <nav aria-label="Main">
+    <a href="CaseList2.dc.html" class="on">Cases</a>
+    <a href="AlertQueue.dc.html">Alerts</a>
+    <a href="Dashboard.dc.html">Dashboard</a>
+    <a href="Members.dc.html">Settings</a>
+  </nav>
+  <label class="search"><span style="position: absolute; left: -9999px">Search</span><input type="search" placeholder="Search Cases, Alerts, Observables, Assets"></label>
+  <span class="live"><i></i>Live</span>
+  <a class="iconbtn" href="Notifications.dc.html" aria-label="Notifications, 3 unread"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10 21h4"></path></svg>3</a>
+  <span class="badge" style="background: #3A3A36; color: #F4F4F1; border-color: #6A6A64">AR · Analyst</span>
+</header>
+<div class="sticky">
+  <div class="hdr">
+    <div class="row between">
+      <div class="row" style="gap: 10px"><span class="mono muted">C-1041</span><h1 style="font-size: 18px">Suspicious PowerShell on FIN-LT-0231</h1>
+        <button class="chip"><span class="k">Status</span> In Progress <span class="car">▼</span></button>
+        <button class="chip"><span class="k">Severity</span> <span class="badge sev-Critical">Critical</span> <span class="car">▼</span></button>
+        <button class="chip"><span class="k">Assignee</span> A. Rivera <span class="car">▼</span></button>
+      </div>
+      <div class="row"><button class="btn sm">More ▼</button><button class="btn sm pri">Mark Resolved</button></div>
+    </div>
+    <nav class="tabs" aria-label="Case sections" style="border-bottom: 0">
+      <a href="Case2.dc.html" >Overview</a>
+      <a href="Timeline2.dc.html" class="on">Timeline (9) &amp; Discussion (24)</a>
+      <a href="CaseWork2.dc.html" >Tasks 3/5 <span class="badge od">1 overdue</span></a>
+      <a href="CaseWork2.dc.html" >Evidence (4)</a>
+      <a href="CaseWork2.dc.html" >Audit Log</a>
+    </nav>
+  </div>
+</div>
+<p class="small muted" style="max-width:1280px;margin:8px auto 0;padding:0 24px">Header collapses to one line once scrolled; shown collapsed here.</p>
+
+<main class="wrap">
+  <div class="row" style="align-items: flex-start; gap: 20px">
+
+    <!-- Timeline -->
+    <section class="stack" style="flex: 3 1 600px; min-width: 0; gap: 12px" aria-label="Timeline">
+      <div class="row between rel">
+        <h2 style="font-size: 17px">Timeline</h2>
+        <div class="row">
+          <span class="pin">2</span>
+          <span class="seg"><span class="on">UTC</span><span>Local</span></span>
+          <label class="row small" style="gap: 6px"><input type="checkbox" style="min-height:auto;width:16px;height:16px"> Show retracted (1)</label>
+        </div>
+      </div>
+
+      <!-- Collapsed composer -->
+      <div class="card rel" style="padding: 10px 12px">
+        <span class="pin abs" style="left: -11px; top: -11px">1</span>
+        <div class="row" style="flex-wrap: nowrap">
+          <input placeholder="+ Add what happened…" style="flex:1">
+          <span class="seg"><span class="on">Exact</span><span>Range</span><span>About</span></span>
+          <input value="2026-10-28 09:31" class="mono" style="width: 150px">
+        </div>
+        <div class="small muted" style="margin-top: 6px">Expands to the full form on focus. Recorded-at is set for you.</div>
+      </div>
+
+      <div class="rail rel">
+        <span class="pin abs" style="left: 40px; top: 0">3</span>
+        <div class="day" style="padding-left: 130px">Tue 28 Oct 2026</div>
+
+        <div class="ent">
+          <div class="t">≈ 09:25<small>± 15 min</small></div>
+          <div class="dot approx"></div>
+          <div class="box">
+            <div>d.howe opens <b>invoice-4471.eml</b> attachment from the finance phishing wave.</div>
+            <div class="row"><span class="badge" style="background:#F4F4F1">Evidence · invoice-4471.eml</span></div>
+            <div class="small muted">A. Rivera · recorded 10:40</div>
+          </div>
+        </div>
+
+        <div class="ent">
+          <div class="t">09:31:12</div>
+          <div class="dot"></div>
+          <div class="box rel">
+            <div class="row between" style="flex-wrap: nowrap; align-items: flex-start">
+              <div>Encoded PowerShell spawned by <span class="mono">OUTLOOK.EXE</span>; beacon to 185.220.101.4.</div>
+              <span class="row" style="gap: 4px; flex: none"><button class="ibtn ghost" aria-label="More">⋯</button></span>
+            </div>
+            <div class="row"><span class="badge" style="background:#F4F4F1">Task · Contain host</span></div>
+            <div class="small muted">J. Okafor · recorded 10:52 · <a href="#">Promoted from Discussion</a></div>
+          </div>
+        </div>
+
+        <div class="ent">
+          <div class="t">10:02 – 10:15</div>
+          <div class="dot range"></div>
+          <div class="box">
+            <div>Host network-contained from the Falcon console; containment confirmed.</div>
+            <div class="small muted">A. Rivera · recorded 10:20 · edited</div>
+          </div>
+        </div>
+
+        <div class="ent">
+          <div class="t"></div>
+          <div class="dot" style="opacity:.4"></div>
+          <div class="small muted" style="padding: 12px 0">1 retracted entry hidden · <a href="#">Show</a></div>
+        </div>
+
+        <div class="day" style="padding-left: 130px">Wed 29 Oct 2026</div>
+        <div class="ent">
+          <div class="t">08:15</div>
+          <div class="dot"></div>
+          <div class="box">
+            <div>Memory capture requested from Forensics before reboot.</div>
+            <div class="small muted">A. Rivera · recorded 08:16</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Discussion -->
+    <section class="card stack rel" style="flex: 2 1 380px; min-width: 0; gap: 0; height: 760px" aria-label="Discussion">
+      <span class="pin abs" style="left: -11px; top: -11px">4</span>
+      <div class="row between pad" style="border-bottom: 1px solid #E6E6E1">
+        <h2 style="font-size: 16px">Discussion</h2>
+        <span class="small muted">24 messages</span>
+      </div>
+      <div class="stack" style="flex: 1; overflow: hidden; padding: 8px; gap: 2px; position: relative">
+        <div class="small muted" style="text-align:center;padding:4px">↑ 18 earlier</div>
+        <div class="msg">
+          <span class="av" style="background:#C7D3F5">AR</span>
+          <div><div class="small"><b>A. Rivera</b> <span class="muted">10:01</span></div><div style="font-size:13px">Containing now. <span class="mention">@J. Okafor</span> can you grab memory before anyone reboots?</div></div>
+        </div>
+        <div class="msg hov rel">
+          <span class="av" style="background:#D8E8D2">JO</span>
+          <div>
+            <div class="row between small"><span><b>J. Okafor</b> <span class="muted">10:05</span> <span class="badge" style="font-size:11px">On the Timeline ↗</span></span>
+              <span class="row" style="gap: 2px; background:#fff; border:1px solid #D2D2CC; border-radius:6px; padding:2px">
+                <button class="ibtn ghost" style="width:auto;padding:0 8px;font-size:12px">Promote</button>
+                <button class="ibtn ghost" style="width:auto;padding:0 8px;font-size:12px">Edit</button>
+                <button class="ibtn ghost" aria-label="More">⋯</button>
+              </span>
+            </div>
+            <div style="font-size:13px">On it. Beacon to 185.220.101.4 started 09:31:12 per Falcon process tree.</div>
+          </div>
+          <span class="pin abs" style="right: -6px; top: -8px">5</span>
+        </div>
+        <div class="msg">
+          <span class="av" style="background:#E2D3C2">MC</span>
+          <div><div class="small"><b>M. Chen</b> <span class="muted">10:30</span> <span class="muted">· edited</span></div><div style="font-size:13px">Creds reset for d.howe, sessions revoked.</div></div>
+        </div>
+        <div class="msg">
+          <span class="av" style="background:#fff;border:2px dashed #8E8E87">KP</span>
+          <div><div class="small"><b>K. Patel</b> <span class="badge" style="font-size:11px">Guest</span> <span class="muted">11:12</span></div><div style="font-size:13px">Is payroll data in scope on that laptop?</div></div>
+        </div>
+        <div class="small muted" style="text-align:center;border-top:1px solid #D2D2CC;margin:6px 0;padding-top:6px;color:#2448B8;font-weight:600">New since you last looked</div>
+        <div class="msg">
+          <span class="av" style="background:#E2D3C2">MC</span>
+          <div><div class="small"><b>M. Chen</b> <span class="muted">11:20</span></div><div style="font-size:13px"><span class="mention">@A. Rivera</span> PDF from counsel is in Evidence.</div></div>
+        </div>
+        <div style="position:absolute;left:50%;bottom:8px;transform:translateX(-50%)"><span class="badge" style="background:#2448B8;color:#fff;border-color:#2448B8">3 new ↓</span></div>
+      </div>
+      <div class="stack rel" style="border-top: 1px solid #E6E6E1; padding: 10px 12px; gap: 6px">
+        <span class="pin abs" style="left: -11px; top: 14px">6</span>
+        <textarea rows="2" placeholder="Message — @ to mention"></textarea>
+        <div class="row between small muted"><span><span class="kbd">Ctrl</span>/<span class="kbd">⌘</span>+<span class="kbd">Enter</span> send · <span class="kbd">@</span> mention</span><button class="btn sm pri">Send</button></div>
+      </div>
+    </section>
+  </div>
+
+  <section class="notes">
+    <h2>What changes on Timeline &amp; Discussion, and why</h2>
+    <ol>
+      <li><span class="pin">1</span><span><b>The new-entry form collapses to one line.</b>The full form sits open above the entries at all times and pushes the Timeline itself below the fold.<span class="was">Now: timeline.tsx renders NewEntryForm in its own Card whenever the Case is open.</span></span></li>
+      <li><span class="pin">2</span><span><b>One time setting for both panes; retracted entries hidden by default.</b>The Timeline is in UTC but the Discussion uses the browser's locale, so “09:31” means two things side by side. Retracted entries stay one click away.<span class="was">Now: utc() vs new Date().toLocaleString() in discussion.tsx.</span></span></li>
+      <li><span class="pin">3</span><span><b>A rail with a time gutter, grouped by day.</b>Exact, range and approximate times look different at a glance (dot, bar, dashed). Edit / Retract go into a ⋯ menu instead of two buttons on every card. Citations could extend to Evidence (Tasks only today).</span></li>
+      <li><span class="pin">4</span><span><b>The Discussion is a fixed-height pane that scrolls on its own,</b>opens at the newest message, marks what's new since your last visit and offers “3 new ↓”. Today it grows with the page, so the composer ends up far below the fold.</span></li>
+      <li><span class="pin">5</span><span><b>Message actions on hover or focus only.</b>Every message carries up to three outline buttons (Promote, Edit, Retract), which outweigh the text. “On the Timeline” becomes a link to the entry.</span></li>
+      <li><span class="pin">6</span><span><b>Composer pinned to the bottom, with its shortcuts shown.</b>Ctrl/⌘+Enter already sends and @ already opens the mention list, but nothing on screen says so.</span></li>
+    </ol>
+  </section>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1500}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
