@@ -15,6 +15,8 @@ export type ServerMessage =
   | { type: "case"; number: number }
   /** Who is viewing Case `number` now; sent to sockets viewing it whenever that changes. */
   | { type: "presence"; number: number; viewers: Viewer[] }
+  /** The Alert queue or an Integration changed: refetch them. Members only. */
+  | { type: "alerts" }
   /** Signals may have been missed, or what you can see changed: refetch everything on screen. */
   | { type: "resync" };
 

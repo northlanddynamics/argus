@@ -5,6 +5,8 @@ import type { Deps } from "./deps";
 import { discussionStore } from "./discussion/discussion";
 import { evidenceStore } from "./evidence/evidence";
 import { guestStore } from "./guests/guests";
+import { alertStore } from "./alerts/alerts";
+import { integrationStore } from "./integrations/integrations";
 import { assetStore, observableStore } from "./observables/observables";
 import { invitationStore } from "./invitations/invitations";
 import { memberStore } from "./members/members";
@@ -33,6 +35,8 @@ export function createModules(deps: Deps) {
     members: memberStore(deps),
     invitations: invitationStore(deps),
     organizations: organizationStore(deps),
+    integrations: integrationStore(deps),
+    alerts: alertStore(deps),
   };
 }
 

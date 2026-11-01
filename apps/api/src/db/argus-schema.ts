@@ -5,6 +5,7 @@ import { CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabula
 import { STORED_LINK_TYPES } from "../case-links/vocabulary";
 import { ASSET_TYPES, OBSERVABLE_TYPES } from "../observables/vocabulary";
 import { type Citation, PROMOTION_SOURCES } from "../timeline/vocabulary";
+import { ALERT_KINDS, ALERT_STATUSES, FALCON_CLOUDS, INTEGRATION_HEALTH } from "../alerts/vocabulary";
 import { organization, session, user } from "./auth-schema";
 
 /**
@@ -593,3 +594,92 @@ export const guestSessions = pgTable("guest_sessions", {
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   organizationId: text("organization_id").references(() => organization.id, { onDelete: "set null" }),
 });
+
+/**
+ * An Integration: an Organization's connection to CrowdStrike Falcon (ADR 0002). `credentials` is the
+ * Falcon API client id and secret, sealed (`integrations/credentials.ts`); `credentials_revision` moves
+ * on with every rotation so the worker holding the stream reconnects with the new ones.
+ *
+ * The rest is the worker's account of the Event Streams connection: `stream_offset` is the offset of
+ * the last event it processed (it resumes after it), and `last_gap_*` the last stretch of the stream
+ * Falcon could no longer replay. Never deleted (ADR 0003); migration 0017 refuses deletes.
+ */
+export const integrations = pgTable(
+  "integrations",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    type: text("type", { enum: ["crowdstrike"] }).notNull(),
+    name: text("name").notNull(),
+    cloud: text("cloud", { enum: FALCON_CLOUDS }).notNull(),
+    credentials: text("credentials").notNull(),
+    /** The last four characters of the client id, so Admins can tell which credentials are in use. */
+    clientIdHint: text("client_id_hint").notNull(),
+    credentialsRevision: integer("credentials_revision").notNull(),
+    credentialsUpdatedAt: timestamp("credentials_updated_at", { withTimezone: true }).notNull(),
+    paused: boolean("paused").notNull().default(false),
+    health: text("health", { enum: INTEGRATION_HEALTH }).notNull(),
+    healthDetail: text("health_detail"),
+    healthChangedAt: timestamp("health_changed_at", { withTimezone: true }).notNull(),
+    /** The worker that holds the stream, while one does. */
+    workerId: text("worker_id"),
+    streamOffset: bigint("stream_offset", { mode: "number" }),
+    lastEventAt: timestamp("last_event_at", { withTimezone: true }),
+    sessionRefreshAt: timestamp("session_refresh_at", { withTimezone: true }),
+    lastGapAt: timestamp("last_gap_at", { withTimezone: true }),
+    lastGapFromOffset: bigint("last_gap_from_offset", { mode: "number" }),
+    lastGapToOffset: bigint("last_gap_to_offset", { mode: "number" }),
+    createdById: text("created_by_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    uniqueIndex("integrations_org_name_idx").on(t.organizationId, sql`lower(${t.name})`),
+    check(
+      "integrations_gap",
+      sql`(${t.lastGapAt} IS NULL) = (${t.lastGapFromOffset} IS NULL) AND (${t.lastGapAt} IS NULL) = (${t.lastGapToOffset} IS NULL)`,
+    ),
+  ],
+);
+
+/**
+ * An Alert: a detection received from an Integration. `external_id` is Falcon's `CompositeId`, unique
+ * per Integration, so a detection delivered again updates its Alert instead of adding another.
+ * `payload` is the detection event as Falcon sent it last. `version` moves on whenever the Alert
+ * changes. Never deleted (ADR 0003); migration 0017 refuses deletes.
+ */
+export const alerts = pgTable(
+  "alerts",
+  {
+    id: text("id").primaryKey(),
+    /** Insertion order, to sort Alerts received at the same instant. */
+    seq: bigserial("seq", { mode: "number" }).notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    integrationId: text("integration_id")
+      .notNull()
+      .references(() => integrations.id, { onDelete: "restrict" }),
+    externalId: text("external_id").notNull(),
+    kind: text("kind", { enum: ALERT_KINDS }).notNull(),
+    status: text("status", { enum: ALERT_STATUSES }).notNull(),
+    severity: text("severity", { enum: SEVERITIES }).notNull(),
+    title: text("title").notNull(),
+    description: text("description"),
+    host: text("host"),
+    userName: text("user_name"),
+    /** When Falcon raised the detection, if it said. */
+    detectedAt: timestamp("detected_at", { withTimezone: true }),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+    version: integer("version").notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    uniqueIndex("alerts_integration_external_idx").on(t.integrationId, t.externalId),
+    index("alerts_org_received_idx").on(t.organizationId, t.receivedAt),
+  ],
+);

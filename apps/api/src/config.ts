@@ -5,6 +5,7 @@ import { systemClock } from "./clock";
 import { createDb } from "./db/client";
 import type { Deps, EvidenceConfig } from "./deps";
 import { s3EvidenceStorage } from "./evidence/s3-storage";
+import { credentialSealer } from "./integrations/credentials";
 import { unconfiguredEvidenceStorage } from "./evidence/storage";
 import { consoleMailer, smtpMailer } from "./mail";
 import { postgresSignals } from "./realtime/signals";
@@ -40,7 +41,8 @@ export function depsFromEnv(): Deps & { close: () => Promise<void> } {
   const mailer = process.env.SMTP_URL
     ? smtpMailer(process.env.SMTP_URL, process.env.MAIL_FROM ?? "Argus <no-reply@argus.local>")
     : consoleMailer;
-  const auth = createAuth({ db, baseUrl, secret: required("BETTER_AUTH_SECRET"), mailer, clock: systemClock });
+  const authSecret = required("BETTER_AUTH_SECRET");
+  const auth = createAuth({ db, baseUrl, secret: authSecret, mailer, clock: systemClock });
   return {
     db,
     auth,
@@ -49,6 +51,8 @@ export function depsFromEnv(): Deps & { close: () => Promise<void> } {
     signals: postgresSignals(sql),
     baseUrl,
     evidence: evidenceFromEnv(),
+    // Integration credentials are sealed under their own secret when one is set.
+    credentials: credentialSealer(process.env.CREDENTIALS_SECRET ?? authSecret),
     close,
   };
 }

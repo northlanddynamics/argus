@@ -4,6 +4,7 @@ import { meQuery } from "@/lib/api";
 import { queryClient } from "@/lib/query-client";
 import { canManage } from "@/lib/roles";
 import { AcceptInvitePage } from "@/routes/accept-invite";
+import { AlertQueuePage, validateAlertQueueSearch } from "@/routes/alerts/queue";
 import { OperatorConsolePage } from "@/routes/operator-console";
 import { CaseAuditLogPage } from "@/routes/cases/audit-log";
 import { CaseLayout } from "@/routes/cases/case-layout";
@@ -17,6 +18,7 @@ import { HomePage } from "@/routes/guest-home";
 import { GuestSignInPage, validateGuestSignInSearch } from "@/routes/guest-sign-in";
 import { OrgAuditLogPage } from "@/routes/settings/audit-log";
 import { SettingsLayout } from "@/routes/settings/layout";
+import { IntegrationsPage } from "@/routes/settings/integrations";
 import { MembersPage } from "@/routes/settings/members";
 import { SignInPage } from "@/routes/sign-in";
 
@@ -85,6 +87,21 @@ const caseAuditLogRoute = createRoute({
   component: CaseAuditLogPage,
 });
 
+/** The Alert queue: Members only. */
+const alertsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/alerts",
+  validateSearch: validateAlertQueueSearch,
+  beforeLoad: async ({ context }) => {
+    const me = await context.queryClient.fetchQuery(meQuery);
+    if (!me) throw redirect({ to: "/sign-in" });
+    if (me.isOperator) throw redirect({ to: "/operator" });
+    if (!me.organization) throw redirect({ to: "/" });
+    return { me };
+  },
+  component: AlertQueuePage,
+});
+
 const operatorRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/operator",
@@ -123,6 +140,12 @@ const membersRoute = createRoute({
   component: MembersPage,
 });
 
+const integrationsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/integrations",
+  component: IntegrationsPage,
+});
+
 const orgAuditLogRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/audit-log",
@@ -152,8 +175,9 @@ export const router = createRouter({
   routeTree: rootRoute.addChildren([
     homeRoute,
     caseRoute.addChildren([caseOverviewRoute, caseTimelineRoute, caseTasksRoute, caseEvidenceRoute, caseObservablesRoute, caseAuditLogRoute]),
+    alertsRoute,
     operatorRoute,
-    settingsRoute.addChildren([settingsIndexRoute, membersRoute, orgAuditLogRoute]),
+    settingsRoute.addChildren([settingsIndexRoute, membersRoute, integrationsRoute, orgAuditLogRoute]),
     signInRoute,
     guestSignInRoute,
     inviteRoute,

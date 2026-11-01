@@ -10,6 +10,7 @@ import { createDb } from "../db/client";
 import { fakeClock } from "../clock";
 import type { Deps } from "../deps";
 import { memoryEvidenceStorage } from "../evidence/storage";
+import { credentialSealer } from "../integrations/credentials";
 import { captureOutbox } from "../mail";
 import { createLive } from "../realtime/live";
 import { type ClientMessage, LIVE_PATH, type ServerMessage } from "../realtime/messages";
@@ -61,6 +62,7 @@ export async function buildTestApp({
     signals: postgresSignals(sql),
     baseUrl: BASE_URL,
     evidence: { storage: evidence.storage, maxBytes: evidenceMaxBytes },
+    credentials: credentialSealer("test-credentials-secret"),
   };
 
   /**
@@ -260,6 +262,8 @@ export async function buildTestApp({
   return {
     app,
     deps,
+    /** Runs `cleanup` after the test, before its database is dropped. */
+    onCleanup: (cleanup: () => Promise<void>) => void cleanups.push(cleanup),
     clock,
     outbox,
     /** Evidence files as stored, by storage key. */
