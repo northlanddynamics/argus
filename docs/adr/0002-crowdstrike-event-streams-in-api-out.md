@@ -13,3 +13,4 @@ Each CrowdStrike Integration holds Falcon API credentials and syncs two ways. In
 - The worker resumes each stream from its last stored offset. An outage longer than Falcon's replay window loses the Alerts raised during it; the gap is recorded in the Organization Audit Log, not backfilled.
 - Comments made in Falcon are not reliably in the stream. Argus fetches an Alert's comments via the Alerts API when a `detection_update` event arrives for it and whenever the Alert or its Case is opened in Argus.
 - Only Alert-related events are consumed in v1; other Falcon activity (containment, RTR, console audit) is ignored.
+- Write-back is a per-Integration setting, off unless an Admin allows it, because writing to a customer's Falcon tenant needs their consent and an API client with Alerts write scope. Off, the Integration is read only: inbound sync runs as usual and nothing is sent to Falcon. Changes made while it is off are not sent later when it is turned on.

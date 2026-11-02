@@ -28,6 +28,8 @@ const actionLabels: Record<string, string> = {
   "integration.credentials_rotated": "Rotated the credentials of",
   "integration.paused": "Paused Integration",
   "integration.resumed": "Resumed Integration",
+  "integration.write_back_enabled": "Allowed write-back to Falcon for",
+  "integration.write_back_disabled": "Denied write-back to Falcon for",
   "integration.stream_gap": "Gap in the stream of",
   "alert.dismissed": "Dismissed Alert",
 };

@@ -22,6 +22,8 @@ export type OrgAuditAction =
   | "integration.credentials_rotated"
   | "integration.paused"
   | "integration.resumed"
+  | "integration.write_back_enabled"
+  | "integration.write_back_disabled"
   | "integration.stream_gap"
   | "alert.dismissed";
 

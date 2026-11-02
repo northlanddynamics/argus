@@ -607,7 +607,8 @@ export const guestSessions = pgTable("guest_sessions", {
 /**
  * An Integration: an Organization's connection to CrowdStrike Falcon (ADR 0002). `credentials` is the
  * Falcon API client id and secret, sealed (`integrations/credentials.ts`); `credentials_revision` moves
- * on with every rotation so the worker holding the stream reconnects with the new ones.
+ * on with every rotation so the worker holding the stream reconnects with the new ones. `write_back`
+ * says whether Argus may write changes to Alerts back to Falcon; off, the Integration only reads.
  *
  * The rest is the worker's account of the Event Streams connection: `stream_offset` is the offset of
  * the last event it processed (it resumes after it), and `last_gap_*` the last stretch of the stream
@@ -629,6 +630,7 @@ export const integrations = pgTable(
     credentialsRevision: integer("credentials_revision").notNull(),
     credentialsUpdatedAt: timestamp("credentials_updated_at", { withTimezone: true }).notNull(),
     paused: boolean("paused").notNull().default(false),
+    writeBack: boolean("write_back").notNull().default(false),
     health: text("health", { enum: INTEGRATION_HEALTH }).notNull(),
     healthDetail: text("health_detail"),
     healthChangedAt: timestamp("health_changed_at", { withTimezone: true }).notNull(),

@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Switch } from "@/components/ui/switch";
 import { ago, FALCON_CLOUDS, type FalconCloud, falconCloudLabel, healthWord, type IntegrationView, integrationsKey, integrationsQuery } from "@/lib/alerts";
 import { api, errorMessage } from "@/lib/api";
 import { useLiveStatus } from "@/lib/live";
@@ -56,6 +57,11 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: integrationsKey }),
   });
+  const setWriteBack = useMutation({
+    mutationFn: async (enabled: boolean) =>
+      ok(await api.integrations[":id"]["write-back"].$put({ param: { id: i.id }, json: { enabled } }), "Could not change write-back"),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: integrationsKey }),
+  });
   const word = healthWord(i);
   return (
     <Card data-testid={`integration-${i.name}`}>
@@ -65,6 +71,7 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
           <Badge variant={word === "Connected" ? "default" : "outline"} className={word === "Error" ? "border-destructive text-destructive" : undefined}>
             {word}
           </Badge>
+          {!i.writeBack && <Badge variant="outline">Read only</Badge>}
         </div>
         <CardAction className="flex gap-2">
           <Button variant="outline" size="sm" disabled={setPaused.isPending} onClick={() => setPaused.mutate(!i.paused)}>
@@ -99,6 +106,18 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
             <AlertDescription>{setPaused.error.message}</AlertDescription>
           </Alert>
         )}
+        <WriteBackSetting
+          id={`write-back-${i.id}`}
+          checked={setWriteBack.isPending ? setWriteBack.variables : i.writeBack}
+          // Only Admins (who see the credentials) may change it.
+          disabled={!i.credentials || setWriteBack.isPending}
+          onCheckedChange={(enabled) => setWriteBack.mutate(enabled)}
+        />
+        {setWriteBack.error && (
+          <Alert variant="destructive">
+            <AlertDescription>{setWriteBack.error.message}</AlertDescription>
+          </Alert>
+        )}
         {i.credentials && (
           <p className="text-sm text-muted-foreground">
             Falcon API credentials: {falconCloudLabel[i.cloud]} cloud · client {i.credentials.clientIdHint} · set{" "}
@@ -115,6 +134,22 @@ function Stat({ label, value, mono = false }: { label: string; value: string; mo
     <div className="rounded-md border p-3">
       <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd className={mono ? "font-mono font-semibold" : "font-semibold"}>{value}</dd>
+    </div>
+  );
+}
+
+/** The write-back switch: on, Argus writes Alert changes back to Falcon; off, it only reads. */
+function WriteBackSetting(props: { id: string; checked?: boolean; defaultChecked?: boolean; disabled?: boolean; name?: string; onCheckedChange?: (checked: boolean) => void }) {
+  const { id, ...rest } = props;
+  return (
+    <div className="flex items-start gap-3">
+      <Switch id={id} className="mt-0.5" {...rest} />
+      <div className="grid gap-1">
+        <Label htmlFor={id}>Write back to Falcon</Label>
+        <p className="text-sm text-muted-foreground">
+          Send Alert Status, Assignee, comments and Case closure to CrowdStrike. Off, Argus reads from Falcon but never writes to it.
+        </p>
+      </div>
     </div>
   );
 }
@@ -140,7 +175,7 @@ function AddIntegrationDialog() {
   const [isOpen, setIsOpen] = useState(false);
   const queryClient = useQueryClient();
   const add = useMutation({
-    mutationFn: async (json: { name: string; cloud: FalconCloud; clientId: string; clientSecret: string }) =>
+    mutationFn: async (json: { name: string; cloud: FalconCloud; clientId: string; clientSecret: string; writeBack: boolean }) =>
       ok(await api.integrations.$post({ json }), "Could not add the Integration"),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: integrationsKey });
@@ -150,7 +185,12 @@ function AddIntegrationDialog() {
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    add.mutate({ name: String(form.get("name")), cloud: form.get("cloud") as FalconCloud, ...credentialsFrom(form) });
+    add.mutate({
+      name: String(form.get("name")),
+      cloud: form.get("cloud") as FalconCloud,
+      writeBack: form.get("writeBack") === "on",
+      ...credentialsFrom(form),
+    });
   };
   return (
     <Dialog
@@ -167,7 +207,8 @@ function AddIntegrationDialog() {
         <DialogHeader>
           <DialogTitle>Add a CrowdStrike Integration</DialogTitle>
           <DialogDescription>
-            An API client with Event Streams read access. A worker connects with it and turns Falcon detections into Alerts.
+            An API client with Event Streams read access (and Alerts write access for write-back). A worker connects with it and
+            turns Falcon detections into Alerts.
           </DialogDescription>
         </DialogHeader>
         <form className="grid gap-4" onSubmit={onSubmit}>
@@ -188,6 +229,7 @@ function AddIntegrationDialog() {
             </div>
           </div>
           <CredentialFields />
+          <WriteBackSetting id="integration-write-back" name="writeBack" defaultChecked={false} />
           {add.error && (
             <Alert variant="destructive">
               <AlertDescription>{add.error.message}</AlertDescription>

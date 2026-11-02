@@ -75,7 +75,7 @@ describe("Adding a CrowdStrike Integration", () => {
 
     const listed = await a.integrations();
     expect(listed).toMatchObject([
-      { type: "crowdstrike", name: "CrowdStrike — Prod", cloud: "us-1", paused: false, health: "connecting", lastEventAt: null },
+      { type: "crowdstrike", name: "CrowdStrike — Prod", cloud: "us-1", paused: false, writeBack: false, health: "connecting", lastEventAt: null },
     ]);
     expect(listed[0]!.credentials).toMatchObject({ clientIdHint: "…0001" });
     expect(JSON.stringify(listed)).not.toContain(CLIENT_SECRET);
@@ -87,7 +87,7 @@ describe("Adding a CrowdStrike Integration", () => {
     expect(JSON.stringify(rows)).not.toContain(CLIENT_ID);
 
     expect(await a.orgAudit()).toMatchObject([
-      { action: "integration.created", actor: { name: "Adam Admin" }, target: "CrowdStrike — Prod", after: "CrowdStrike US-1 · client …0001" },
+      { action: "integration.created", actor: { name: "Adam Admin" }, target: "CrowdStrike — Prod", after: "CrowdStrike US-1 · client …0001 · read only" },
     ]);
   });
 
@@ -132,9 +132,55 @@ describe("Adding a CrowdStrike Integration", () => {
       ["integration.resumed", "CrowdStrike — Prod", null, null],
       ["integration.paused", "CrowdStrike — Prod", null, null],
       ["integration.credentials_rotated", "CrowdStrike — Prod", "client …0001", "client …0002"],
-      ["integration.created", "CrowdStrike — Prod", null, "CrowdStrike US-1 · client …0001"],
+      ["integration.created", "CrowdStrike — Prod", null, "CrowdStrike US-1 · client …0001 · read only"],
     ]);
     expect((await a.integration(id)).credentials).toMatchObject({ clientIdHint: "…0002" });
+  });
+
+  test("write-back to Falcon is off unless asked for when adding one", async () => {
+    const a = await acme();
+    const readOnly = await a.addProd();
+    const writing = await a.addProd({ name: "CrowdStrike — Lab", clientId: "falcon-lab-0009", writeBack: true });
+    expect((await a.integration(readOnly)).writeBack).toBe(false);
+    expect((await a.integration(writing)).writeBack).toBe(true);
+    expect((await a.orgAudit())[0]).toMatchObject({ action: "integration.created", after: "CrowdStrike US-1 · client …0009 · write-back on" });
+  });
+
+  test("an Admin allows and denies write-back, recorded in the Organization Audit Log; Analysts can't", async () => {
+    const a = await acme();
+    const id = await a.addProd();
+    const param = { id };
+    const setWriteBack = (as: typeof a.admin, enabled: boolean) => as.api.integrations[":id"]["write-back"].$put({ param, json: { enabled } });
+
+    expect((await setWriteBack(a.ana, true)).status).toBe(403);
+    expect((await a.integration(id)).writeBack).toBe(false);
+
+    expect((await setWriteBack(a.admin, true)).status).toBe(200);
+    expect(await a.integration(id, a.ana)).toMatchObject({ writeBack: true });
+    expect((await setWriteBack(a.admin, true)).status).toBe(200);
+    expect((await setWriteBack(a.admin, false)).status).toBe(200);
+    expect((await a.integration(id)).writeBack).toBe(false);
+
+    expect((await a.orgAudit()).map((e) => [e.action, e.actor.name, e.before, e.after])).toEqual([
+      ["integration.write_back_disabled", "Adam Admin", "write-back on", "read only"],
+      ["integration.write_back_enabled", "Adam Admin", "read only", "write-back on"],
+      ["integration.created", "Adam Admin", null, "CrowdStrike US-1 · client …0001 · read only"],
+    ]);
+    expect((await a.admin.api.integrations[":id"]["write-back"].$put({ param: { id: "nope" }, json: { enabled: true } })).status).toBe(404);
+  });
+
+  test("denying write-back leaves the stream alone: Alerts keep arriving", async () => {
+    const a = await acme();
+    const id = await a.addProd({ writeBack: true });
+    const stream = a.falcon.tenant(CLIENT_ID);
+    const w = a.worker();
+    await w.tick();
+    await a.admin.api.integrations[":id"]["write-back"].$put({ param: { id }, json: { enabled: false } });
+    await w.tick();
+    stream.detection("EppDetectionSummaryEvent", "ldt:0", { Name: "Still read" });
+    await stream.drained();
+    expect(stream.opened).toHaveLength(1);
+    expect((await a.queue()).map((x) => x.title)).toEqual(["Still read"]);
   });
 
   test("an unknown Integration is not found", async () => {

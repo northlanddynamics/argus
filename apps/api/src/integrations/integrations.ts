@@ -12,7 +12,7 @@ import { publish } from "../realtime/signals";
 
 /**
  * Integrations as Admins manage them: add a CrowdStrike Integration, rotate its credentials, pause
- * and resume it, each recorded in the Organization Audit Log. Every Member sees the Organization's
+ * and resume it, and allow or deny write-back to Falcon, each recorded in the Organization Audit Log. Every Member sees the Organization's
  * Integrations and how their streams are doing; only Admins see which credentials are in use.
  * The stream itself is the worker's (`crowdstrike/stream-worker.ts`).
  */
@@ -48,7 +48,13 @@ async function find(tx: Tx, me: Membership, id: string) {
   return row;
 }
 
-export type NewIntegration = { name: string; cloud: FalconCloud; credentials: FalconCredentials };
+/**
+ * `writeBack`: whether Argus may write Alert changes back to Falcon (ADR 0002). Off, the Integration
+ * only reads: Alerts still arrive and follow changes made in Falcon, but nothing is sent to Falcon.
+ */
+export type NewIntegration = { name: string; cloud: FalconCloud; credentials: FalconCredentials; writeBack: boolean };
+
+const writeBackLabel = (on: boolean) => (on ? "write-back on" : "read only");
 
 export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, "db" | "clock" | "credentials">) {
   const seal = (c: FalconCredentials) => sealer.seal(JSON.stringify({ clientId: c.clientId, clientSecret: c.clientSecret }));
@@ -68,6 +74,7 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
         name: row.name,
         cloud: row.cloud,
         paused: row.paused,
+        writeBack: row.writeBack,
         health: row.health,
         healthDetail: row.healthDetail,
         healthChangedAt: row.healthChangedAt.toISOString(),
@@ -102,6 +109,7 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
             clientIdHint: hintOf(input.credentials.clientId),
             credentialsRevision: 1,
             credentialsUpdatedAt: now,
+            writeBack: input.writeBack,
             health: "connecting",
             healthChangedAt: now,
             createdById: me.userId,
@@ -114,7 +122,7 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
             category: "integrations",
             action: "integration.created",
             target: input.name,
-            after: `CrowdStrike ${falconCloudLabel[input.cloud]} · client ${hintOf(input.credentials.clientId)}`,
+            after: `CrowdStrike ${falconCloudLabel[input.cloud]} · client ${hintOf(input.credentials.clientId)} · ${writeBackLabel(input.writeBack)}`,
           });
           await publish(tx, { kind: "alerts", organizationId: me.organizationId });
         });
@@ -176,6 +184,31 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
           category: "integrations",
           action: paused ? "integration.paused" : "integration.resumed",
           target: row.name,
+        });
+        await publish(tx, { kind: "alerts", organizationId: me.organizationId });
+      });
+    },
+
+    /**
+     * Allows or denies writing Alert changes back to Falcon. Denied, the Integration keeps reading
+     * the stream but nothing is written to Falcon. Admins only. Doing what is already so changes nothing.
+     */
+    async setWriteBack(me: Membership, id: string, writeBack: boolean) {
+      if (!organizationPolicy.canManageIntegrations(me)) throw new NotPermitted();
+      await db.transaction(async (tx) => {
+        const row = await find(tx, me, id);
+        if (row.writeBack === writeBack) return;
+        const now = clock.now();
+        await tx.update(integrations).set({ writeBack }).where(eq(integrations.id, id));
+        await recordOrgAudit(tx, {
+          organizationId: me.organizationId,
+          occurredAt: now,
+          actor: actorOf(me),
+          category: "integrations",
+          action: writeBack ? "integration.write_back_enabled" : "integration.write_back_disabled",
+          target: row.name,
+          before: writeBackLabel(row.writeBack),
+          after: writeBackLabel(writeBack),
         });
         await publish(tx, { kind: "alerts", organizationId: me.organizationId });
       });
