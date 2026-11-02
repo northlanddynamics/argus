@@ -9,7 +9,6 @@ import { type CaseSummary, type CaseView, caseKey, caseQuery, casesKey, resoluti
 import { useCaseNumber } from "@/routes/cases/case-layout";
 import { CaseAlertsPanel } from "@/routes/cases/alerts-panel";
 import { CaseRolesPanel } from "@/routes/cases/case-roles-panel";
-import { GuestsPanel } from "@/routes/cases/guests-panel";
 import { LinkedCasesPanel } from "@/routes/cases/linked-cases-panel";
 import { TagsPanel } from "@/routes/cases/tags-panel";
 
@@ -57,7 +56,6 @@ export function CaseOverviewPage() {
       <CaseAlertsPanel c={c} />
       <LinkedCasesPanel number={number} readOnly={isReadOnly(c)} />
       <TagsPanel number={number} tags={c.tags} readOnly={isReadOnly(c)} />
-      {c.can.work && <GuestsPanel c={c} />}
       </div>
     </div>
   );

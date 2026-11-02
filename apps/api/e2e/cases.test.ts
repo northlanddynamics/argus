@@ -65,6 +65,8 @@ async function pickDay(scope: Page | Locator, label: string, day: string) {
     await page.getByRole("button", { name: back ? "Go to the Previous Month" : "Go to the Next Month" }).click();
   }
   await cell.click();
+  // Let it close, so the next picker's calendar is the only one open.
+  await page.locator("[data-slot=popover-content]").waitFor({ state: "detached" });
 }
 
 /** Sets a Timeline date-time field (`YYYY-MM-DDTHH:mm`, UTC). */
@@ -220,11 +222,18 @@ test("an Analyst marks the Case assigned to them Restricted; a colleague can't s
     await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
     await page.goto(`${baseUrl}/cases/1`);
     await page.getByRole("heading", { name: "Departing employee bulk download" }).waitFor();
-    expect(await page.getByLabel("Restricted").count()).toBe(0);
+    // Until it's hers, she can't restrict it.
+    await page.getByRole("button", { name: /^Access/ }).click();
+    let access = page.getByRole("dialog", { name: "Access to C-1" });
+    expect(await access.getByRole("checkbox", { name: "Restricted" }).isDisabled()).toBe(true);
+    await page.keyboard.press("Escape");
     await choose(page, "Assignee", "Ana Analyst");
-    await page.getByRole("checkbox", { name: "Restricted" }).click();
+    await page.getByRole("button", { name: /^Access/ }).click();
+    access = page.getByRole("dialog", { name: "Access to C-1" });
+    await access.getByRole("checkbox", { name: "Restricted" }).and(page.locator(":enabled")).click();
     await page.locator("[data-slot=badge]", { hasText: "Restricted" }).waitFor();
-    expect(await page.getByRole("checkbox", { name: "Restricted" }).getAttribute("aria-checked")).toBe("true");
+    expect(await access.getByRole("checkbox", { name: "Restricted" }).getAttribute("aria-checked")).toBe("true");
+    await page.keyboard.press("Escape");
 
     // Ben, another Analyst, finds no trace of it.
     const benPage = await browser.newPage();
@@ -741,8 +750,9 @@ test("the Owner invites a Guest to a Case; the Guest signs in by email link, rea
     const ownerPage = await browser.newPage();
     await signIn(ownerPage, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
     await ownerPage.goto(`${baseUrl}/cases/1`);
-    await ownerPage.getByRole("button", { name: "+ Invite" }).click();
-    const dialog = ownerPage.getByRole("dialog", { name: "Invite a Guest to C-1" });
+    await ownerPage.getByRole("button", { name: /^Access/ }).click();
+    const dialog = ownerPage.getByRole("dialog", { name: "Access to C-1" });
+    await dialog.getByText("No Guests on this Case.").waitFor();
     await dialog.getByLabel("Email").fill("k.patel@lawfirm.example");
     await dialog.getByLabel("Name (optional)").fill("Kim Patel");
     // Access until the first of next month.
@@ -752,8 +762,8 @@ test("the Owner invites a Guest to a Case; the Guest signs in by email link, rea
     await ownerPage.getByRole("button", { name: "Go to the Next Month" }).click();
     await ownerPage.locator(`[data-day="${until.toLocaleDateString()}"]`).click();
     await dialog.getByRole("button", { name: "Send invite" }).click();
-    await ownerPage.getByText("k.patel@lawfirm.example").waitFor();
-    await ownerPage.getByText(`Access until ${until.toLocaleDateString()}`).waitFor();
+    await dialog.getByText("k.patel@lawfirm.example").waitFor();
+    await dialog.getByText(`Access until ${until.toLocaleDateString()}`).waitFor();
     // Globex invites them too.
     await globex.api.cases[":number"].guests.$post({ param: { number: "1" }, json: { email: "k.patel@lawfirm.example" } });
 
@@ -790,12 +800,13 @@ test("the Owner invites a Guest to a Case; the Guest signs in by email link, rea
     await page.getByText("Globex", { exact: true }).waitFor();
 
     // Removed from the Acme Case, it disappears from their list.
-    await ownerPage.getByRole("button", { name: "Remove Kim Patel" }).click();
-    await ownerPage.getByText("No Guests on this Case.").waitFor();
+    await dialog.getByRole("button", { name: "Remove Kim Patel" }).click();
+    await dialog.getByText("No Guests on this Case.").waitFor();
     await page.getByRole("link", { name: "Your Cases" }).first().click();
     await page.getByRole("main").getByRole("button", { name: /Vendor email compromise/ }).waitFor();
     expect(await page.getByRole("button", { name: /Suspicious PowerShell/ }).count()).toBe(0);
 
+    await ownerPage.keyboard.press("Escape");
     await ownerPage.getByRole("tab", { name: "Audit Log" }).click();
     await ownerPage.getByRole("cell", { name: "Invited Guest" }).waitFor();
     await ownerPage.getByRole("cell", { name: "Removed Guest" }).waitFor();

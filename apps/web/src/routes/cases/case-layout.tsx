@@ -5,8 +5,7 @@ import { PresenceAvatars } from "@/components/presence-avatars";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Field, FieldContent, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, errorMessage } from "@/lib/api";
@@ -28,6 +27,7 @@ import {
   type Status,
   statusLabel,
 } from "@/lib/cases";
+import { CaseAccessDialog } from "@/routes/cases/case-access-dialog";
 import { CloseCaseDialog } from "@/routes/cases/close-case-dialog";
 import { membersKey } from "@/routes/settings/members";
 
@@ -132,8 +132,16 @@ export function CaseLayout() {
                 </p>
                 <h1 className="text-2xl font-semibold tracking-tight">{c.title}</h1>
               </div>
-              <div className="flex items-center gap-4">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                 <PresenceAvatars number={c.number} />
+                {c.can.work && (
+                  <CaseAccessDialog
+                    c={c}
+                    locked={locked}
+                    error={change.variables?.restricted !== undefined ? change.error : null}
+                    onRestrictedChange={(restricted) => change.mutate({ restricted })}
+                  />
+                )}
                 {!isReadOnly(c) && <CloseCaseDialog number={c.number} />}
               </div>
             </div>
@@ -237,20 +245,6 @@ export function CaseLayout() {
                 </Select>
               </Field>
             </div>
-            {c.can.restrict && (
-              <Field orientation="horizontal" data-disabled={locked}>
-                <Checkbox
-                  id="case-restricted"
-                  checked={c.restricted}
-                  disabled={locked}
-                  onCheckedChange={(checked) => change.mutate({ restricted: checked === true })}
-                />
-                <FieldContent>
-                  <FieldLabel htmlFor="case-restricted">Restricted</FieldLabel>
-                  <FieldDescription>Only Admins, its Assignee and people with a Case Role on it can see it.</FieldDescription>
-                </FieldContent>
-              </Field>
-            )}
             {(change.error ?? reopen.error) && (
               <Alert variant="destructive">
                 <AlertDescription>{(change.error ?? reopen.error)?.message}</AlertDescription>
