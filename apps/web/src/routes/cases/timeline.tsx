@@ -3,7 +3,19 @@ import { useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { api, errorMessage } from "@/lib/api";
 import { Visibility } from "@/components/visibility";
@@ -40,9 +52,9 @@ function CaseTimeline() {
       </div>
       {!readOnly && (
         <Card>
-          <CardHeader className="flex-row items-baseline justify-between">
+          <CardHeader>
             <CardTitle>New Timeline Entry</CardTitle>
-            <span className="text-xs text-muted-foreground">Recorded-at is set automatically</span>
+            <CardDescription className="text-xs">Recorded-at is set automatically</CardDescription>
           </CardHeader>
           <CardContent>
             <NewEntryForm number={number} />
@@ -88,7 +100,6 @@ function Entry({
   onEdit: () => void;
 }) {
   const queryClient = useQueryClient();
-  const [confirming, setConfirming] = useState(false);
   const [reason, setReason] = useState("");
   const retract = useMutation({
     mutationFn: async () => {
@@ -122,11 +133,35 @@ function Entry({
             <Button variant="outline" size="sm" onClick={onEdit}>
               Edit
             </Button>
-            {!confirming && (
-              <Button variant="outline" size="sm" onClick={() => setConfirming(true)}>
-                Retract
-              </Button>
-            )}
+            <AlertDialog
+              onOpenChange={(open) => {
+                if (!open) return;
+                setReason("");
+                retract.reset();
+              }}
+            >
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                  Retract
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Retract this Timeline Entry?</AlertDialogTitle>
+                  <AlertDialogDescription>It stays on the Timeline struck through; the original is kept in the Audit Log.</AlertDialogDescription>
+                </AlertDialogHeader>
+                <Field>
+                  <FieldLabel htmlFor={`retract-${e.id}`}>Why retract it? (optional)</FieldLabel>
+                  <Input id={`retract-${e.id}`} maxLength={500} value={reason} onChange={(ev) => setReason(ev.target.value)} />
+                </Field>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Keep it</AlertDialogCancel>
+                  <AlertDialogAction variant="destructive" disabled={retract.isPending} onClick={() => retract.mutate()}>
+                    Retract entry
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         )}
       </div>
@@ -151,30 +186,6 @@ function Entry({
           {e.source && ` · ${sourceText(e.source)}`}
           {e.editedAt && " · edited (original in Audit Log)"}
         </p>
-      )}
-      {confirming && live && (
-        <form
-          className="flex flex-wrap items-center gap-2"
-          onSubmit={(ev) => {
-            ev.preventDefault();
-            retract.mutate(undefined, { onSuccess: () => setConfirming(false) });
-          }}
-        >
-          <Input
-            aria-label="Why retract it? (optional)"
-            placeholder="Why? (optional)"
-            className="max-w-xs"
-            maxLength={500}
-            value={reason}
-            onChange={(ev) => setReason(ev.target.value)}
-          />
-          <Button type="submit" variant="destructive" size="sm" disabled={retract.isPending}>
-            Retract entry
-          </Button>
-          <Button type="button" variant="ghost" size="sm" onClick={() => setConfirming(false)}>
-            Keep it
-          </Button>
-        </form>
       )}
       {retract.error && (
         <Alert variant="destructive">

@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { SeverityBadge } from "@/components/case-badges";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Visibility } from "@/components/visibility";
 import { caseAlertsQuery } from "@/lib/alerts";
 import { type CaseView, canMarkInternal } from "@/lib/cases";
@@ -17,12 +18,16 @@ export function CaseAlertsPanel({ c }: { c: CaseView }) {
   if (!member && !alerts.data?.length) return null;
   return (
     <Card className="self-start">
-      <CardHeader className="flex-row items-center justify-between">
+      <CardHeader>
         <CardTitle className="text-xs tracking-widest text-muted-foreground uppercase">Alerts</CardTitle>
         {member && (
-          <Link to="/alerts" search={{ status: "attached" }} className="text-xs text-primary underline">
-            Alert queue
-          </Link>
+          <CardAction>
+            <Button variant="link" size="xs" asChild>
+              <Link to="/alerts" search={{ status: "attached" }}>
+                Alert queue
+              </Link>
+            </Button>
+          </CardAction>
         )}
       </CardHeader>
       <CardContent>

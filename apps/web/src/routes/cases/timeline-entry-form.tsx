@@ -1,14 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { XIcon } from "lucide-react";
 import { type FormEvent, useState } from "react";
+import { DatePicker } from "@/components/date-picker";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Field, FieldContent, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { api, errorMessage } from "@/lib/api";
 import { tasksQuery } from "@/lib/tasks";
 import {
@@ -26,7 +30,7 @@ import {
 } from "@/lib/timeline";
 
 type Kind = OccurredAt["kind"];
-/** What the form holds: `datetime-local` values in UTC. */
+/** What the form holds: `YYYY-MM-DDTHH:mm` values in UTC. */
 export type EntryFields = {
   kind: Kind;
   at: string;
@@ -104,107 +108,106 @@ function EntryForm({
   const set = (patch: Partial<EntryFields>) => setFields((f) => ({ ...f, ...patch }));
   const id = (name: string) => `${idPrefix}-${name}`;
   const taskTitle = (taskId: string) => tasks.data?.find((t) => t.id === taskId)?.title ?? "(not found)";
+  const incomplete = fields.at === "" || (fields.kind === "range" && fields.end === "");
+  const citable = tasks.data?.filter((t) => !fields.citations.some((c) => c.id === t.id)) ?? [];
   const rangeBackwards = fields.kind === "range" && fields.at !== "" && fields.end !== "" && fields.end <= fields.at;
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (rangeBackwards) return;
+    if (rangeBackwards || incomplete) return;
     onSubmit({ occurredAt: occurredAtOf(fields), body: fields.body.trim(), citations: fields.citations }, () => setFields(blankFields()));
   };
 
   return (
     <form className="grid gap-4" onSubmit={submit} aria-label={submitLabel}>
-      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Occurred at">
-        <span className="text-sm font-medium">Occurred at</span>
-        {(["exact", "range", "approximate"] as const).map((kind) => (
-          <Button
-            key={kind}
-            type="button"
-            size="sm"
-            variant={fields.kind === kind ? "default" : "outline"}
-            aria-pressed={fields.kind === kind}
-            onClick={() => set({ kind })}
-          >
-            {occurredKindLabel[kind]}
-          </Button>
-        ))}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium" id={id("kind")}>
+          Occurred at
+        </span>
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          size="sm"
+          aria-labelledby={id("kind")}
+          value={fields.kind}
+          // Choosing the current kind again would clear it; there is always one.
+          onValueChange={(kind) => kind && set({ kind: kind as Kind })}
+        >
+          {(["exact", "range", "approximate"] as const).map((kind) => (
+            <ToggleGroupItem key={kind} value={kind}>
+              {occurredKindLabel[kind]}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="grid gap-2">
-          <Label htmlFor={id("at")}>{fields.kind === "range" ? "From (UTC)" : fields.kind === "approximate" ? "Around (UTC)" : "At (UTC)"}</Label>
-          <Input id={id("at")} type="datetime-local" required value={fields.at} onChange={(e) => set({ at: e.target.value })} />
-        </div>
+        <UtcDateTimeField
+          id={id("at")}
+          label={fields.kind === "range" ? "From (UTC)" : fields.kind === "approximate" ? "Around (UTC)" : "At (UTC)"}
+          value={fields.at}
+          onChange={(at) => set({ at })}
+        />
         {fields.kind === "range" && (
-          <div className="grid gap-2">
-            <Label htmlFor={id("end")}>To (UTC)</Label>
-            <Input
-              id={id("end")}
-              type="datetime-local"
-              required
-              value={fields.end}
-              aria-invalid={rangeBackwards}
-              onChange={(e) => set({ end: e.target.value })}
-            />
-          </div>
+          <UtcDateTimeField id={id("end")} label="To (UTC)" value={fields.end} invalid={rangeBackwards} onChange={(end) => set({ end })} />
         )}
         {fields.kind === "approximate" && (
-          <div className="grid gap-2">
-            <Label htmlFor={id("precision")}>Give or take</Label>
-            <NativeSelect
-              id={id("precision")}
-              value={String(fields.precisionMinutes)}
-              onChange={(e) => set({ precisionMinutes: Number(e.target.value) })}
-            >
-              {/* An entry saved with another precision keeps it until changed. */}
-              {!PRECISIONS.includes(fields.precisionMinutes as (typeof PRECISIONS)[number]) && (
-                <NativeSelectOption value={String(fields.precisionMinutes)}>{precisionLabel(fields.precisionMinutes)}</NativeSelectOption>
-              )}
-              {PRECISIONS.map((p) => (
-                <NativeSelectOption key={p} value={String(p)}>
-                  {precisionLabel(p)}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </div>
+          <Field>
+            <FieldLabel htmlFor={id("precision")}>Give or take</FieldLabel>
+            <Select value={String(fields.precisionMinutes)} onValueChange={(value) => set({ precisionMinutes: Number(value) })}>
+              <SelectTrigger id={id("precision")} className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {/* An entry saved with another precision keeps it until changed. */}
+                {!PRECISIONS.includes(fields.precisionMinutes as (typeof PRECISIONS)[number]) && (
+                  <SelectItem value={String(fields.precisionMinutes)}>{precisionLabel(fields.precisionMinutes)}</SelectItem>
+                )}
+                {PRECISIONS.map((p) => (
+                  <SelectItem key={p} value={String(p)}>
+                    {precisionLabel(p)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
         )}
       </div>
       {rangeBackwards && <p className="text-sm text-destructive">A range must end after it starts.</p>}
-      <div className="grid gap-2">
-        <Label htmlFor={id("body")}>What happened</Label>
+      <Field>
+        <FieldLabel htmlFor={id("body")}>What happened</FieldLabel>
         <Textarea id={id("body")} required maxLength={10_000} value={fields.body} onChange={(e) => set({ body: e.target.value })} />
-      </div>
+      </Field>
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-medium">Cites</span>
         {fields.citations.map((c) => (
           <Badge key={`${c.kind}:${c.id}`} variant="secondary" className="gap-1">
             Task · {taskTitle(c.id)}
-            <button
+            <Button
               type="button"
-              className="ml-1 text-muted-foreground hover:text-foreground"
+              variant="ghost"
+              size="icon-xs"
+              className="-mr-1 size-4 rounded-full"
               aria-label={`Remove citation Task · ${taskTitle(c.id)}`}
               onClick={() => set({ citations: fields.citations.filter((x) => x !== c) })}
             >
-              ×
-            </button>
+              <XIcon />
+            </Button>
           </Badge>
         ))}
-        <NativeSelect
-          aria-label="Cite a Task"
-          value=""
-          onChange={(e) => {
-            const taskId = e.target.value;
-            if (taskId && !fields.citations.some((c) => c.id === taskId)) set({ citations: [...fields.citations, { kind: "task", id: taskId }] });
-          }}
-        >
-          <NativeSelectOption value="">+ Cite a Task</NativeSelectOption>
-          {tasks.data
-            ?.filter((t) => !fields.citations.some((c) => c.id === t.id))
-            .map((t) => (
-              <NativeSelectOption key={t.id} value={t.id}>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" variant="outline" size="sm" disabled={!citable.length}>
+              + Cite a Task
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            {citable.map((t) => (
+              <DropdownMenuItem key={t.id} onSelect={() => set({ citations: [...fields.citations, { kind: "task", id: t.id }] })}>
                 {t.title}
-              </NativeSelectOption>
+              </DropdownMenuItem>
             ))}
-        </NativeSelect>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       {error && (
         <Alert variant="destructive">
@@ -213,22 +216,65 @@ function EntryForm({
       )}
       <div className="flex items-center justify-end gap-2">
         {internal && (
-          <div className="mr-auto flex items-center gap-2">
+          <Field orientation="horizontal" className="mr-auto w-auto">
             <Checkbox id={id("internal")} checked={internal.value} onCheckedChange={(checked) => internal.onChange(checked === true)} />
-            <Label htmlFor={id("internal")}>Internal</Label>
-            <span className="text-xs text-muted-foreground">Hidden from Guests</span>
-          </div>
+            <FieldContent>
+              <FieldLabel htmlFor={id("internal")}>Internal</FieldLabel>
+              <FieldDescription className="text-xs">Hidden from Guests</FieldDescription>
+            </FieldContent>
+          </Field>
         )}
         {onCancel && (
           <Button type="button" variant="outline" onClick={onCancel}>
             Cancel
           </Button>
         )}
-        <Button type="submit" disabled={pending || disabled || rangeBackwards || !fields.body.trim()}>
+        <Button type="submit" disabled={pending || disabled || rangeBackwards || incomplete || !fields.body.trim()}>
           {submitLabel}
         </Button>
       </div>
     </form>
+  );
+}
+
+/** A UTC instant to the minute, as `YYYY-MM-DDTHH:mm`: a day from a calendar and a time typed in. */
+function UtcDateTimeField({
+  id,
+  label,
+  value,
+  invalid,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  invalid?: boolean;
+  onChange: (value: string) => void;
+}) {
+  /** The time typed before any day is picked. */
+  const [pendingTime, setPendingTime] = useState("00:00");
+  const day = value.slice(0, 10);
+  const time = value ? value.slice(11, 16) : pendingTime;
+  return (
+    <Field>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <div className="flex gap-2">
+        <DatePicker id={id} value={day} clearable={false} className="w-auto min-w-0 flex-1 shrink" aria-invalid={invalid} onChange={(next) => onChange(next ? `${next}T${time}` : "")} />
+        <Input
+          type="time"
+          aria-label={`${label} time`}
+          className="w-28 shrink-0 appearance-none bg-background [&::-webkit-calendar-picker-indicator]:hidden"
+          required
+          value={time}
+          aria-invalid={invalid}
+          onChange={(e) => {
+            const next = e.target.value || "00:00";
+            if (value) onChange(`${day}T${next}`);
+            else setPendingTime(next);
+          }}
+        />
+      </div>
+    </Field>
   );
 }
 

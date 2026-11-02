@@ -65,15 +65,16 @@ export function TagsPanel({ number, tags, readOnly }: { number: number; tags: st
                 <Badge variant="secondary" className="gap-1">
                   {tagLabel(tag)}
                   {!readOnly && (
-                    <button
-                      type="button"
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
                       aria-label={`Remove ${tagLabel(tag)}`}
-                      className="rounded-sm hover:text-destructive"
+                      className="-mr-1 size-4 rounded-full hover:text-destructive"
                       disabled={remove.isPending}
                       onClick={() => remove.mutate(tag)}
                     >
-                      <XIcon className="size-3" />
-                    </button>
+                      <XIcon />
+                    </Button>
                   )}
                 </Badge>
               </li>

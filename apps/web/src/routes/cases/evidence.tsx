@@ -2,9 +2,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Visibility } from "@/components/visibility";
 import { canMarkInternal, canParticipate, caseQuery } from "@/lib/cases";
@@ -59,11 +60,11 @@ export function CaseEvidencePage() {
   const list = evidence.data ?? [];
   return (
     <Card>
-      <CardHeader className="flex-row flex-wrap items-baseline justify-between gap-2">
+      <CardHeader>
         <CardTitle>Evidence</CardTitle>
-        <span className="text-xs text-muted-foreground">
+        <CardDescription className="text-xs">
           Fingerprinted on upload · never altered or deleted · every view and download is logged
-        </span>
+        </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4">
         {participating && (
@@ -89,10 +90,10 @@ export function CaseEvidencePage() {
             </Button>
             — SHA-256 computed on upload
             {canMarkInternal(c) && (
-              <span className="ml-4 flex items-center gap-2">
+              <Field orientation="horizontal" className="ml-4 w-auto">
                 <Checkbox id="evidence-internal" checked={internal} onCheckedChange={(checked) => setInternal(checked === true)} />
-                <Label htmlFor="evidence-internal">Add as Internal</Label>
-              </span>
+                <FieldLabel htmlFor="evidence-internal">Add as Internal</FieldLabel>
+              </Field>
             )}
             <input
               ref={input}
@@ -122,9 +123,7 @@ export function CaseEvidencePage() {
               <span>
                 Adding {u.name} · {Math.round(u.progress * 100)}%
               </span>
-              <div className="h-1.5 overflow-hidden rounded bg-muted">
-                <div className="h-full bg-primary transition-all" style={{ width: `${u.progress * 100}%` }} />
-              </div>
+              <Progress value={u.progress * 100} aria-label={`Adding ${u.name}`} />
             </div>
           ),
         )}

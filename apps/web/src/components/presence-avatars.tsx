@@ -1,3 +1,5 @@
+import { Avatar, AvatarFallback, AvatarGroup } from "@/components/ui/avatar";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCasePresence } from "@/lib/live";
 
 const tints = ["bg-sky-200", "bg-amber-200", "bg-emerald-200", "bg-rose-200", "bg-violet-200", "bg-lime-200"];
@@ -19,18 +21,20 @@ export function PresenceAvatars({ number }: { number: number }) {
   return (
     <div className="flex items-center gap-2">
       <span className="text-xs text-muted-foreground">Viewing now</span>
-      <ul className="flex -space-x-1.5" aria-label="Viewing now">
+      <AvatarGroup role="list" aria-label="Viewing now">
         {viewers.map((v) => (
-          <li
-            key={v.id}
-            title={v.name}
-            aria-label={v.name}
-            className={`flex size-7 items-center justify-center rounded-full border-2 border-background text-[11px] font-semibold text-slate-900 ${tintFor(v.id)}`}
-          >
-            <span aria-hidden>{initials(v.name)}</span>
-          </li>
+          <Tooltip key={v.id}>
+            <TooltipTrigger asChild>
+              <Avatar role="listitem" aria-label={v.name} tabIndex={0}>
+                <AvatarFallback className={`text-[11px] font-semibold text-slate-900 ${tintFor(v.id)}`} aria-hidden>
+                  {initials(v.name)}
+                </AvatarFallback>
+              </Avatar>
+            </TooltipTrigger>
+            <TooltipContent>{v.name}</TooltipContent>
+          </Tooltip>
         ))}
-      </ul>
+      </AvatarGroup>
     </div>
   );
 }
