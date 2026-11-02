@@ -4,7 +4,8 @@ import type { FalconCloud } from "../alerts/vocabulary";
  * The Falcon API as Argus uses it (ADR 0002): an adapter, so the worker runs against the real API
  * (`falcon-http.ts`) in production and a fake stream in tests (`test/fake-falcon.ts`).
  *
- * Only Event Streams for now; Alert write-back, comments and user lookup join it with the outbox.
+ * Only Event Streams for now; Alert write-back, comments and user lookup join it with the outbox,
+ * which writes nothing for an Integration whose `writeBack` is off.
  */
 
 export type FalconCredentials = { clientId: string; clientSecret: string };

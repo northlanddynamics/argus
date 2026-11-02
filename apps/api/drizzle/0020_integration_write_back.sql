@@ -1,0 +1,1 @@
+ALTER TABLE "integrations" ADD COLUMN "write_back" boolean DEFAULT false NOT NULL;
