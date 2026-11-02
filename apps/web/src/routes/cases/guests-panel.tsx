@@ -1,15 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarIcon } from "lucide-react";
 import { type FormEvent, useState } from "react";
+import { DatePicker, parseDay } from "@/components/date-picker";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Calendar } from "@/components/ui/calendar";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, errorMessage } from "@/lib/api";
 import { type CaseView, caseKey, caseRef } from "@/lib/cases";
@@ -100,8 +98,7 @@ function InviteGuestDialog({ number }: { number: number }) {
   const queryClient = useQueryClient();
   const [isOpen, setIsOpen] = useState(false);
   /** Access ends as this day ends; none means it never expires. */
-  const [expiresOn, setExpiresOn] = useState<Date>();
-  const [pickingDate, setPickingDate] = useState(false);
+  const [expiresOn, setExpiresOn] = useState("");
   /** Days before this one can't be picked; set when the dialog opens. */
   const [today, setToday] = useState(() => new Date());
   const invite = useMutation({
@@ -121,12 +118,11 @@ function InviteGuestDialog({ number }: { number: number }) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const name = String(form.get("name") ?? "").trim();
+    const until = parseDay(expiresOn);
     invite.mutate({
       email: String(form.get("email")),
       ...(name && { name }),
-      expiresAt: expiresOn
-        ? new Date(expiresOn.getFullYear(), expiresOn.getMonth(), expiresOn.getDate(), 23, 59, 59).toISOString()
-        : null,
+      expiresAt: until ? new Date(until.getFullYear(), until.getMonth(), until.getDate(), 23, 59, 59).toISOString() : null,
     });
   };
 
@@ -137,7 +133,7 @@ function InviteGuestDialog({ number }: { number: number }) {
         setIsOpen(next);
         if (next) {
           invite.reset();
-          setExpiresOn(undefined);
+          setExpiresOn("");
           setToday(new Date());
         }
       }}
@@ -167,32 +163,7 @@ function InviteGuestDialog({ number }: { number: number }) {
             </Field>
             <Field>
               <FieldLabel htmlFor="guest-expires">Access expires (optional)</FieldLabel>
-              <Popover open={pickingDate} onOpenChange={setPickingDate}>
-                <PopoverTrigger asChild>
-                  <Button
-                    id="guest-expires"
-                    type="button"
-                    variant="outline"
-                    data-empty={!expiresOn}
-                    className="w-full justify-between font-normal data-[empty=true]:text-muted-foreground"
-                  >
-                    {expiresOn ? expiresOn.toLocaleDateString() : "Never"}
-                    <CalendarIcon />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={expiresOn}
-                    defaultMonth={expiresOn}
-                    disabled={{ before: today }}
-                    onSelect={(day) => {
-                      setExpiresOn(day);
-                      setPickingDate(false);
-                    }}
-                  />
-                </PopoverContent>
-              </Popover>
+              <DatePicker id="guest-expires" value={expiresOn} onChange={setExpiresOn} placeholder="Never" disabled={{ before: today }} />
             </Field>
           </FieldGroup>
           <p className="text-xs text-muted-foreground">Only Admins and this Case's Assignee can invite or remove Guests.</p>

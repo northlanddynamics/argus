@@ -50,6 +50,29 @@ async function signIn(page: Page, baseUrl: string, email: string, code: () => Pr
   await page.getByRole("heading", { name: "Cases" }).waitFor();
 }
 
+/** Picks `day` (`YYYY-MM-DD`) in the date picker labelled `label`. */
+async function pickDay(scope: Page | Locator, label: string, day: string) {
+  const page = "page" in scope ? scope.page() : scope;
+  const [y, m, d] = day.split("-").map(Number);
+  const target = new Date(y!, m! - 1, d!);
+  const trigger = scope.getByLabel(label, { exact: true });
+  await trigger.click();
+  // It opens on the chosen day's month (the trigger shows that day), or this one.
+  const shown = (await trigger.getAttribute("data-empty")) === "true" ? new Date() : new Date((await trigger.textContent()) ?? "");
+  const cell = page.locator(`[data-slot=popover-content] [data-day="${target.toLocaleDateString()}"]`).first();
+  for (let i = 0; i < 36 && !(await cell.count()); i++) {
+    const back = target < shown;
+    await page.getByRole("button", { name: back ? "Go to the Previous Month" : "Go to the Next Month" }).click();
+  }
+  await cell.click();
+}
+
+/** Sets a Timeline date-time field (`YYYY-MM-DDTHH:mm`, UTC). */
+async function pickUtc(scope: Locator, label: string, value: string) {
+  await pickDay(scope, label, value.slice(0, 10));
+  await scope.getByLabel(`${label} time`, { exact: true }).fill(value.slice(11, 16));
+}
+
 /** Picks `option` in the shadcn/ui Select labelled `label`. */
 async function choose(scope: Page | Locator, label: string, option: string) {
   await scope.getByLabel(label, { exact: true }).click();
@@ -314,8 +337,8 @@ test("an Admin adds a Case Role; an Analyst gives it on a Case, works its Tasks 
     let dialog = page.getByRole("dialog", { name: "New Task" });
     await dialog.getByLabel("Title").fill("Capture memory image");
     await dialog.getByLabel("Description").fill("Before reboot; upload as Evidence");
-    await dialog.getByLabel("Owner").selectOption({ label: "Ben Analyst" });
-    await dialog.getByLabel("Due date (optional)").fill("2026-01-05");
+    await choose(dialog, "Owner", "Ben Analyst");
+    await pickDay(dialog, "Due date (optional)", "2026-01-05");
     await dialog.getByRole("button", { name: "Create Task" }).click();
     await page.getByTestId("task-Capture memory image").getByText("Ben Analyst").waitFor();
     await page.getByRole("button", { name: "+ New Task" }).click();
@@ -340,7 +363,7 @@ test("an Admin adds a Case Role; an Analyst gives it on a Case, works its Tasks 
     await dialog.getByText("Not saved — the Task changed since you opened it").waitFor();
     await dialog.getByRole("button", { name: "Load current" }).click();
     expect(await dialog.getByLabel("Title").inputValue()).toBe("Capture memory image (FIN-LT-0231)");
-    await dialog.getByLabel("Due date (optional)").fill("2026-01-06");
+    await pickDay(dialog, "Due date (optional)", "2026-01-06");
     await dialog.getByRole("button", { name: "Save" }).click();
     await page.getByTestId("task-Capture memory image (FIN-LT-0231)").getByText("2026-01-06").waitFor();
 
@@ -415,7 +438,7 @@ test("an Analyst discusses a Restricted Case, mentioning only people who can see
 
     // Then retracts it.
     await mine.getByRole("button", { name: "Retract" }).click();
-    await mine.getByRole("button", { name: "Retract message" }).click();
+    await page.getByRole("alertdialog", { name: "Retract your message?" }).getByRole("button", { name: "Retract message" }).click();
     await mine.getByText("Retracted by Ana Analyst. The original is kept in the Audit Log.").waitFor();
 
     // The Audit Log keeps every version.
@@ -456,20 +479,21 @@ test("an Analyst writes the Timeline: exact, range and approximate entries, cita
     const headings = () => entries.getByRole("heading").allTextContents();
 
     // A range, citing the Task.
-    await form.getByRole("button", { name: "Range" }).click();
-    await form.getByLabel("From (UTC)").fill("2026-10-28T09:20");
-    await form.getByLabel("To (UTC)").fill("2026-10-28T09:47");
+    await form.getByRole("radio", { name: "Range" }).click();
+    await pickUtc(form, "From (UTC)", "2026-10-28T09:20");
+    await pickUtc(form, "To (UTC)", "2026-10-28T09:47");
     await form.getByLabel("What happened").fill("Beaconing to 185.220.101.4 roughly every 60 s.");
-    await form.getByLabel("Cite a Task").selectOption({ label: "Contain host" });
+    await form.getByRole("button", { name: "+ Cite a Task" }).click();
+    await page.getByRole("menuitem", { name: "Contain host" }).click();
     await form.getByRole("button", { name: "Add entry" }).click();
     const beaconing = page.getByRole("listitem", { name: "Timeline Entry: Beaconing to 185.220.101.4 roughly every 60 s." });
     await beaconing.getByText("Task · Contain host").waitFor();
     expect(await form.getByLabel("What happened").inputValue()).toBe("");
 
     // An approximate entry, which happened earlier, goes above it.
-    await form.getByRole("button", { name: "Approximate" }).click();
-    await form.getByLabel("Around (UTC)").fill("2026-10-27T18:00");
-    await form.getByLabel("Give or take").selectOption({ label: "± 6 h" });
+    await form.getByRole("radio", { name: "Approximate" }).click();
+    await pickUtc(form, "Around (UTC)", "2026-10-27T18:00");
+    await choose(form, "Give or take", "± 6 h");
     await form.getByLabel("What happened").fill("Phishing email delivered to d.howe.");
     await form.getByRole("button", { name: "Add entry" }).click();
     await page.getByRole("listitem", { name: "Timeline Entry: Phishing email delivered to d.howe." }).waitFor();
@@ -480,7 +504,7 @@ test("an Analyst writes the Timeline: exact, range and approximate entries, cita
     await bens.getByRole("button", { name: "Promote to Timeline" }).click();
     const dialog = page.getByRole("dialog", { name: "Promote to Timeline" });
     expect(await dialog.getByLabel("What happened").inputValue()).toBe("Containing host from console now.");
-    await dialog.getByLabel("At (UTC)").fill("2026-10-28T10:02");
+    await pickUtc(dialog, "At (UTC)", "2026-10-28T10:02");
     await dialog.getByLabel("What happened").fill("Host network-contained from the Falcon console.");
     await dialog.getByRole("button", { name: "Promote" }).click();
     const contained = page.getByRole("listitem", { name: "Timeline Entry: Host network-contained from the Falcon console." });
@@ -512,8 +536,9 @@ test("an Analyst writes the Timeline: exact, range and approximate entries, cita
     // The approximate entry is retracted, with a reason; it stays, struck through.
     const phishing = page.getByRole("listitem", { name: "Timeline Entry: Phishing email delivered to d.howe." });
     await phishing.getByRole("button", { name: "Retract" }).click();
-    await phishing.getByLabel("Why retract it? (optional)").fill("wrong recipient");
-    await phishing.getByRole("button", { name: "Retract entry" }).click();
+    const retracting = page.getByRole("alertdialog", { name: "Retract this Timeline Entry?" });
+    await retracting.getByLabel("Why retract it? (optional)").fill("wrong recipient");
+    await retracting.getByRole("button", { name: "Retract entry" }).click();
     await phishing.getByText("Retracted by Ana Analyst — wrong recipient. Original kept in the Audit Log.").waitFor();
     expect(await phishing.getByRole("button", { name: "Edit" }).count()).toBe(0);
 
@@ -598,7 +623,7 @@ test("an Analyst adds Observables and Assets, sees the other Cases they appear i
     await page.getByText("No Observables yet.").waitFor();
 
     // A defanged domain is the same Observable as C-1's, shown defanged, and C-1 is listed.
-    await page.getByLabel("Observable type").selectOption("domain");
+    await choose(page, "Observable type", "Domain");
     await page.getByLabel("Observable value").fill("INVOICE-PORTAL[.]biz");
     await page.getByRole("button", { name: "+ Add Observable" }).click();
     const domain = page.getByTestId("observable-invoice-portal.biz");
@@ -606,12 +631,12 @@ test("an Analyst adds Observables and Assets, sees the other Cases they appear i
     await domain.getByRole("link", { name: "C-1" }).waitFor();
 
     // An invalid value says why.
-    await page.getByLabel("Observable type").selectOption("ip");
+    await choose(page, "Observable type", "IP");
     await page.getByLabel("Observable value").fill("999.1.1.1");
     await page.getByRole("button", { name: "+ Add Observable" }).click();
     await page.getByText("IP must be an IPv4 or IPv6 address").waitFor();
 
-    await page.getByLabel("Asset type").selectOption("host");
+    await choose(page, "Asset type", "Host");
     await page.getByLabel("Asset identifier").fill("FIN-LT-0231");
     await page.getByRole("button", { name: "+ Add Asset" }).click();
     const host = page.getByTestId("asset-FIN-LT-0231");

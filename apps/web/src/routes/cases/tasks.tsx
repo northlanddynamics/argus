@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api, errorMessage } from "@/lib/api";
@@ -44,14 +44,18 @@ export function CaseTasksPage() {
   const list = tasks.data ?? [];
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between">
+      <CardHeader>
         <CardTitle>
           Tasks{" "}
           <span className="font-normal text-muted-foreground">
             {list.filter((t) => t.done).length} of {list.length} done
           </span>
         </CardTitle>
-        {!readOnly && <Button onClick={() => setEditing("new")}>+ New Task</Button>}
+        {!readOnly && (
+          <CardAction>
+            <Button onClick={() => setEditing("new")}>+ New Task</Button>
+          </CardAction>
+        )}
       </CardHeader>
       <CardContent className="grid gap-4">
         {setDone.error && (

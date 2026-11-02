@@ -2,9 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { DatePicker } from "@/components/date-picker";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
 import {
@@ -109,6 +109,9 @@ const entryText = (e: Entry) => {
   return `${what}: ${change}`;
 };
 
+/** Radix Select can't hold an empty value, so "no filter" gets one of its own. */
+const ANY = "any";
+
 export function CaseAuditLogPage() {
   const number = useCaseNumber();
   const { data: c } = useQuery(caseQuery(number));
@@ -143,32 +146,42 @@ export function CaseAuditLogPage() {
     <>
       <Card>
         <CardContent className="grid gap-4 sm:grid-cols-[1fr_1fr_1fr_2fr] sm:items-end">
-          <div className="grid gap-2">
-            <Label htmlFor="audit-actor">Actor</Label>
-            <NativeSelect id="audit-actor" value={actor} onChange={(e) => setActor(e.target.value)}>
-              <NativeSelectOption value="">Anyone</NativeSelectOption>
-              {members.data?.members.map((m) => (
-                <NativeSelectOption key={m.userId} value={m.userId}>
-                  {m.name}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="audit-action">Action</Label>
-            <NativeSelect id="audit-action" value={action} onChange={(e) => setAction(e.target.value as CaseAuditAction | "")}>
-              <NativeSelectOption value="">All actions</NativeSelectOption>
-              {CASE_AUDIT_ACTIONS.map((a) => (
-                <NativeSelectOption key={a} value={a}>
-                  {actionLabel[a]}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="audit-from">From</Label>
-            <Input id="audit-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-          </div>
+          <Field>
+            <FieldLabel htmlFor="audit-actor">Actor</FieldLabel>
+            <Select value={actor || ANY} onValueChange={(next) => setActor(next === ANY ? "" : next)}>
+              <SelectTrigger id="audit-actor" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ANY}>Anyone</SelectItem>
+                {members.data?.members.map((m) => (
+                  <SelectItem key={m.userId} value={m.userId}>
+                    {m.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="audit-action">Action</FieldLabel>
+            <Select value={action || ANY} onValueChange={(next) => setAction(next === ANY ? "" : (next as CaseAuditAction))}>
+              <SelectTrigger id="audit-action" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ANY}>All actions</SelectItem>
+                {CASE_AUDIT_ACTIONS.map((a) => (
+                  <SelectItem key={a} value={a}>
+                    {actionLabel[a]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="audit-from">From</FieldLabel>
+            <DatePicker id="audit-from" value={from} onChange={setFrom} placeholder="Any time" />
+          </Field>
           <p className="text-right text-xs text-muted-foreground">Immutable · system-written · ordered by when it was done in Argus</p>
         </CardContent>
       </Card>

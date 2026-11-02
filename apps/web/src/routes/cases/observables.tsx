@@ -5,7 +5,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api, errorMessage } from "@/lib/api";
 import { caseQuery, caseRef, isReadOnly } from "@/lib/cases";
@@ -134,13 +134,18 @@ function LinkedCard<Type extends string>(props: {
               if (value.trim()) add.mutate();
             }}
           >
-            <NativeSelect aria-label={`${noun} type`} value={type} onChange={(e) => setType(e.target.value as Type)}>
-              {types.map((t) => (
-                <NativeSelectOption key={t} value={t}>
-                  {typeLabel[t]}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+            <Select value={type} onValueChange={(next) => setType(next as Type)}>
+              <SelectTrigger aria-label={`${noun} type`}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {types.map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {typeLabel[t]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Input
               aria-label={`${noun} ${props.valueHeading.toLowerCase()}`}
               className="min-w-40 flex-1 font-mono"

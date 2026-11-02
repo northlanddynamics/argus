@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
+import { DatePicker } from "@/components/date-picker";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { api, errorMessage } from "@/lib/api";
 import { caseKey } from "@/lib/cases";
@@ -131,37 +132,44 @@ export function TaskDialog({
               </AlertDescription>
             </Alert>
           )}
-          <div className="grid gap-2">
-            <Label htmlFor="task-title">Title</Label>
+          <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="task-title">Title</FieldLabel>
             <Input id="task-title" value={fields.title} onChange={(e) => set({ title: e.target.value })} required maxLength={300} />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="task-description">Description</Label>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="task-description">Description</FieldLabel>
             <Textarea id="task-description" value={fields.description} onChange={(e) => set({ description: e.target.value })} />
-          </div>
+          </Field>
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="grid gap-2">
-              <Label htmlFor="task-owner">Owner</Label>
-              <NativeSelect id="task-owner" value={fields.ownerId} onChange={(e) => set({ ownerId: e.target.value })} required>
-                {/* Someone who can no longer see the Case stays selectable until someone changes it. */}
-                {base && !ownerKnown && fields.ownerId === base.owner.id && (
-                  <NativeSelectOption value={base.owner.id}>{base.owner.name}</NativeSelectOption>
-                )}
-                {!base && !ownerKnown && <NativeSelectOption value="">Choose an owner</NativeSelectOption>}
-                {owners.map((p) => (
-                  <NativeSelectOption key={p.id} value={p.id}>
-                    {p.role === "guest" ? `${p.name} (Guest)` : p.name}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="task-due">Due date (optional)</Label>
-              <Input id="task-due" type="date" value={fields.dueDate} onChange={(e) => set({ dueDate: e.target.value })} />
-            </div>
+            <Field>
+              <FieldLabel htmlFor="task-owner">Owner</FieldLabel>
+              <Select
+                required
+                value={!base && !ownerKnown ? "" : fields.ownerId}
+                onValueChange={(ownerId) => set({ ownerId })}
+              >
+                <SelectTrigger id="task-owner" className="w-full">
+                  <SelectValue placeholder="Choose an owner" />
+                </SelectTrigger>
+                <SelectContent>
+                  {/* Someone who can no longer see the Case stays selectable until someone changes it. */}
+                  {base && !ownerKnown && fields.ownerId === base.owner.id && <SelectItem value={base.owner.id}>{base.owner.name}</SelectItem>}
+                  {owners.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.role === "guest" ? `${p.name} (Guest)` : p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="task-due">Due date (optional)</FieldLabel>
+              <DatePicker id="task-due" value={fields.dueDate} onChange={(dueDate) => set({ dueDate })} placeholder="No due date" />
+            </Field>
           </div>
           {!base && (
-            <div className="flex items-center gap-2">
+            <Field orientation="horizontal">
               <Checkbox
                 id="task-internal"
                 checked={internal}
@@ -171,10 +179,13 @@ export function TaskDialog({
                   if (checked === true && people.data?.find((p) => p.id === fields.ownerId)?.role === "guest") set({ ownerId: defaultOwnerId });
                 }}
               />
-              <Label htmlFor="task-internal">Internal</Label>
-              <span className="text-sm text-muted-foreground">Hidden from Guests; a Guest can't own it.</span>
-            </div>
+              <FieldContent>
+                <FieldLabel htmlFor="task-internal">Internal</FieldLabel>
+                <FieldDescription>Hidden from Guests; a Guest can't own it.</FieldDescription>
+              </FieldContent>
+            </Field>
           )}
+          </FieldGroup>
           {save.error && (
             <Alert variant="destructive">
               <AlertDescription>{save.error.message}</AlertDescription>

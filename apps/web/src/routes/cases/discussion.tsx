@@ -2,9 +2,20 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type KeyboardEvent, useRef, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
+import { Field, FieldContent, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
 import { Visibility } from "@/components/visibility";
 import { api, errorMessage } from "@/lib/api";
@@ -128,7 +139,6 @@ function Message({
   onPromote: () => void;
 }) {
   const queryClient = useQueryClient();
-  const [confirming, setConfirming] = useState(false);
   const retract = useMutation({
     mutationFn: async () => {
       const res = await api.cases[":number"].discussion[":id"].retract.$post({ param: { number: String(number), id: m.id } });
@@ -183,21 +193,27 @@ function Message({
               Edit
             </Button>
           )}
-          {m.can.retract &&
-            (confirming ? (
-              <>
-                <Button variant="destructive" size="sm" disabled={retract.isPending} onClick={() => retract.mutate()}>
-                  Retract message
+          {m.can.retract && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                  Retract
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
-                  Keep it
-                </Button>
-              </>
-            ) : (
-              <Button variant="outline" size="sm" onClick={() => setConfirming(true)}>
-                Retract
-              </Button>
-            ))}
+              </AlertDialogTrigger>
+              <AlertDialogContent size="sm">
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Retract your message?</AlertDialogTitle>
+                  <AlertDialogDescription>Others see that it was retracted; the original is kept in the Audit Log.</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Keep it</AlertDialogCancel>
+                  <AlertDialogAction variant="destructive" disabled={retract.isPending} onClick={() => retract.mutate()}>
+                    Retract message
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
         </div>
       )}
       {retract.error && (
@@ -386,11 +402,13 @@ function Composer({
       )}
       <div className="flex items-center justify-end gap-2">
         {offerInternal && (
-          <div className="mr-auto flex items-center gap-2">
+          <Field orientation="horizontal" className="mr-auto w-auto">
             <Checkbox id={`${label}-internal`} checked={internal} onCheckedChange={(checked) => setInternal(checked === true)} />
-            <Label htmlFor={`${label}-internal`}>Internal</Label>
-            <span className="text-xs text-muted-foreground">Hidden from Guests</span>
-          </div>
+            <FieldContent>
+              <FieldLabel htmlFor={`${label}-internal`}>Internal</FieldLabel>
+              <FieldDescription className="text-xs">Hidden from Guests</FieldDescription>
+            </FieldContent>
+          </Field>
         )}
         {onCancel && (
           <Button type="button" variant="ghost" onClick={onCancel}>
