@@ -3,6 +3,7 @@ import { Fragment } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { GuestSession } from "@/components/guest-nav";
 import { LiveIndicator } from "@/components/live-indicator";
+import { NotificationBell } from "@/components/notification-bell";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -13,6 +14,7 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { type Me, useMe } from "@/lib/api";
 import { caseRef } from "@/lib/cases";
@@ -91,6 +93,7 @@ export function AppShell() {
             <div className="ml-auto flex items-center gap-4">
               {me.guest && <GuestSession guest={me.guest} />}
               <LiveIndicator />
+              <NotificationBell />
             </div>
           </header>
           <div className="flex-1 p-4 md:p-6">
@@ -98,6 +101,7 @@ export function AppShell() {
           </div>
         </SidebarInset>
       </SidebarProvider>
+      <Toaster position="bottom-right" />
     </TooltipProvider>
   );
 }

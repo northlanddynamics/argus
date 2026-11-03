@@ -93,7 +93,7 @@ describe("Case signals", () => {
     const res = await tasks.$post({ param: param(number), json: { title: "Contain host", ownerId: await userId(ana) } });
     const body = await res.json();
     if (!("task" in body)) throw new Error("Could not create a Task");
-    expect(await live.next()).toEqual({ type: "case", number });
+    expect(await live.next((m) => m.type === "case")).toEqual({ type: "case", number });
     await tasks[":id"].$patch({ param: { ...param(number), id: body.task.id }, json: { title: "Contain FIN-LT-0231", version: 1 } });
     expect(await live.next()).toEqual({ type: "case", number });
     await tasks[":id"].done.$put({ param: { ...param(number), id: body.task.id }, json: { done: true } });
@@ -210,7 +210,7 @@ describe("Signals are forwarded only to those who can see the Case", () => {
     const number = await restrictedToAna();
     const live = await t.connect(ben);
     await change(owner, number, { assigneeId: await userId(ben) });
-    expect(await live.next()).toEqual({ type: "case", number });
+    expect(await live.next((m) => m.type === "case")).toEqual({ type: "case", number });
   });
 
   test("an Analyst given a Case Role on a Restricted Case starts hearing about it; hears it taken away, and nothing after", async () => {

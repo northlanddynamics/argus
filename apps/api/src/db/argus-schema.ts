@@ -19,6 +19,7 @@ import type { CaseSummary } from "../cases/case-summary";
 import { CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabulary";
 import { STORED_LINK_TYPES } from "../case-links/vocabulary";
 import { ASSET_TYPES, OBSERVABLE_TYPES } from "../observables/vocabulary";
+import { NOTIFICATION_KINDS } from "../notifications/vocabulary";
 import { type Citation, PROMOTION_SOURCES } from "../timeline/vocabulary";
 import {
   ALERT_KINDS,
@@ -250,6 +251,8 @@ export const tasks = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
     /** Hidden from Guests on the Case (`access/policy.ts`). */
     internal: boolean("internal").notNull().default(false),
+    /** The due date its owner was last told it is overdue for, so they are told once per due date. */
+    overdueNotifiedFor: date("overdue_notified_for", { mode: "string" }),
   },
   (t) => [
     index("tasks_case_idx").on(t.caseId, t.createdAt),
@@ -864,4 +867,42 @@ export const alertFalconComments = pgTable(
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
   },
   (t) => [uniqueIndex("alert_falcon_comments_alert_comment_idx").on(t.alertId, t.falconCommentId)],
+);
+
+/**
+ * In-app notifications, one per recipient, and their email. Each names what it is about by id, so it
+ * reads with current names, and the access policy decides at read time whether its recipient may
+ * still see it. `email_pending` rows are the email outbox (`notifications/notifications.ts`).
+ */
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: text("id").primaryKey(),
+    seq: bigserial("seq", { mode: "number" }).notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    caseId: text("case_id")
+      .notNull()
+      .references(() => cases.id, { onDelete: "restrict" }),
+    recipientId: text("recipient_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    kind: text("kind", { enum: NOTIFICATION_KINDS }).notNull(),
+    /** Who caused it; null when nobody did (a Task falling overdue). */
+    actorId: text("actor_id").references(() => user.id, { onDelete: "restrict" }),
+    taskId: text("task_id").references(() => tasks.id, { onDelete: "restrict" }),
+    messageId: text("message_id").references(() => discussionMessages.id, { onDelete: "restrict" }),
+    /** The Guest added, for `guest_added`. */
+    guestId: text("guest_id").references(() => user.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    emailPending: boolean("email_pending").notNull().default(true),
+    emailAttempts: integer("email_attempts").notNull().default(0),
+    emailedAt: timestamp("emailed_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("notifications_recipient_idx").on(t.recipientId, t.seq),
+    index("notifications_email_pending_idx").on(t.seq).where(sql`${t.emailPending}`),
+  ],
 );

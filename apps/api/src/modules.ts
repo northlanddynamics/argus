@@ -11,6 +11,7 @@ import { internalStore } from "./internal/internal";
 import { assetStore, observableStore } from "./observables/observables";
 import { invitationStore } from "./invitations/invitations";
 import { memberStore } from "./members/members";
+import { notificationStore } from "./notifications/notifications";
 import { organizationStore } from "./organizations/organizations";
 import { tagStore } from "./tags/tags";
 import { taskStore } from "./tasks/tasks";
@@ -39,6 +40,7 @@ export function createModules(deps: Deps) {
     organizations: organizationStore(deps),
     integrations: integrationStore(deps),
     alerts: alertStore(deps),
+    notifications: notificationStore(deps),
   };
 }
 

@@ -10,6 +10,7 @@ import { caseGuests, cases, member, user } from "../db/schema";
 import type { Deps } from "../deps";
 import { secureId } from "../ids";
 import type { Membership } from "../members/membership";
+import { notify, sendNotificationEmails } from "../notifications/notifications";
 import { publish } from "../realtime/signals";
 import { sendGuestInvite } from "./invite-email";
 
@@ -143,6 +144,9 @@ export function guestStore(deps: Pick<Deps, "db" | "auth" | "clock" | "mailer" |
           target: describeGuest(account),
           after: describeExpiry(input.expiresAt),
         });
+        if (current.assigneeId) {
+          await notify(tx, current, [{ recipientId: current.assigneeId, kind: "guest_added", actorId: me.userId, guestId: account.id }], now);
+        }
         await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id });
         const [row] = (await tx.select({ title: cases.title }).from(cases).where(eq(cases.id, current.id))) as [{ title: string }];
         return { title: row.title, guests: await guestsOf(tx, current.id, now) };
@@ -155,6 +159,7 @@ export function guestStore(deps: Pick<Deps, "db" | "auth" | "clock" | "mailer" |
         invitedBy: me.name,
         expiresAt: input.expiresAt,
       });
+      await sendNotificationEmails(deps);
       return guests;
     },
 

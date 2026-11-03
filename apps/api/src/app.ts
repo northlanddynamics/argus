@@ -10,6 +10,7 @@ import { integrationRoutes } from "./routes/integrations";
 import { invitationRoutes } from "./routes/invitations";
 import { liveRoutes } from "./routes/live";
 import { meRoutes } from "./routes/me";
+import { notificationRoutes } from "./routes/notifications";
 import { operatorRoutes } from "./routes/operator";
 import { organizationRoutes } from "./routes/organization";
 
@@ -46,6 +47,7 @@ export function createApi(deps: Deps, live: Live = createLive(deps)) {
     .route("/cases", caseRoutes(deps, modules))
     .route("/alerts", alertRoutes(deps, modules))
     .route("/integrations", integrationRoutes(deps, modules))
+    .route("/notifications", notificationRoutes(deps, modules))
     .route("/live", liveRoutes(deps, live));
 }
 

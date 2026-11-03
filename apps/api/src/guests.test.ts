@@ -434,7 +434,7 @@ describe("Guests live", () => {
 
     await a.owner.api.cases[":number"].$patch({ param: param(notTheirs), json: { severity: "critical" } });
     await a.owner.api.cases[":number"].$patch({ param: param(theirs), json: { severity: "critical" } });
-    expect(await live.next()).toEqual({ type: "case", number: theirs });
+    expect(await live.next((m) => m.type === "case")).toEqual({ type: "case", number: theirs });
 
     live.send({ type: "view", number: theirs });
     ownerLive.send({ type: "view", number: theirs });
