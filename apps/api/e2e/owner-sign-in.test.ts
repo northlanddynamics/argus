@@ -38,7 +38,8 @@ test("the Owner accepts their invite, enrolls in TOTP, signs in with password an
     });
 
     await page.goto(inviteLink);
-    await expect(page.getByText("Acme Security").isVisible()).resolves.toBe(true);
+    // Waits for the invitation to load; `isVisible` alone checks once, before it may have.
+    await page.getByText("Acme Security").waitFor();
     await page.getByLabel("Your name").fill("Olive Owner");
     await page.getByLabel("Password", { exact: true }).fill("correct-horse-battery");
     await page.getByLabel("Confirm password").fill("correct-horse-battery");
