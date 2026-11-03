@@ -24,6 +24,7 @@ import {
 } from "@/lib/alerts";
 import { api } from "@/lib/api";
 import { caseRef, SEVERITIES, type Severity, severityLabel } from "@/lib/cases";
+import { assetTypeLabel, observableTypeLabel, shownObservable } from "@/lib/observables";
 import { cn } from "@/lib/utils";
 import {
   AttachAlertsDialog,
@@ -33,8 +34,8 @@ import {
   OpenCaseFromAlertsDialog,
 } from "@/routes/alerts/alert-dialogs";
 
-/** `status` is New unless the URL says otherwise; "any" shows every Status. */
-export type AlertQueueSearch = { status?: AlertStatus | "any"; severity?: Severity; integration?: string };
+/** `status` is New unless the URL says otherwise; "any" shows every Status. `alert` is the Alert shown in full. */
+export type AlertQueueSearch = { status?: AlertStatus | "any"; severity?: Severity; integration?: string; alert?: string };
 
 const pick = <T extends string>(list: readonly T[], value: unknown) => (list.includes(value as T) ? (value as T) : undefined);
 
@@ -43,6 +44,7 @@ export const validateAlertQueueSearch = (search: Record<string, unknown>): Alert
   status: pick([...ALERT_STATUSES, "any"] as const, search.status),
   severity: pick(SEVERITIES, search.severity),
   integration: typeof search.integration === "string" && search.integration ? search.integration : undefined,
+  alert: typeof search.alert === "string" && search.alert ? search.alert : undefined,
 });
 
 const time = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -69,7 +71,8 @@ export function AlertQueuePage() {
   /** Selected Alerts: id → the version shown when it was selected, so changes since are caught. */
   const [selected, setSelected] = useState<Map<string, number>>(new Map());
   const [outcome, setOutcome] = useState<BulkOutcome | null>(null);
-  const [showing, setShowing] = useState<string | null>(null);
+  const showing = search.alert ?? null;
+  const setShowing = (alert: string | null) => setSearch({ alert: alert ?? undefined });
   const [dialog, setDialog] = useState<"open" | "attach" | "dismiss" | null>(null);
 
   const rows = alerts.data ?? [];
@@ -334,6 +337,26 @@ function OutcomeNotice({ outcome, onReselect, onDismiss }: { outcome: BulkOutcom
 }
 
 /** One Alert in full, beside the queue, with Move and Detach while it is on a Case. */
+/** Observables or Assets an Alert names, as badges. */
+function Extracted({ label, items }: { label: string; items: { id: string; text: string; title: string }[] }) {
+  return (
+    <section aria-label={label} className="grid gap-1">
+      <h3 className="text-xs font-medium text-muted-foreground">{label}</h3>
+      {items.length ? (
+        <div className="flex flex-wrap gap-1">
+          {items.map((item) => (
+            <Badge key={item.id} variant="outline" className="max-w-full truncate font-mono" title={item.title}>
+              {item.text}
+            </Badge>
+          ))}
+        </div>
+      ) : (
+        <p className="text-muted-foreground">None</p>
+      )}
+    </section>
+  );
+}
+
 function AlertPanel({ id, onClose }: { id: string; onClose: () => void }) {
   const alert = useQuery(alertQuery(id));
   const [moving, setMoving] = useState<"move" | "detach" | null>(null);
@@ -389,6 +412,17 @@ function AlertPanel({ id, onClose }: { id: string; onClose: () => void }) {
             </>
           )}
         </dl>
+        <Extracted
+          label="Extracted Observables"
+          items={a.indicators.observables.map((o) => ({ id: o.id, text: `${observableTypeLabel[o.type]} ${shownObservable(o.type, o.value)}`, title: o.value }))}
+        />
+        <Extracted
+          label="Extracted Assets"
+          items={a.indicators.assets.map((x) => ({ id: x.id, text: `${assetTypeLabel[x.type]} ${x.value}`, title: x.value }))}
+        />
+        {a.indicators.observables.length + a.indicators.assets.length > 0 && (
+          <p className="text-xs text-muted-foreground">Attaching this Alert adds these to the Case.</p>
+        )}
         <details>
           <summary className="cursor-pointer text-muted-foreground">Raw payload</summary>
           <pre className="mt-2 max-h-64 overflow-auto rounded bg-muted p-2 text-xs">{JSON.stringify(a.payload, null, 2)}</pre>

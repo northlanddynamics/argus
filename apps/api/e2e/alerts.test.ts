@@ -156,3 +156,53 @@ test("an Analyst bulk-attaches Alerts to a Case, is told which changed meanwhile
     await stop();
   }
 }, 60_000);
+
+test("an Alert shows the Observables and Assets it names; attaching it adds them to the Case as Alert (auto)", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  const falcon = fakeFalcon();
+  const worker = createStreamWorker(t.deps, { connect: falcon.connect, workerId: "worker-1" });
+  t.onCleanup(worker.close);
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    await owner.api.organization.invitations.$post({ json: { email: "ana@acme.example", role: "analyst" } });
+    const ana = await t.acceptInvite("ana@acme.example", PASSWORD, "Ana Analyst");
+    await owner.api.integrations.$post({ json: { name: "CrowdStrike — Prod", cloud: "us-1", clientId: "falcon-client-0001", clientSecret: "s" } });
+    await worker.tick();
+    const stream = falcon.tenant("falcon-client-0001");
+    stream.detection("EppDetectionSummaryEvent", "ldt:1", {
+      Name: "Encoded PowerShell from Office process",
+      SeverityName: "High",
+      Hostname: "FIN-LT-0231",
+      UserName: "d.howe",
+      NetworkAccesses: [{ LocalAddress: "10.20.4.17", RemoteAddress: "185.220.101.4", RemotePort: 443 }],
+    });
+    await stream.drained();
+    const opened = await (await ana.api.cases.$post({ json: { title: "PowerShell on FIN-LT-0231", caseType: "malware", severity: "high" } })).json();
+    if (!("case" in opened)) throw new Error("Could not open a Case");
+    const number = opened.case.number;
+
+    const page = await browser.newPage();
+    await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
+    await page.goto(`${baseUrl}/alerts`);
+    await page.getByTestId("alert-ldt:1").getByRole("button", { name: "Encoded PowerShell from Office process" }).click();
+    await page.getByRole("region", { name: "Extracted Observables" }).getByText("IP 185.220.101.4").waitFor();
+    await page.getByRole("region", { name: "Extracted Assets" }).getByText("Host FIN-LT-0231").waitFor();
+    await page.getByRole("region", { name: "Extracted Assets" }).getByText("Account d.howe").waitFor();
+
+    await page.getByLabel("Select ldt:1").check();
+    await page.getByRole("button", { name: "Attach to Case…" }).click();
+    const dialog = page.getByRole("dialog", { name: "Attach 1 Alert to a Case" });
+    await dialog.getByLabel("Find a Case").fill(`C-${number}`);
+    await dialog.getByText("PowerShell on FIN-LT-0231").click();
+    await dialog.getByRole("button", { name: "Attach" }).click();
+
+    await page.goto(`${baseUrl}/cases/${number}/observables`);
+    const row = page.getByTestId("observable-185.220.101.4");
+    await row.getByText("Alert (auto)").waitFor();
+    await row.getByRole("link", { name: "Encoded PowerShell from Office process" }).click();
+    await page.getByRole("region", { name: "Extracted Observables" }).waitFor();
+  } finally {
+    await stop();
+  }
+}, 60_000);

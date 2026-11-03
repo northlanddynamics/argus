@@ -1,5 +1,20 @@
 import { sql } from "drizzle-orm";
-import { bigint, bigserial, boolean, check, date, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import {
+  type AnyPgColumn,
+  bigint,
+  bigserial,
+  boolean,
+  check,
+  date,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 import type { CaseSummary } from "../cases/case-summary";
 import { CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabulary";
 import { STORED_LINK_TYPES } from "../case-links/vocabulary";
@@ -410,8 +425,15 @@ export const evidence = pgTable(
  * An item is never deleted (ADR 0003). `match_key` is its normalised value
  * (`observables/vocabulary.ts`) and unique per Organization and type; `value` is how it is shown.
  * Unlinking an item from a Case ends the link and keeps the row; linking it again adds a new one.
+ *
+ * A link's `alert_id` is set when attaching that Alert linked the item (the item was among those the
+ * Alert names, in `alert_links`), and null when someone linked it by hand. `alert_links` holds what
+ * each Alert names: added as detections arrive, and never removed.
  */
-function heldOncePerOrganization(names: { items: string; links: string; itemId: string }, types: readonly string[]) {
+function heldOncePerOrganization(
+  names: { items: string; links: string; itemId: string; alertLinks: string },
+  types: readonly string[],
+) {
   const items = pgTable(
     names.items,
     {
@@ -450,6 +472,8 @@ function heldOncePerOrganization(names: { items: string; links: string; itemId: 
       linkedAt: timestamp("linked_at", { withTimezone: true }).notNull(),
       unlinkedById: text("unlinked_by_id").references(() => user.id, { onDelete: "restrict" }),
       unlinkedAt: timestamp("unlinked_at", { withTimezone: true }),
+      /** The Alert whose attachment linked it; null when linked by hand. */
+      alertId: text("alert_id").references((): AnyPgColumn => alerts.id, { onDelete: "restrict" }),
     },
     (t) => [
       uniqueIndex(`${names.links}_active_idx`)
@@ -461,18 +485,35 @@ function heldOncePerOrganization(names: { items: string; links: string; itemId: 
       check(`${names.links}_unlinked`, sql`(${t.unlinkedAt} IS NULL) = (${t.unlinkedById} IS NULL)`),
     ],
   );
-  return { items, links };
+  const alertLinks = pgTable(
+    names.alertLinks,
+    {
+      organizationId: text("organization_id")
+        .notNull()
+        .references(() => organization.id, { onDelete: "restrict" }),
+      alertId: text("alert_id")
+        .notNull()
+        .references((): AnyPgColumn => alerts.id, { onDelete: "restrict" }),
+      itemId: text(names.itemId)
+        .notNull()
+        .references(() => items.id, { onDelete: "restrict" }),
+      /** Insertion order: the order the detection named them in. */
+      seq: bigserial("seq", { mode: "number" }).notNull(),
+    },
+    (t) => [primaryKey({ columns: [t.alertId, t.itemId] }), index(`${names.alertLinks}_item_idx`).on(t.itemId)],
+  );
+  return { items, links, alertLinks };
 }
 
 /** Observables (an IP, domain, URL, email address or hash) and the Cases they are linked to. */
-export const { items: observables, links: caseObservables } = heldOncePerOrganization(
-  { items: "observables", links: "case_observables", itemId: "observable_id" },
+export const { items: observables, links: caseObservables, alertLinks: alertObservables } = heldOncePerOrganization(
+  { items: "observables", links: "case_observables", itemId: "observable_id", alertLinks: "alert_observables" },
   OBSERVABLE_TYPES,
 );
 
 /** Assets (a host or account) and the Cases they are linked to. */
-export const { items: assets, links: caseAssets } = heldOncePerOrganization(
-  { items: "assets", links: "case_assets", itemId: "asset_id" },
+export const { items: assets, links: caseAssets, alertLinks: alertAssets } = heldOncePerOrganization(
+  { items: "assets", links: "case_assets", itemId: "asset_id", alertLinks: "alert_assets" },
   ASSET_TYPES,
 );
 

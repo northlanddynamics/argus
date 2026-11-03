@@ -1,6 +1,7 @@
 import type { AlertKind } from "../alerts/vocabulary";
 import type { Severity } from "../cases/vocabulary";
 import type { StreamEvent } from "./falcon";
+import { extractIndicators, type Indicators } from "./indicators";
 
 /** The stream's detection events, and the kind of Alert each becomes. Every other event type is ignored. */
 export const DETECTION_EVENTS: Record<string, AlertKind> = {
@@ -20,6 +21,8 @@ export type Detection = {
   userName: string | null;
   detectedAt: Date | null;
   payload: Record<string, unknown>;
+  /** The Observables and Assets it names. */
+  indicators: Indicators;
 };
 
 const text = (event: Record<string, unknown>, ...fields: string[]) => {
@@ -72,5 +75,6 @@ export function readDetection({ eventType, event, createdAt }: StreamEvent): Det
     userName: text(event, "UserName", "SourceAccountName", "UserPrincipal"),
     detectedAt: createdAt,
     payload: event,
+    indicators: extractIndicators(event),
   };
 }

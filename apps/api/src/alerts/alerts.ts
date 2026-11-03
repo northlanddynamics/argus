@@ -11,6 +11,7 @@ import { alerts, cases, integrations, user } from "../db/schema";
 import type { Deps } from "../deps";
 import { secureId } from "../ids";
 import type { Membership, Participant } from "../members/membership";
+import { alertIndicators, linkAlertIndicators, recordAlertIndicators, unlinkAlertIndicators } from "../observables/observables";
 import { publish } from "../realtime/signals";
 import { alertLabel, type AlertStatus, type DismissalReason, dismissalReasonLabel } from "./vocabulary";
 
@@ -19,7 +20,8 @@ import { alertLabel, type AlertStatus, type DismissalReason, dismissalReasonLabe
  * queue; Guests never do. Alerts arrive through the worker (`recordDetection`).
  *
  * Attaching an Alert to a Case makes it Internal, hidden from the Case's Guests, until a Member
- * shows it to them (`internal/`). Guests see only the Alerts on their Case that aren't Internal.
+ * shows it to them (`internal/`). It also links the Observables and Assets the Alert names to the
+ * Case, and detaching it unlinks them again, except those added by hand (`observables/`). Guests see only the Alerts on their Case that aren't Internal.
  *
  * Members open a Case from Alerts, attach them to a Case, move them between Cases, detach them and
  * dismiss them with a Dismissal Reason. An Alert is on at most one Case at a time; attaching one
@@ -91,7 +93,8 @@ const QUEUE_LIMIT = 500;
 /**
  * Records a detection from `integration`: a new Alert with Status New, or, for a `CompositeId` already
  * received, the same Alert brought up to date (its Status unchanged). Its version moves on only when
- * something changed. Returns whether anything did. Call it in the transaction that stores the offset.
+ * something changed. The Observables and Assets the detection names are recorded as the Alert's.
+ * Returns whether anything changed. Call it in the transaction that stores the offset.
  */
 export async function recordDetection(
   tx: Tx,
@@ -109,7 +112,7 @@ export async function recordDetection(
     detectedAt: detection.detectedAt,
     payload: detection.payload,
   };
-  const changed = await tx
+  const [changed] = await tx
     .insert(alerts)
     .values({
       id: secureId(),
@@ -141,7 +144,8 @@ export async function recordDetection(
         IS DISTINCT FROM (excluded.kind, excluded.severity, excluded.title, excluded.description, excluded.host, excluded.user_name, excluded.detected_at, excluded.payload)`,
     })
     .returning({ id: alerts.id });
-  return changed.length > 0;
+  if (changed) await recordAlertIndicators(tx, { id: changed.id, organizationId: integration.organizationId }, detection.indicators, now);
+  return changed !== undefined;
 }
 
 
@@ -263,7 +267,7 @@ async function attachIn(tx: Tx, me: Membership, target: { id: string; number: nu
   if (caseOf.get(target.id)?.status === "closed") throw new CaseClosed();
   const result: BulkResult = { applied: [], refused: [] };
   const touched = new Set<string>();
-  /** Cases that lost an Alert their Guests could see. */
+  /** Cases where something their Guests can see changed: an Alert they saw left, Observables or Assets came or went. */
   const guestsSaw = new Set<string>();
   for (const { id, version } of selection) {
     if (result.applied.includes(id)) continue;
@@ -313,8 +317,10 @@ async function attachIn(tx: Tx, me: Membership, target: { id: string; number: nu
         after: caseRef(target.number),
       });
       touched.add(from.id);
+      if (await unlinkAlertIndicators(tx, me, from.id, id, now)) guestsSaw.add(from.id);
       if (!alert.internal) guestsSaw.add(from.id);
     }
+    if (await linkAlertIndicators(tx, me, target.id, id, now)) guestsSaw.add(target.id);
     touched.add(target.id);
     result.applied.push(id);
   }
@@ -496,6 +502,8 @@ export function alertStore({ db, clock }: Pick<Deps, "db" | "clock">) {
         receivedAt: row.receivedAt.toISOString(),
         version: row.version,
         payload: row.payload,
+        /** The Observables and Assets its detection names. */
+        indicators: await alertIndicators(db, row.id),
         /** Hidden from the Guests on its Case. */
         internal: row.internal,
         integration: { id: row.integrationId, name: row.integrationName },
@@ -574,9 +582,10 @@ export function alertStore({ db, clock }: Pick<Deps, "db" | "clock">) {
           target: alertLabel(alert),
           before: caseRef(from.number),
         });
+        const unlinked = await unlinkAlertIndicators(tx, me, from.id, id, now);
         await tx.update(cases).set({ updatedAt: now }).where(eq(cases.id, from.id));
         await publish(tx, { kind: "alerts", organizationId: me.organizationId });
-        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: from.id, membersOnly: alert.internal });
+        await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: from.id, membersOnly: alert.internal && !unlinked });
       });
     },
 

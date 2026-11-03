@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,19 +10,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api, errorMessage } from "@/lib/api";
 import { caseQuery, caseRef, isReadOnly } from "@/lib/cases";
-import { shortHash } from "@/lib/evidence";
 import {
   ASSET_TYPES,
   type AssetType,
   assetTypeLabel,
   assetsKey,
   assetsQuery,
-  defang,
   OBSERVABLE_TYPES,
   type ObservableType,
   observableTypeLabel,
   observablesKey,
   observablesQuery,
+  shownObservable,
 } from "@/lib/observables";
 import { useCaseNumber } from "@/routes/cases/case-layout";
 
@@ -44,7 +44,7 @@ export function CaseObservablesPage() {
           placeholder="185.220.101.4, invoice-portal[.]biz, a hash…"
           types={OBSERVABLE_TYPES}
           typeLabel={observableTypeLabel}
-          shown={(type, value) => (["md5", "sha1", "sha256"].includes(type) ? shortHash(value) : defang(type, value))}
+          shown={shownObservable}
           items={observables.data}
           queryKey={observablesKey(number)}
           readOnly={readOnly}
@@ -68,7 +68,8 @@ export function CaseObservablesPage() {
       </div>
       <p className="text-xs text-muted-foreground">
         Each Observable and Asset is held once for the Organization. “Seen in other Cases” lists only Cases you can see.
-        Adding and unlinking are recorded in the Audit Log.
+        Attaching an Alert adds what it names (“Alert (auto)”); detaching it removes those again, but never what was added
+        by hand. Adding and unlinking are recorded in the Audit Log.
       </p>
     </>
   );
@@ -81,6 +82,7 @@ type Item<Type extends string> = {
   linkedBy: { name: string };
   linkedAt: string;
   seenIn: { number: number; title: string }[];
+  fromAlert: { alert: { id: string; externalId: string; title: string } | null } | null;
 };
 
 function LinkedCard<Type extends string>(props: {
@@ -180,8 +182,24 @@ function LinkedCard<Type extends string>(props: {
                 <TableCell className="min-w-36 font-mono text-xs break-all whitespace-normal" title={item.value}>
                   {shown(item.type, item.value)}
                 </TableCell>
-                <TableCell className="text-sm" title={new Date(item.linkedAt).toLocaleString()}>
-                  {item.linkedBy.name}
+                <TableCell className="text-sm whitespace-normal" title={new Date(item.linkedAt).toLocaleString()}>
+                  {item.fromAlert ? (
+                    <>
+                      <Badge variant="secondary">Alert (auto)</Badge>
+                      {item.fromAlert.alert && (
+                        <Link
+                          to="/alerts"
+                          search={{ status: "any", alert: item.fromAlert.alert.id }}
+                          className="ml-1 text-xs text-primary underline"
+                          title={item.fromAlert.alert.externalId}
+                        >
+                          {item.fromAlert.alert.title}
+                        </Link>
+                      )}
+                    </>
+                  ) : (
+                    item.linkedBy.name
+                  )}
                 </TableCell>
                 <TableCell className="whitespace-normal">
                   {item.seenIn.length === 0 ? (
