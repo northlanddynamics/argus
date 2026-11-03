@@ -5,7 +5,8 @@ import type { Db, Tx } from "../db/client";
 import { type Actor, canSeeCase, casePermissions, casePolicy, NotPermitted, visibleCases } from "../access/policy";
 import { caseRoleAssignmentsOf, caseRoleHolderIds } from "../case-roles/holders";
 import { guestGrantsOf } from "../guests/grants";
-import { cases, organization, user } from "../db/schema";
+import { alerts, cases, organization, user } from "../db/schema";
+import { caseClosedComment, queueWriteBacks } from "../crowdstrike/write-back";
 import { secureId } from "../ids";
 import type { Membership, Participant } from "../members/membership";
 import { memberName } from "../members/members";
@@ -14,7 +15,7 @@ import { taskCounts } from "../tasks/task-counts";
 import { hasTag, tagsOfCase } from "../tags/case-tags";
 import { type CaseActor, type CaseAuditEntry, listCaseAudit, recordCaseAudit, type CaseAuditFilter } from "./case-audit-log";
 import { type CaseSummary, emptySummary } from "./case-summary";
-import { type CaseType, REOPENED_STATUS, type Resolution, type Severity, type Status } from "./vocabulary";
+import { type CaseType, REOPENED_STATUS, type Resolution, resolutionLabel, type Severity, type Status } from "./vocabulary";
 
 /**
  * Cases within one Organization. Every read and write goes through here and is limited by the
@@ -138,15 +139,32 @@ export const lockCase = async (tx: Tx, me: Participant, number: number, closed: 
   return { ...current, caseRoleHolderIds: await caseRoleHolderIds(tx, current.id), guests: await guestGrantsOf(tx, current.id) };
 };
 
+/** The Alerts attached to Case `caseId`, as the write-back outbox names them. */
+const attachedAlerts = (tx: Tx, caseId: string) =>
+  tx
+    .select({ id: alerts.id, integrationId: alerts.integrationId, externalId: alerts.externalId })
+    .from(alerts)
+    .where(eq(alerts.caseId, caseId))
+    .orderBy(alerts.seq);
+
 /**
- * Closes a Case locked by `lockCase` with `resolution`, recording it in its Audit Log. The caller
+ * Closes a Case locked by `lockCase` with `resolution`, recording it in its Audit Log, and closes its
+ * attached Alerts in Falcon with the Resolution as a comment (where write-back is on). The caller
  * publishes the Case's signal.
  */
 export async function closeLocked(tx: Tx, me: Membership, current: { id: string; status: Status }, resolution: Resolution, now: Date) {
-  await tx
+  const [closed] = await tx
     .update(cases)
     .set({ status: "closed", resolution, closedById: me.userId, closedAt: now, updatedAt: now })
-    .where(eq(cases.id, current.id));
+    .where(eq(cases.id, current.id))
+    .returning({ number: cases.number, title: cases.title });
+  await queueWriteBacks(
+    tx,
+    me.organizationId,
+    await attachedAlerts(tx, current.id),
+    { action: "case_close", falconStatus: "closed", comment: caseClosedComment(closed!, me.name, resolutionLabel[resolution]) },
+    now,
+  );
   await recordCaseAudit(tx, {
     organizationId: me.organizationId,
     caseId: current.id,
@@ -336,6 +354,8 @@ export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
           set.caseType = changes.caseType;
           entries.push(entry("case.case_type_changed", current.caseType, changes.caseType));
         }
+        /** The new Assignee's email, to assign the Case's Alerts to in Falcon; null when unassigned. */
+        let assigneeEmail: string | null | undefined;
         if (changes.assigneeId !== undefined && changes.assigneeId !== current.assigneeId) {
           let after: string | null = null;
           if (changes.assigneeId !== null) {
@@ -347,11 +367,17 @@ export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
             : null;
           set.assigneeId = changes.assigneeId;
           entries.push(entry("case.assignee_changed", before, after));
+          assigneeEmail = changes.assigneeId
+            ? ((await tx.select({ email: user.email }).from(user).where(eq(user.id, changes.assigneeId)))[0]?.email ?? null)
+            : null;
         }
         const next = { ...current, ...set };
         if (!entries.length) return next;
         await tx.update(cases).set({ ...set, updatedAt: now }).where(eq(cases.id, current.id));
         for (const e of entries) await recordCaseAudit(tx, e);
+        if (assigneeEmail !== undefined) {
+          await queueWriteBacks(tx, me.organizationId, await attachedAlerts(tx, current.id), { action: "assign", assigneeEmail }, now);
+        }
         const before = { restricted: current.restricted, assigneeId: current.assigneeId };
         await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id, before });
         return next;

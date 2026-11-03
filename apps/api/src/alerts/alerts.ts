@@ -7,6 +7,7 @@ import { actorOf, CaseClosed, CaseNotFound, insertCase, type OpenCaseInput } fro
 import { caseRef, SEVERITIES, type Severity, type Status } from "../cases/vocabulary";
 import type { Detection } from "../crowdstrike/detections";
 import type { FalconUpdate } from "../crowdstrike/falcon-updates";
+import { attachedComment, dismissedComment, queueWriteBacks } from "../crowdstrike/write-back";
 import type { Db, Tx } from "../db/client";
 import { alerts, cases, integrations, user } from "../db/schema";
 import type { Deps } from "../deps";
@@ -23,6 +24,10 @@ import { alertLabel, type AlertStatus, crowdstrikeActorName, type DismissalReaso
  * Attaching an Alert to a Case makes it Internal, hidden from the Case's Guests, until a Member
  * shows it to them (`internal/`). It also links the Observables and Assets the Alert names to the
  * Case, and detaching it unlinks them again, except those added by hand (`observables/`). Guests see only the Alerts on their Case that aren't Internal.
+ *
+ * With its Integration's write-back on, attaching an Alert sets it In Progress in Falcon with a
+ * comment linking to the Case, and dismissing it closes it there with the Dismissal Reason as a
+ * comment, through the write-back outbox (`crowdstrike/write-back.ts`).
  *
  * Changes made to an Alert in Falcon (its status, assignee and tags there) are mirrored onto it
  * (`applyFalconUpdate`), last write wins, and recorded as CrowdStrike's: in its Case's Audit Log
@@ -249,6 +254,7 @@ const dismissedBy = alias(user, "dismissed_by");
 
 type LockedAlert = {
   id: string;
+  integrationId: string;
   externalId: string;
   title: string;
   status: AlertStatus;
@@ -267,6 +273,7 @@ async function lockAlerts(tx: Tx, me: Membership, ids: readonly string[]) {
   const rows = await tx
     .select({
       id: alerts.id,
+      integrationId: alerts.integrationId,
       externalId: alerts.externalId,
       title: alerts.title,
       status: alerts.status,
@@ -352,7 +359,14 @@ function attachRefusal(id: string, alert: LockedAlert | undefined, version: numb
  * Attaches the selected Alerts to `target` in `tx`, moving any on another Case, and records each in
  * both Cases' Audit Logs. Each becomes Internal on `target`. Publishes the signals for whatever changed.
  */
-async function attachIn(tx: Tx, me: Membership, target: { id: string; number: number }, selection: AlertSelection, now: Date) {
+async function attachIn(
+  tx: Tx,
+  me: Membership,
+  target: { id: string; number: number; title: string },
+  selection: AlertSelection,
+  now: Date,
+  baseUrl: string,
+) {
   const locked = await lockAlerts(tx, me, selection.map((s) => s.id));
   const caseOf = await lockCases(tx, me, [target.id, ...[...locked.values()].map((a) => a.caseId)]);
   if (caseOf.get(target.id)?.status === "closed") throw new CaseClosed();
@@ -416,6 +430,13 @@ async function attachIn(tx: Tx, me: Membership, target: { id: string; number: nu
     result.applied.push(id);
   }
   if (result.applied.length) {
+    await queueWriteBacks(
+      tx,
+      me.organizationId,
+      result.applied.map((id) => locked.get(id)!),
+      { action: "attach", falconStatus: "in_progress", comment: attachedComment(target, baseUrl) },
+      now,
+    );
     await tx.update(cases).set({ updatedAt: now }).where(inArray(cases.id, [...touched]));
     await publish(tx, { kind: "alerts", organizationId: me.organizationId });
     for (const caseId of touched) {
@@ -428,7 +449,7 @@ async function attachIn(tx: Tx, me: Membership, target: { id: string; number: nu
 /** The visible Case numbered `number`, or throws `CaseNotFound`. */
 const caseNumbered = async (tx: Tx | Db, me: Membership, number: number) => {
   const [found] = await tx
-    .select({ id: cases.id, number: cases.number, status: cases.status })
+    .select({ id: cases.id, number: cases.number, title: cases.title, status: cases.status })
     .from(cases)
     .where(and(visibleCases(me), eq(cases.number, number)))
     .limit(1);
@@ -441,12 +462,12 @@ const single = (result: BulkResult) => {
   if (result.refused[0]) throw new AlertRefused(result.refused[0]);
 };
 
-export function alertStore({ db, clock }: Pick<Deps, "db" | "clock">) {
+export function alertStore({ db, clock, baseUrl }: Pick<Deps, "db" | "clock" | "baseUrl">) {
   /** Attaches the selection to Case `number` (moving any on other Cases). */
   const attach = (me: Membership, number: number, selection: AlertSelection) =>
     db.transaction(async (tx) => {
       const target = await caseNumbered(tx, me, number);
-      return attachIn(tx, me, target, selection, clock.now());
+      return attachIn(tx, me, target, selection, clock.now(), baseUrl);
     });
 
   return {
@@ -640,7 +661,7 @@ export function alertStore({ db, clock }: Pick<Deps, "db" | "clock">) {
         if (!usable.length) throw new NoAlertsToAttach(checked.flatMap(({ refused }) => (refused ? [refused] : [])));
         const severity = input.severity ?? highestSeverity(usable.map((a) => a.severity));
         const opened = await insertCase(tx, me, { ...input, severity }, now);
-        const result = await attachIn(tx, me, opened, selection, now);
+        const result = await attachIn(tx, me, { ...opened, title: input.title }, selection, now, baseUrl);
         return { case: { number: opened.number }, ...result };
       });
     },
@@ -736,6 +757,13 @@ export function alertStore({ db, clock }: Pick<Deps, "db" | "clock">) {
           });
           result.applied.push(id);
         }
+        await queueWriteBacks(
+          tx,
+          me.organizationId,
+          result.applied.map((id) => locked.get(id)!),
+          { action: "dismiss", falconStatus: "closed", comment: dismissedComment(me.name, dismissalReasonLabel[reason], comment) },
+          now,
+        );
         if (result.applied.length) await publish(tx, { kind: "alerts", organizationId: me.organizationId });
         return result;
       });

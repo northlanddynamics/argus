@@ -3,6 +3,7 @@ import { NotPermitted, organizationPolicy } from "../access/policy";
 import { type FalconCloud, falconCloudLabel } from "../alerts/vocabulary";
 import { recordOrgAudit } from "../audit/org-audit-log";
 import type { FalconCredentials } from "../crowdstrike/falcon";
+import { writeBackCounts } from "../crowdstrike/write-back";
 import type { Tx } from "../db/client";
 import { integrations } from "../db/schema";
 import type { Deps } from "../deps";
@@ -68,6 +69,11 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
         .from(integrations)
         .where(eq(integrations.organizationId, me.organizationId))
         .orderBy(asc(integrations.createdAt), asc(integrations.id));
+      const writeBacks = await writeBackCounts(
+        db,
+        rows.map((r) => r.id),
+        clock.now(),
+      );
       return rows.map((row) => ({
         id: row.id,
         type: row.type,
@@ -86,6 +92,8 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
           row.lastGapAt && row.lastGapFromOffset !== null && row.lastGapToOffset !== null
             ? { at: row.lastGapAt.toISOString(), fromOffset: row.lastGapFromOffset, toOffset: row.lastGapToOffset }
             : null,
+        /** Its write-backs to Falcon, by where they stand. */
+        writeBacks: writeBacks.get(row.id)!,
         /** For Admins only: which credentials are in use, never the credentials themselves. */
         credentials: admin ? { clientIdHint: row.clientIdHint, updatedAt: row.credentialsUpdatedAt.toISOString() } : null,
       }));

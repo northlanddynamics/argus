@@ -90,4 +90,48 @@ describe("The Falcon API client", () => {
     });
     await expect(falconHttpClient(connection, none.fetchImpl).openStream()).rejects.toThrow(/Event Streams enabled/);
   });
+
+  test("updates Alerts with Falcon's action parameters", async () => {
+    const { requests, fetchImpl } = stubFalcon({
+      "POST https://api.eu-1.crowdstrike.com/oauth2/token": token,
+      "PATCH https://api.eu-1.crowdstrike.com/alerts/entities/alerts/v3": () => Response.json({ resources: [] }),
+    });
+    const client = falconHttpClient(connection, fetchImpl);
+    await client.updateAlerts(["a", "b"], { status: "in_progress", comment: "Attached to Argus Case C-1" });
+    await client.updateAlerts(["a"], { assignTo: "uuid-1" });
+    await client.updateAlerts(["a"], { assignTo: null });
+    const patches = requests.filter((r) => r.method === "PATCH");
+    expect(patches[0]!.headers.get("authorization")).toBe("Bearer access");
+    expect(await Promise.all(patches.map((r) => r.json()))).toEqual([
+      {
+        composite_ids: ["a", "b"],
+        action_parameters: [
+          { name: "update_status", value: "in_progress" },
+          { name: "append_comment", value: "Attached to Argus Case C-1" },
+        ],
+      },
+      { composite_ids: ["a"], action_parameters: [{ name: "assign_to_uuid", value: "uuid-1" }] },
+      { composite_ids: ["a"], action_parameters: [{ name: "unassign", value: "" }] },
+    ]);
+
+    const refused = stubFalcon({
+      "POST https://api.eu-1.crowdstrike.com/oauth2/token": token,
+      "PATCH https://api.eu-1.crowdstrike.com/alerts/entities/alerts/v3": () => Response.json({ errors: [{ message: "access denied" }] }, { status: 403 }),
+    });
+    await expect(falconHttpClient(connection, refused.fetchImpl).updateAlerts(["a"], { status: "closed" })).rejects.toThrow(
+      "Updating Alerts in Falcon failed: 403 access denied",
+    );
+  });
+
+  test("finds a Falcon user by login email, escaping it for FQL", async () => {
+    const { requests, fetchImpl } = stubFalcon({
+      "POST https://api.eu-1.crowdstrike.com/oauth2/token": token,
+      "GET https://api.eu-1.crowdstrike.com/user-management/queries/users/v1": (req) =>
+        Response.json({ resources: new URL(req.url).searchParams.get("filter") === "uid:'ana@acme.example'" ? ["uuid-ana"] : [] }),
+    });
+    const client = falconHttpClient(connection, fetchImpl);
+    expect(await client.findUser("ana@acme.example")).toBe("uuid-ana");
+    expect(await client.findUser("o'brien@acme.example")).toBeNull();
+    expect(new URL(requests.at(-1)!.url).searchParams.get("filter")).toBe("uid:'o\\'brien@acme.example'");
+  });
 });

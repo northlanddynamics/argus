@@ -118,6 +118,7 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
             <AlertDescription>{setWriteBack.error.message}</AlertDescription>
           </Alert>
         )}
+        <WriteBacks counts={i.writeBacks} />
         {i.credentials && (
           <p className="text-sm text-muted-foreground">
             Falcon API credentials: {falconCloudLabel[i.cloud]} cloud · client {i.credentials.clientIdHint} · set{" "}
@@ -126,6 +127,30 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/** The Integration's write-backs to Falcon by where they stand; sent, skipped and failed over the last 24 hours. */
+function WriteBacks({ counts: w }: { counts: IntegrationView["writeBacks"] }) {
+  return (
+    <div className="grid gap-2" data-testid="write-backs">
+      <span className="text-sm font-semibold">Write-backs to Falcon</span>
+      <div className="flex flex-wrap gap-2">
+        <Badge variant="outline">Pending {w.pending}</Badge>
+        <Badge variant="outline" className={w.retrying ? "border-amber-400 text-amber-900" : undefined}>
+          Retrying {w.retrying}
+          {w.nextRetryAt ? ` · next ${until(w.nextRetryAt)}` : ""}
+        </Badge>
+        <Badge variant="outline">Sent (24 h) {w.sent}</Badge>
+        <Badge variant="outline">Skipped, no Falcon user match (24 h) {w.skipped}</Badge>
+        {w.failed > 0 && (
+          <Badge variant="outline" className="border-destructive text-destructive">
+            Failed (24 h) {w.failed}
+          </Badge>
+        )}
+      </div>
+      {w.lastError && <p className="text-sm text-muted-foreground">Last failure: {w.lastError}</p>}
+    </div>
   );
 }
 
