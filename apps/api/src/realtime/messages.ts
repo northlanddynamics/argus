@@ -17,6 +17,8 @@ export type ServerMessage =
   | { type: "presence"; number: number; viewers: Viewer[] }
   /** The Alert queue or an Integration changed: refetch them. Members only. */
   | { type: "alerts" }
+  /** Your notifications changed: refetch them, and toast any new ones. */
+  | { type: "notifications" }
   /** Signals may have been missed, or what you can see changed: refetch everything on screen. */
   | { type: "resync" };
 

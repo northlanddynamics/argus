@@ -31,7 +31,9 @@ export type Signal =
   /** Membership changed (removed, role changed, Organization deleted): who sees what may have too. */
   | { kind: "members"; organizationId: string }
   /** The Organization's Alerts or Integrations changed. */
-  | { kind: "alerts"; organizationId: string };
+  | { kind: "alerts"; organizationId: string }
+  /** These people's notifications changed (a new one, or one marked read). */
+  | { kind: "notifications"; organizationId: string; userIds: string[] };
 
 /**
  * Publishes `signal`. Inside a transaction it is delivered only if and when that transaction

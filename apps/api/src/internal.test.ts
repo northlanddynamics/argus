@@ -61,7 +61,8 @@ async function acme() {
   /** A new Alert from Falcon, attached to the Case. */
   const newAlert = async () => {
     const compositeId = `ldt:acme:${++detections}`;
-    stream.detection("EppDetectionSummaryEvent", compositeId, { Name: `Detection ${detections}`, SeverityName: "High", Hostname: "FIN-LT-0231" });
+    // No host or other indicators, so detaching it changes nothing a Guest sees.
+    stream.detection("EppDetectionSummaryEvent", compositeId, { Name: `Detection ${detections}`, SeverityName: "High" });
     await stream.drained();
     const body = await (await owner.api.alerts.$get({ query: {} })).json();
     if (!("alerts" in body)) throw new Error("No Alert queue");
@@ -211,8 +212,9 @@ describe("Guests × Internal, for every kind of item", () => {
     await memberLive.next((m) => m.type === "case");
     // Then something the Guest does see.
     await a.owner.api.cases[":number"].$patch({ param: param(a.number), json: { severity: "critical" } });
+    // The Guest is told of the raise first (in the same transaction), so this is that change's signal.
+    await live.next((m) => m.type === "notifications");
     await live.next((m) => m.type === "case");
-    await a.t.live.settled();
     expect(live.messages.filter((m) => m.type === "case")).toEqual([{ type: "case", number: a.number }]);
   });
 

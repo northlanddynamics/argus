@@ -193,6 +193,12 @@ export function createLive({ db, clock, signals }: { db: Db; clock: Clock; signa
       return;
     }
 
+    if (signal.kind === "notifications") {
+      // Each reads their own through the API, which decides what they may see.
+      for (const s of open) if (signal.userIds.includes(s.member.userId)) send(s, { type: "notifications" });
+      return;
+    }
+
     const facts = await accessFacts(signal.caseId);
     if (!facts) return;
 

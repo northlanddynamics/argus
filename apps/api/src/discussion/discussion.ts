@@ -5,13 +5,14 @@ import { guestGrantsOf } from "../guests/grants";
 import { actorOf, CaseNotFound, lockCase } from "../cases/cases";
 import { recordCaseAudit } from "../cases/case-audit-log";
 import { peopleWhoCanSee } from "../cases/people";
-import type { Clock } from "../clock";
 import type { Db, Tx } from "../db/client";
 import { cases, discussionMentions, discussionMessages, user } from "../db/schema";
 import { alertLabel, crowdstrikeActorName, falconAuthorName } from "../alerts/vocabulary";
 import { secureId } from "../ids";
 import type { Participant } from "../members/membership";
+import { notify, sendNotificationEmails } from "../notifications/notifications";
 import { publish } from "../realtime/signals";
+import type { Deps } from "../deps";
 import { GuestCannotSeeInternal } from "../internal/internal";
 import { mentionedIds, withNames } from "./mentions";
 
@@ -167,7 +168,18 @@ const recordMentions = async (tx: Tx, me: Participant, caseId: string, messageId
     .onConflictDoNothing();
 };
 
-export function discussionStore({ db, clock }: { db: Db; clock: Clock }) {
+/** Notifies the people `ids` names that they were mentioned in message `messageId`. */
+const notifyMentions = (tx: Tx, me: Participant, theCase: Awaited<ReturnType<typeof lockCase>>, messageId: string, ids: readonly string[], internal: boolean, at: Date) =>
+  notify(
+    tx,
+    theCase,
+    ids.map((recipientId) => ({ recipientId, kind: "mentioned" as const, actorId: me.userId, messageId })),
+    at,
+    { internal },
+  );
+
+export function discussionStore(deps: Pick<Deps, "db" | "clock" | "mailer" | "baseUrl">) {
+  const { db, clock } = deps;
   /** The Case's messages (or just `id`) as `me` sees them, oldest first. */
   const select = async (me: Participant, number: number, id?: string): Promise<MessageView[]> => {
     const [found] = await db
@@ -262,6 +274,7 @@ export function discussionStore({ db, clock }: { db: Db; clock: Clock }) {
           internal,
         });
         await recordMentions(tx, me, current.id, id, mentions, now);
+        await notifyMentions(tx, me, current, id, mentions, internal, now);
         await recordCaseAudit(tx, {
           organizationId: me.organizationId,
           caseId: current.id,
@@ -273,6 +286,7 @@ export function discussionStore({ db, clock }: { db: Db; clock: Clock }) {
         });
         await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id, membersOnly: internal });
       });
+      await sendNotificationEmails(deps);
       return view(me, number, id);
     },
 
@@ -294,6 +308,7 @@ export function discussionStore({ db, clock }: { db: Db; clock: Clock }) {
         await checkMentions(tx, current, added, message.internal, now);
         await tx.update(discussionMessages).set({ body, editedAt: now }).where(eq(discussionMessages.id, id));
         await recordMentions(tx, me, current.id, id, added, now);
+        await notifyMentions(tx, me, current, id, added, message.internal, now);
         const names = await namesOf(tx, [...new Set([...before, ...after])]);
         await recordCaseAudit(tx, {
           organizationId: me.organizationId,
@@ -306,6 +321,7 @@ export function discussionStore({ db, clock }: { db: Db; clock: Clock }) {
         });
         await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id, membersOnly: message.internal });
       });
+      await sendNotificationEmails(deps);
       return view(me, number, id);
     },
 

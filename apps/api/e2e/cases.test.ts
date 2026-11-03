@@ -876,3 +876,32 @@ test("a Member hides a Task and a message from Guests; the Guest sees the rest, 
     await stop();
   }
 }, 60_000);
+
+test("an Analyst is told live when a Case is assigned to them, and opens it from the bell", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    await owner.api.organization.invitations.$post({ json: { email: "ana@acme.example", role: "analyst" } });
+    const ana = await t.acceptInvite("ana@acme.example", PASSWORD, "Ana Analyst");
+    const page = await browser.newPage();
+    await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
+    await page.getByRole("status").getByText("Live").waitFor();
+
+    const opened = await (await owner.api.cases.$post({ json: { title: "Phishing from payroll", caseType: "phishing", severity: "high" } })).json();
+    if (!("case" in opened)) throw new Error("Could not open a Case");
+    const me = await (await ana.api.me.$get()).json();
+    if (!("user" in me)) throw new Error("Not signed in");
+    await owner.api.cases[":number"].$patch({ param: { number: String(opened.case.number) }, json: { assigneeId: me.user.id } });
+
+    // A toast, and an unread count on the bell.
+    await page.getByText("Olive Owner made you Assignee of C-1").first().waitFor();
+    await page.getByRole("button", { name: "Notifications, 1 unread" }).click();
+    await page.getByRole("menuitem", { name: /Olive Owner made you Assignee of C-1/ }).click();
+    await page.waitForURL(`${baseUrl}/cases/1`);
+    await page.getByRole("heading", { name: "Phishing from payroll" }).waitFor();
+    await page.getByRole("button", { name: "Notifications", exact: true }).waitFor();
+  } finally {
+    await stop();
+  }
+}, 60_000);

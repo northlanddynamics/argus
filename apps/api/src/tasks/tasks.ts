@@ -3,14 +3,15 @@ import { alias } from "drizzle-orm/pg-core";
 import { canSeeItem, visibleCases, visibleItems } from "../access/policy";
 import { actorOf, CaseNotFound, lockCase } from "../cases/cases";
 import { type CaseAuditEntry, recordCaseAudit } from "../cases/case-audit-log";
-import type { Clock } from "../clock";
 import type { Db, Tx } from "../db/client";
 import { cases, tasks, user } from "../db/schema";
 import { secureId } from "../ids";
 import { GuestCannotSeeInternal } from "../internal/internal";
 import type { Membership, Participant } from "../members/membership";
 import { peopleWhoCanSee } from "../cases/people";
+import { notify, sendNotificationEmails } from "../notifications/notifications";
 import { publish } from "../realtime/signals";
+import type { Deps } from "../deps";
 
 /**
  * Tasks on a Case: created and edited by Members who can see the Case, and completed and reopened by
@@ -111,7 +112,8 @@ const ownerName = async (tx: Tx, theCase: Awaited<ReturnType<typeof lockCase>>, 
   return who.name;
 };
 
-export function taskStore({ db, clock }: { db: Db; clock: Clock }) {
+export function taskStore(deps: Pick<Deps, "db" | "clock" | "mailer" | "baseUrl">) {
+  const { db, clock } = deps;
   const select = (from: Db | Tx = db) =>
     from
       .select(columns)
@@ -198,8 +200,10 @@ export function taskStore({ db, clock }: { db: Db; clock: Clock }) {
           target: input.title,
           after: internal ? `${name} · Internal` : name,
         });
+        await notify(tx, current, [{ recipientId: input.ownerId, kind: "task_assigned", actorId: me.userId, taskId: id }], now, { internal });
         await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id, membersOnly: internal });
       });
+      await sendNotificationEmails(deps);
       return view(me, number, id);
     },
 
@@ -251,9 +255,13 @@ export function taskStore({ db, clock }: { db: Db; clock: Clock }) {
           .set({ ...set, version: version + 1, updatedAt: now })
           .where(eq(tasks.id, task.id));
         for (const e of entries) await recordCaseAudit(tx, e);
+        if (set.ownerId) {
+          await notify(tx, current, [{ recipientId: set.ownerId, kind: "task_assigned", actorId: me.userId, taskId: task.id }], now, task);
+        }
         await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id, membersOnly: task.internal });
         return true;
       });
+      await sendNotificationEmails(deps);
       const task = await view(me, number, id);
       if (!saved) throw new StaleTask(task);
       return task;

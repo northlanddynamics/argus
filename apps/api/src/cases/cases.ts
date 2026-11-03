@@ -1,7 +1,7 @@
 import { and, count, desc, eq, isNull, ne, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import type { Clock } from "../clock";
-import type { Db, Tx } from "../db/client";
+import type { Tx } from "../db/client";
+import type { Deps } from "../deps";
 import { type Actor, canSeeCase, casePermissions, casePolicy, NotPermitted, visibleCases } from "../access/policy";
 import { caseRoleAssignmentsOf, caseRoleHolderIds } from "../case-roles/holders";
 import { guestGrantsOf } from "../guests/grants";
@@ -10,6 +10,7 @@ import { caseClosedComment, queueWriteBacks } from "../crowdstrike/write-back";
 import { secureId } from "../ids";
 import type { Membership, Participant } from "../members/membership";
 import { memberName } from "../members/members";
+import { notify, type Notice, participantsOf, sendNotificationEmails } from "../notifications/notifications";
 import { publish } from "../realtime/signals";
 import { taskCounts } from "../tasks/task-counts";
 import { hasTag, tagsOfCase } from "../tags/case-tags";
@@ -217,7 +218,8 @@ export async function insertCase(tx: Tx, me: Membership, input: OpenCaseInput, n
   return { id, number: last + 1 };
 }
 
-export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
+export function caseStore(deps: Pick<Deps, "db" | "clock" | "mailer" | "baseUrl">) {
+  const { db, clock } = deps;
   /** The Case's internal id, or throws `CaseNotFound` when `me` can't see it. */
   const findId = async (me: Actor, number: number) => {
     const [row] = await db
@@ -378,10 +380,17 @@ export function caseStore({ db, clock }: { db: Db; clock: Clock }) {
         if (assigneeEmail !== undefined) {
           await queueWriteBacks(tx, me.organizationId, await attachedAlerts(tx, current.id), { action: "assign", assigneeEmail }, now);
         }
+        const notices: Notice[] = [];
+        if (set.assigneeId) notices.push({ recipientId: set.assigneeId, kind: "case_assigned", actorId: me.userId });
+        if (set.severity === "critical") {
+          for (const recipientId of participantsOf(next)) notices.push({ recipientId, kind: "severity_critical", actorId: me.userId });
+        }
+        await notify(tx, next, notices, now);
         const before = { restricted: current.restricted, assigneeId: current.assigneeId };
         await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id, before });
         return next;
       });
+      await sendNotificationEmails(deps);
       return canSeeCase(me, result) ? view(me, number) : null;
     },
 
