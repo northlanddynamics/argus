@@ -1,5 +1,5 @@
 import { and, eq, isNull } from "drizzle-orm";
-import { recordDetection } from "../alerts/alerts";
+import { applyFalconUpdate, recordDetection } from "../alerts/alerts";
 import type { IntegrationHealth } from "../alerts/vocabulary";
 import { recordOrgAudit } from "../audit/org-audit-log";
 import type { Clock } from "../clock";
@@ -9,6 +9,7 @@ import type { CredentialSealer } from "../integrations/credentials";
 import { publish } from "../realtime/signals";
 import { readDetection } from "./detections";
 import type { FalconConnection, StreamEvent } from "./falcon";
+import { readFalconUpdate } from "./falcon-updates";
 
 /**
  * What the worker reads and writes about Integrations' streams. Like every module (ADR 0006), only
@@ -85,7 +86,8 @@ export async function reportSessionRefresh(db: Db, integrationId: string, at: Da
 
 /**
  * Processes one event from the Integration's stream, once: an event at or before the stored offset
- * was processed already and is skipped. A detection becomes or updates an Alert. An event past the
+ * was processed already and is skipped. A detection becomes or updates an Alert, and a
+ * `detection_update` applies a change made in Falcon to the Alerts it names. An event past the
  * next expected offset means Falcon no longer holds those in between: the gap is recorded in the
  * Organization Audit Log, and not backfilled. The offset is stored with the result.
  */
@@ -123,6 +125,8 @@ export async function processStreamEvent(db: Db, clock: Clock, integrationId: st
 
     const detection = readDetection(event);
     if (detection) await recordDetection(tx, row, detection, now);
+    const update = readFalconUpdate(event, now);
+    if (update) await applyFalconUpdate(tx, row, update, now);
 
     await tx
       .update(integrations)

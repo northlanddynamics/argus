@@ -6,6 +6,7 @@ import { DatePicker } from "@/components/date-picker";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { falconStatusLabel } from "@/lib/alerts";
 import { api } from "@/lib/api";
 import {
   CASE_AUDIT_ACTIONS,
@@ -68,6 +69,9 @@ export const actionLabel: Record<CaseAuditAction, string> = {
   "tag.removed": "Removed Tag",
   "alert.attached": "Attached Alert",
   "alert.detached": "Detached Alert",
+  "alert.falcon_status_changed": "Changed Falcon status of Alert",
+  "alert.falcon_assignee_changed": "Changed Falcon assignee of Alert",
+  "alert.falcon_tags_changed": "Changed Falcon tags of Alert",
   "item.marked_internal": "Marked Internal",
   "item.shown_to_guests": "Showed to Guests",
 };
@@ -82,6 +86,8 @@ function shown(action: CaseAuditAction, value: string | null) {
     case "case.closed":
     case "case.reopened":
       return statusLabel[value as Status] ?? resolutionLabel[value as Resolution] ?? value;
+    case "alert.falcon_status_changed":
+      return falconStatusLabel[value] ?? value;
     case "case.severity_changed":
       return severityLabel[value as Severity] ?? value;
     case "case.case_type_changed":

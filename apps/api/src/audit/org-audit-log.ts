@@ -25,12 +25,19 @@ export type OrgAuditAction =
   | "integration.write_back_enabled"
   | "integration.write_back_disabled"
   | "integration.stream_gap"
-  | "alert.dismissed";
+  | "alert.dismissed"
+  | "alert.falcon_status_changed"
+  | "alert.falcon_assignee_changed"
+  | "alert.falcon_tags_changed";
 
-/** Who acted: a Member (or the Operator) by id and name at the time, or the system itself. */
+/**
+ * Who acted: a Member (or the Operator) by id and name at the time, CrowdStrike for changes made in
+ * Falcon (named after the Falcon user), or the system itself.
+ */
 export type OrgAuditActor =
   | { type: "member"; id: string; name: string }
   | { type: "operator"; id: string }
+  | { type: "crowdstrike"; name: string }
   | { type: "system" };
 
 export type OrgAuditEntry = {
@@ -52,9 +59,9 @@ export async function recordOrgAudit(db: Db | Tx, entry: OrgAuditEntry) {
     organizationId: entry.organizationId,
     occurredAt: entry.occurredAt,
     actorType: actor.type,
-    actorId: actor.type === "system" ? null : actor.id,
+    actorId: actor.type === "member" || actor.type === "operator" ? actor.id : null,
     // Operators are shown by role, not name: they are not part of the Organization.
-    actorName: actor.type === "member" ? actor.name : actor.type === "operator" ? "Operator" : "System",
+    actorName: actor.type === "member" || actor.type === "crowdstrike" ? actor.name : actor.type === "operator" ? "Operator" : "System",
     category: entry.category,
     action: entry.action,
     target: entry.target ?? null,

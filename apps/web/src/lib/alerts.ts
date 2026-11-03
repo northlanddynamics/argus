@@ -11,6 +11,7 @@ export {
   dismissalReasonLabel,
   FALCON_CLOUDS,
   falconCloudLabel,
+  falconStatusLabel,
   integrationHealthLabel,
   type AlertKind,
   type AlertStatus,

@@ -15,6 +15,12 @@ export const dismissalReasonLabel: Record<DismissalReason, string> = {
   other: "Other",
 };
 
+/** An Alert's status in Falcon, which Argus mirrors but does not own: it is not its Alert Status. */
+export const falconStatusLabel: Record<string, string> = { new: "New", in_progress: "In Progress", reopened: "Reopened", closed: "Closed" };
+
+/** How CrowdStrike is named in Audit Logs for a change made in Falcon by `user`. */
+export const crowdstrikeActorName = (user: string | null) => (user ? `CrowdStrike (Falcon: ${user})` : "CrowdStrike");
+
 /** How an Alert is named in Audit Logs: its detection's title and Falcon's id for it. */
 export const alertLabel = (a: { title: string; externalId: string }) => `${a.title} (${a.externalId})`;
 

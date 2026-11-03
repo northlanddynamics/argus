@@ -100,6 +100,9 @@ export const CASE_AUDIT_ACTIONS = [
   "tag.removed",
   "alert.attached",
   "alert.detached",
+  "alert.falcon_status_changed",
+  "alert.falcon_assignee_changed",
+  "alert.falcon_tags_changed",
   "item.marked_internal",
   "item.shown_to_guests",
 ] as const;

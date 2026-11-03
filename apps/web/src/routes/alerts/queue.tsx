@@ -19,6 +19,7 @@ import {
   type AlertStatus,
   alertStatusLabel,
   dismissalReasonLabel,
+  falconStatusLabel,
   healthWord,
   integrationsQuery,
 } from "@/lib/alerts";
@@ -408,6 +409,30 @@ function AlertPanel({ id, onClose }: { id: string; onClose: () => void }) {
                 {dismissalReasonLabel[a.dismissed.reason]}
                 {a.dismissed.by && ` by ${a.dismissed.by.name}`}
                 {a.dismissed.comment && <span className="block text-muted-foreground">“{a.dismissed.comment}”</span>}
+              </dd>
+            </>
+          )}
+          {a.falcon.status && (
+            <>
+              <dt className="text-muted-foreground">In Falcon</dt>
+              <dd>{falconStatusLabel[a.falcon.status] ?? a.falcon.status}</dd>
+            </>
+          )}
+          {a.falcon.assignee && (
+            <>
+              <dt className="text-muted-foreground">Falcon assignee</dt>
+              <dd>{a.falcon.assignee}</dd>
+            </>
+          )}
+          {a.falcon.tags.length > 0 && (
+            <>
+              <dt className="text-muted-foreground">Falcon tags</dt>
+              <dd className="flex flex-wrap gap-1">
+                {a.falcon.tags.map((tag) => (
+                  <Badge key={tag} variant="secondary">
+                    {tag}
+                  </Badge>
+                ))}
               </dd>
             </>
           )}
