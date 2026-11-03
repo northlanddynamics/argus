@@ -37,6 +37,9 @@ export type WriteBackState = (typeof WRITE_BACK_STATES)[number];
 /** How CrowdStrike is named in Audit Logs for a change made in Falcon by `user`. */
 export const crowdstrikeActorName = (user: string | null) => (user ? `CrowdStrike (Falcon: ${user})` : "CrowdStrike");
 
+/** How the author of a comment made in Falcon, synced into a Discussion, is shown. */
+export const falconAuthorName = (author: string | null) => (author ? `CrowdStrike: ${author}` : "CrowdStrike");
+
 /** How an Alert is named in Audit Logs: its detection's title and Falcon's id for it. */
 export const alertLabel = (a: { title: string; externalId: string }) => `${a.title} (${a.externalId})`;
 

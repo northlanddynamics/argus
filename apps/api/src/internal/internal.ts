@@ -8,6 +8,7 @@ import type { Clock } from "../clock";
 import type { Db, Tx } from "../db/client";
 import { alerts, discussionMessages, evidence, tasks, timelineEntries, user } from "../db/schema";
 import { mentionedIds } from "../discussion/mentions";
+import { falconAuthorName } from "../alerts/vocabulary";
 import type { Membership } from "../members/membership";
 import { publish } from "../realtime/signals";
 import { INTERNAL_ITEM_KINDS, type InternalItem } from "./vocabulary";
@@ -61,12 +62,20 @@ async function lockItem(tx: Tx, caseId: string, item: InternalItem): Promise<Mar
     }
     case "discussion_message": {
       const [row] = await tx
-        .select({ internal: discussionMessages.internal, body: discussionMessages.body, author: user.name })
+        .select({
+          internal: discussionMessages.internal,
+          body: discussionMessages.body,
+          author: user.name,
+          falconCommentId: discussionMessages.falconCommentId,
+          falconAuthor: discussionMessages.falconAuthor,
+        })
         .from(discussionMessages)
-        .innerJoin(user, eq(discussionMessages.authorId, user.id))
+        .leftJoin(user, eq(discussionMessages.authorId, user.id))
         .where(and(eq(discussionMessages.id, item.id), eq(discussionMessages.caseId, caseId)))
         .for("update", { of: discussionMessages });
-      return row ? { internal: row.internal, label: `Message from ${row.author}`, involves: mentionedIds(row.body) } : missing();
+      if (!row) return missing();
+      const author = row.falconCommentId !== null ? falconAuthorName(row.falconAuthor) : (row.author ?? "unknown");
+      return { internal: row.internal, label: `Message from ${author}`, involves: mentionedIds(row.body) };
     }
     case "timeline_entry": {
       const [row] = await tx

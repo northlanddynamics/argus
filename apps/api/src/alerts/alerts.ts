@@ -7,6 +7,7 @@ import { actorOf, CaseClosed, CaseNotFound, insertCase, type OpenCaseInput } fro
 import { caseRef, SEVERITIES, type Severity, type Status } from "../cases/vocabulary";
 import type { Detection } from "../crowdstrike/detections";
 import type { FalconUpdate } from "../crowdstrike/falcon-updates";
+import { falconCommentsOf, requestCaseCommentSync, requestCommentSync } from "../crowdstrike/comment-sync";
 import { attachedComment, dismissedComment, queueWriteBacks } from "../crowdstrike/write-back";
 import type { Db, Tx } from "../db/client";
 import { alerts, cases, integrations, user } from "../db/schema";
@@ -32,6 +33,8 @@ import { alertLabel, type AlertStatus, crowdstrikeActorName, type DismissalReaso
  * Changes made to an Alert in Falcon (its status, assignee and tags there) are mirrored onto it
  * (`applyFalconUpdate`), last write wins, and recorded as CrowdStrike's: in its Case's Audit Log
  * while it is on one, else in the Organization Audit Log. They don't change its Alert Status.
+ * Comments made on it in Falcon are fetched when Falcon reports a change to it, when it is attached,
+ * and when it or its Case is opened, and posted into its Case's Discussion (`crowdstrike/comment-sync.ts`).
  *
  * Members open a Case from Alerts, attach them to a Case, move them between Cases, detach them and
  * dismiss them with a Dismissal Reason. An Alert is on at most one Case at a time; attaching one
@@ -172,7 +175,8 @@ const tagList = (tags: readonly string[]) => (tags.length ? tags.join(", ") : nu
  * Alerts not yet received are skipped. Each of status, assignee and tags is applied only if the
  * change is no older than the one that last set it, so changes arriving out of order never
  * overwrite newer ones. Each change applied moves the Alert's version on and is recorded in the
- * Audit Log as CrowdStrike's. Call it in the transaction that stores the offset.
+ * Audit Log as CrowdStrike's. Every Alert it names is also marked for a comment fetch, since a
+ * comment added in Falcon may be all that changed. Call it in the transaction that stores the offset.
  */
 export async function applyFalconUpdate(tx: Tx, integration: { id: string; organizationId: string }, update: FalconUpdate, now: Date) {
   const rows = await tx
@@ -194,6 +198,11 @@ export async function applyFalconUpdate(tx: Tx, integration: { id: string; organ
     .orderBy(asc(alerts.id))
     .for("update");
   /** Whether this change is no older than the one that last set a field at `at`. */
+  await requestCommentSync(
+    tx,
+    rows.map((r) => r.id),
+    now,
+  );
   const newer = (at: Date | null) => at === null || update.at.getTime() >= at.getTime();
   const actor = { type: "crowdstrike" as const, name: crowdstrikeActorName(update.user) };
   let applied = false;
@@ -437,6 +446,8 @@ async function attachIn(
       { action: "attach", falconStatus: "in_progress", comment: attachedComment(target, baseUrl) },
       now,
     );
+    // Comments already made in Falcon join the Case's Discussion.
+    await requestCommentSync(tx, result.applied, now);
     await tx.update(cases).set({ updatedAt: now }).where(inArray(cases.id, [...touched]));
     await publish(tx, { kind: "alerts", organizationId: me.organizationId });
     for (const caseId of touched) {
@@ -558,8 +569,26 @@ export function alertStore({ db, clock, baseUrl }: Pick<Deps, "db" | "clock" | "
       }));
     },
 
-    /** One Alert in full, with its detection as Falcon sent it. */
+    /**
+     * Asks for the comments of every Alert attached to Case `number` again, unless fetched just now,
+     * as when someone opens the Case; the worker fetches them. Does nothing when `me` can't see it.
+     */
+    async refreshCommentsOnCase(me: Participant, number: number) {
+      const [found] = await db
+        .select({ id: cases.id })
+        .from(cases)
+        .where(and(visibleCases(me), eq(cases.number, number)))
+        .limit(1);
+      if (found) await requestCaseCommentSync(db, found.id, clock.now());
+    },
+
+    /**
+     * One Alert in full, with its detection as Falcon sent it and its comments in Falcon as last
+     * fetched. Opening it asks for its comments again, unless they were fetched just now; the worker
+     * fetches them, and `falconComments.refreshing` says so meanwhile.
+     */
     async get(me: Membership, id: string) {
+      await requestCommentSync(db, [id], clock.now(), { ifStale: true });
       const [row] = await db
         .select({
           id: alerts.id,
@@ -593,6 +622,9 @@ export function alertStore({ db, clock, baseUrl }: Pick<Deps, "db" | "clock" | "
           falconStatus: alerts.falconStatus,
           falconAssignee: alerts.falconAssignee,
           falconTags: alerts.falconTags,
+          falconCommentsDue: alerts.falconCommentsDue,
+          falconCommentsSyncedAt: alerts.falconCommentsSyncedAt,
+          falconCommentsError: alerts.falconCommentsError,
         })
         .from(alerts)
         .innerJoin(integrations, eq(alerts.integrationId, integrations.id))
@@ -624,6 +656,8 @@ export function alertStore({ db, clock, baseUrl }: Pick<Deps, "db" | "clock" | "
         integration: { id: row.integrationId, name: row.integrationName },
         /** The Alert as Falcon has it, from changes made there; null fields aren't known yet. */
         falcon: { status: row.falconStatus, assignee: row.falconAssignee, tags: row.falconTags },
+        /** The comments made on it in Falcon, as last fetched. */
+        falconComments: await falconCommentsOf(db, row),
         /** Set while it is Attached; `case` is null when that Case is one `me` can't see. */
         attached:
           row.status === "attached" && row.attachedAt

@@ -277,17 +277,32 @@ export const discussionMessages = pgTable(
     caseId: text("case_id")
       .notNull()
       .references(() => cases.id, { onDelete: "restrict" }),
-    authorId: text("author_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "restrict" }),
+    /** Null for a synced Falcon comment, which has no author in Argus. */
+    authorId: text("author_id").references(() => user.id, { onDelete: "restrict" }),
     body: text("body").notNull(),
     postedAt: timestamp("posted_at", { withTimezone: true }).notNull(),
     editedAt: timestamp("edited_at", { withTimezone: true }),
     retractedAt: timestamp("retracted_at", { withTimezone: true }),
     /** Hidden from Guests on the Case (`access/policy.ts`). */
     internal: boolean("internal").notNull().default(false),
+    /**
+     * A comment made in Falcon on an Alert attached to the Case, synced in (ADR 0002): the Alert, the
+     * comment's identity in Falcon, and the Falcon user who made it, if Falcon said.
+     */
+    alertId: text("alert_id").references((): AnyPgColumn => alerts.id, { onDelete: "restrict" }),
+    falconCommentId: text("falcon_comment_id"),
+    falconAuthor: text("falcon_author"),
   },
-  (t) => [index("discussion_messages_case_idx").on(t.caseId, t.seq)],
+  (t) => [
+    index("discussion_messages_case_idx").on(t.caseId, t.seq),
+    uniqueIndex("discussion_messages_falcon_comment_idx")
+      .on(t.caseId, t.alertId, t.falconCommentId)
+      .where(sql`${t.falconCommentId} IS NOT NULL`),
+    check(
+      "discussion_messages_author",
+      sql`(${t.authorId} IS NULL) = (${t.falconCommentId} IS NOT NULL) AND (${t.falconCommentId} IS NULL) = (${t.alertId} IS NULL)`,
+    ),
+  ],
 );
 
 /**
@@ -759,11 +774,19 @@ export const alerts = pgTable(
     falconAssigneeAt: timestamp("falcon_assignee_at", { withTimezone: true }),
     falconTags: jsonb("falcon_tags").$type<string[]>().notNull().default([]),
     falconTagsAt: timestamp("falcon_tags_at", { withTimezone: true }),
+    /**
+     * Fetching the Alert's comments from Falcon (`crowdstrike/comment-sync.ts`): whether a fetch is
+     * wanted, when the last one finished, and why it failed, if it did.
+     */
+    falconCommentsDue: boolean("falcon_comments_due").notNull().default(false),
+    falconCommentsSyncedAt: timestamp("falcon_comments_synced_at", { withTimezone: true }),
+    falconCommentsError: text("falcon_comments_error"),
   },
   (t) => [
     uniqueIndex("alerts_integration_external_idx").on(t.integrationId, t.externalId),
     index("alerts_org_received_idx").on(t.organizationId, t.receivedAt),
     index("alerts_case_idx").on(t.caseId),
+    index("alerts_falcon_comments_due_idx").on(t.id).where(sql`${t.falconCommentsDue}`),
     check(
       "alerts_status",
       sql`(${t.status} = 'attached') = (${t.caseId} IS NOT NULL) AND (${t.status} = 'dismissed') = (${t.dismissalReason} IS NOT NULL)`,
@@ -813,4 +836,32 @@ export const falconWriteBacks = pgTable(
     index("falcon_write_backs_alert_idx").on(t.alertId, t.seq),
     index("falcon_write_backs_integration_idx").on(t.integrationId, t.state),
   ],
+);
+
+/**
+ * The comments made on an Alert in Falcon, as fetched from there (ADR 0002), each held once by its
+ * identity in Falcon. Comments Argus wrote itself (write-backs) are left out. While the Alert is
+ * attached to a Case, each is also a message in that Case's Discussion.
+ */
+export const alertFalconComments = pgTable(
+  "alert_falcon_comments",
+  {
+    id: text("id").primaryKey(),
+    seq: bigserial("seq", { mode: "number" }).notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    alertId: text("alert_id")
+      .notNull()
+      .references(() => alerts.id, { onDelete: "restrict" }),
+    /** Falcon's id for the comment, or one derived from its time, author and text when Falcon gives none. */
+    falconCommentId: text("falcon_comment_id").notNull(),
+    /** The Falcon user who made it, if Falcon said. */
+    author: text("author"),
+    body: text("body").notNull(),
+    /** When it was made in Falcon, if Falcon said. */
+    createdAt: timestamp("created_at", { withTimezone: true }),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [uniqueIndex("alert_falcon_comments_alert_comment_idx").on(t.alertId, t.falconCommentId)],
 );

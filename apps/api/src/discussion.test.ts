@@ -130,6 +130,7 @@ describe("Posting messages", () => {
     expect(first).toEqual({
       id: expect.any(String),
       author: { id: await userId(ana), name: "Ana Analyst" },
+      falcon: null,
       body: "Contained. Can someone grab a memory image before reboot?",
       mentions: [],
       postedAt: "2026-01-01T09:00:00.000Z",
@@ -219,6 +220,7 @@ describe("Editing and retracting messages", () => {
     const retracted = {
       id: posted.id,
       author: posted.author,
+      falcon: null,
       body: null,
       mentions: [],
       postedAt: posted.postedAt,
