@@ -4,8 +4,8 @@ import type { FalconCloud } from "../alerts/vocabulary";
  * The Falcon API as Argus uses it (ADR 0002): an adapter, so the worker runs against the real API
  * (`falcon-http.ts`) in production and a fake stream in tests (`test/fake-falcon.ts`).
  *
- * Only Event Streams for now; Alert write-back, comments and user lookup join it with the outbox,
- * which writes nothing for an Integration whose `writeBack` is off.
+ * Event Streams in; Alert updates and user lookup out, for the write-back outbox
+ * (`write-back.ts`), which writes nothing for an Integration whose `writeBack` is off.
  */
 
 export type FalconCredentials = { clientId: string; clientSecret: string };
@@ -33,6 +33,19 @@ export type StreamEvent = {
   event: Record<string, unknown>;
 };
 
+/**
+ * One change to Alerts in Falcon, as `PATCH /alerts/entities/alerts/v3` takes it. Fields left
+ * undefined are left as they are.
+ */
+export type AlertPatch = {
+  /** Falcon's status: `new`, `in_progress`, `reopened` or `closed`. */
+  status?: string;
+  /** Added to the Alert's comments. */
+  comment?: string;
+  /** The Falcon user to assign to, by UUID; null unassigns. */
+  assignTo?: string | null;
+};
+
 export interface FalconClient {
   /** Opens an Event Streams session. Rejects when the credentials are refused or Event Streams isn't enabled. */
   openStream(): Promise<StreamSession>;
@@ -44,6 +57,10 @@ export interface FalconClient {
    * `signal` aborts.
    */
   consume(session: StreamSession, offset: number, signal: AbortSignal): AsyncIterable<StreamEvent>;
+  /** Applies `patch` to the Alerts with these composite IDs. Rejects when Falcon refuses or fails. */
+  updateAlerts(compositeIds: readonly string[], patch: AlertPatch): Promise<void>;
+  /** The UUID of the Falcon user whose login is `email`, or null when there is none. */
+  findUser(email: string): Promise<string | null>;
 }
 
 /** Makes the client for one Integration. */

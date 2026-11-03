@@ -1,9 +1,10 @@
-import type { FalconClient, FalconConnection, FalconConnector, StreamEvent, StreamSession } from "../crowdstrike/falcon";
+import type { AlertPatch, FalconClient, FalconConnection, FalconConnector, StreamEvent, StreamSession } from "../crowdstrike/falcon";
 
 /**
  * A fake Falcon for tests: one Event Stream per tenant (keyed by API client id), with consecutive
  * offsets. Tests emit events into it, drop open connections, and make Falcon forget old events
- * (as its replay window does) to create gaps it can no longer replay.
+ * (as its replay window does) to create gaps it can no longer replay. Each tenant also has the
+ * Alerts API, recording every patch it accepts, and users to look up by email.
  */
 
 type Consumer = {
@@ -37,6 +38,15 @@ function fakeTenant() {
     refuseRefresh: null as string | null,
     /** Set to make the next read start at this offset whatever was asked for, as a replay would. */
     replayFrom: null as number | null,
+
+    /** Every patch the Alerts API accepted, in order. */
+    patches: [] as { compositeIds: string[]; patch: AlertPatch }[],
+    /** The tenant's Falcon users: login email → UUID. */
+    users: new Map<string, string>(),
+    /** Set to make every Alerts API call and user lookup fail with this message. */
+    refuseWrites: null as string | null,
+    /** How many more Alerts API calls fail before they succeed again. */
+    failNextWrites: 0,
 
     /** Adds an event to the stream; returns its offset. */
     emit(eventType: string, event: Record<string, unknown>, createdAt: Date | null = null) {
@@ -143,6 +153,18 @@ export function fakeFalcon() {
         t.refreshes++;
       },
       consume: (_session, offset, signal) => t.read(offset, signal),
+      async updateAlerts(compositeIds, patch) {
+        if (t.refuseWrites) throw new Error(t.refuseWrites);
+        if (t.failNextWrites > 0) {
+          t.failNextWrites--;
+          throw new Error("Updating Alerts in Falcon failed: 503");
+        }
+        t.patches.push({ compositeIds: [...compositeIds], patch });
+      },
+      async findUser(email) {
+        if (t.refuseWrites) throw new Error(t.refuseWrites);
+        return t.users.get(email.toLowerCase()) ?? null;
+      },
     };
   };
 

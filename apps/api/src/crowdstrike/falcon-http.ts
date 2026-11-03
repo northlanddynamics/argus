@@ -1,9 +1,9 @@
 import type { FalconCloud } from "../alerts/vocabulary";
-import type { FalconClient, FalconConnection, StreamEvent, StreamSession } from "./falcon";
+import type { AlertPatch, FalconClient, FalconConnection, StreamEvent, StreamSession } from "./falcon";
 
 /**
  * The Falcon API over HTTP: OAuth2 client credentials, then the Event Streams discovery, refresh and
- * data feed endpoints. Unverified against a live tenant (see spec #1, "Further Notes").
+ * data feed endpoints, the Alerts update endpoint and the user lookup. Unverified against a live tenant (see spec #1, "Further Notes").
  */
 
 const BASE_URLS: Record<FalconCloud, string> = {
@@ -15,6 +15,18 @@ const BASE_URLS: Record<FalconCloud, string> = {
 
 /** Falcon's default when a session says nothing: 30 minutes. */
 const DEFAULT_REFRESH_INTERVAL_MS = 30 * 60_000;
+
+/** How long a write or lookup may take before it counts as failed. */
+const REQUEST_TIMEOUT_MS = 30_000;
+
+/** `patch` as Falcon's `action_parameters`. */
+export function actionParameters(patch: AlertPatch) {
+  const params: { name: string; value: string }[] = [];
+  if (patch.status !== undefined) params.push({ name: "update_status", value: patch.status });
+  if (patch.assignTo !== undefined) params.push(patch.assignTo === null ? { name: "unassign", value: "" } : { name: "assign_to_uuid", value: patch.assignTo });
+  if (patch.comment !== undefined) params.push({ name: "append_comment", value: patch.comment });
+  return params;
+}
 
 /** A Falcon API call failed; the message says which and how. */
 export class FalconError extends Error {}
@@ -77,6 +89,28 @@ export function falconHttpClient({ cloud, credentials, appId }: FalconConnection
         body: JSON.stringify({ action_name: "refresh_active_stream_session", appId }),
       });
       if (!res.ok) throw await failure("Refreshing the Event Stream session", res);
+    },
+
+    async updateAlerts(compositeIds, patch) {
+      const res = await fetchImpl(`${base}/alerts/entities/alerts/v3`, {
+        method: "PATCH",
+        headers: { authorization: `Bearer ${await accessToken()}`, "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ composite_ids: compositeIds, action_parameters: actionParameters(patch) }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (!res.ok) throw await failure("Updating Alerts in Falcon", res);
+    },
+
+    async findUser(email) {
+      // FQL string: a quote or backslash in the email is escaped.
+      const filter = `uid:'${email.replace(/[\\']/g, (c) => `\\${c}`)}'`;
+      const res = await fetchImpl(`${base}/user-management/queries/users/v1?${new URLSearchParams({ filter })}`, {
+        headers: { authorization: `Bearer ${await accessToken()}`, accept: "application/json" },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (!res.ok) throw await failure("Looking up a Falcon user", res);
+      const body = (await res.json()) as { resources?: string[] };
+      return body.resources?.[0] ?? null;
     },
 
     async *consume(session, offset, signal) {

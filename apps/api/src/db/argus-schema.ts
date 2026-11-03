@@ -20,7 +20,15 @@ import { CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabula
 import { STORED_LINK_TYPES } from "../case-links/vocabulary";
 import { ASSET_TYPES, OBSERVABLE_TYPES } from "../observables/vocabulary";
 import { type Citation, PROMOTION_SOURCES } from "../timeline/vocabulary";
-import { ALERT_KINDS, ALERT_STATUSES, DISMISSAL_REASONS, FALCON_CLOUDS, INTEGRATION_HEALTH } from "../alerts/vocabulary";
+import {
+  ALERT_KINDS,
+  ALERT_STATUSES,
+  DISMISSAL_REASONS,
+  FALCON_CLOUDS,
+  INTEGRATION_HEALTH,
+  WRITE_BACK_ACTIONS,
+  WRITE_BACK_STATES,
+} from "../alerts/vocabulary";
 import { organization, session, user } from "./auth-schema";
 
 /**
@@ -760,5 +768,49 @@ export const alerts = pgTable(
       "alerts_status",
       sql`(${t.status} = 'attached') = (${t.caseId} IS NOT NULL) AND (${t.status} = 'dismissed') = (${t.dismissalReason} IS NOT NULL)`,
     ),
+  ],
+);
+
+/**
+ * The Falcon write-back outbox (ADR 0002): one row per change to one Alert that Argus is to write
+ * back to Falcon, queued in the transaction that made the change, and sent by the worker. Rows for
+ * the same Alert are sent in `seq` order, each only once those before it are done. A failed send
+ * stays `pending` with `next_attempt_at` pushed back; `attempts` counts the failures.
+ *
+ * `falcon_status` and `comment` are what to set; for `assign`, `assignee_email` names the Falcon
+ * user to assign to by email, and null unassigns.
+ */
+export const falconWriteBacks = pgTable(
+  "falcon_write_backs",
+  {
+    id: text("id").primaryKey(),
+    seq: bigserial("seq", { mode: "number" }).notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    integrationId: text("integration_id")
+      .notNull()
+      .references(() => integrations.id, { onDelete: "restrict" }),
+    alertId: text("alert_id")
+      .notNull()
+      .references(() => alerts.id, { onDelete: "restrict" }),
+    /** Falcon's composite ID for the Alert. */
+    externalId: text("external_id").notNull(),
+    action: text("action", { enum: WRITE_BACK_ACTIONS }).notNull(),
+    falconStatus: text("falcon_status"),
+    comment: text("comment"),
+    assigneeEmail: text("assignee_email"),
+    state: text("state", { enum: WRITE_BACK_STATES }).notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull(),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    /** When it was sent, skipped, cancelled or given up on. */
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("falcon_write_backs_due_idx").on(t.nextAttemptAt).where(sql`${t.state} = 'pending'`),
+    index("falcon_write_backs_alert_idx").on(t.alertId, t.seq),
+    index("falcon_write_backs_integration_idx").on(t.integrationId, t.state),
   ],
 );

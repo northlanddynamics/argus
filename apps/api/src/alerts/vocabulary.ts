@@ -18,6 +18,22 @@ export const dismissalReasonLabel: Record<DismissalReason, string> = {
 /** An Alert's status in Falcon, which Argus mirrors but does not own: it is not its Alert Status. */
 export const falconStatusLabel: Record<string, string> = { new: "New", in_progress: "In Progress", reopened: "Reopened", closed: "Closed" };
 
+/**
+ * What Argus writes back to Falcon about an Alert (ADR 0002), each the result of something done in
+ * Argus: attaching it to a Case, dismissing it, closing its Case, or changing its Case's Assignee.
+ */
+export const WRITE_BACK_ACTIONS = ["attach", "dismiss", "case_close", "assign"] as const;
+export type WriteBackAction = (typeof WRITE_BACK_ACTIONS)[number];
+
+/**
+ * Where a write-back stands. `pending`: waiting to be sent, or to be retried after a failure.
+ * `sent`: Falcon accepted it. `skipped`: there was nothing to send (no Falcon user matches the
+ * Assignee's email). `cancelled`: write-back was turned off before it was sent. `failed`: Falcon
+ * kept refusing it, and Argus gave up.
+ */
+export const WRITE_BACK_STATES = ["pending", "sent", "skipped", "cancelled", "failed"] as const;
+export type WriteBackState = (typeof WRITE_BACK_STATES)[number];
+
 /** How CrowdStrike is named in Audit Logs for a change made in Falcon by `user`. */
 export const crowdstrikeActorName = (user: string | null) => (user ? `CrowdStrike (Falcon: ${user})` : "CrowdStrike");
 
