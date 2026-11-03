@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { falconHttpClient } from "./falcon-http";
+import { falconHttpClient, readComments } from "./falcon-http";
 
 /** A Falcon API that answers from `routes`, recording each request. */
 function stubFalcon(routes: Record<string, (req: Request) => Response>) {
@@ -133,5 +133,37 @@ describe("The Falcon API client", () => {
     expect(await client.findUser("ana@acme.example")).toBe("uuid-ana");
     expect(await client.findUser("o'brien@acme.example")).toBeNull();
     expect(new URL(requests.at(-1)!.url).searchParams.get("filter")).toBe("uid:'o\\'brien@acme.example'");
+  });
+
+  test("reads an Alert's comments, oldest first, giving those without an id one that stays the same", async () => {
+    const alert = {
+      composite_id: "a",
+      comments: [
+        { id: "c-2", value: "Reimaging.", created_by: "mlee@acme.example", timestamp: "2026-01-01T10:00:00Z" },
+        { value: "Isolated.", user_name: "jsmith@acme.example", timestamp: 1767258000 },
+        { value: "   " },
+        "not a comment",
+      ],
+    };
+    const { requests, fetchImpl } = stubFalcon({
+      "POST https://api.eu-1.crowdstrike.com/oauth2/token": token,
+      "POST https://api.eu-1.crowdstrike.com/alerts/entities/alerts/v2": () => Response.json({ resources: [alert] }),
+    });
+    const comments = await falconHttpClient(connection, fetchImpl).alertComments("a");
+    expect(await requests.at(-1)!.json()).toEqual({ composite_ids: ["a"] });
+    expect(comments).toEqual([
+      { id: expect.stringMatching(/^sha256:[0-9a-f]{64}$/), author: "jsmith@acme.example", body: "Isolated.", createdAt: new Date(1767258000 * 1000) },
+      { id: "c-2", author: "mlee@acme.example", body: "Reimaging.", createdAt: new Date("2026-01-01T10:00:00Z") },
+    ]);
+    expect(readComments(alert)[0]!.id).toBe(comments[0]!.id);
+    expect(readComments({})).toEqual([]);
+
+    const refused = stubFalcon({
+      "POST https://api.eu-1.crowdstrike.com/oauth2/token": token,
+      "POST https://api.eu-1.crowdstrike.com/alerts/entities/alerts/v2": () => Response.json({ errors: [{ message: "access denied" }] }, { status: 403 }),
+    });
+    await expect(falconHttpClient(connection, refused.fetchImpl).alertComments("a")).rejects.toThrow(
+      "Reading an Alert's comments from Falcon failed: 403 access denied",
+    );
   });
 });

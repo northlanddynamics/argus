@@ -1,10 +1,11 @@
-import type { AlertPatch, FalconClient, FalconConnection, FalconConnector, StreamEvent, StreamSession } from "../crowdstrike/falcon";
+import type { AlertPatch, FalconClient, FalconComment, FalconConnection, FalconConnector, StreamEvent, StreamSession } from "../crowdstrike/falcon";
 
 /**
  * A fake Falcon for tests: one Event Stream per tenant (keyed by API client id), with consecutive
  * offsets. Tests emit events into it, drop open connections, and make Falcon forget old events
  * (as its replay window does) to create gaps it can no longer replay. Each tenant also has the
- * Alerts API, recording every patch it accepts, and users to look up by email.
+ * Alerts API, recording every patch it accepts and serving each Alert's comments, and users to
+ * look up by email. A comment in a patch it accepts becomes one of the Alert's comments, as in Falcon.
  */
 
 type Consumer = {
@@ -47,6 +48,24 @@ function fakeTenant() {
     refuseWrites: null as string | null,
     /** How many more Alerts API calls fail before they succeed again. */
     failNextWrites: 0,
+
+    /** Each Alert's comments, by composite ID, oldest first. */
+    comments: new Map<string, FalconComment[]>(),
+    /** The composite ID of every Alert whose comments were read, in order. */
+    commentReads: [] as string[],
+    /** Set to make reading comments fail with this message. */
+    refuseReads: null as string | null,
+
+    /** Adds a comment to an Alert, as a Falcon user would in the console; returns it. */
+    comment(
+      compositeId: string,
+      body: string,
+      { author = "jsmith@acme.example", at = null, id = crypto.randomUUID() }: { author?: string; at?: Date | null; id?: string } = {},
+    ) {
+      const comment: FalconComment = { id, author, body, createdAt: at };
+      tenant.comments.set(compositeId, [...(tenant.comments.get(compositeId) ?? []), comment]);
+      return comment;
+    },
 
     /** Adds an event to the stream; returns its offset. */
     emit(eventType: string, event: Record<string, unknown>, createdAt: Date | null = null) {
@@ -160,10 +179,18 @@ export function fakeFalcon() {
           throw new Error("Updating Alerts in Falcon failed: 503");
         }
         t.patches.push({ compositeIds: [...compositeIds], patch });
+        if (patch.comment !== undefined) {
+          for (const id of compositeIds) t.comment(id, patch.comment, { author: "argus-api-client" });
+        }
       },
       async findUser(email) {
         if (t.refuseWrites) throw new Error(t.refuseWrites);
         return t.users.get(email.toLowerCase()) ?? null;
+      },
+      async alertComments(compositeId) {
+        if (t.refuseReads) throw new Error(t.refuseReads);
+        t.commentReads.push(compositeId);
+        return [...(t.comments.get(compositeId) ?? [])];
       },
     };
   };

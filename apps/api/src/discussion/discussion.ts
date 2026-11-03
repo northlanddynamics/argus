@@ -8,6 +8,7 @@ import { peopleWhoCanSee } from "../cases/people";
 import type { Clock } from "../clock";
 import type { Db, Tx } from "../db/client";
 import { cases, discussionMentions, discussionMessages, user } from "../db/schema";
+import { alertLabel, crowdstrikeActorName, falconAuthorName } from "../alerts/vocabulary";
 import { secureId } from "../ids";
 import type { Participant } from "../members/membership";
 import { publish } from "../realtime/signals";
@@ -22,6 +23,10 @@ import { mentionedIds, withNames } from "./mentions";
  * A message may mention only people who can see it: people who can see the Case, and no Guests on
  * an Internal message. Mentioning someone never lets them see it. Who was mentioned where is stored
  * for notifications.
+ *
+ * Comments made in Falcon on an Alert attached to the Case are synced in as messages attributed to
+ * "CrowdStrike: <user>" (`postFalconComments`), once each by their identity in Falcon. They are
+ * Internal until a Member shows them to Guests, and nobody can edit or retract them.
  */
 
 export class MessageNotFound extends Error {
@@ -46,7 +51,13 @@ export { NotPermitted };
 type Person = { id: string; name: string };
 export type MessageView = {
   id: string;
-  author: Person;
+  /** `id` is null for a synced Falcon comment. */
+  author: { id: string | null; name: string };
+  /**
+   * Set when the message is a comment synced from Falcon; `alertId` names the Alert it was made on,
+   * for Members only.
+   */
+  falcon: { alertId: string | null } | null;
   /** With mentions as `<@userId>`; null once retracted. */
   body: string | null;
   /** The people the text mentions now, by id, with their current names. */
@@ -59,6 +70,54 @@ export type MessageView = {
   /** What the viewer may do to this message, while the Case isn't Closed. */
   can: { edit: boolean; retract: boolean };
 };
+
+/** A comment made in Falcon on an Alert, to post into the Discussion of the Case it is attached to. */
+export type SyncedComment = { falconCommentId: string; author: string | null; body: string; createdAt: Date | null };
+
+/**
+ * Posts the comments on `alert`, attached to Case `caseId`, that aren't in its Discussion yet, as
+ * Internal messages attributed to CrowdStrike, each recorded in the Case Audit Log. Call it in a
+ * transaction that holds the Alert's row lock. Returns how many were posted.
+ */
+export async function postFalconComments(
+  tx: Tx,
+  alert: { id: string; organizationId: string; caseId: string; title: string; externalId: string },
+  comments: readonly SyncedComment[],
+  now: Date,
+) {
+  if (!comments.length) return 0;
+  const posted = await tx
+    .insert(discussionMessages)
+    .values(
+      comments.map((c) => ({
+        id: secureId(),
+        organizationId: alert.organizationId,
+        caseId: alert.caseId,
+        authorId: null,
+        body: c.body,
+        postedAt: now,
+        internal: true,
+        alertId: alert.id,
+        falconCommentId: c.falconCommentId,
+        falconAuthor: c.author,
+      })),
+    )
+    .onConflictDoNothing()
+    .returning({ body: discussionMessages.body, falconAuthor: discussionMessages.falconAuthor });
+  for (const message of posted) {
+    await recordCaseAudit(tx, {
+      organizationId: alert.organizationId,
+      caseId: alert.caseId,
+      occurredAt: now,
+      actor: { type: "crowdstrike", name: crowdstrikeActorName(message.falconAuthor) },
+      action: "discussion.message_posted",
+      target: `Internal · from ${alertLabel(alert)}`,
+      after: message.body,
+    });
+  }
+  if (posted.length) await publish(tx, { kind: "case", organizationId: alert.organizationId, caseId: alert.caseId, membersOnly: true });
+  return posted.length;
+}
 
 /** The names of these people, by id. Joins `tx`. */
 const namesOf = async (db: Db | Tx, ids: readonly string[]) => {
@@ -122,6 +181,9 @@ export function discussionStore({ db, clock }: { db: Db; clock: Clock }) {
         id: discussionMessages.id,
         authorId: discussionMessages.authorId,
         authorName: user.name,
+        alertId: discussionMessages.alertId,
+        falconCommentId: discussionMessages.falconCommentId,
+        falconAuthor: discussionMessages.falconAuthor,
         body: discussionMessages.body,
         postedAt: discussionMessages.postedAt,
         editedAt: discussionMessages.editedAt,
@@ -129,7 +191,7 @@ export function discussionStore({ db, clock }: { db: Db; clock: Clock }) {
         internal: discussionMessages.internal,
       })
       .from(discussionMessages)
-      .innerJoin(user, eq(discussionMessages.authorId, user.id))
+      .leftJoin(user, eq(discussionMessages.authorId, user.id))
       .where(
         and(
           eq(discussionMessages.caseId, found.id),
@@ -142,10 +204,12 @@ export function discussionStore({ db, clock }: { db: Db; clock: Clock }) {
     const names = await namesOf(db, [...new Set(live.flatMap((r) => mentionedIds(r.body)))]);
     return rows.map((r) => {
       const retracted = r.retractedAt !== null;
+      const fromFalcon = r.falconCommentId !== null;
       const mine = discussionPolicy.canChangeMessage(me, r);
       return {
         id: r.id,
-        author: { id: r.authorId, name: r.authorName },
+        author: fromFalcon ? { id: null, name: falconAuthorName(r.falconAuthor) } : { id: r.authorId, name: r.authorName ?? "unknown" },
+        falcon: fromFalcon ? { alertId: me.role === "guest" ? null : r.alertId } : null,
         body: retracted ? null : r.body,
         mentions: retracted ? [] : mentionedIds(r.body).map((m) => ({ id: m, name: names.get(m) ?? "unknown" })),
         postedAt: r.postedAt.toISOString(),

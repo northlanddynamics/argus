@@ -1,9 +1,10 @@
 import type { FalconCloud } from "../alerts/vocabulary";
-import type { AlertPatch, FalconClient, FalconConnection, StreamEvent, StreamSession } from "./falcon";
+import { createHash } from "node:crypto";
+import type { AlertPatch, FalconClient, FalconComment, FalconConnection, StreamEvent, StreamSession } from "./falcon";
 
 /**
  * The Falcon API over HTTP: OAuth2 client credentials, then the Event Streams discovery, refresh and
- * data feed endpoints, the Alerts update endpoint and the user lookup. Unverified against a live tenant (see spec #1, "Further Notes").
+ * data feed endpoints, the Alerts update and read endpoints and the user lookup. Unverified against a live tenant (see spec #1, "Further Notes").
  */
 
 const BASE_URLS: Record<FalconCloud, string> = {
@@ -26,6 +27,44 @@ export function actionParameters(patch: AlertPatch) {
   if (patch.assignTo !== undefined) params.push(patch.assignTo === null ? { name: "unassign", value: "" } : { name: "assign_to_uuid", value: patch.assignTo });
   if (patch.comment !== undefined) params.push({ name: "append_comment", value: patch.comment });
   return params;
+}
+
+const text = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+
+/** Falcon's timestamps: ISO strings, or seconds or milliseconds since the epoch. */
+function when(v: unknown) {
+  if (typeof v === "string" && v.trim() && Number.isNaN(Number(v))) {
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const n = typeof v === "string" ? Number(v) : v;
+  if (typeof n !== "number" || !Number.isFinite(n) || n <= 0) return null;
+  return new Date(n > 1e12 ? n : n * 1000);
+}
+
+/**
+ * The comments in an Alert entity as Falcon returns it, oldest first. Comments without an id of
+ * their own are given one derived from their time, author and text, so the same comment is
+ * recognised on every fetch.
+ */
+export function readComments(alert: Record<string, unknown> | undefined): FalconComment[] {
+  const list = alert?.comments;
+  if (!Array.isArray(list)) return [];
+  const comments: FalconComment[] = [];
+  for (const item of list) {
+    if (!item || typeof item !== "object") continue;
+    const c = item as Record<string, unknown>;
+    const body = text(c.value) ?? text(c.comment) ?? text(c.text) ?? text(c.body);
+    if (!body) continue;
+    const author = text(c.user_name) ?? text(c.created_by) ?? text(c.user_id) ?? text(c.user_uuid);
+    const createdAt = when(c.timestamp ?? c.created_timestamp ?? c.created_on);
+    const id =
+      text(c.id) ??
+      text(c.comment_id) ??
+      `sha256:${createHash("sha256").update(JSON.stringify([createdAt?.toISOString() ?? null, author, body])).digest("hex")}`;
+    comments.push({ id, author, body, createdAt });
+  }
+  return comments.toSorted((a, b) => (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0));
 }
 
 /** A Falcon API call failed; the message says which and how. */
@@ -111,6 +150,18 @@ export function falconHttpClient({ cloud, credentials, appId }: FalconConnection
       if (!res.ok) throw await failure("Looking up a Falcon user", res);
       const body = (await res.json()) as { resources?: string[] };
       return body.resources?.[0] ?? null;
+    },
+
+    async alertComments(compositeId) {
+      const res = await fetchImpl(`${base}/alerts/entities/alerts/v2`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${await accessToken()}`, "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ composite_ids: [compositeId] }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (!res.ok) throw await failure("Reading an Alert's comments from Falcon", res);
+      const body = (await res.json()) as { resources?: Record<string, unknown>[] };
+      return readComments(body.resources?.[0]);
     },
 
     async *consume(session, offset, signal) {

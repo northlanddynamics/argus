@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type KeyboardEvent, useRef, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -150,6 +151,11 @@ function Message({
     <li className="grid gap-1 border-b pb-4 last:border-b-0" aria-label={`Message from ${m.author.name}`}>
       <div className="flex items-baseline gap-2 text-sm">
         <span className="font-semibold">{m.author.name}</span>
+        {m.falcon && (
+          <Badge variant="outline" title="A comment made in Falcon on an Alert attached to this Case">
+            Synced from Falcon
+          </Badge>
+        )}
         <time className="text-xs text-muted-foreground" dateTime={m.postedAt}>
           {new Date(m.postedAt).toLocaleString()}
         </time>

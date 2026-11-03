@@ -2,6 +2,7 @@ import { websocket } from "@hono/bun";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chromium, type Browser, type Page } from "playwright";
 import { defaultWebDist } from "../src/config";
+import { createCommentSyncer } from "../src/crowdstrike/comment-sync";
 import { createStreamWorker } from "../src/crowdstrike/stream-worker";
 import { createServerApp } from "../src/server-app";
 import { fakeFalcon } from "../src/test/fake-falcon";
@@ -202,6 +203,55 @@ test("an Alert shows the Observables and Assets it names; attaching it adds them
     await row.getByText("Alert (auto)").waitFor();
     await row.getByRole("link", { name: "Encoded PowerShell from Office process" }).click();
     await page.getByRole("region", { name: "Extracted Observables" }).waitFor();
+  } finally {
+    await stop();
+  }
+}, 60_000);
+
+test("opening an Alert refreshes its Falcon comments without waiting; once attached, they are in the Case's Discussion", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  const falcon = fakeFalcon();
+  const worker = createStreamWorker(t.deps, { connect: falcon.connect, workerId: "worker-1" });
+  t.onCleanup(worker.close);
+  const comments = createCommentSyncer(t.deps, { connect: falcon.connect });
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    await owner.api.organization.invitations.$post({ json: { email: "ana@acme.example", role: "analyst" } });
+    const ana = await t.acceptInvite("ana@acme.example", PASSWORD, "Ana Analyst");
+    await owner.api.integrations.$post({ json: { name: "CrowdStrike — Prod", cloud: "us-1", clientId: "falcon-client-0001", clientSecret: "s" } });
+    await worker.tick();
+    const stream = falcon.tenant("falcon-client-0001");
+    stream.detection("EppDetectionSummaryEvent", "ldt:1", { Name: "Encoded PowerShell from Office process", SeverityName: "High" });
+    await stream.drained();
+    stream.comment("ldt:1", "Isolated the host from the console.", { author: "jsmith@acme.example" });
+    const opened = await (await ana.api.cases.$post({ json: { title: "PowerShell on FIN-LT-0231", caseType: "malware", severity: "high" } })).json();
+    if (!("case" in opened)) throw new Error("Could not open a Case");
+    const number = opened.case.number;
+
+    const page = await browser.newPage();
+    await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
+    await page.goto(`${baseUrl}/alerts`);
+    await page.getByTestId("alert-ldt:1").getByRole("button", { name: "Encoded PowerShell from Office process" }).click();
+    const inFalcon = page.getByRole("region", { name: "Comments in Falcon" });
+    await inFalcon.getByText("Refreshing from Falcon…").waitFor();
+    await comments.tick();
+    await inFalcon.getByText("Isolated the host from the console.").waitFor();
+    await inFalcon.getByText("CrowdStrike: jsmith@acme.example").waitFor();
+
+    await page.getByLabel("Select ldt:1").check();
+    await page.getByRole("button", { name: "Attach to Case…" }).click();
+    const dialog = page.getByRole("dialog", { name: "Attach 1 Alert to a Case" });
+    await dialog.getByLabel("Find a Case").fill(`C-${number}`);
+    await dialog.getByText("PowerShell on FIN-LT-0231").click();
+    await dialog.getByRole("button", { name: "Attach" }).click();
+    await dialog.waitFor({ state: "hidden" });
+    await comments.tick();
+
+    await page.goto(`${baseUrl}/cases/${number}/timeline`);
+    const message = page.getByRole("listitem", { name: "Message from CrowdStrike: jsmith@acme.example" });
+    await message.getByText("Isolated the host from the console.").waitFor();
+    await message.getByText("Synced from Falcon").waitFor();
   } finally {
     await stop();
   }

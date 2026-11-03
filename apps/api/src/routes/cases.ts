@@ -249,6 +249,8 @@ export const caseRoutes = (
     .get("/:number", zValidator("param", numberParam), async (c) => {
       const found = await unlessNotFound(store.view(c.get("participant"), c.req.valid("param").number));
       if (!found) return c.json(notFound, 404);
+      // Opening a Case asks Falcon for its Alerts' comments again; the worker fetches them.
+      await alerts.refreshCommentsOnCase(c.get("participant"), c.req.valid("param").number);
       return c.json({ case: found }, 200);
     })
     .patch("/:number", membersOnly, zValidator("param", numberParam), zValidator("json", changeBody), async (c) => {

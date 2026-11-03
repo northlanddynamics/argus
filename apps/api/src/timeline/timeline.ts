@@ -6,6 +6,7 @@ import { recordCaseAudit } from "../cases/case-audit-log";
 import type { CaseAuditAction } from "../cases/vocabulary";
 import type { Clock } from "../clock";
 import type { Db, Tx } from "../db/client";
+import { falconAuthorName } from "../alerts/vocabulary";
 import { caseAuditLog, cases, discussionMessages, tasks, timelineEntries, user } from "../db/schema";
 import { secureId } from "../ids";
 import type { Membership, Participant } from "../members/membership";
@@ -73,7 +74,8 @@ export class AlreadyPromoted extends Error {
 type Person = { id: string; name: string };
 export type CitationView = Citation & { label: string };
 export type SourceView =
-  | { kind: "discussion_message"; id: string; author: Person; postedAt: string }
+  /** `author.id` is null for a comment synced from Falcon. */
+  | { kind: "discussion_message"; id: string; author: { id: string | null; name: string }; postedAt: string }
   | { kind: "audit_log_entry"; id: string; action: CaseAuditAction; actor: string; occurredAt: string };
 export type TimelineEntryView = {
   id: string;
@@ -282,9 +284,16 @@ export function timelineStore({ db, clock }: { db: Db; clock: Clock }) {
     const messageIds = ids("discussion_message");
     if (messageIds.length) {
       const rows = await db
-        .select({ id: discussionMessages.id, authorId: user.id, authorName: user.name, postedAt: discussionMessages.postedAt })
+        .select({
+          id: discussionMessages.id,
+          authorId: user.id,
+          authorName: user.name,
+          falconCommentId: discussionMessages.falconCommentId,
+          falconAuthor: discussionMessages.falconAuthor,
+          postedAt: discussionMessages.postedAt,
+        })
         .from(discussionMessages)
-        .innerJoin(user, eq(discussionMessages.authorId, user.id))
+        .leftJoin(user, eq(discussionMessages.authorId, user.id))
         .where(
           and(eq(discussionMessages.caseId, caseId), inArray(discussionMessages.id, messageIds), visibleItems(me, discussionMessages.internal)),
         );
@@ -292,7 +301,8 @@ export function timelineStore({ db, clock }: { db: Db; clock: Clock }) {
         views.set(r.id, {
           kind: "discussion_message",
           id: r.id,
-          author: { id: r.authorId, name: r.authorName },
+          author:
+            r.falconCommentId !== null ? { id: null, name: falconAuthorName(r.falconAuthor) } : { id: r.authorId, name: r.authorName ?? "unknown" },
           postedAt: r.postedAt.toISOString(),
         });
       }

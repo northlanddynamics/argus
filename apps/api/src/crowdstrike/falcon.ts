@@ -5,7 +5,8 @@ import type { FalconCloud } from "../alerts/vocabulary";
  * (`falcon-http.ts`) in production and a fake stream in tests (`test/fake-falcon.ts`).
  *
  * Event Streams in; Alert updates and user lookup out, for the write-back outbox
- * (`write-back.ts`), which writes nothing for an Integration whose `writeBack` is off.
+ * (`write-back.ts`), which writes nothing for an Integration whose `writeBack` is off. An Alert's
+ * comments are read on demand (`comment-sync.ts`), whatever the write-back setting.
  */
 
 export type FalconCredentials = { clientId: string; clientSecret: string };
@@ -46,6 +47,17 @@ export type AlertPatch = {
   assignTo?: string | null;
 };
 
+/** One comment on an Alert in Falcon. */
+export type FalconComment = {
+  /** Its identity in Falcon: what synced comments are de-duplicated by. */
+  id: string;
+  /** The Falcon user who made it, if Falcon said. */
+  author: string | null;
+  body: string;
+  /** When it was made, if Falcon said. */
+  createdAt: Date | null;
+};
+
 export interface FalconClient {
   /** Opens an Event Streams session. Rejects when the credentials are refused or Event Streams isn't enabled. */
   openStream(): Promise<StreamSession>;
@@ -61,6 +73,8 @@ export interface FalconClient {
   updateAlerts(compositeIds: readonly string[], patch: AlertPatch): Promise<void>;
   /** The UUID of the Falcon user whose login is `email`, or null when there is none. */
   findUser(email: string): Promise<string | null>;
+  /** The comments on the Alert with this composite ID, oldest first; none if Falcon has no such Alert. */
+  alertComments(compositeId: string): Promise<FalconComment[]>;
 }
 
 /** Makes the client for one Integration. */

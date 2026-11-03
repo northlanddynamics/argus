@@ -14,6 +14,7 @@ import {
   ago,
   ALERT_STATUSES,
   alertKindLabel,
+  type AlertDetail,
   alertQuery,
   alertsKey,
   type AlertStatus,
@@ -339,6 +340,47 @@ function OutcomeNotice({ outcome, onReselect, onDismiss }: { outcome: BulkOutcom
 
 /** One Alert in full, beside the queue, with Move and Detach while it is on a Case. */
 /** Observables or Assets an Alert names, as badges. */
+/** The Alert's comments in Falcon, as last fetched; opening the Alert asks the worker to fetch them again. */
+function FalconComments({ comments: c, attached }: { comments: AlertDetail["falconComments"]; attached: boolean }) {
+  return (
+    <section aria-label="Comments in Falcon" className="grid gap-1">
+      <div className="flex items-baseline justify-between gap-2">
+        <h3 className="text-xs font-medium text-muted-foreground">Comments in Falcon</h3>
+        {c.refreshing ? (
+          <span role="status" className="text-xs text-muted-foreground">
+            Refreshing from Falcon…
+          </span>
+        ) : (
+          c.syncedAt && (
+            <span className="text-xs text-muted-foreground">
+              Fetched <time dateTime={c.syncedAt}>{new Date(c.syncedAt).toLocaleTimeString()}</time>
+            </span>
+          )
+        )}
+      </div>
+      {c.error && <p className="text-xs text-destructive">Couldn’t fetch comments: {c.error}</p>}
+      {c.comments.length ? (
+        <ul className="grid gap-2">
+          {c.comments.map((comment) => (
+            <li key={comment.id} className="rounded border p-2">
+              <p className="text-xs text-muted-foreground">
+                CrowdStrike: {comment.author ?? "unknown user"}
+                {comment.createdAt && ` · ${new Date(comment.createdAt).toLocaleString()}`}
+              </p>
+              <p className="whitespace-pre-wrap">{comment.body}</p>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        !c.refreshing && <p className="text-muted-foreground">None</p>
+      )}
+      {attached && c.comments.length > 0 && (
+        <p className="text-xs text-muted-foreground">These are in the Case’s Discussion too, as Internal messages.</p>
+      )}
+    </section>
+  );
+}
+
 function Extracted({ label, items }: { label: string; items: { id: string; text: string; title: string }[] }) {
   return (
     <section aria-label={label} className="grid gap-1">
@@ -448,6 +490,7 @@ function AlertPanel({ id, onClose }: { id: string; onClose: () => void }) {
         {a.indicators.observables.length + a.indicators.assets.length > 0 && (
           <p className="text-xs text-muted-foreground">Attaching this Alert adds these to the Case.</p>
         )}
+        <FalconComments comments={a.falconComments} attached={a.attached !== null} />
         <details>
           <summary className="cursor-pointer text-muted-foreground">Raw payload</summary>
           <pre className="mt-2 max-h-64 overflow-auto rounded bg-muted p-2 text-xs">{JSON.stringify(a.payload, null, 2)}</pre>

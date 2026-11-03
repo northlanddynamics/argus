@@ -124,7 +124,7 @@ export const casePolicy = {
 /** Discussion permissions, for a message on a Case the actor can already see. */
 export const discussionPolicy = {
   /** Only a message's author edits or retracts it. */
-  canChangeMessage: (actor: Actor, message: { authorId: string }) => message.authorId === actor.userId,
+  canChangeMessage: (actor: Actor, message: { authorId: string | null }) => message.authorId !== null && message.authorId === actor.userId,
 };
 
 /** Organization permissions. */
