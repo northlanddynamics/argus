@@ -37,7 +37,7 @@ export const orgAuditLog = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "restrict" }),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
-    actorType: text("actor_type", { enum: ["member", "operator", "system"] }).notNull(),
+    actorType: text("actor_type", { enum: ["member", "operator", "crowdstrike", "system"] }).notNull(),
     actorId: text("actor_id").references(() => user.id, { onDelete: "restrict" }),
     /** The actor's name when they acted, so the entry reads the same after they leave. */
     actorName: text("actor_name").notNull(),
@@ -741,6 +741,16 @@ export const alerts = pgTable(
     dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
     /** Hidden from Guests on the Case it is attached to; every attachment makes it Internal again. */
     internal: boolean("internal").notNull().default(true),
+    /**
+     * The Alert as Falcon has it: its status, assignee and tags there, each with the time of the
+     * Falcon change that set it, so an older change arriving late never overwrites a newer one.
+     */
+    falconStatus: text("falcon_status"),
+    falconStatusAt: timestamp("falcon_status_at", { withTimezone: true }),
+    falconAssignee: text("falcon_assignee"),
+    falconAssigneeAt: timestamp("falcon_assignee_at", { withTimezone: true }),
+    falconTags: jsonb("falcon_tags").$type<string[]>().notNull().default([]),
+    falconTagsAt: timestamp("falcon_tags_at", { withTimezone: true }),
   },
   (t) => [
     uniqueIndex("alerts_integration_external_idx").on(t.integrationId, t.externalId),

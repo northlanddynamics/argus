@@ -32,6 +32,9 @@ const actionLabels: Record<string, string> = {
   "integration.write_back_disabled": "Denied write-back to Falcon for",
   "integration.stream_gap": "Gap in the stream of",
   "alert.dismissed": "Dismissed Alert",
+  "alert.falcon_status_changed": "Changed Falcon status of Alert",
+  "alert.falcon_assignee_changed": "Changed Falcon assignee of Alert",
+  "alert.falcon_tags_changed": "Changed Falcon tags of Alert",
 };
 
 /** Describes an entry: "Changed role of J. Okafor". The creation entry already names its target in "after". */

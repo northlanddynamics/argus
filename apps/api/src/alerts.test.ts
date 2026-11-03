@@ -406,3 +406,125 @@ describe("Live updates", () => {
     await socket.next((m) => m.type === "alerts");
   });
 });
+
+/** Emits a `detection_update` by `user` at `at` (seconds) changing `values` on the Alerts `ids`. */
+const falconUpdate = (stream: Awaited<ReturnType<typeof acme>>["stream"], ids: string[], values: Record<string, string>, at: number, user = "jsmith@acme.example") => {
+  stream.emit("UserActivityAuditEvent", {
+    OperationName: "detection_update",
+    ServiceName: "detections",
+    UserId: user,
+    UTCTimestamp: at,
+    AuditKeyValues: [...ids.map((id) => ({ Key: "composite_id", ValueString: id })), ...Object.entries(values).map(([Key, ValueString]) => ({ Key, ValueString }))],
+  });
+  return stream.drained();
+};
+const orgAudit = async (a: Awaited<ReturnType<typeof acme>>) => {
+  const body = await (await a.owner.api.organization["audit-log"].$get({ query: { category: "alerts" } })).json();
+  if (!("entries" in body)) throw new Error("Could not read the Organization Audit Log");
+  return body.entries;
+};
+
+describe("Changes made in Falcon", () => {
+  test("status, assignee and tag changes apply to the Alert matched by composite ID, attributed to CrowdStrike", async () => {
+    const a = await acme();
+    await a.detect("ldt:1", "Credential dumping attempt");
+    await a.detect("ldt:2", "PUP installer blocked");
+    const before = await a.alert("ldt:1");
+
+    await falconUpdate(a.stream, ["ldt:1"], { new_status: "in_progress", assigned_to_name: "John Smith", add_tag: "contained" }, 1_800_000_000);
+
+    const after = await a.detail(before.id);
+    expect(after.falcon).toEqual({ status: "in_progress", assignee: "John Smith", tags: ["contained"] });
+    expect(after.version).toBe(before.version + 1);
+    // Falcon's status is not the Alert Status.
+    expect(after.status).toBe("new");
+    expect((await a.detail((await a.alert("ldt:2")).id)).falcon).toEqual({ status: null, assignee: null, tags: [] });
+
+    const entries = await orgAudit(a);
+    expect(entries.map((e) => [e.actor.type, e.actor.name, e.action, e.target, e.before, e.after])).toEqual(
+      expect.arrayContaining([
+        ["crowdstrike", "CrowdStrike (Falcon: jsmith@acme.example)", "alert.falcon_status_changed", "Credential dumping attempt (ldt:1)", null, "in_progress"],
+        ["crowdstrike", "CrowdStrike (Falcon: jsmith@acme.example)", "alert.falcon_assignee_changed", "Credential dumping attempt (ldt:1)", null, "John Smith"],
+        ["crowdstrike", "CrowdStrike (Falcon: jsmith@acme.example)", "alert.falcon_tags_changed", "Credential dumping attempt (ldt:1)", null, "contained"],
+      ]),
+    );
+  });
+
+  test("a change to an Alert on a Case is recorded in that Case's Audit Log", async () => {
+    const a = await acme();
+    await a.detect("ldt:1", "Credential dumping attempt");
+    const number = await a.open();
+    await a.attach(number, await a.select("ldt:1"));
+
+    await falconUpdate(a.stream, ["ldt:1"], { new_status: "closed" }, 1_800_000_000);
+
+    const body = await (await a.owner.api.cases[":number"]["audit-log"].$get({ param: param(number), query: {} })).json();
+    if (!("entries" in body)) throw new Error("Could not read the Audit Log");
+    const entry = body.entries.find((e) => e.action === "alert.falcon_status_changed");
+    expect(entry).toMatchObject({
+      actor: { type: "crowdstrike", id: null, name: "CrowdStrike (Falcon: jsmith@acme.example)" },
+      target: "Credential dumping attempt (ldt:1)",
+      before: null,
+      after: "closed",
+    });
+    expect((await orgAudit(a)).filter((e) => e.action.startsWith("alert.falcon"))).toEqual([]);
+    expect((await a.alert("ldt:1")).status).toBe("attached");
+  });
+
+  test("last write wins by Falcon's timestamp: an older change arriving late doesn't overwrite a newer one", async () => {
+    const a = await acme();
+    await a.detect("ldt:1", "Credential dumping attempt");
+    const { id } = await a.alert("ldt:1");
+
+    await falconUpdate(a.stream, ["ldt:1"], { new_status: "closed", add_tag: "fp" }, 1_800_000_200);
+    await falconUpdate(a.stream, ["ldt:1"], { new_status: "in_progress", assigned_to_name: "John Smith", remove_tag: "fp" }, 1_800_000_100);
+    expect((await a.detail(id)).falcon).toEqual({ status: "closed", assignee: "John Smith", tags: ["fp"] });
+
+    await falconUpdate(a.stream, ["ldt:1"], { new_status: "reopened" }, 1_800_000_300);
+    expect((await a.detail(id)).falcon.status).toBe("reopened");
+    const statuses = (await orgAudit(a)).filter((e) => e.action === "alert.falcon_status_changed").map((e) => [e.before, e.after]);
+    expect(statuses).toEqual([
+      ["closed", "reopened"],
+      [null, "closed"],
+    ]);
+  });
+
+  test("a change naming several Alerts applies to each; unknown ones and other operations are skipped", async () => {
+    const a = await acme();
+    await a.detect("ldt:1", "Credential dumping attempt");
+    await a.detect("ldt:2", "PUP installer blocked");
+    await falconUpdate(a.stream, ["ldt:1", "ldt:2", "ldt:unknown"], { new_status: "in_progress" }, 1_800_000_000);
+    a.stream.emit("UserActivityAuditEvent", {
+      OperationName: "detection_containment",
+      UserId: "jsmith@acme.example",
+      UTCTimestamp: 1_800_000_100,
+      AuditKeyValues: [{ Key: "composite_id", ValueString: "ldt:1" }, { Key: "new_status", ValueString: "closed" }],
+    });
+    await a.stream.drained();
+
+    expect((await a.detail((await a.alert("ldt:1")).id)).falcon.status).toBe("in_progress");
+    expect((await a.detail((await a.alert("ldt:2")).id)).falcon.status).toBe("in_progress");
+    expect((await a.queue()).length).toBe(2);
+  });
+
+  test("a change made in Falcon reaches Members' live sockets", async () => {
+    const a = await acme();
+    await a.detect("ldt:1", "Credential dumping attempt");
+    const number = await a.open();
+    await a.attach(number, await a.select("ldt:1"));
+    const socket = await a.t.connect(a.ben);
+
+    await falconUpdate(a.stream, ["ldt:1"], { assigned_to_name: "John Smith" }, 1_800_000_000);
+    await socket.next((m) => m.type === "case" && m.number === number);
+    await socket.next((m) => m.type === "alerts");
+  });
+
+  test("a selection made before a change in Falcon is refused as changed", async () => {
+    const a = await acme();
+    await a.detect("ldt:1", "Credential dumping attempt");
+    const selection = await a.select("ldt:1");
+    await falconUpdate(a.stream, ["ldt:1"], { add_tag: "contained" }, 1_800_000_000);
+    const { body } = await a.dismiss(selection);
+    expect(body).toMatchObject({ applied: [], refused: [{ reason: "changed", detail: "changed since you selected it: it was updated from Falcon" }] });
+  });
+});

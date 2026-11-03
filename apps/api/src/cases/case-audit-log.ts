@@ -4,8 +4,11 @@ import { caseAuditLog } from "../db/schema";
 import { secureId } from "../ids";
 import type { CaseAuditAction } from "./vocabulary";
 
-/** Who acted on a Case. CrowdStrike and the system arrive with later work. */
-export type CaseActor = { type: "member" | "guest"; id: string; name: string };
+/**
+ * Who acted on a Case: a Member or Guest, or CrowdStrike, for changes made in Falcon, named after
+ * the Falcon user who made them ("CrowdStrike (Falcon: jsmith)"). The system arrives with later work.
+ */
+export type CaseActor = { type: "member" | "guest"; id: string; name: string } | { type: "crowdstrike"; name: string };
 
 export type CaseAuditEntry = {
   organizationId: string;
@@ -27,7 +30,7 @@ export async function recordCaseAudit(tx: Tx, entry: CaseAuditEntry) {
     caseId: entry.caseId,
     occurredAt: entry.occurredAt,
     actorType: entry.actor.type,
-    actorId: entry.actor.id,
+    actorId: entry.actor.type === "crowdstrike" ? null : entry.actor.id,
     actorName: entry.actor.name,
     action: entry.action,
     target: entry.target ?? null,

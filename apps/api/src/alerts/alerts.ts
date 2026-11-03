@@ -6,6 +6,7 @@ import { recordCaseAudit } from "../cases/case-audit-log";
 import { actorOf, CaseClosed, CaseNotFound, insertCase, type OpenCaseInput } from "../cases/cases";
 import { caseRef, SEVERITIES, type Severity, type Status } from "../cases/vocabulary";
 import type { Detection } from "../crowdstrike/detections";
+import type { FalconUpdate } from "../crowdstrike/falcon-updates";
 import type { Db, Tx } from "../db/client";
 import { alerts, cases, integrations, user } from "../db/schema";
 import type { Deps } from "../deps";
@@ -13,7 +14,7 @@ import { secureId } from "../ids";
 import type { Membership, Participant } from "../members/membership";
 import { alertIndicators, linkAlertIndicators, recordAlertIndicators, unlinkAlertIndicators } from "../observables/observables";
 import { publish } from "../realtime/signals";
-import { alertLabel, type AlertStatus, type DismissalReason, dismissalReasonLabel } from "./vocabulary";
+import { alertLabel, type AlertStatus, crowdstrikeActorName, type DismissalReason, dismissalReasonLabel } from "./vocabulary";
 
 /**
  * Alerts: detections received from the Organization's Integrations. Every Member sees the Alert
@@ -22,6 +23,10 @@ import { alertLabel, type AlertStatus, type DismissalReason, dismissalReasonLabe
  * Attaching an Alert to a Case makes it Internal, hidden from the Case's Guests, until a Member
  * shows it to them (`internal/`). It also links the Observables and Assets the Alert names to the
  * Case, and detaching it unlinks them again, except those added by hand (`observables/`). Guests see only the Alerts on their Case that aren't Internal.
+ *
+ * Changes made to an Alert in Falcon (its status, assignee and tags there) are mirrored onto it
+ * (`applyFalconUpdate`), last write wins, and recorded as CrowdStrike's: in its Case's Audit Log
+ * while it is on one, else in the Organization Audit Log. They don't change its Alert Status.
  *
  * Members open a Case from Alerts, attach them to a Case, move them between Cases, detach them and
  * dismiss them with a Dismissal Reason. An Alert is on at most one Case at a time; attaching one
@@ -148,6 +153,92 @@ export async function recordDetection(
   return changed !== undefined;
 }
 
+/** A Falcon change as an Audit Log entry: what changed, from what to what. */
+type FalconChange = {
+  action: "alert.falcon_status_changed" | "alert.falcon_assignee_changed" | "alert.falcon_tags_changed";
+  before: string | null;
+  after: string | null;
+};
+
+const tagList = (tags: readonly string[]) => (tags.length ? tags.join(", ") : null);
+
+/**
+ * Applies a change made in Falcon to the Integration's Alerts it names, matched by composite ID;
+ * Alerts not yet received are skipped. Each of status, assignee and tags is applied only if the
+ * change is no older than the one that last set it, so changes arriving out of order never
+ * overwrite newer ones. Each change applied moves the Alert's version on and is recorded in the
+ * Audit Log as CrowdStrike's. Call it in the transaction that stores the offset.
+ */
+export async function applyFalconUpdate(tx: Tx, integration: { id: string; organizationId: string }, update: FalconUpdate, now: Date) {
+  const rows = await tx
+    .select({
+      id: alerts.id,
+      externalId: alerts.externalId,
+      title: alerts.title,
+      version: alerts.version,
+      caseId: alerts.caseId,
+      falconStatus: alerts.falconStatus,
+      falconStatusAt: alerts.falconStatusAt,
+      falconAssignee: alerts.falconAssignee,
+      falconAssigneeAt: alerts.falconAssigneeAt,
+      falconTags: alerts.falconTags,
+      falconTagsAt: alerts.falconTagsAt,
+    })
+    .from(alerts)
+    .where(and(eq(alerts.integrationId, integration.id), inArray(alerts.externalId, update.externalIds)))
+    .orderBy(asc(alerts.id))
+    .for("update");
+  /** Whether this change is no older than the one that last set a field at `at`. */
+  const newer = (at: Date | null) => at === null || update.at.getTime() >= at.getTime();
+  const actor = { type: "crowdstrike" as const, name: crowdstrikeActorName(update.user) };
+  let applied = false;
+
+  for (const row of rows) {
+    const set: Partial<typeof alerts.$inferInsert> = {};
+    const changes: FalconChange[] = [];
+    if (update.status !== undefined && newer(row.falconStatusAt)) {
+      set.falconStatusAt = update.at;
+      if (update.status !== row.falconStatus) {
+        set.falconStatus = update.status;
+        changes.push({ action: "alert.falcon_status_changed", before: row.falconStatus, after: update.status });
+      }
+    }
+    if (update.assignee !== undefined && newer(row.falconAssigneeAt)) {
+      set.falconAssigneeAt = update.at;
+      if (update.assignee !== row.falconAssignee) {
+        set.falconAssignee = update.assignee;
+        changes.push({ action: "alert.falcon_assignee_changed", before: row.falconAssignee, after: update.assignee });
+      }
+    }
+    if (update.tags && newer(row.falconTagsAt)) {
+      set.falconTagsAt = update.at;
+      const base = update.tags.set ?? row.falconTags;
+      const tags = [...new Set([...base, ...update.tags.add])].filter((t) => !update.tags!.remove.includes(t));
+      const same = tags.length === row.falconTags.length && tags.every((t) => row.falconTags.includes(t));
+      if (!same) {
+        set.falconTags = tags;
+        changes.push({ action: "alert.falcon_tags_changed", before: tagList(row.falconTags), after: tagList(tags) });
+      }
+    }
+    if (!Object.keys(set).length) continue;
+    if (changes.length) Object.assign(set, { version: row.version + 1, updatedAt: now });
+    await tx.update(alerts).set(set).where(eq(alerts.id, row.id));
+    if (!changes.length) continue;
+
+    applied = true;
+    const target = alertLabel(row);
+    for (const change of changes) {
+      if (row.caseId) {
+        await recordCaseAudit(tx, { organizationId: integration.organizationId, caseId: row.caseId, occurredAt: now, actor, target, ...change });
+      } else {
+        await recordOrgAudit(tx, { organizationId: integration.organizationId, occurredAt: now, actor, category: "alerts", target, ...change });
+      }
+    }
+    // Falcon's view of an Alert is shown to Members only.
+    if (row.caseId) await publish(tx, { kind: "case", organizationId: integration.organizationId, caseId: row.caseId, membersOnly: true });
+  }
+  return applied;
+}
 
 /** The most serious of `severities`, which must not be empty. */
 export const highestSeverity = (severities: readonly Severity[]) =>
@@ -478,6 +569,9 @@ export function alertStore({ db, clock }: Pick<Deps, "db" | "clock">) {
           dismissedById: dismissedBy.id,
           dismissedByName: dismissedBy.name,
           dismissedAt: alerts.dismissedAt,
+          falconStatus: alerts.falconStatus,
+          falconAssignee: alerts.falconAssignee,
+          falconTags: alerts.falconTags,
         })
         .from(alerts)
         .innerJoin(integrations, eq(alerts.integrationId, integrations.id))
@@ -507,6 +601,8 @@ export function alertStore({ db, clock }: Pick<Deps, "db" | "clock">) {
         /** Hidden from the Guests on its Case. */
         internal: row.internal,
         integration: { id: row.integrationId, name: row.integrationName },
+        /** The Alert as Falcon has it, from changes made there; null fields aren't known yet. */
+        falcon: { status: row.falconStatus, assignee: row.falconAssignee, tags: row.falconTags },
         /** Set while it is Attached; `case` is null when that Case is one `me` can't see. */
         attached:
           row.status === "attached" && row.attachedAt

@@ -155,6 +155,13 @@
       "when": 1793664867408,
       "tag": "0021_alert_indicators",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1793678933666,
+      "tag": "0022_falcon_inbound_updates",
+      "breakpoints": true
     }
   ]
 }

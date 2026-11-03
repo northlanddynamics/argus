@@ -95,7 +95,7 @@ A detection raised by an external security tool (e.g. CrowdStrike) and received 
 _Avoid_: Detection, event, signal, case
 
 **Alert Status**:
-Where an Alert stands: New, Attached (to a Case) or Dismissed.
+Where an Alert stands: New, Attached (to a Case) or Dismissed. Its status, assignee and tags in Falcon are mirrored alongside but are not its Alert Status.
 _Avoid_: Alert state
 
 **Dismissal Reason**:
