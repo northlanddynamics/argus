@@ -1,0 +1,54 @@
+{
+  "AgentId": "3c7e9a1b2d4f6a8c0e2b4d6f8a1c3e5b",
+  "CompositeId": "f6f3c1d2e9a84b6c9d0e1f2a3b4c5d6e:ind:3c7e9a1b2d4f6a8c0e2b4d6f8a1c3e5b:33BD-0002",
+  "ComputerName": "Pixel-8-MC",
+  "Name": "SideloadedApp",
+  "Description": "An application installed from outside an official app store requested accessibility permissions.",
+  "Severity": 3,
+  "SeverityName": "Medium",
+  "Objective": "Gain Access",
+  "Tactic": "Persistence",
+  "Technique": "Sideloaded Application",
+  "Platform": "Android",
+  "MobileOsVersion": "Android 14",
+  "MobileManufacturer": "Google",
+  "MobileModel": "Pixel 8",
+  "UserName": "m.chen@acme.example",
+  "FalconHostLink": "https://falcon.crowdstrike.com/mobile/detections/33BD-0002",
+  "MobileAppsDetails": [
+    {
+      "AppIdentifierId": "com.flashlightpro.torch",
+      "AppName": "Flashlight Pro",
+      "AppInstallerInformation": "com.google.android.packageinstaller",
+      "ImageFileName": "base.apk",
+      "IsBeingDebugged": false,
+      "IsContainerized": false,
+      "SHA256HashData": "c4d8e2f6a0b4c8d2e6f0a4b8c2d6e0f4a8b2c6d0e4f8a2b6c0d4e8f2a6b0c4d8",
+      "Version": "2.4.1"
+    }
+  ],
+  "MobileDnsRequests": [
+    { "DomainName": "cdn.flashlight-pro.app", "Timestamp": 1761900500 },
+    { "DomainName": "not a domain", "Timestamp": 1761900501 }
+  ],
+  "MobileNetworkConnections": [
+    {
+      "ConnectionDirection": 0,
+      "LocalAddress": "192.168.1.23",
+      "LocalPort": 40122,
+      "Protocol": "TCP",
+      "RemoteAddress": "203.0.113.50",
+      "RemotePort": 8443,
+      "Timestamp": 1761900502
+    },
+    {
+      "ConnectionDirection": 0,
+      "LocalAddress": "192.168.1.23",
+      "LocalPort": 40123,
+      "Protocol": "UDP",
+      "RemoteAddress": "0.0.0.0",
+      "RemotePort": 0,
+      "Timestamp": 1761900503
+    }
+  ]
+}

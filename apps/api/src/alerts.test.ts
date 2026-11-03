@@ -80,6 +80,8 @@ async function acme() {
     if (!("entries" in body)) throw new Error(`Could not read the Audit Log of C-${number}`);
     return body.entries.map((e) => [e.action, e.target, e.before, e.after]);
   };
+  /** The newest entry about Alerts in the Audit Log of Case `number`. */
+  const lastAlertAudit = async (number: number) => (await caseAudit(number)).find(([action]) => action?.startsWith("alert."));
 
   type OpenJson = Parameters<Member["api"]["alerts"]["cases"]["$post"]>[0]["json"];
   const openFrom = async (alerts: OpenJson["alerts"], json: Partial<OpenJson> = {}, as: Member = ana) => {
@@ -105,7 +107,7 @@ async function acme() {
     return { status: res.status, body: await res.json() };
   };
 
-  return { t, owner, ana, ben, stream, detect, queue, alert, select, detail, open, view, caseAudit, openFrom, attach, dismiss, move, detach };
+  return { t, owner, ana, ben, stream, detect, queue, alert, select, detail, open, view, caseAudit, lastAlertAudit, openFrom, attach, dismiss, move, detach };
 }
 
 describe("Opening a Case from Alerts", () => {
@@ -132,6 +134,8 @@ describe("Opening a Case from Alerts", () => {
     expect((await a.caseAudit(body.case.number)).toSorted()).toEqual([
       ["alert.attached", "Credential dumping attempt (ldt:2)", null, `C-${body.case.number}`],
       ["alert.attached", "Encoded PowerShell from Office process (ldt:1)", null, `C-${body.case.number}`],
+      // Both Alerts name the host, linked once.
+      ["asset.linked", "Host FIN-LT-0231", null, null],
       ["case.opened", null, null, "Suspicious PowerShell on FIN-LT-0231"],
     ]);
     const attached = await a.detail(body.applied[0]!);
@@ -273,8 +277,8 @@ describe("Moving and detaching an Alert", () => {
     const { status, body } = await a.move(id, version, to);
     expect(status).toBe(200);
     expect(body).toMatchObject({ alert: { status: "attached", attached: { case: { number: to } } } });
-    expect((await a.caseAudit(from))[0]).toEqual(["alert.detached", "Credential dumping attempt (ldt:1)", `C-${from}`, `C-${to}`]);
-    expect((await a.caseAudit(to))[0]).toEqual(["alert.attached", "Credential dumping attempt (ldt:1)", `C-${from}`, `C-${to}`]);
+    expect(await a.lastAlertAudit(from)).toEqual(["alert.detached", "Credential dumping attempt (ldt:1)", `C-${from}`, `C-${to}`]);
+    expect(await a.lastAlertAudit(to)).toEqual(["alert.attached", "Credential dumping attempt (ldt:1)", `C-${from}`, `C-${to}`]);
     expect((await a.queue(a.ana, { case: String(from) })).length).toBe(0);
 
     // Bulk attaching moves too.
@@ -308,7 +312,7 @@ describe("Moving and detaching an Alert", () => {
     const { status, body } = await a.detach(id, version);
     expect(status).toBe(200);
     expect(body).toMatchObject({ alert: { status: "new", attached: null } });
-    expect((await a.caseAudit(number))[0]).toEqual(["alert.detached", "Credential dumping attempt (ldt:1)", `C-${number}`, null]);
+    expect(await a.lastAlertAudit(number)).toEqual(["alert.detached", "Credential dumping attempt (ldt:1)", `C-${number}`, null]);
     expect((await a.detach(id, version + 1)).body).toMatchObject({ refusal: { reason: "not_attached" } });
   });
 

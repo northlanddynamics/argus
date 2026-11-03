@@ -128,6 +128,7 @@ describe("Adding Observables", () => {
         linkedBy: { id: await userId(ana), name: "Ana Analyst" },
         linkedAt: t.clock.now().toISOString(),
         seenIn: [],
+        fromAlert: null,
       },
     });
     if (!("observable" in body)) throw new Error("Not added");

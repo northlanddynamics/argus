@@ -1,0 +1,89 @@
+{
+  "AgentId": "8f1c2b3a4d5e6f708192a3b4c5d6e7f8",
+  "AggregateId": "aggind:8f1c2b3a4d5e6f708192a3b4c5d6e7f8:12884902012",
+  "CommandLine": "powershell.exe -nop -w hidden -enc JABzAD0ATgBlAHcALQBPAGIAagBlAGMAdAAgAEkATwAuAE0AZQBtAG8AcgB5AFMAdAByAGUAYQBtAA==",
+  "CompositeId": "f6f3c1d2e9a84b6c9d0e1f2a3b4c5d6e:ind:8f1c2b3a4d5e6f708192a3b4c5d6e7f8:12884902012-10197-6604032",
+  "DataDomains": "Endpoint",
+  "Description": "A process launched PowerShell with an encoded command line from a Microsoft Office application.",
+  "FalconHostLink": "https://falcon.crowdstrike.com/activity-v2/detections/f6f3c1d2e9a84b6c9d0e1f2a3b4c5d6e:ind:8f1c2b3a4d5e6f708192a3b4c5d6e7f8:12884902012-10197-6604032",
+  "FileName": "powershell.exe",
+  "FilePath": "\\Device\\HarddiskVolume3\\Windows\\System32\\WindowsPowerShell\\v1.0",
+  "GrandParentCommandLine": "C:\\Windows\\Explorer.EXE",
+  "GrandParentImageFileName": "\\Device\\HarddiskVolume3\\Windows\\explorer.exe",
+  "Hostname": "FIN-LT-0231",
+  "IOCType": "hash_sha256",
+  "IOCValue": "7F3A9C0E5B2D4A6F8E1C3B5D7A9F0E2C4B6D8A0F1E3C5B7D9A1F3E5C7B9D1C91",
+  "LocalIP": "10.20.4.17",
+  "LogonDomain": "ACME",
+  "MACAddress": "00-15-5d-4a-2b-7c",
+  "MD5String": "7353F60B1739074EB17C5F4DDDEFE239",
+  "Name": "EncodedPowerShellFromOffice",
+  "Objective": "Gain Access",
+  "ParentCommandLine": "\"C:\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE\" /n \"C:\\Users\\d.howe\\Downloads\\invoice-0923.docm\"",
+  "ParentImageFileName": "\\Device\\HarddiskVolume3\\Program Files\\Microsoft Office\\root\\Office16\\WINWORD.EXE",
+  "ParentProcessId": 52987361245,
+  "PatternDispositionDescription": "Prevention, process killed.",
+  "PatternDispositionValue": 2048,
+  "PatternId": 10197,
+  "Platform": "Windows",
+  "ProcessId": 53002183412,
+  "ProcessStartTime": 1761900611,
+  "ProcessEndTime": 1761900612,
+  "SHA1String": "0000000000000000000000000000000000000000",
+  "SHA256String": "7f3a9c0e5b2d4a6f8e1c3b5d7a9f0e2c4b6d8a0f1e3c5b7d9a1f3e5c7b9d1c91",
+  "Severity": 70,
+  "SeverityName": "High",
+  "SourceProducts": "Falcon Insight",
+  "SourceVendors": "CrowdStrike",
+  "Tactic": "Execution",
+  "Technique": "PowerShell",
+  "Timestamp": 1761900612345,
+  "UserName": "d.howe",
+  "NetworkAccesses": [
+    {
+      "AccessTimestamp": 1761900611,
+      "AccessType": 0,
+      "ConnectionDirection": 0,
+      "IsIPV6": false,
+      "LocalAddress": "10.20.4.17",
+      "LocalPort": 51234,
+      "Protocol": "TCP",
+      "RemoteAddress": "185.220.101.4",
+      "RemotePort": 443
+    },
+    {
+      "AccessTimestamp": 1761900611,
+      "AccessType": 0,
+      "ConnectionDirection": 0,
+      "IsIPV6": false,
+      "LocalAddress": "10.20.4.17",
+      "LocalPort": 51235,
+      "Protocol": "TCP",
+      "RemoteAddress": "185.220.101.4",
+      "RemotePort": 443
+    }
+  ],
+  "DnsRequests": [
+    {
+      "CausedDetect": false,
+      "DomainName": "Invoice-Portal.biz",
+      "InterfaceIndex": 0,
+      "LoadTime": 1761900610,
+      "RequestType": "A"
+    }
+  ],
+  "ExecutablesWritten": [
+    {
+      "FileName": "stage2.exe",
+      "FilePath": "\\Device\\HarddiskVolume3\\Users\\d.howe\\AppData\\Local\\Temp\\stage2.exe",
+      "Timestamp": 1761900611
+    }
+  ],
+  "DocumentsAccessed": [
+    {
+      "FileName": "invoice-0923.docm",
+      "FilePath": "\\Device\\HarddiskVolume3\\Users\\d.howe\\Downloads",
+      "Timestamp": 1761900609
+    }
+  ]
+}
