@@ -4,3 +4,7 @@ dist
 .env
 .env.*
 !.env.example
+
+# Claude Code
+.claude/settings.local.json
+.claude/skills/impeccable/scripts/bin/

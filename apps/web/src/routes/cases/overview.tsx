@@ -116,7 +116,7 @@ function CaseSummaryCard({ number, summary, readOnly }: { number: number; summar
   return (
     <div className="grid content-start gap-4">
       {conflict && (
-        <Alert className="border-amber-300 bg-amber-50 text-amber-950">
+        <Alert className="border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80">
           <AlertTitle>Not saved — the Case Summary changed since you opened it</AlertTitle>
           <AlertDescription className="grid gap-3">
             <p>

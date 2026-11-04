@@ -92,7 +92,7 @@ export function CaseTasksPage() {
                 <TableCell>{t.owner.name}{t.owner.id === me.user.id && me.guest ? " (you)" : ""}</TableCell>
                 <TableCell>
                   {t.overdue ? (
-                    <Badge variant="outline" className="border-red-300 text-red-700">
+                    <Badge variant="outline" className="border-overdue-border text-overdue">
                       Overdue · {t.dueDate}
                     </Badge>
                   ) : (

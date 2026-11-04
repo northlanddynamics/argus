@@ -66,7 +66,7 @@ export function CaseObservablesPage() {
           unlink={(id) => api.cases[":number"].assets[":id"].$delete({ param: { number: n, id } })}
         />
       </div>
-      <p className="text-xs text-muted-foreground">
+      <p className="max-w-prose text-xs text-muted-foreground">
         Each Observable and Asset is held once for the Organization. “Seen in other Cases” lists only Cases you can see.
         Attaching an Alert adds what it names (“Alert (auto)”); detaching it removes those again, but never what was added
         by hand. Adding and unlinking are recorded in the Audit Log.
@@ -170,7 +170,6 @@ function LinkedCard<Type extends string>(props: {
             <TableRow>
               <TableHead>Type</TableHead>
               <TableHead>{props.valueHeading}</TableHead>
-              <TableHead>Added by</TableHead>
               <TableHead>Seen in other Cases</TableHead>
               {!readOnly && <TableHead className="w-0" />}
             </TableRow>
@@ -179,27 +178,33 @@ function LinkedCard<Type extends string>(props: {
             {items?.map((item) => (
               <TableRow key={item.id} data-testid={`${noun.toLowerCase()}-${item.value}`}>
                 <TableCell>{typeLabel[item.type] ?? item.type}</TableCell>
-                <TableCell className="min-w-36 font-mono text-xs break-all whitespace-normal" title={item.value}>
-                  {shown(item.type, item.value)}
-                </TableCell>
-                <TableCell className="text-sm whitespace-normal" title={new Date(item.linkedAt).toLocaleString()}>
-                  {item.fromAlert ? (
-                    <>
-                      <Badge variant="secondary">Alert (auto)</Badge>
-                      {item.fromAlert.alert && (
-                        <Link
-                          to="/alerts"
-                          search={{ status: "any", alert: item.fromAlert.alert.id }}
-                          className="ml-1 text-xs text-primary underline"
-                          title={item.fromAlert.alert.externalId}
-                        >
-                          {item.fromAlert.alert.title}
-                        </Link>
-                      )}
-                    </>
-                  ) : (
-                    item.linkedBy.name
-                  )}
+                {/* Who added it sits under the value, so the row fits a half-width card without clipping Unlink. */}
+                <TableCell className="min-w-36 whitespace-normal">
+                  <span className="block font-mono text-xs break-all" title={item.value}>
+                    {shown(item.type, item.value)}
+                  </span>
+                  <span
+                    className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground"
+                    title={new Date(item.linkedAt).toLocaleString()}
+                  >
+                    {item.fromAlert ? (
+                      <>
+                        <Badge variant="secondary">Alert (auto)</Badge>
+                        {item.fromAlert.alert && (
+                          <Link
+                            to="/alerts"
+                            search={{ status: "any", alert: item.fromAlert.alert.id }}
+                            className="text-xs text-primary underline"
+                            title={item.fromAlert.alert.externalId}
+                          >
+                            {item.fromAlert.alert.title}
+                          </Link>
+                        )}
+                      </>
+                    ) : (
+                      <>Added by {item.linkedBy.name}</>
+                    )}
+                  </span>
                 </TableCell>
                 <TableCell className="whitespace-normal">
                   {item.seenIn.length === 0 ? (
@@ -221,7 +226,7 @@ function LinkedCard<Type extends string>(props: {
                   )}
                 </TableCell>
                 {!readOnly && (
-                  <TableCell className="w-0 pl-0 text-right">
+                  <TableCell className="w-0 text-right">
                     <Button
                       variant="ghost"
                       size="sm"
@@ -238,7 +243,7 @@ function LinkedCard<Type extends string>(props: {
             ))}
             {items?.length === 0 && (
               <TableRow>
-                <TableCell colSpan={readOnly ? 4 : 5} className="text-muted-foreground">
+                <TableCell colSpan={readOnly ? 3 : 4} className="text-muted-foreground">
                   No {title} yet.
                 </TableCell>
               </TableRow>

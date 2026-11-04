@@ -203,7 +203,7 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
           </Alert>
         )}
         {i.lastGap && (
-          <Alert className="border-amber-400 bg-amber-50 text-amber-950">
+          <Alert className="border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80">
             <AlertTitle>Gap in the stream, noticed {new Date(i.lastGap.at).toLocaleString()}</AlertTitle>
             <AlertDescription>
               Falcon could no longer replay events {i.lastGap.fromOffset.toLocaleString()}–{i.lastGap.toOffset.toLocaleString()}, so
@@ -247,7 +247,7 @@ function WriteBacks({ counts: w }: { counts: IntegrationView["writeBacks"] }) {
       <span className="text-sm font-semibold">Write-backs to Falcon</span>
       <div className="flex flex-wrap gap-2">
         <Badge variant="outline">Pending {w.pending}</Badge>
-        <Badge variant="outline" className={w.retrying ? "border-amber-400 text-amber-900" : undefined}>
+        <Badge variant="outline" className={w.retrying ? "border-notice-border text-notice-foreground" : undefined}>
           Retrying {w.retrying}
           {w.nextRetryAt ? ` · next ${until(w.nextRetryAt)}` : ""}
         </Badge>

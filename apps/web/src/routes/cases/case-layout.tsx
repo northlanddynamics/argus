@@ -148,7 +148,7 @@ export function CaseLayout() {
               </div>
             </div>
             {c.closed && c.resolution && (
-              <Alert className="border-amber-300 bg-amber-50 text-amber-950">
+              <Alert className="border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80">
                 <AlertTitle>Closed · {resolutionLabel[c.resolution]}</AlertTitle>
                 <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
                   <span>

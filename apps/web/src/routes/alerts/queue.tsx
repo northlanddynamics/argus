@@ -308,7 +308,7 @@ function OutcomeNotice({ outcome, onReselect, onDismiss }: { outcome: BulkOutcom
     );
   }
   return (
-    <Alert role="status" className="border-amber-300 bg-amber-50 text-amber-950">
+    <Alert role="status" className="border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80">
       <AlertTitle>
         {outcome.refused.length} of {total} {total === 1 ? "Alert was" : "Alerts were"} not {outcome.verb.split(";")[0]}
       </AlertTitle>

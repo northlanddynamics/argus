@@ -200,7 +200,7 @@ export function CaseAuditLogPage() {
                 <TableHead>When</TableHead>
                 <TableHead>Actor</TableHead>
                 <TableHead>Action</TableHead>
-                <TableHead>Before → After</TableHead>
+                <TableHead className="w-[30%]">Before → After</TableHead>
                 <TableHead className="w-0" />
               </TableRow>
             </TableHeader>
@@ -209,11 +209,12 @@ export function CaseAuditLogPage() {
                 <TableRow key={e.id}>
                   <TableCell className="font-mono text-xs">{new Date(e.occurredAt).toLocaleString()}</TableCell>
                   <TableCell>{e.actor.name}</TableCell>
-                  <TableCell>
+                  {/* Hashes and URLs wrap anywhere, so the full value stays on the record without widening the table. */}
+                  <TableCell className="min-w-48 whitespace-normal [overflow-wrap:anywhere]">
                     {actionLabel[e.action] ?? e.action}
                     {e.target !== null && <span className="font-medium"> {e.target}</span>}
                   </TableCell>
-                  <TableCell className="max-w-md font-mono text-xs whitespace-normal">
+                  <TableCell className="min-w-48 font-mono text-xs whitespace-normal [overflow-wrap:anywhere]">
                     {e.before !== null && <span className="line-through">{shown(e.action, e.before)}</span>}
                     {e.before !== null && " "}→ {shown(e.action, e.after)}
                   </TableCell>
@@ -222,8 +223,13 @@ export function CaseAuditLogPage() {
                       <span className="text-xs text-muted-foreground">On the Timeline</span>
                     ) : (
                       c?.status !== "closed" && (
-                        <Button variant="outline" size="sm" onClick={() => setPromoting(e)}>
-                          Promote to Timeline
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          aria-label="Promote to Timeline"
+                          onClick={() => setPromoting(e)}
+                        >
+                          Promote
                         </Button>
                       )
                     )}

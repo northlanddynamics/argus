@@ -28,7 +28,7 @@ export function CaseEvidencePage() {
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [dragging, setDragging] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
-  /** Add the next files as Internal. */
+  /** Add the next files as Internal; reset after each batch, so it never carries over unnoticed. */
   const [internal, setInternal] = useState(false);
   const input = useRef<HTMLInputElement>(null);
 
@@ -46,6 +46,7 @@ export function CaseEvidencePage() {
         })
         .catch((e: unknown) => update(key, { error: e instanceof Error ? e.message : `Could not add ${file.name}` }));
     }
+    setInternal(false);
   };
 
   const copy = async (sha256: string) => {
@@ -67,6 +68,12 @@ export function CaseEvidencePage() {
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4">
+        {participating && canMarkInternal(c) && (
+          <Field orientation="horizontal" className="w-auto">
+            <Checkbox id="evidence-internal" checked={internal} onCheckedChange={(checked) => setInternal(checked === true)} />
+            <FieldLabel htmlFor="evidence-internal">Add the next files as Internal (hidden from Guests)</FieldLabel>
+          </Field>
+        )}
         {participating && (
           <div
             className={cn(
@@ -84,17 +91,11 @@ export function CaseEvidencePage() {
               add(e.dataTransfer.files);
             }}
           >
-            Drop files here or
+            {internal ? "Drop files to add as Internal, or" : "Drop files here or"}
             <Button variant="outline" size="sm" onClick={() => input.current?.click()}>
-              Choose files
+              {internal ? "Choose Internal files" : "Choose files"}
             </Button>
             — SHA-256 computed on upload
-            {canMarkInternal(c) && (
-              <Field orientation="horizontal" className="ml-4 w-auto">
-                <Checkbox id="evidence-internal" checked={internal} onCheckedChange={(checked) => setInternal(checked === true)} />
-                <FieldLabel htmlFor="evidence-internal">Add as Internal</FieldLabel>
-              </Field>
-            )}
             <input
               ref={input}
               type="file"

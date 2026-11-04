@@ -11,6 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ThemeSubmenu } from "@/components/theme-menu";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from "@/components/ui/sidebar";
 import { authClient, type Me } from "@/lib/api";
 
@@ -84,6 +85,8 @@ export function NavUser({ me }: { me: Me }) {
                 {passkey === "added" ? "Passkey added" : passkey === "failed" ? "Passkey not added, try again" : "Add a passkey"}
               </DropdownMenuItem>
             )}
+            <ThemeSubmenu />
+            <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => void signOut()}>
               <LogOutIcon />
               Sign out
