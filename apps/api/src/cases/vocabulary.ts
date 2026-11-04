@@ -105,6 +105,7 @@ export const CASE_AUDIT_ACTIONS = [
   "alert.falcon_tags_changed",
   "item.marked_internal",
   "item.shown_to_guests",
+  "case.report_exported",
 ] as const;
 export type CaseAuditAction = (typeof CASE_AUDIT_ACTIONS)[number];
 

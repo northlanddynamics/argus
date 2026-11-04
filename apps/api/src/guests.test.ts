@@ -271,7 +271,7 @@ describe("what Guests see and do", () => {
 
     const { body } = await a.view(guest, number);
     expect(body).toMatchObject({
-      case: { can: { work: false, participate: true, markInternal: false, restrict: false, reopen: false, manageGuests: false, readAuditLog: false } },
+      case: { can: { work: false, participate: true, markInternal: false, restrict: false, reopen: false, manageGuests: false, readAuditLog: false, exportCompleteReport: false } },
     });
     const messages = await (await guest.api.cases[":number"].discussion.$get({ param: param(number) })).json();
     expect(messages).toMatchObject({ messages: [{ body: "Contained at 10:02." }] });

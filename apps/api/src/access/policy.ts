@@ -24,8 +24,12 @@ import { caseGuests, caseRoleAssignments, cases } from "../db/schema";
 /** The access policy doesn't let the actor do this. Modules throw it; routes answer 403. */
 export class NotPermitted extends Error {}
 
-/** A Member of one Organization. */
-export type MemberActor = { organizationId: string; userId: string; role: OrgRole };
+/**
+ * A Member of one Organization. With `readsAs: "guests"` they read a Case they can see the way its
+ * Guests do: without Internal items, the Audit Log, other Cases or Alerts. A Guest-safe Case Report
+ * is read this way.
+ */
+export type MemberActor = { organizationId: string; userId: string; role: OrgRole; readsAs?: "guests" };
 /**
  * A Guest acting in one Organization that granted them Cases. `at` is the moment their request is
  * judged at: a grant that has expired by then no longer counts.
@@ -50,6 +54,8 @@ export type CaseAccessFacts = {
 };
 
 export const isGuest = (actor: Actor): actor is GuestActor => actor.role === "guest";
+/** Sees the items on a Case as its Guests do: a Guest, or a Member reading as one. */
+const readsAsGuest = (actor: Pick<Actor, "role"> & { readsAs?: "guests" }) => actor.role === "guest" || actor.readsAs === "guests";
 const seesEveryCase = (actor: Actor) => actor.role === "owner" || actor.role === "admin";
 const managesOrganization = (actor: Actor) => actor.role === "owner" || actor.role === "admin";
 const isAssignee = (actor: Actor, c: Pick<CaseAccessFacts, "assigneeId">) => !isGuest(actor) && c.assigneeId === actor.userId;
@@ -92,14 +98,14 @@ export function visibleCases(actor: Actor): SQL {
 export type InternalFact = { internal: boolean };
 
 /** Whether `actor` can see an item on a Case they can see. Mirrors `visibleItems`. */
-export const canSeeItem = (actor: Pick<Actor, "role">, item: InternalFact) => !item.internal || actor.role !== "guest";
+export const canSeeItem = (actor: Pick<Actor, "role"> & { readsAs?: "guests" }, item: InternalFact) => !item.internal || !readsAsGuest(actor);
 
 /**
  * The items `actor` can see on a Case they can see, as a condition on the item table's `internal`
  * column (none for Members). Mirrors `canSeeItem`.
  */
 export const visibleItems = (actor: Actor, internal: AnyPgColumn): SQL | undefined =>
-  isGuest(actor) ? eq(internal, false) : undefined;
+  readsAsGuest(actor) ? eq(internal, false) : undefined;
 
 /** Case permissions, for a Case the actor can already see. */
 export const casePolicy = {
@@ -110,9 +116,15 @@ export const casePolicy = {
   /** Admins, the Owner and the Case's Assignee invite Guests to it and remove them. */
   canManageGuests: (actor: Actor, c: Pick<CaseAccessFacts, "assigneeId">) => seesEveryCase(actor) || isAssignee(actor, c),
   /** Members only: Guests never see a Case's Audit Log. */
-  canReadAuditLog: (actor: Actor) => !isGuest(actor),
+  canReadAuditLog: (actor: Actor) => !readsAsGuest(actor),
   /** Members only: Guests never learn which other Cases an Observable or Asset is on. */
-  canSeeCorrelation: (actor: Actor) => !isGuest(actor),
+  canSeeCorrelation: (actor: Actor) => !readsAsGuest(actor),
+  /** Members only: Guests aren't told which Alert linked an Observable or Asset. */
+  canSeeAlerts: (actor: Actor) => !readsAsGuest(actor),
+  /** Members only: Guests never learn of Internal items, nor of what an item cites that is. */
+  canSeeInternal: (actor: Actor) => !readsAsGuest(actor),
+  /** Members only; Guests export only the Guest-safe Case Report. */
+  canExportCompleteReport: (actor: Actor) => !isGuest(actor),
   /** Members only: change the Case and everything on it beyond what Guests take part in. */
   canWork: (actor: Actor) => !isGuest(actor),
   /** Everyone who can see the Case: post in the Discussion, complete Tasks, add Evidence. */
@@ -155,4 +167,5 @@ export const casePermissions = (actor: Actor, c: Pick<CaseAccessFacts, "assignee
   reopen: casePolicy.canReopen(actor),
   manageGuests: casePolicy.canManageGuests(actor, c),
   readAuditLog: casePolicy.canReadAuditLog(actor),
+  exportCompleteReport: casePolicy.canExportCompleteReport(actor),
 });

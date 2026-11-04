@@ -1,3 +1,4 @@
+import { caseReportStore } from "./case-reports/case-reports";
 import { caseLinkStore } from "./case-links/case-links";
 import { caseRoleStore } from "./case-roles/case-roles";
 import { caseStore } from "./cases/cases";
@@ -24,15 +25,18 @@ import { timelineStore } from "./timeline/timeline";
  * worker, a script), go through these; only they touch the database. See ADR 0006.
  */
 export function createModules(deps: Deps) {
-  return {
+  const readers = {
     cases: caseStore(deps),
     tasks: taskStore(deps),
-    caseRoles: caseRoleStore(deps),
-    discussion: discussionStore(deps),
     timeline: timelineStore(deps),
     evidence: evidenceStore(deps),
     observables: observableStore(deps),
     assets: assetStore(deps),
+  };
+  return {
+    ...readers,
+    caseRoles: caseRoleStore(deps),
+    discussion: discussionStore(deps),
     caseLinks: caseLinkStore(deps),
     tags: tagStore(deps),
     guests: guestStore(deps),
@@ -45,6 +49,7 @@ export function createModules(deps: Deps) {
     notifications: notificationStore(deps),
     teamsChannel: teamsChannelStore(deps),
     sso: ssoStore(deps),
+    caseReports: caseReportStore(deps, readers),
   };
 }
 

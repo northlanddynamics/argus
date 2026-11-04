@@ -255,7 +255,7 @@ export function timelineStore({ db, clock }: { db: Db; clock: Clock }) {
     const entries = rows.map((r) => r.entry);
     const labels = await citationLabels(db, caseId, entries.flatMap((e) => e.citations), me);
     const sources = await sourceViews(me, caseId, entries);
-    const hidden = !casePolicy.canMarkInternal(me);
+    const hidden = !casePolicy.canSeeInternal(me);
     return rows.map(({ entry: e, recordedByName, retractedByName }) => ({
       id: e.id,
       occurredAt: occurredAtOf(e),

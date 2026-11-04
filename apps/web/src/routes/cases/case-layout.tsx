@@ -29,6 +29,7 @@ import {
 } from "@/lib/cases";
 import { CaseAccessDialog } from "@/routes/cases/case-access-dialog";
 import { CloseCaseDialog } from "@/routes/cases/close-case-dialog";
+import { ExportReportDialog } from "@/routes/cases/export-report-dialog";
 import { membersKey } from "@/routes/settings/members";
 
 /** The Case's sections, each its own route under the Case. */
@@ -142,6 +143,7 @@ export function CaseLayout() {
                     onRestrictedChange={(restricted) => change.mutate({ restricted })}
                   />
                 )}
+                <ExportReportDialog number={c.number} complete={c.can.exportCompleteReport} />
                 {!isReadOnly(c) && <CloseCaseDialog number={c.number} />}
               </div>
             </div>

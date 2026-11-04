@@ -148,7 +148,7 @@ function heldOnceStore<Type extends string>({ db, clock }: { db: Db; clock: Cloc
         fromAlert:
           r.alertId === null
             ? null
-            : { alert: me.role === "guest" ? null : { id: r.alertId, externalId: r.alertExternalId!, title: r.alertTitle! } },
+            : { alert: !casePolicy.canSeeAlerts(me) ? null : { id: r.alertId, externalId: r.alertExternalId!, title: r.alertTitle! } },
       }));
   }
 

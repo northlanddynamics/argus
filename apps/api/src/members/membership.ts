@@ -16,6 +16,8 @@ export type Membership = {
   role: OrgRole;
   userId: string;
   name: string;
+  /** Reading as the Case's Guests would, for a Guest-safe Case Report (`access/policy.ts`). */
+  readsAs?: "guests";
 };
 
 /** A signed-in Guest, acting in one of the Organizations that granted them Cases. */
