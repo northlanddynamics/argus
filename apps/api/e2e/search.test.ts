@@ -36,7 +36,7 @@ async function signIn(page: Page, baseUrl: string, email: string, code: () => Pr
   await page.getByText("Acme Security", { exact: true }).waitFor();
 }
 
-test("an Analyst searches from the header and finds Cases and Observables, but not a Restricted Case they aren't on", async () => {
+test("an Analyst searches from anywhere: top results as they type, narrowed by kind, then every result on the results page", async () => {
   const { t, baseUrl, stop } = await serveTestApp();
   try {
     await t.inviteOwner("Acme Security", "owner@acme.example");
@@ -50,19 +50,38 @@ test("an Analyst searches from the header and finds Cases and Observables, but n
 
     const page = await browser.newPage();
     await signIn(page, baseUrl, "ben@acme.example", () => t.totpCode(ben.totp.secret));
-    await page.keyboard.press("/");
-    await page.keyboard.type("payroll");
-    await page.keyboard.press("Enter");
-    await page.waitForURL(`${baseUrl}/search?q=payroll`);
-    await page.getByRole("link", { name: "C-1 Wire fraud attempt on payroll" }).waitFor();
-    expect(await page.getByText("Payroll director under investigation").count()).toBe(0);
 
-    const box = page.getByRole("searchbox", { name: "Search Cases, Alerts, Observables and Assets" });
-    await box.fill("payroll-update.example");
-    await box.press("Enter");
-    const observables = page.locator("[data-slot=card]", { hasText: "Observables" });
-    await observables.getByText("payroll-update[.]example").waitFor();
-    await observables.getByRole("link", { name: "C-1 Wire fraud attempt on payroll" }).click();
+    // "/" opens the search box; results come as he types, the Restricted Case never among them.
+    await page.keyboard.press("/");
+    const palette = page.getByRole("dialog", { name: "Search" });
+    await palette.getByRole("combobox", { name: "Search" }).fill("payr");
+    const options = palette.getByRole("option");
+    await options.filter({ hasText: "payroll-update[.]example" }).waitFor();
+    await options.filter({ hasText: "Wire fraud attempt on payroll" }).waitFor();
+    expect(await palette.getByText("Payroll director under investigation").count()).toBe(0);
+
+    // Narrowed to Observables, only the domain is left; Enter opens the Case it is on.
+    await palette.getByRole("radio", { name: "Observables" }).or(palette.getByRole("button", { name: "Observables" })).click();
+    await options.filter({ hasText: "Wire fraud attempt on payroll" }).waitFor({ state: "detached" });
+    await palette.getByRole("combobox", { name: "Search" }).press("Enter");
+    await page.waitForURL(`${baseUrl}/cases/1/observables`);
+
+    // The last row opens every result, with the same kinds.
+    await page.keyboard.press("Control+k");
+    await palette.getByRole("combobox", { name: "Search" }).fill("payroll");
+    await options.filter({ hasText: "See all results" }).click();
+    await page.waitForURL((url) => url.pathname === "/search" && url.searchParams.get("q") === "payroll" && url.searchParams.get("kinds") === "observables");
+    await page.getByRole("region", { name: /Observables/ }).getByRole("link", { name: /payroll-update\[\.\]example/ }).waitFor();
+    const toggle = (name: RegExp) => page.getByRole("radio", { name }).or(page.getByRole("button", { name }));
+    await toggle(/^Observables/).click();
+    await page.waitForURL((url) => !url.searchParams.has("kinds"));
+    const casesSection = page.getByRole("region", { name: /Cases/ });
+    await casesSection.getByRole("link", { name: /C-1 Wire fraud attempt on payroll/ }).waitFor();
+    expect(await page.getByText("Payroll director under investigation").count()).toBe(0);
+    await toggle(/^Cases/).click();
+    await page.waitForURL((url) => url.searchParams.get("kinds") === "cases");
+    await page.getByRole("region", { name: /Observables/ }).waitFor({ state: "detached" });
+    await casesSection.getByRole("link", { name: /C-1 Wire fraud attempt on payroll/ }).click();
     await page.getByRole("heading", { name: "Wire fraud attempt on payroll" }).waitFor();
   } finally {
     await stop();

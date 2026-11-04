@@ -71,8 +71,8 @@ async function acme() {
     const res = await owner.api.alerts.attach.$post({ json: { case: number, alerts: [{ id, version }] } });
     if (res.status !== 200) throw new Error(`Could not attach: ${res.status}`);
   };
-  const search = async (as: Session, q: string) => {
-    const res = await as.api.search.$get({ query: { q } });
+  const search = async (as: Session, q: string, options: { kinds?: string; limit?: string } = {}) => {
+    const res = await as.api.search.$get({ query: { q, ...options } });
     const body = await res.json();
     if (!("results" in body)) throw new Error(`Could not search: ${res.status}`);
     return body.results;
@@ -96,7 +96,13 @@ describe("Global search", () => {
     expect(await a.caseNumbers(a.ben, "ransomware -decryptor")).toEqual([ransom]);
     expect(await a.caseNumbers(a.ben, `C-${phish}`)).toEqual([phish]);
     expect(await a.caseNumbers(a.ben, "nothing-like-this")).toEqual([]);
-    expect(await a.search(a.ben, "  -- ")).toEqual({ cases: [], alerts: [], observables: [], assets: [] });
+    expect(await a.search(a.ben, "  -- ")).toEqual({
+      cases: [],
+      alerts: [],
+      observables: [],
+      assets: [],
+      more: { cases: false, alerts: false, observables: false, assets: false },
+    });
   });
 
   test("Restricted Cases, and what is linked only to them, never leak", async () => {
@@ -170,6 +176,48 @@ describe("Global search", () => {
     expect(shown.status).toBe(200);
     expect((await a.search(guest, "EncodedPowerShellFromOffice")).alerts.map((x) => [x.id, x.case?.number])).toEqual([[onTheirs, theirs]]);
     expect((await a.search(guest, "unusual login")).alerts).toEqual([]);
+  });
+
+  test("words match as they are typed, whole words ranking first", async () => {
+    const a = await acme();
+    const portal = await a.open("Beaconing to an invoice portal");
+    await a.observe(portal, "domain", "invoice-portal.biz");
+    const invoices = await a.open("Invoices sent from a lookalike domain");
+
+    expect(await a.caseNumbers(a.ben, "invo")).toEqual(expect.arrayContaining([portal, invoices]));
+    expect(await a.caseNumbers(a.ben, "invoice")).toEqual([portal, invoices]);
+    expect((await a.search(a.ben, "invoice")).observables.map((o) => o.value)).toEqual(["invoice-portal.biz"]);
+    expect(await a.caseNumbers(a.ben, "lookalike dom")).toEqual([invoices]);
+  });
+
+  test("searches only the kinds asked for, at most `limit` of each, and says when there are more", async () => {
+    const a = await acme();
+    const numbers = [];
+    for (let i = 1; i <= 6; i++) numbers.push(await a.open(`Phishing wave ${i}`));
+    await a.observe(numbers[0]!, "domain", "phishing-kit.example");
+    const id = await a.detect("epp");
+
+    const top = await a.search(a.ben, "phishing", { limit: "5" });
+    expect(top.cases).toHaveLength(5);
+    expect(top.more).toEqual({ cases: true, alerts: false, observables: false, assets: false });
+    expect(top.observables.map((o) => o.value)).toEqual(["phishing-kit.example"]);
+    expect(top.cases.every((c) => typeof c.rank === "number" && c.rank > 0)).toBe(true);
+
+    const onlyItems = await a.search(a.ben, "phishing", { kinds: "observables,assets" });
+    expect([onlyItems.cases, onlyItems.alerts]).toEqual([[], []]);
+    expect(onlyItems.observables.map((o) => o.value)).toEqual(["phishing-kit.example"]);
+
+    const onlyAlerts = await a.search(a.ben, "FIN-LT-0231", { kinds: "alerts" });
+    expect(onlyAlerts.alerts.map((x) => x.id)).toEqual([id]);
+    expect([onlyAlerts.cases, onlyAlerts.observables, onlyAlerts.assets]).toEqual([[], [], []]);
+
+    // A reference outranks every text match.
+    const byRef = await a.search(a.ben, String(numbers[3]));
+    expect(byRef.cases[0]?.number).toBe(numbers[3]);
+    expect(byRef.cases[0]!.rank).toBeGreaterThan(100);
+
+    expect((await a.ben.api.search.$get({ query: { q: "x", kinds: "cases,tasks" } })).status as number).toBe(400);
+    expect((await a.ben.api.search.$get({ query: { q: "x", limit: "51" } })).status as number).toBe(400);
   });
 
   test("signed-out people can't search", async () => {
