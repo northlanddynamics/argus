@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon, LockIcon, UsersIcon, XIcon } from "lucide-react";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef } from "react";
 import { SeverityBadge, StatusBadge } from "@/components/case-badges";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +28,7 @@ import {
 } from "@/lib/cases";
 import { normaliseTag, tagLabel, tagsInUseQuery } from "@/lib/tags";
 import { cn } from "@/lib/utils";
+import { useJustChanged } from "@/lib/use-just-changed";
 import { exactTime, when } from "@/lib/when";
 import { OpenCaseDialog } from "@/routes/cases/open-case-dialog";
 
@@ -72,24 +73,6 @@ const FILTERS = ["status", "severity", "caseType", "tag", "access"] as const;
 const noFilters = { status: undefined, severity: undefined, caseType: undefined, tag: undefined, access: undefined };
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-
-/** Rows whose Case changed since the list last loaded, for a moment, so a row that moves can be followed. */
-function useJustChanged(cases: { number: number; updatedAt: string }[] | undefined) {
-  const seen = useRef<Map<number, string> | null>(null);
-  const [changed, setChanged] = useState<Set<number>>(new Set());
-  useEffect(() => {
-    if (!cases) return;
-    const before = seen.current;
-    seen.current = new Map(cases.map((c) => [c.number, c.updatedAt]));
-    if (!before) return;
-    const moved = new Set(cases.filter((c) => before.has(c.number) && before.get(c.number) !== c.updatedAt).map((c) => c.number));
-    if (moved.size === 0) return;
-    setChanged(moved);
-    const clear = setTimeout(() => setChanged(new Set()), 2000);
-    return () => clearTimeout(clear);
-  }, [cases]);
-  return changed;
-}
 
 /** j and k move between the Cases in the list, Enter opens the one in focus. */
 function useRowKeys(table: React.RefObject<HTMLTableElement | null>) {

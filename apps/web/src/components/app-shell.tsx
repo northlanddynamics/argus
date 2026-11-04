@@ -1,5 +1,5 @@
 import { Link, Outlet, useRouteContext, useRouterState } from "@tanstack/react-router";
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { GuestSession } from "@/components/guest-nav";
 import { LiveIndicator } from "@/components/live-indicator";
@@ -61,14 +61,37 @@ function crumbsWithin(pathname: string, me: Me): Crumb[] {
 /** The sidebar remembers being collapsed in a cookie (shadcn/ui's `sidebar_state`). */
 const startsOpen = () => !document.cookie.split("; ").includes("sidebar_state=false");
 
+/** Areas with nothing to do with working Cases, where the work queue starts tucked away to give the page room. */
+const tuckedArea = (pathname: string) => {
+  const area = pathname.split("/")[1];
+  return area === "settings" || area === "dashboard" ? area : null;
+};
+
+/**
+ * Whether the sidebar is open: as the person left it, except in a tucked area, where it starts
+ * collapsed until they open it there.
+ */
+function useSidebarOpen(pathname: string) {
+  const [preferred, setPreferred] = useState(startsOpen);
+  const [openedIn, setOpenedIn] = useState<string | null>(null);
+  const tucked = tuckedArea(pathname);
+  const open = tucked ? preferred && openedIn === tucked : preferred;
+  const onOpenChange = (next: boolean) => {
+    setPreferred(next);
+    setOpenedIn(next ? tucked : null);
+  };
+  return { open, onOpenChange };
+}
+
 /** The frame around every page a Member or Guest works in. */
 export function AppShell() {
   const me = useMe(useRouteContext({ from: "/_app" }).me);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const crumbs = crumbsFor(pathname, me);
+  const sidebar = useSidebarOpen(pathname);
   return (
     <TooltipProvider>
-      <SidebarProvider defaultOpen={startsOpen()} style={{ "--sidebar-width": "350px" } as React.CSSProperties}>
+      <SidebarProvider open={sidebar.open} onOpenChange={sidebar.onOpenChange} style={{ "--sidebar-width": "350px" } as React.CSSProperties}>
         {/* The first stop for the keyboard: past the sidebar and header to the page itself. */}
         <a
           href="#content"

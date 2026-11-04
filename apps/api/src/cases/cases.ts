@@ -2,10 +2,10 @@ import { and, asc, count, desc, eq, isNull, ne, sql, type SQL } from "drizzle-or
 import { alias } from "drizzle-orm/pg-core";
 import type { Tx } from "../db/client";
 import type { Deps } from "../deps";
-import { type Actor, canSeeCase, casePermissions, casePolicy, isGuest, NotPermitted, visibleCases } from "../access/policy";
+import { type Actor, canSeeCase, casePermissions, casePolicy, isGuest, NotPermitted, visibleCases, visibleItems } from "../access/policy";
 import { caseRoleAssignmentsOf, caseRoleHolderIds } from "../case-roles/holders";
 import { guestGrantsOf } from "../guests/grants";
-import { alerts, caseGuests, cases, organization, user } from "../db/schema";
+import { alerts, caseGuests, cases, organization, tasks, user } from "../db/schema";
 import { caseClosedComment, queueWriteBacks } from "../crowdstrike/write-back";
 import { secureId } from "../ids";
 import type { Membership, Participant } from "../members/membership";
@@ -272,7 +272,7 @@ export function caseStore(deps: Pick<Deps, "db" | "clock" | "mailer" | "baseUrl"
       .where(and(visibleCases(me), eq(cases.number, number)))
       .limit(1);
     if (!row) throw new CaseNotFound();
-    const [caseRoles, tasks] = await Promise.all([caseRoleAssignmentsOf(db, row.id), taskCounts(db, row.id, me)]);
+    const [caseRoles, taskTotals] = await Promise.all([caseRoleAssignmentsOf(db, row.id), taskCounts(db, row.id, me)]);
     return {
       ...listItem(row),
       can: casePermissions(me, { assigneeId: row.assigneeId }),
@@ -288,7 +288,7 @@ export function caseStore(deps: Pick<Deps, "db" | "clock" | "mailer" | "baseUrl"
         updatedAt: row.summaryUpdatedAt.toISOString(),
       } satisfies CaseSummaryView,
       caseRoles,
-      tasks,
+      tasks: taskTotals,
     };
   };
 
@@ -350,6 +350,13 @@ export function caseStore(deps: Pick<Deps, "db" | "clock" | "mailer" | "baseUrl"
           // Guests don't learn who else has been let in.
           guests: guest ? sql<null>`null` : sql<number>`(select count(*)::int from ${caseGuests} where ${countingGuests})`,
           alerts: sql<number>`(select count(*)::int from ${alerts} where ${alerts.caseId} = ${cases.id}${guest ? sql` and not ${alerts.internal}` : sql``})`,
+          // Open Tasks past their due date, among those `me` can see.
+          overdueTasks: sql<number>`(select count(*)::int from ${tasks} where ${and(
+            eq(tasks.caseId, cases.id),
+            eq(tasks.done, false),
+            sql`${tasks.dueDate} < ${now.toISOString().slice(0, 10)}::date`,
+            visibleItems(me, tasks.internal),
+          )})`,
         })
         .from(cases)
         .leftJoin(assignee, eq(cases.assigneeId, assignee.id))
@@ -362,7 +369,7 @@ export function caseStore(deps: Pick<Deps, "db" | "clock" | "mailer" | "baseUrl"
         (["mine", "unassigned", "open", "closed"] as const).map((v) => countOf(views[v])),
       );
       return {
-        cases: rows.map((row) => ({ ...listItem(row), guests: row.guests, alerts: row.alerts })),
+        cases: rows.map((row) => ({ ...listItem(row), guests: row.guests, alerts: row.alerts, overdueTasks: row.overdueTasks })),
         counts: { mine, unassigned, open, closed },
       };
     },

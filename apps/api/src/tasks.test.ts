@@ -315,6 +315,23 @@ describe("Overdue Tasks", () => {
     t.clock.advance(DAY);
     expect(await overdue()).toEqual([late.id]);
   });
+
+  test("the Case list counts each Case's overdue Tasks", async () => {
+    const { t, owner, open, task, setDone } = await acme();
+    const number = await open();
+    await task(owner, number, { title: "Capture memory image", dueDate: "2026-01-02" });
+    await task(owner, number, { title: "Brief counsel", dueDate: "2026-01-02" });
+    const finished = await task(owner, number, { title: "Contain host", dueDate: "2026-01-02" });
+    await task(owner, number, { title: "Write the report", dueDate: "2026-02-01" });
+    await setDone(owner, number, finished.id, true);
+    const overdueTasks = async () => {
+      const body = await (await owner.api.cases.$get({ query: {} })).json();
+      return "cases" in body ? body.cases.find((c) => c.number === number)?.overdueTasks : undefined;
+    };
+    expect(await overdueTasks()).toBe(0);
+    t.clock.advance(2 * DAY);
+    expect(await overdueTasks()).toBe(2);
+  });
 });
 
 describe("Tasks on a Closed Case", () => {

@@ -45,7 +45,7 @@ export function NavUser({ me }: { me: Me }) {
   const who = (
     <>
       <Avatar className="size-8 rounded-lg">
-        <AvatarFallback className="rounded-lg">{initials(name || email)}</AvatarFallback>
+        <AvatarFallback className="rounded-lg text-foreground">{initials(name || email)}</AvatarFallback>
       </Avatar>
       <div className="grid flex-1 text-left text-sm leading-tight">
         <span className="truncate font-medium">{name}</span>
@@ -68,7 +68,7 @@ export function NavUser({ me }: { me: Me }) {
               <ChevronsUpDownIcon className="ml-auto size-4" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
-          <DropdownMenuContent className="min-w-56 rounded-lg" side={isMobile ? "bottom" : "right"} align="end" sideOffset={4}>
+          <DropdownMenuContent className="min-w-56 rounded-lg" side={isMobile ? "top" : "right"} align="end" sideOffset={4}>
             <DropdownMenuLabel className="p-0 font-normal">
               <div className="flex items-center gap-2 px-1 py-1.5">{who}</div>
             </DropdownMenuLabel>
