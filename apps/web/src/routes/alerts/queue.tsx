@@ -60,6 +60,11 @@ type Picked = { version: number; severity: Severity; externalId: string; title: 
 type AlertRow = { id: string } & Picked;
 const pickedOf = (a: AlertRow): Picked => ({ version: a.version, severity: a.severity, externalId: a.externalId, title: a.title });
 const shortcut = { o: "open", a: "attach", d: "dismiss" } as const;
+/**
+ * Host / user and Received give way when the queue is narrow (the Alert panel is open). Their cells
+ * stay in the row, emptied and without padding, so the cells after them keep their columns.
+ */
+const narrowHidden = "overflow-hidden px-0 @3xl:px-2";
 
 /**
  * Keyboard triage: j and k move between Alerts, x selects the one in focus, Escape closes the
@@ -274,29 +279,6 @@ export function AlertQueuePage() {
         )}
       </div>
       {outcome && <OutcomeNotice outcome={outcome} onReselect={reselect} onDismiss={() => setOutcome(null)} />}
-      {selected.size > 0 && (
-        <div
-          className="flex flex-wrap items-center gap-2 rounded-lg bg-foreground px-4 py-3 text-background"
-          role="toolbar"
-          aria-label="Selected Alerts"
-        >
-          <span className="mr-2 font-semibold">
-            {selected.size} selected{hiddenSelected > 0 && ` · ${hiddenSelected} not shown by these filters`}
-          </span>
-          <Button size="sm" onClick={() => act("open")}>
-            Open Case
-          </Button>
-          <Button size="sm" variant="secondary" onClick={() => act("attach")}>
-            Attach to Case…
-          </Button>
-          <Button size="sm" variant="secondary" onClick={() => act("dismiss")}>
-            Dismiss…
-          </Button>
-          <Button size="sm" variant="secondary" className="ml-auto" onClick={() => setSelected(new Map())}>
-            Clear selection
-          </Button>
-        </div>
-      )}
       <OpenCaseFromAlertsDialog
         open={dialog?.kind === "open"}
         onOpenChange={(o) => !o && setDialog(null)}
@@ -325,20 +307,55 @@ export function AlertQueuePage() {
       {!(alerts.isError && !loaded) && (
       <Card className="@container py-0">
           <Table ref={table} className="table-fixed">
+            {/* Column widths live here, so the header row can turn into the selection toolbar without moving them. */}
+            <colgroup>
+              <col className="w-10" />
+              <col className="w-28" />
+              <col />
+              <col className="w-0 @3xl:w-40" />
+              <col className="w-0 @3xl:w-36" />
+              <col className="w-32" />
+            </colgroup>
             <TableHeader>
-              <TableRow>
-                <TableHead scope="col" className="w-10 pl-4">
+              <TableRow className={cn("hover:bg-transparent", selected.size > 0 && "bg-muted/50")}>
+                <TableHead scope="col" className="pl-4">
                   <Checkbox
                     aria-label="Select all Alerts shown"
                     checked={allSelected}
-                    onCheckedChange={(on) => setPicked(rows, on === true)}
+                    onCheckedChange={() => setPicked(rows, !allSelected)}
                   />
                 </TableHead>
-                <TableHead scope="col" className="w-28">Severity</TableHead>
-                <TableHead scope="col">Detection</TableHead>
-                <TableHead scope="col" className="hidden w-40 @3xl:table-cell">Host / user</TableHead>
-                <TableHead scope="col" className="hidden w-36 @3xl:table-cell">Received</TableHead>
-                <TableHead scope="col" className="w-32 pr-4">Status</TableHead>
+                {selected.size > 0 ? (
+                  // While Alerts are selected, the header row holds what can be done with them.
+                  <TableHead colSpan={5} className="pr-4">
+                    <div role="toolbar" aria-label="Selected Alerts" className="flex items-center gap-2">
+                      <span className="mr-1 font-medium tabular-nums">
+                        {selected.size} selected
+                        {hiddenSelected > 0 && <span className="font-normal text-muted-foreground">{` · ${hiddenSelected} not shown by these filters`}</span>}
+                      </span>
+                      <Button size="sm" onClick={() => act("open")}>
+                        Open Case
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => act("attach")}>
+                        Attach to Case…
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => act("dismiss")}>
+                        Dismiss…
+                      </Button>
+                      <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setSelected(new Map())}>
+                        Clear selection
+                      </Button>
+                    </div>
+                  </TableHead>
+                ) : (
+                  <>
+                    <TableHead scope="col">Severity</TableHead>
+                    <TableHead scope="col">Detection</TableHead>
+                    <TableHead scope="col" className={narrowHidden}><span className="hidden @3xl:inline">Host / user</span></TableHead>
+                    <TableHead scope="col" className={narrowHidden}><span className="hidden @3xl:inline">Received</span></TableHead>
+                    <TableHead scope="col" className="pr-4">Status</TableHead>
+                  </>
+                )}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -348,8 +365,8 @@ export function AlertQueuePage() {
                     <TableCell className="pl-4"><Skeleton className="size-4" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-4/5" /></TableCell>
-                    <TableCell className="hidden @3xl:table-cell"><Skeleton className="h-4 w-24" /></TableCell>
-                    <TableCell className="hidden @3xl:table-cell"><Skeleton className="h-4 w-16" /></TableCell>
+                    <TableCell className={narrowHidden}><Skeleton className="hidden h-4 w-24 @3xl:block" /></TableCell>
+                    <TableCell className={narrowHidden}><Skeleton className="hidden h-4 w-16 @3xl:block" /></TableCell>
                     <TableCell className="pr-4"><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
                   </TableRow>
                 ))}
@@ -399,7 +416,8 @@ export function AlertQueuePage() {
                       </span>
                     </div>
                   </TableCell>
-                  <TableCell className="hidden font-mono text-xs @3xl:table-cell">
+                  <TableCell className={cn(narrowHidden, "font-mono text-xs")}>
+                    <div className="hidden @3xl:block">
                     <div className="truncate" title={a.host ?? undefined}>
                       {a.host ?? <span className="font-sans text-muted-foreground">No host</span>}
                     </div>
@@ -408,9 +426,10 @@ export function AlertQueuePage() {
                         {a.userName}
                       </div>
                     )}
+                    </div>
                   </TableCell>
-                  <TableCell className="hidden text-muted-foreground tabular-nums @3xl:table-cell" title={exactTime(a.receivedAt)}>
-                    {received(a.receivedAt)}
+                  <TableCell className={cn(narrowHidden, "text-muted-foreground tabular-nums")} title={exactTime(a.receivedAt)}>
+                    <span className="hidden @3xl:inline">{received(a.receivedAt)}</span>
                   </TableCell>
                   <TableCell className="pr-4">
                     <div className="flex flex-wrap items-center gap-1">
