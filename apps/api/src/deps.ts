@@ -6,12 +6,15 @@ import type { GuestSession } from "./guests/guest-sessions";
 import type { CredentialSealer } from "./integrations/credentials";
 import type { Mailer } from "./mail";
 import type { SignalSource } from "./realtime/signals";
+import type { TeamsPoster } from "./teams/teams-webhook";
 
 /** Everything the app reaches outside itself; injected so tests can swap in fakes. */
 export type Deps = {
   db: Db;
   auth: Auth;
   mailer: Mailer;
+  /** Posts to Organizations' Teams channels. */
+  teams: TeamsPoster;
   clock: Clock;
   /** Change signals from every process (ADR 0005). */
   signals: SignalSource;

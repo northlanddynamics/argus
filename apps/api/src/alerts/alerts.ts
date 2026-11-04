@@ -17,6 +17,7 @@ import type { Membership, Participant } from "../members/membership";
 import { alertIndicators, linkAlertIndicators, recordAlertIndicators, unlinkAlertIndicators } from "../observables/observables";
 import { publish } from "../realtime/signals";
 import { alertLabel, type AlertStatus, crowdstrikeActorName, type DismissalReason, dismissalReasonLabel } from "./vocabulary";
+import { queueTeamsPost, sendTeamsPosts } from "../teams/teams";
 
 /**
  * Alerts: detections received from the Organization's Integrations. Every Member sees the Alert
@@ -473,7 +474,8 @@ const single = (result: BulkResult) => {
   if (result.refused[0]) throw new AlertRefused(result.refused[0]);
 };
 
-export function alertStore({ db, clock, baseUrl }: Pick<Deps, "db" | "clock" | "baseUrl">) {
+export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams" | "credentials">) {
+  const { db, clock, baseUrl } = deps;
   /** Attaches the selection to Case `number` (moving any on other Cases). */
   const attach = (me: Membership, number: number, selection: AlertSelection) =>
     db.transaction(async (tx) => {
@@ -686,7 +688,7 @@ export function alertStore({ db, clock, baseUrl }: Pick<Deps, "db" | "clock" | "
      */
     async openCase(me: Membership, input: Omit<OpenCaseInput, "severity"> & { severity?: Severity }, selection: AlertSelection) {
       const now = clock.now();
-      return db.transaction(async (tx) => {
+      const result = await db.transaction(async (tx) => {
         // Checked before the Case exists, so nothing opens when no Alert can be attached.
         const locked = await lockAlerts(tx, me, selection.map((x) => x.id));
         const caseOf = await lockCases(tx, me, [...locked.values()].map((a) => a.caseId));
@@ -695,9 +697,13 @@ export function alertStore({ db, clock, baseUrl }: Pick<Deps, "db" | "clock" | "
         if (!usable.length) throw new NoAlertsToAttach(checked.flatMap(({ refused }) => (refused ? [refused] : [])));
         const severity = input.severity ?? highestSeverity(usable.map((a) => a.severity));
         const opened = await insertCase(tx, me, { ...input, severity }, now);
-        const result = await attachIn(tx, me, { ...opened, title: input.title }, selection, now, baseUrl);
-        return { case: { number: opened.number }, ...result };
+        const attached = await attachIn(tx, me, { ...opened, title: input.title }, selection, now, baseUrl);
+        const announcement = { organizationId: me.organizationId, caseId: opened.id, actorId: me.userId };
+        await queueTeamsPost(tx, { ...announcement, kind: "case_opened", severity, alertCount: attached.applied.length }, now);
+        return { case: { number: opened.number }, ...attached };
       });
+      await sendTeamsPosts(deps);
+      return result;
     },
 
     /** Attaches the selected Alerts to Case `number`, moving those on other Cases. */

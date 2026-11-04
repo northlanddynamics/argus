@@ -43,7 +43,117 @@ export function IntegrationsPage() {
           </CardContent>
         </Card>
       )}
+      <TeamsChannelCard />
     </>
+  );
+}
+
+const teamsChannelKey = ["teams-channel"] as const;
+
+/** The Organization's Teams channel: its incoming webhook, a test post, and what is posted to it. */
+function TeamsChannelCard() {
+  const queryClient = useQueryClient();
+  const [webhookUrl, setWebhookUrl] = useState("");
+  const [tested, setTested] = useState(false);
+  const channel = useQuery({
+    queryKey: teamsChannelKey,
+    queryFn: async () => {
+      const res = await api["teams-channel"].$get();
+      if (!res.ok) throw new Error(await errorMessage(res, "Could not load the Teams channel"));
+      return (await res.json()).teamsChannel;
+    },
+  });
+  const refresh = () => queryClient.invalidateQueries({ queryKey: teamsChannelKey });
+  const save = useMutation({
+    mutationFn: async () => ok(await api["teams-channel"].$put({ json: { webhookUrl } }), "Could not save the webhook"),
+    onSuccess: async () => {
+      setWebhookUrl("");
+      setTested(false);
+      await refresh();
+    },
+  });
+  const remove = useMutation({
+    mutationFn: async () => ok(await api["teams-channel"].$delete(), "Could not remove the webhook"),
+    onSuccess: refresh,
+  });
+  const test = useMutation({
+    mutationFn: async () => ok(await api["teams-channel"].test.$post({ json: webhookUrl ? { webhookUrl } : {} }), "Could not send a test post"),
+    onMutate: () => setTested(false),
+    onSuccess: () => setTested(true),
+  });
+  const configured = channel.data?.configured ?? false;
+  const error = save.error ?? remove.error ?? test.error;
+  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    save.mutate();
+  };
+  return (
+    <Card id="teams" data-testid="teams-channel">
+      <CardHeader className="border-b">
+        <div className="flex items-center gap-3 self-center">
+          <CardTitle>Teams channel</CardTitle>
+          <Badge variant={configured ? "default" : "outline"}>{configured ? "Active" : "Not set"}</Badge>
+        </div>
+        {configured && (
+          <CardAction>
+            <Button variant="outline" size="sm" disabled={remove.isPending} onClick={() => remove.mutate()}>
+              Remove
+            </Button>
+          </CardAction>
+        )}
+      </CardHeader>
+      <CardContent>
+        <form className="grid gap-4" onSubmit={onSubmit}>
+          <div className="grid gap-2">
+            <Label htmlFor="teams-webhook">{configured ? "Replace the incoming webhook URL" : "Incoming webhook URL"}</Label>
+            <Input
+              id="teams-webhook"
+              type="url"
+              autoComplete="off"
+              placeholder="https://….webhook.office.com/… or a Teams Workflows URL"
+              value={webhookUrl}
+              onChange={(e) => {
+                setWebhookUrl(e.target.value);
+                setTested(false);
+              }}
+            />
+            {channel.data?.webhook && (
+              <p className="text-sm text-muted-foreground">
+                In use: <span className="font-mono">{channel.data.webhook.hint}</span>, set by {channel.data.webhook.updatedBy.name} on{" "}
+                {new Date(channel.data.webhook.updatedAt).toLocaleDateString()}
+              </p>
+            )}
+          </div>
+          <div className="grid gap-1 text-sm">
+            <span className="font-semibold">Posts to the channel when</span>
+            <ul className="list-disc pl-5">
+              <li>a new Case is opened as Critical</li>
+              <li>a Case's Severity is raised to Critical</li>
+              <li>a Case is opened from Alerts</li>
+            </ul>
+            <span className="text-muted-foreground">Restricted Cases post a link only, no details.</span>
+          </div>
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error.message}</AlertDescription>
+            </Alert>
+          )}
+          {tested && !error && (
+            <Alert>
+              <AlertDescription>Test post sent. Check the channel.</AlertDescription>
+            </Alert>
+          )}
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" disabled={test.isPending || (!webhookUrl && !configured)} onClick={() => test.mutate()}>
+              Send test post
+            </Button>
+            <Button type="submit" disabled={save.isPending || !webhookUrl}>
+              Save
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
 
