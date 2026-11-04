@@ -10,6 +10,7 @@ target_fingerprint: "sha256:2fec699af5f8649da2abb7449218a4956b7031d5c1ce6252def5
 target_path: /home/user/argus/apps/web/src/routes/alerts/queue.tsx
 timestamp: 2026-11-04T17-34-19Z
 slug: src-routes-alerts-queue-tsx
+closed: true
 ---
 Method: dual-agent (A: design review · B: detector + browser)
 
