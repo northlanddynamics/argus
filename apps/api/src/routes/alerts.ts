@@ -1,7 +1,7 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
-import { AlertNotFound, AlertRefused, NoAlertsToAttach } from "../alerts/alerts";
+import { AlertNotFound, AlertRefused, NoAlertsToAttach, QUEUE_LIMIT } from "../alerts/alerts";
 import { ALERT_STATUSES, DISMISSAL_REASONS } from "../alerts/vocabulary";
 import { caseSummarySchema } from "../cases/case-summary";
 import { CaseClosed, CaseNotFound } from "../cases/cases";
@@ -51,7 +51,8 @@ export const alertRoutes = (deps: Deps, { alerts }: Modules) =>
     .get("/", zValidator("query", queueQuery), async (c) => {
       const { status, severity, integration, case: caseNumber } = c.req.valid("query");
       try {
-        return c.json({ alerts: await alerts.list(c.get("membership"), { status, severity, integrationId: integration, caseNumber }) }, 200);
+        // `limit`: the most Alerts the queue shows at once; there may be more when it is reached.
+        return c.json({ alerts: await alerts.list(c.get("membership"), { status, severity, integrationId: integration, caseNumber }), limit: QUEUE_LIMIT }, 200);
       } catch (e) {
         if (e instanceof CaseNotFound) return c.json(caseNotFound, 404);
         throw e;

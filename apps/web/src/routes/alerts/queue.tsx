@@ -1,14 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SeverityBadge } from "@/components/case-badges";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   ago,
@@ -66,9 +67,10 @@ export function AlertQueuePage() {
         query: { ...(status !== "any" && { status }), severity: search.severity, integration: search.integration },
       });
       if (!res.ok) throw new Error("Could not load Alerts");
-      return (await res.json()).alerts;
+      return res.json();
     },
   });
+  const limit = alerts.data?.limit ?? null;
 
   /** Selected Alerts: id → the version shown when it was selected, so changes since are caught. */
   const [selected, setSelected] = useState<Map<string, number>>(new Map());
@@ -77,7 +79,10 @@ export function AlertQueuePage() {
   const setShowing = (alert: string | null) => setSearch({ alert: alert ?? undefined });
   const [dialog, setDialog] = useState<"open" | "attach" | "dismiss" | null>(null);
 
-  const rows = alerts.data ?? [];
+  const loaded = alerts.data?.alerts;
+  const rows = loaded ?? [];
+  /** Integrations that aren't bringing Alerts in: paused, disconnected or in error. */
+  const unhealthy = integrations.data?.filter((i) => i.paused || i.health === "error" || i.health === "disconnected") ?? [];
   const selection = [...selected].map(([id, version]) => ({ id, version }));
   const allSelected = rows.length > 0 && rows.every((a) => selected.has(a.id));
   const toggle = (a: { id: string; version: number }, on: boolean) =>
@@ -111,9 +116,42 @@ export function AlertQueuePage() {
               {i.name} · {healthWord(i).toLowerCase()} · {i.lastEventAt ? `last event ${ago(i.lastEventAt)}` : "no events yet"}
             </li>
           ))}
-          {integrations.data?.length === 0 && <li>No Integrations yet: an Admin adds one in Settings.</li>}
+          {integrations.data?.length === 0 && (
+            <li>
+              No Integrations yet: an Admin adds one in{" "}
+              <Link to="/settings/integrations" className="underline underline-offset-4 hover:text-foreground">
+                Settings
+              </Link>
+              .
+            </li>
+          )}
         </ul>
       </div>
+      {unhealthy.length > 0 && (
+        <Alert className="border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80">
+          <AlertTitle>
+            {unhealthy.length === 1 ? `${unhealthy[0]!.name} isn't bringing in Alerts` : `${unhealthy.length} Integrations aren't bringing in Alerts`}
+          </AlertTitle>
+          <AlertDescription>
+            <ul>
+              {unhealthy.map((i) => (
+                <li key={i.id}>
+                  {i.name}: {healthWord(i)}
+                  {i.healthDetail && ` (${i.healthDetail})`}
+                  {i.lastEventAt ? `, last event ${ago(i.lastEventAt)}` : ", no events yet"}.
+                </li>
+              ))}
+            </ul>
+            <p>
+              New detections may be missing from the queue until it reconnects. An Admin can check it in{" "}
+              <Link to="/settings/integrations" className="underline underline-offset-4">
+                Settings
+              </Link>
+              .
+            </p>
+          </AlertDescription>
+        </Alert>
+      )}
       <Card>
         <CardContent className="grid items-end gap-4 sm:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
           <div className="grid gap-2">
@@ -158,7 +196,7 @@ export function AlertQueuePage() {
             </NativeSelect>
           </div>
           <p className="text-sm text-muted-foreground">
-            {alerts.data && `${alerts.data.length} ${status === "any" ? "Alerts" : alertStatusLabel[status]} · new Alerts appear live`}
+            {loaded && `${loaded.length} ${status === "any" ? "Alerts" : alertStatusLabel[status]} · new Alerts appear live`}
           </p>
         </CardContent>
       </Card>
@@ -198,7 +236,23 @@ export function AlertQueuePage() {
         selection={selection}
         onDone={done}
       />
+      {alerts.isError && (
+        <Alert variant="destructive">
+          <AlertTitle>Alerts couldn't be loaded</AlertTitle>
+          <AlertDescription>
+            {loaded
+              ? "The queue below may be out of date. Try again, or reload the page."
+              : "No Alerts are shown because the queue didn't load, not because there are none. Try again, or reload the page."}
+          </AlertDescription>
+          <AlertAction>
+            <Button variant="outline" size="sm" disabled={alerts.isFetching} onClick={() => alerts.refetch()}>
+              Try again
+            </Button>
+          </AlertAction>
+        </Alert>
+      )}
       <div className={cn("grid items-start gap-4", showing && "lg:grid-cols-[1fr_340px]")}>
+      {!(alerts.isError && !loaded) && (
       <Card>
         <CardContent>
           <Table>
@@ -222,7 +276,24 @@ export function AlertQueuePage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {alerts.data?.map((a) => (
+              {alerts.isPending &&
+                Array.from({ length: 8 }, (_, i) => (
+                  <TableRow key={i} className="hover:bg-transparent" aria-hidden>
+                    <TableCell><Skeleton className="size-4" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-64" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
+                  </TableRow>
+                ))}
+              {alerts.isPending && (
+                <TableRow className="sr-only">
+                  <TableCell colSpan={7} role="status">Loading Alerts…</TableCell>
+                </TableRow>
+              )}
+              {loaded?.map((a) => (
                 <TableRow
                   key={a.id}
                   data-testid={`alert-${a.externalId}`}
@@ -273,7 +344,7 @@ export function AlertQueuePage() {
                   </TableCell>
                 </TableRow>
               ))}
-              {alerts.data?.length === 0 && (
+              {loaded?.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={7} className="text-muted-foreground">
                     No Alerts here.
@@ -284,8 +355,14 @@ export function AlertQueuePage() {
           </Table>
         </CardContent>
       </Card>
+      )}
       {showing && <AlertPanel id={showing} onClose={() => setShowing(null)} />}
       </div>
+      {limit !== null && loaded && loaded.length >= limit && (
+        <p role="status" className="text-xs text-muted-foreground">
+          Showing the newest {limit} Alerts. Narrow the filters to see older ones.
+        </p>
+      )}
     </div>
   );
 }
@@ -342,13 +419,21 @@ function OutcomeNotice({ outcome, onReselect, onDismiss }: { outcome: BulkOutcom
 /** Observables or Assets an Alert names, as badges. */
 /** The Alert's comments in Falcon, as last fetched; opening the Alert asks the worker to fetch them again. */
 function FalconComments({ comments: c, attached }: { comments: AlertDetail["falconComments"]; attached: boolean }) {
+  /** Refreshing for longer than Falcon usually takes: the worker may be down or Falcon unreachable. */
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    setSlow(false);
+    if (!c.refreshing) return;
+    const timer = setTimeout(() => setSlow(true), 20_000);
+    return () => clearTimeout(timer);
+  }, [c.refreshing]);
   return (
     <section aria-label="Comments in Falcon" className="grid gap-1">
       <div className="flex items-baseline justify-between gap-2">
         <h3 className="text-xs font-medium text-muted-foreground">Comments in Falcon</h3>
         {c.refreshing ? (
           <span role="status" className="text-xs text-muted-foreground">
-            Refreshing from Falcon…
+            {slow ? "Falcon hasn't answered yet; these may be out of date" : "Refreshing from Falcon…"}
           </span>
         ) : (
           c.syncedAt && (
@@ -404,7 +489,53 @@ function AlertPanel({ id, onClose }: { id: string; onClose: () => void }) {
   const alert = useQuery(alertQuery(id));
   const [moving, setMoving] = useState<"move" | "detach" | null>(null);
   const a = alert.data;
-  if (!a) return null;
+  if (alert.isPending) {
+    return (
+      <Card aria-label="Alert" aria-busy className="self-start">
+        <CardContent className="grid gap-3">
+          <span className="sr-only" role="status">
+            Loading the Alert…
+          </span>
+          <div className="flex justify-between">
+            <Skeleton className="h-5 w-16 rounded-full" />
+            <Skeleton className="h-5 w-16 rounded-full" />
+          </div>
+          <Skeleton className="h-5 w-4/5" />
+          <Skeleton className="h-3 w-1/2" />
+          <Skeleton className="h-16 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+  if (!a) {
+    return (
+      <Card aria-label="Alert" className="self-start">
+        <CardContent className="grid gap-3 text-sm">
+          {alert.isError ? (
+            <>
+              <p className="font-medium">This Alert couldn't be loaded</p>
+              <p className="text-muted-foreground">Try again, or reload the page.</p>
+            </>
+          ) : (
+            <>
+              <p className="font-medium">This Alert isn't available</p>
+              <p className="text-muted-foreground">It may have been removed from the queue, or the link may be wrong.</p>
+            </>
+          )}
+          <div className="flex gap-2">
+            {alert.isError && (
+              <Button size="sm" variant="outline" disabled={alert.isFetching} onClick={() => alert.refetch()}>
+                Try again
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" className="ml-auto" onClick={onClose}>
+              Close
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
   const onCase = a.attached?.case ?? null;
   const editable = onCase !== null && onCase.status !== "closed";
   return (
