@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-04T00:00:00Z",
+  "title": "Design System: Argus",
+  "extensions": {
+    "colorMeta": {
+      "primary": { "role": "primary", "displayName": "Ink Black", "canonical": "oklch(0.205 0 0)", "tonalRamp": ["oklch(0.15 0 0)", "oklch(0.205 0 0)", "oklch(0.269 0 0)", "oklch(0.371 0 0)", "oklch(0.439 0 0)", "oklch(0.556 0 0)", "oklch(0.708 0 0)", "oklch(0.87 0 0)"] },
+      "background": { "role": "neutral", "displayName": "Paper White", "canonical": "oklch(1 0 0)", "tonalRamp": ["oklch(0.145 0 0)", "oklch(0.269 0 0)", "oklch(0.439 0 0)", "oklch(0.556 0 0)", "oklch(0.708 0 0)", "oklch(0.922 0 0)", "oklch(0.97 0 0)", "oklch(1 0 0)"] },
+      "foreground": { "role": "neutral", "displayName": "Console Ink", "canonical": "oklch(0.145 0 0)" },
+      "muted": { "role": "neutral", "displayName": "Soft Grey Wash", "canonical": "oklch(0.97 0 0)" },
+      "muted-foreground": { "role": "neutral", "displayName": "Quiet Grey Text", "canonical": "oklch(0.556 0 0)" },
+      "border": { "role": "neutral", "displayName": "Hairline Grey", "canonical": "oklch(0.922 0 0)" },
+      "ring": { "role": "neutral", "displayName": "Focus Grey", "canonical": "oklch(0.708 0 0)" },
+      "sidebar": { "role": "neutral", "displayName": "Sidebar Mist", "canonical": "oklch(0.985 0 0)" },
+      "destructive": { "role": "signal", "displayName": "Alarm Red", "canonical": "oklch(0.577 0.245 27.325)", "tonalRamp": ["oklch(0.25 0.09 27)", "oklch(0.35 0.14 27)", "oklch(0.45 0.19 27)", "oklch(0.577 0.245 27.325)", "oklch(0.68 0.18 25)", "oklch(0.8 0.11 20)", "oklch(0.9 0.05 18)", "oklch(0.97 0.015 17)"] },
+      "notice-surface": { "role": "signal", "displayName": "Amber Notice (fill)", "canonical": "oklch(0.987 0.022 95.277)", "tonalRamp": ["oklch(0.279 0.077 45.635)", "oklch(0.414 0.112 45.904)", "oklch(0.555 0.163 48.998)", "oklch(0.666 0.179 58.318)", "oklch(0.769 0.188 70.08)", "oklch(0.879 0.169 91.605)", "oklch(0.962 0.059 95.617)", "oklch(0.987 0.022 95.277)"] },
+      "notice-border": { "role": "signal", "displayName": "Amber Notice (border)", "canonical": "oklch(0.879 0.169 91.605)" },
+      "notice-ink": { "role": "signal", "displayName": "Amber Notice (text)", "canonical": "oklch(0.279 0.077 45.635)" },
+      "live": { "role": "signal", "displayName": "Live Green", "canonical": "oklch(0.723 0.219 149.579)" },
+      "reconnecting": { "role": "signal", "displayName": "Reconnecting Amber", "canonical": "oklch(0.769 0.188 70.08)" },
+      "overdue-ink": { "role": "signal", "displayName": "Overdue Red", "canonical": "oklch(0.505 0.213 27.518)" },
+      "overdue-border": { "role": "signal", "displayName": "Overdue Red (border)", "canonical": "oklch(0.808 0.114 19.571)" },
+      "mention-surface": { "role": "signal", "displayName": "Mention Blue (fill)", "canonical": "oklch(0.951 0.026 236.824)" },
+      "mention-ink": { "role": "signal", "displayName": "Mention Blue (text)", "canonical": "oklch(0.391 0.09 240.876)" },
+      "operator-chrome": { "role": "neutral", "displayName": "Operator Slate", "canonical": "oklch(0.208 0.042 265.755)" }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Headline", "purpose": "The page h1 and auth card titles." },
+      "title": { "displayName": "Title", "purpose": "Card titles and section headings." },
+      "body": { "displayName": "Body", "purpose": "Tables, forms, Discussion, menus: almost everything." },
+      "label": { "displayName": "Label", "purpose": "Badges, metadata, live indicator, small buttons." },
+      "reference": { "displayName": "Reference", "purpose": "Case references, fingerprints, Observable values, keys." }
+    },
+    "shadows": [
+      { "name": "float-sm", "value": "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)", "purpose": "Small floating layers." },
+      { "name": "float-md", "value": "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)", "purpose": "Menus, popovers, the mention picker." },
+      { "name": "float-lg", "value": "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)", "purpose": "Dialogs and toasts." }
+    ],
+    "motion": [
+      { "name": "state-transition", "value": "all 150ms cubic-bezier(0.4, 0, 0.2, 1)", "purpose": "Hover, focus and press on buttons, badges and inputs (Tailwind transition default)." },
+      { "name": "press", "value": "translateY(1px)", "purpose": "Buttons nudge down 1px while pressed." }
+    ],
+    "breakpoints": [
+      { "name": "md", "value": "768px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The main action of a view; one per view.",
+      "html": "<button class=\"ds-btn ds-btn-primary\">Open Case</button>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 10px; border-radius: 10px; border: 1px solid transparent; font: 500 0.875rem/1.25rem 'Geist Variable', sans-serif; cursor: pointer; transition: all 150ms cubic-bezier(0.4,0,0.2,1); outline: none; } .ds-btn:active { transform: translateY(1px); } .ds-btn:focus-visible { border-color: oklch(0.708 0 0); box-shadow: 0 0 0 3px oklch(0.708 0 0 / 0.5); } .ds-btn-primary { background: oklch(0.205 0 0); color: oklch(0.985 0 0); } .ds-btn-primary:hover { background: oklch(0.205 0 0 / 0.8); }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Secondary actions beside a primary one.",
+      "html": "<button class=\"ds-btn-outline\">Attach to Case</button>",
+      "css": ".ds-btn-outline { display: inline-flex; align-items: center; height: 32px; padding: 0 10px; border-radius: 10px; border: 1px solid oklch(0.922 0 0); background: oklch(1 0 0); color: oklch(0.145 0 0); font: 500 0.875rem/1.25rem 'Geist Variable', sans-serif; cursor: pointer; transition: all 150ms; outline: none; } .ds-btn-outline:hover { background: oklch(0.97 0 0); } .ds-btn-outline:focus-visible { border-color: oklch(0.708 0 0); box-shadow: 0 0 0 3px oklch(0.708 0 0 / 0.5); } .ds-btn-outline:active { transform: translateY(1px); }"
+    },
+    {
+      "name": "Destructive Button",
+      "kind": "button",
+      "refersTo": "button-destructive",
+      "description": "Destructive actions: red text on a 10% red tint, never a solid fill.",
+      "html": "<button class=\"ds-btn-destructive\">Remove Guest</button>",
+      "css": ".ds-btn-destructive { display: inline-flex; align-items: center; height: 32px; padding: 0 10px; border-radius: 10px; border: 1px solid transparent; background: oklch(0.577 0.245 27.325 / 0.1); color: oklch(0.577 0.245 27.325); font: 500 0.875rem/1.25rem 'Geist Variable', sans-serif; cursor: pointer; transition: all 150ms; outline: none; } .ds-btn-destructive:hover { background: oklch(0.577 0.245 27.325 / 0.2); } .ds-btn-destructive:focus-visible { border-color: oklch(0.577 0.245 27.325 / 0.4); box-shadow: 0 0 0 3px oklch(0.577 0.245 27.325 / 0.2); }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Standard 32px field with hairline border.",
+      "html": "<input class=\"ds-input\" placeholder=\"Search Cases, Alerts, Observables…\" />",
+      "css": ".ds-input { height: 32px; width: 280px; padding: 4px 10px; border-radius: 10px; border: 1px solid oklch(0.922 0 0); background: transparent; color: oklch(0.145 0 0); font: 400 0.875rem/1.25rem 'Geist Variable', sans-serif; outline: none; transition: color 150ms, border-color 150ms, box-shadow 150ms; } .ds-input::placeholder { color: oklch(0.556 0 0); } .ds-input:focus-visible { border-color: oklch(0.708 0 0); box-shadow: 0 0 0 3px oklch(0.708 0 0 / 0.5); }"
+    },
+    {
+      "name": "Severity Badges",
+      "kind": "chip",
+      "refersTo": "badge-solid",
+      "description": "Severity by weight: Critical solid, High heavy outline, the rest thin outline.",
+      "html": "<span class=\"ds-badge ds-badge-critical\">Critical</span> <span class=\"ds-badge ds-badge-high\">High</span> <span class=\"ds-badge ds-badge-outline\">Medium</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; height: 20px; padding: 2px 8px; border-radius: 26px; border: 1px solid transparent; font: 500 0.75rem/1rem 'Geist Variable', sans-serif; white-space: nowrap; box-sizing: border-box; } .ds-badge-critical { background: oklch(0.205 0 0); color: oklch(0.985 0 0); } .ds-badge-high { border: 2px solid oklch(0.145 0 0); color: oklch(0.145 0 0); font-weight: 600; } .ds-badge-outline { border-color: oklch(0.922 0 0); color: oklch(0.145 0 0); }"
+    },
+    {
+      "name": "Internal Badge",
+      "kind": "chip",
+      "refersTo": "badge-outline",
+      "description": "Marks items hidden from the Case's Guests.",
+      "html": "<span class=\"ds-badge-internal\">Internal</span>",
+      "css": ".ds-badge-internal { display: inline-flex; align-items: center; height: 20px; padding: 2px 8px; border-radius: 26px; border: 1px dashed oklch(0.145 0 0 / 0.5); color: oklch(0.145 0 0); font: 500 0.75rem/1rem 'Geist Variable', sans-serif; box-sizing: border-box; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Flat container with a hairline ring.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-title\">Case Summary</div><p class=\"ds-card-body\">Phishing email reported by Finance; two recipients clicked the link.</p></div>",
+      "css": ".ds-card { width: 320px; padding: 16px; border-radius: 14px; background: oklch(1 0 0); color: oklch(0.145 0 0); box-shadow: 0 0 0 1px oklch(0.145 0 0 / 0.1); display: flex; flex-direction: column; gap: 8px; } .ds-card-title { font: 500 1rem/1.5rem 'Geist Variable', sans-serif; } .ds-card-body { margin: 0; font: 400 0.875rem/1.25rem 'Geist Variable', sans-serif; color: oklch(0.556 0 0); }"
+    },
+    {
+      "name": "Amber Notice",
+      "kind": "custom",
+      "refersTo": "notice",
+      "description": "The one warning treatment, inline next to what it is about.",
+      "html": "<div class=\"ds-notice\" role=\"status\">2 Alerts changed since you saw them and were not attached. The rest were.</div>",
+      "css": ".ds-notice { width: 420px; padding: 8px 10px; border-radius: 10px; border: 1px solid oklch(0.879 0.169 91.605); background: oklch(0.987 0.022 95.277); color: oklch(0.279 0.077 45.635); font: 400 0.875rem/1.25rem 'Geist Variable', sans-serif; }"
+    },
+    {
+      "name": "Live Indicator",
+      "kind": "custom",
+      "description": "Connection state: a dot plus words.",
+      "html": "<span class=\"ds-live\" role=\"status\"><span class=\"ds-live-dot\"></span>Live</span>",
+      "css": ".ds-live { display: inline-flex; align-items: center; gap: 6px; font: 400 0.75rem/1rem 'Geist Variable', sans-serif; color: oklch(0.556 0 0); } .ds-live-dot { width: 8px; height: 8px; border-radius: 9999px; background: oklch(0.723 0.219 149.579); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Quiet Console",
+    "overview": "Argus is a working tool that Analysts keep open all day, and the design stays out of their way. Surfaces are white and neutral grey, text is near-black, and the only things that stand out are those that need attention: a warning, an error, an overdue Task, the live connection, and the people on the Case with you. Density is high. Body text is 14px, controls are 32px tall, and the standard gap is 8px, so a Case, its Tasks and its Alerts fit on one desktop screen without scrolling around.\n\nThe system is shadcn/ui (\"radix-nova\" style, neutral base colour) kept close to stock on purpose. Buttons, inputs, menus, dialogs, tables and the sidebar behave the way people expect from any modern web app, and no part of the interface needs learning. Argus's own character shows in a few domain markers: Severity shown by badge weight, the dashed \"Internal\" badge, monospace Case references, the live-status dot and tinted presence avatars.\n\nThe app is light mode only. Dark tokens exist in `src/index.css` (shadcn's defaults), but nothing switches to them.",
+    "keyCharacteristics": [
+      "Neutral greyscale surfaces; colour appears only where something needs attention.",
+      "Dense: 14px body, 32px controls, 8px default gap.",
+      "Stock shadcn/ui components with no custom styling of their own.",
+      "Flat: hairline borders and rings rather than shadows.",
+      "Domain meaning carried by weight, outline and pattern (solid, heavy, dashed) as well as colour."
+    ],
+    "rules": [
+      { "name": "The Attention Rule", "body": "Colour is used where it draws attention to something the person should notice: a warning, an error, something overdue, a connection state, another person. It is never decoration, and a neutral surface is the default.", "section": "colors" },
+      { "name": "The One Amber Rule", "body": "Every warning uses the same Amber Notice treatment (amber-300 border, amber-50 fill, amber-950 text). Don't invent a second warning style.", "section": "colors" },
+      { "name": "The Two Sizes Rule", "body": "Working screens are set almost entirely in 14px body and 12px label. Larger sizes are for the page heading only.", "section": "typography" },
+      { "name": "The Identifier Rule", "body": "Anything a person might copy, compare or search for exactly (references, hashes, IPs, keys) is set in monospace.", "section": "typography" },
+      { "name": "The Float-Only Shadow Rule", "body": "A shadow means \"this is floating above the page\". Content in the page flow never gets one.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do use stock shadcn/ui components and add new ones with `bunx shadcn@latest add`.",
+      "Do keep working screens at 14px body and 12px label, with 32px controls and 8px gaps.",
+      "Do use colour only to draw attention (warnings, errors, overdue, live state, people), and use the existing signal colour for that meaning.",
+      "Do put every warning in the Amber Notice style, inline next to what it is about.",
+      "Do set references, hashes, IPs and keys in monospace.",
+      "Do pair every colour signal with words or a shape (a label, a dashed or heavy outline) so it never relies on colour alone."
+    ],
+    "donts": [
+      "Don't restyle shadcn/ui components locally or add custom variants for one screen.",
+      "Don't put shadows on content in the page flow; they are only for menus, popovers, toasts and dialogs.",
+      "Don't use colour as decoration, such as tinted page backgrounds, gradients or coloured section headings.",
+      "Don't use a solid red fill for destructive buttons; use the red-tint destructive variant.",
+      "Don't create a second warning style next to Amber Notice."
+    ]
+  }
+}
