@@ -72,7 +72,7 @@ export function CloseCaseDialog({ number }: { number: number }) {
               ))}
             </RadioGroup>
           </FieldSet>
-          <Alert className="border-amber-300 bg-amber-50 text-amber-950">
+          <Alert className="border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80">
             <AlertDescription>The Case becomes read-only. Only an Admin can reopen it.</AlertDescription>
           </Alert>
           {close.error && (

@@ -180,7 +180,7 @@ function Message({
             typeof part === "string" ? (
               part
             ) : (
-              <span key={i} className="rounded bg-sky-100 px-0.5 font-medium text-sky-900">
+              <span key={i} className="rounded bg-mention px-0.5 font-medium text-mention-foreground">
                 @{part.name}
               </span>
             ),

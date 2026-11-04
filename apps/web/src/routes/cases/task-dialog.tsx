@@ -117,7 +117,7 @@ export function TaskDialog({
         </DialogHeader>
         <form className="grid gap-4" onSubmit={onSubmit}>
           {conflict && (
-            <Alert className="border-amber-300 bg-amber-50 text-amber-950">
+            <Alert className="border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80">
               <AlertTitle>Not saved — the Task changed since you opened it</AlertTitle>
               <AlertDescription className="grid gap-2">
                 <p>

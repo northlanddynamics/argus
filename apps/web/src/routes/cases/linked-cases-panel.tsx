@@ -188,7 +188,7 @@ function LinkCaseDialog({ number }: { number: number }) {
             </Select>
           </Field>
           {duplicate && (
-            <Alert className="border-amber-300 bg-amber-50 text-amber-950">
+            <Alert className="border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80">
               <AlertDescription>
                 Marking as Duplicate of {target ? caseRef(Number(target)) : "another Case"} closes {caseRef(number)} now with Resolution
                 Duplicate.

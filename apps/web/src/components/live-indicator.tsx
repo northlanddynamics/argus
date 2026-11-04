@@ -3,9 +3,9 @@ import { type LiveStatus, useLiveStatus } from "@/lib/live";
 
 const shown: Record<LiveStatus, { label: string; dot: string }> = {
   connecting: { label: "Connecting…", dot: "bg-muted-foreground" },
-  live: { label: "Live", dot: "bg-green-500" },
-  reconnecting: { label: "Reconnecting…", dot: "bg-amber-500" },
-  reconnected: { label: "Reconnected · views refreshed", dot: "bg-green-500" },
+  live: { label: "Live", dot: "bg-live" },
+  reconnecting: { label: "Reconnecting…", dot: "bg-reconnecting" },
+  reconnected: { label: "Reconnected · views refreshed", dot: "bg-live" },
 };
 
 /** The live connection's state, for the page header. Keeps the connection open while shown. */

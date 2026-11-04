@@ -4,44 +4,216 @@
   "title": "Design System: Argus",
   "extensions": {
     "colorMeta": {
-      "primary": { "role": "primary", "displayName": "Ink Black", "canonical": "oklch(0.205 0 0)", "tonalRamp": ["oklch(0.15 0 0)", "oklch(0.205 0 0)", "oklch(0.269 0 0)", "oklch(0.371 0 0)", "oklch(0.439 0 0)", "oklch(0.556 0 0)", "oklch(0.708 0 0)", "oklch(0.87 0 0)"] },
-      "background": { "role": "neutral", "displayName": "Paper White", "canonical": "oklch(1 0 0)", "tonalRamp": ["oklch(0.145 0 0)", "oklch(0.269 0 0)", "oklch(0.439 0 0)", "oklch(0.556 0 0)", "oklch(0.708 0 0)", "oklch(0.922 0 0)", "oklch(0.97 0 0)", "oklch(1 0 0)"] },
-      "foreground": { "role": "neutral", "displayName": "Console Ink", "canonical": "oklch(0.145 0 0)" },
-      "muted": { "role": "neutral", "displayName": "Soft Grey Wash", "canonical": "oklch(0.97 0 0)" },
-      "muted-foreground": { "role": "neutral", "displayName": "Quiet Grey Text", "canonical": "oklch(0.556 0 0)" },
-      "border": { "role": "neutral", "displayName": "Hairline Grey", "canonical": "oklch(0.922 0 0)" },
-      "ring": { "role": "neutral", "displayName": "Focus Grey", "canonical": "oklch(0.708 0 0)" },
-      "sidebar": { "role": "neutral", "displayName": "Sidebar Mist", "canonical": "oklch(0.985 0 0)" },
-      "destructive": { "role": "signal", "displayName": "Alarm Red", "canonical": "oklch(0.577 0.245 27.325)", "tonalRamp": ["oklch(0.25 0.09 27)", "oklch(0.35 0.14 27)", "oklch(0.45 0.19 27)", "oklch(0.577 0.245 27.325)", "oklch(0.68 0.18 25)", "oklch(0.8 0.11 20)", "oklch(0.9 0.05 18)", "oklch(0.97 0.015 17)"] },
-      "notice-surface": { "role": "signal", "displayName": "Amber Notice (fill)", "canonical": "oklch(0.987 0.022 95.277)", "tonalRamp": ["oklch(0.279 0.077 45.635)", "oklch(0.414 0.112 45.904)", "oklch(0.555 0.163 48.998)", "oklch(0.666 0.179 58.318)", "oklch(0.769 0.188 70.08)", "oklch(0.879 0.169 91.605)", "oklch(0.962 0.059 95.617)", "oklch(0.987 0.022 95.277)"] },
-      "notice-border": { "role": "signal", "displayName": "Amber Notice (border)", "canonical": "oklch(0.879 0.169 91.605)" },
-      "notice-ink": { "role": "signal", "displayName": "Amber Notice (text)", "canonical": "oklch(0.279 0.077 45.635)" },
-      "live": { "role": "signal", "displayName": "Live Green", "canonical": "oklch(0.723 0.219 149.579)" },
-      "reconnecting": { "role": "signal", "displayName": "Reconnecting Amber", "canonical": "oklch(0.769 0.188 70.08)" },
-      "overdue-ink": { "role": "signal", "displayName": "Overdue Red", "canonical": "oklch(0.505 0.213 27.518)" },
-      "overdue-border": { "role": "signal", "displayName": "Overdue Red (border)", "canonical": "oklch(0.808 0.114 19.571)" },
-      "mention-surface": { "role": "signal", "displayName": "Mention Blue (fill)", "canonical": "oklch(0.951 0.026 236.824)" },
-      "mention-ink": { "role": "signal", "displayName": "Mention Blue (text)", "canonical": "oklch(0.391 0.09 240.876)" },
-      "operator-chrome": { "role": "neutral", "displayName": "Operator Slate", "canonical": "oklch(0.208 0.042 265.755)" }
+      "primary": {
+        "role": "primary",
+        "displayName": "Ink Black",
+        "canonical": "oklch(0.205 0 0)",
+        "tonalRamp": [
+          "oklch(0.15 0 0)",
+          "oklch(0.205 0 0)",
+          "oklch(0.269 0 0)",
+          "oklch(0.371 0 0)",
+          "oklch(0.439 0 0)",
+          "oklch(0.556 0 0)",
+          "oklch(0.708 0 0)",
+          "oklch(0.87 0 0)"
+        ],
+        "dark": "oklch(0.922 0 0)"
+      },
+      "background": {
+        "role": "neutral",
+        "displayName": "Paper White",
+        "canonical": "oklch(1 0 0)",
+        "tonalRamp": [
+          "oklch(0.145 0 0)",
+          "oklch(0.269 0 0)",
+          "oklch(0.439 0 0)",
+          "oklch(0.556 0 0)",
+          "oklch(0.708 0 0)",
+          "oklch(0.922 0 0)",
+          "oklch(0.97 0 0)",
+          "oklch(1 0 0)"
+        ],
+        "dark": "oklch(0.145 0 0)"
+      },
+      "foreground": {
+        "role": "neutral",
+        "displayName": "Console Ink",
+        "canonical": "oklch(0.145 0 0)",
+        "dark": "oklch(0.985 0 0)"
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Soft Grey Wash",
+        "canonical": "oklch(0.97 0 0)",
+        "dark": "oklch(0.269 0 0)"
+      },
+      "muted-foreground": {
+        "role": "neutral",
+        "displayName": "Quiet Grey Text",
+        "canonical": "oklch(0.556 0 0)",
+        "dark": "oklch(0.708 0 0)"
+      },
+      "border": {
+        "role": "neutral",
+        "displayName": "Hairline Grey",
+        "canonical": "oklch(0.922 0 0)",
+        "dark": "oklch(1 0 0 / 10%)"
+      },
+      "ring": {
+        "role": "neutral",
+        "displayName": "Focus Grey",
+        "canonical": "oklch(0.708 0 0)",
+        "dark": "oklch(0.556 0 0)"
+      },
+      "sidebar": {
+        "role": "neutral",
+        "displayName": "Sidebar Mist",
+        "canonical": "oklch(0.985 0 0)",
+        "dark": "oklch(0.205 0 0)"
+      },
+      "destructive": {
+        "role": "signal",
+        "displayName": "Alarm Red",
+        "canonical": "oklch(0.577 0.245 27.325)",
+        "tonalRamp": [
+          "oklch(0.25 0.09 27)",
+          "oklch(0.35 0.14 27)",
+          "oklch(0.45 0.19 27)",
+          "oklch(0.577 0.245 27.325)",
+          "oklch(0.68 0.18 25)",
+          "oklch(0.8 0.11 20)",
+          "oklch(0.9 0.05 18)",
+          "oklch(0.97 0.015 17)"
+        ],
+        "dark": "oklch(0.704 0.191 22.216)"
+      },
+      "notice-surface": {
+        "role": "signal",
+        "displayName": "Amber Notice (fill)",
+        "canonical": "oklch(0.987 0.022 95.277)",
+        "tonalRamp": [
+          "oklch(0.279 0.077 45.635)",
+          "oklch(0.414 0.112 45.904)",
+          "oklch(0.555 0.163 48.998)",
+          "oklch(0.666 0.179 58.318)",
+          "oklch(0.769 0.188 70.08)",
+          "oklch(0.879 0.169 91.605)",
+          "oklch(0.962 0.059 95.617)",
+          "oklch(0.987 0.022 95.277)"
+        ],
+        "dark": "oklch(0.25 0.045 62)"
+      },
+      "notice-border": {
+        "role": "signal",
+        "displayName": "Amber Notice (border)",
+        "canonical": "oklch(0.879 0.169 91.605)",
+        "dark": "oklch(0.473 0.137 46.201)"
+      },
+      "notice-ink": {
+        "role": "signal",
+        "displayName": "Amber Notice (text)",
+        "canonical": "oklch(0.279 0.077 45.635)",
+        "dark": "oklch(0.962 0.059 95.617)"
+      },
+      "live": {
+        "role": "signal",
+        "displayName": "Live Green",
+        "canonical": "oklch(0.723 0.219 149.579)",
+        "dark": "oklch(0.792 0.209 151.711)"
+      },
+      "reconnecting": {
+        "role": "signal",
+        "displayName": "Reconnecting Amber",
+        "canonical": "oklch(0.769 0.188 70.08)",
+        "dark": "oklch(0.828 0.189 84.429)"
+      },
+      "overdue-ink": {
+        "role": "signal",
+        "displayName": "Overdue Red",
+        "canonical": "oklch(0.505 0.213 27.518)",
+        "dark": "oklch(0.808 0.114 19.571)"
+      },
+      "overdue-border": {
+        "role": "signal",
+        "displayName": "Overdue Red (border)",
+        "canonical": "oklch(0.808 0.114 19.571)",
+        "dark": "oklch(0.444 0.177 26.899)"
+      },
+      "mention-surface": {
+        "role": "signal",
+        "displayName": "Mention Blue (fill)",
+        "canonical": "oklch(0.951 0.026 236.824)",
+        "dark": "oklch(0.293 0.066 243.157)"
+      },
+      "mention-ink": {
+        "role": "signal",
+        "displayName": "Mention Blue (text)",
+        "canonical": "oklch(0.391 0.09 240.876)",
+        "dark": "oklch(0.901 0.058 230.902)"
+      },
+      "operator-chrome": {
+        "role": "neutral",
+        "displayName": "Operator Slate",
+        "canonical": "oklch(0.208 0.042 265.755)"
+      }
     },
     "typographyMeta": {
-      "headline": { "displayName": "Headline", "purpose": "The page h1 and auth card titles." },
-      "title": { "displayName": "Title", "purpose": "Card titles and section headings." },
-      "body": { "displayName": "Body", "purpose": "Tables, forms, Discussion, menus: almost everything." },
-      "label": { "displayName": "Label", "purpose": "Badges, metadata, live indicator, small buttons." },
-      "reference": { "displayName": "Reference", "purpose": "Case references, fingerprints, Observable values, keys." }
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "The page h1 and auth card titles."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Card titles and section headings."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Tables, forms, Discussion, menus: almost everything."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Badges, metadata, live indicator, small buttons."
+      },
+      "reference": {
+        "displayName": "Reference",
+        "purpose": "Case references, fingerprints, Observable values, keys."
+      }
     },
     "shadows": [
-      { "name": "float-sm", "value": "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)", "purpose": "Small floating layers." },
-      { "name": "float-md", "value": "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)", "purpose": "Menus, popovers, the mention picker." },
-      { "name": "float-lg", "value": "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)", "purpose": "Dialogs and toasts." }
+      {
+        "name": "float-sm",
+        "value": "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)",
+        "purpose": "Small floating layers."
+      },
+      {
+        "name": "float-md",
+        "value": "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
+        "purpose": "Menus, popovers, the mention picker."
+      },
+      {
+        "name": "float-lg",
+        "value": "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
+        "purpose": "Dialogs and toasts."
+      }
     ],
     "motion": [
-      { "name": "state-transition", "value": "all 150ms cubic-bezier(0.4, 0, 0.2, 1)", "purpose": "Hover, focus and press on buttons, badges and inputs (Tailwind transition default)." },
-      { "name": "press", "value": "translateY(1px)", "purpose": "Buttons nudge down 1px while pressed." }
+      {
+        "name": "state-transition",
+        "value": "all 150ms cubic-bezier(0.4, 0, 0.2, 1)",
+        "purpose": "Hover, focus and press on buttons, badges and inputs (Tailwind transition default)."
+      },
+      {
+        "name": "press",
+        "value": "translateY(1px)",
+        "purpose": "Buttons nudge down 1px while pressed."
+      }
     ],
     "breakpoints": [
-      { "name": "md", "value": "768px" }
+      {
+        "name": "md",
+        "value": "768px"
+      }
     ]
   },
   "components": [
@@ -119,25 +291,57 @@
   ],
   "narrative": {
     "northStar": "The Quiet Console",
-    "overview": "Argus is a working tool that Analysts keep open all day, and the design stays out of their way. Surfaces are white and neutral grey, text is near-black, and the only things that stand out are those that need attention: a warning, an error, an overdue Task, the live connection, and the people on the Case with you. Density is high. Body text is 14px, controls are 32px tall, and the standard gap is 8px, so a Case, its Tasks and its Alerts fit on one desktop screen without scrolling around.\n\nThe system is shadcn/ui (\"radix-nova\" style, neutral base colour) kept close to stock on purpose. Buttons, inputs, menus, dialogs, tables and the sidebar behave the way people expect from any modern web app, and no part of the interface needs learning. Argus's own character shows in a few domain markers: Severity shown by badge weight, the dashed \"Internal\" badge, monospace Case references, the live-status dot and tinted presence avatars.\n\nThe app is light mode only. Dark tokens exist in `src/index.css` (shadcn's defaults), but nothing switches to them.",
+    "overview": "Argus is a working tool that Analysts keep open all day, and the design stays out of their way. Surfaces are neutral (white in light mode, near-black in dark mode), and the things that stand out most are those that need attention: a warning, an error, an overdue Task, the live connection, and the people on the Case with you. Colour may also be used decoratively, sparingly and with taste, where it makes the tool more pleasant without competing with those signals. Density is high. Body text is 14px, controls are 32px tall, and the standard gap is 8px, so a Case, its Tasks and its Alerts fit on one desktop screen without scrolling around.\n\nThe system is shadcn/ui (\"radix-nova\" style, neutral base colour) kept close to stock on purpose. Buttons, inputs, menus, dialogs, tables and the sidebar behave the way people expect from any modern web app, and no part of the interface needs learning. Argus's own character shows in a few domain markers: Severity shown by badge weight, the dashed \"Internal\" badge, monospace Case references, the live-status dot and tinted presence avatars.\n\nThe app supports light and dark mode. By default it follows the device's setting; anyone can choose System, Light or Dark under Theme in the account menu (remembered per browser, via `next-themes` with the `.dark` class). Both themes come from the same tokens in `src/index.css`, so every surface and signal colour has a light and a dark value.",
     "keyCharacteristics": [
-      "Neutral greyscale surfaces; colour appears only where something needs attention.",
+      "Neutral greyscale surfaces in light and dark mode; colour mainly signals what needs attention, with occasional tasteful decoration.",
       "Dense: 14px body, 32px controls, 8px default gap.",
       "Stock shadcn/ui components with no custom styling of their own.",
       "Flat: hairline borders and rings rather than shadows.",
       "Domain meaning carried by weight, outline and pattern (solid, heavy, dashed) as well as colour."
     ],
     "rules": [
-      { "name": "The Attention Rule", "body": "Colour is used where it draws attention to something the person should notice: a warning, an error, something overdue, a connection state, another person. It is never decoration, and a neutral surface is the default.", "section": "colors" },
-      { "name": "The One Amber Rule", "body": "Every warning uses the same Amber Notice treatment (amber-300 border, amber-50 fill, amber-950 text). Don't invent a second warning style.", "section": "colors" },
-      { "name": "The Two Sizes Rule", "body": "Working screens are set almost entirely in 14px body and 12px label. Larger sizes are for the page heading only.", "section": "typography" },
-      { "name": "The Identifier Rule", "body": "Anything a person might copy, compare or search for exactly (references, hashes, IPs, keys) is set in monospace.", "section": "typography" },
-      { "name": "The Float-Only Shadow Rule", "body": "A shadow means \"this is floating above the page\". Content in the page flow never gets one.", "section": "elevation" }
+      {
+        "name": "The Attention Rule",
+        "body": "Colour's first job is to draw attention to something the person should notice: a warning, an error, something overdue, a connection state, another person. A neutral surface is the default.",
+        "section": "colors"
+      },
+      {
+        "name": "The Sparing Decoration Rule",
+        "body": "Decorative colour is welcome when it is sparing and tasteful: a small touch per screen, soft in strength, and never louder than a signal colour or confusable with one.",
+        "section": "colors"
+      },
+      {
+        "name": "The Both Themes Rule",
+        "body": "Every colour is a token with a light and a dark value. A colour that only works in one theme isn't finished.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Amber Rule",
+        "body": "Every warning uses the same Amber Notice treatment (amber-300 border, amber-50 fill, amber-950 text). Don't invent a second warning style.",
+        "section": "colors"
+      },
+      {
+        "name": "The Two Sizes Rule",
+        "body": "Working screens are set almost entirely in 14px body and 12px label. Larger sizes are for the page heading only.",
+        "section": "typography"
+      },
+      {
+        "name": "The Identifier Rule",
+        "body": "Anything a person might copy, compare or search for exactly (references, hashes, IPs, keys) is set in monospace.",
+        "section": "typography"
+      },
+      {
+        "name": "The Float-Only Shadow Rule",
+        "body": "A shadow means \"this is floating above the page\". Content in the page flow never gets one.",
+        "section": "elevation"
+      }
     ],
     "dos": [
       "Do use stock shadcn/ui components and add new ones with `bunx shadcn@latest add`.",
       "Do keep working screens at 14px body and 12px label, with 32px controls and 8px gaps.",
-      "Do use colour only to draw attention (warnings, errors, overdue, live state, people), and use the existing signal colour for that meaning.",
+      "Do use the existing signal colour for its meaning (warnings, errors, overdue, live state, mentions, people).",
+      "Do use decorative colour sparingly and tastefully, softer than any signal colour.",
+      "Do define every new colour as a token with light and dark values in `src/index.css`, and check the screen in both themes.",
       "Do put every warning in the Amber Notice style, inline next to what it is about.",
       "Do set references, hashes, IPs and keys in monospace.",
       "Do pair every colour signal with words or a shape (a label, a dashed or heavy outline) so it never relies on colour alone."
@@ -145,7 +349,8 @@
     "donts": [
       "Don't restyle shadcn/ui components locally or add custom variants for one screen.",
       "Don't put shadows on content in the page flow; they are only for menus, popovers, toasts and dialogs.",
-      "Don't use colour as decoration, such as tinted page backgrounds, gradients or coloured section headings.",
+      "Don't let decorative colour dominate a working screen, or use amber or red decoratively where it could be read as a warning or error.",
+      "Don't use raw Tailwind palette classes (`bg-amber-50`, `text-red-700`) for anything that must work in both themes; use a token.",
       "Don't use a solid red fill for destructive buttons; use the red-tint destructive variant.",
       "Don't create a second warning style next to Amber Notice."
     ]

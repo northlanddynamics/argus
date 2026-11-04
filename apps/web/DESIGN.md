@@ -1,6 +1,6 @@
 ---
 name: Argus
-description: Collaborative security case management for in-house teams; a quiet, dense, all-day working tool.
+description: Collaborative security case management for in-house teams; a quiet, dense, all-day working tool in light and dark mode.
 colors:
   background: "oklch(1 0 0)"
   foreground: "oklch(0.145 0 0)"
@@ -117,14 +117,14 @@ components:
 
 **Creative North Star: "The Quiet Console"**
 
-Argus is a working tool that Analysts keep open all day, and the design stays out of their way. Surfaces are white and neutral grey, text is near-black, and the only things that stand out are those that need attention: a warning, an error, an overdue Task, the live connection, and the people on the Case with you. Density is high. Body text is 14px, controls are 32px tall, and the standard gap is 8px, so a Case, its Tasks and its Alerts fit on one desktop screen without scrolling around.
+Argus is a working tool that Analysts keep open all day, and the design stays out of their way. Surfaces are neutral (white in light mode, near-black in dark mode), and the things that stand out most are those that need attention: a warning, an error, an overdue Task, the live connection, and the people on the Case with you. Colour may also be used decoratively, sparingly and with taste, where it makes the tool more pleasant without competing with those signals. Density is high. Body text is 14px, controls are 32px tall, and the standard gap is 8px, so a Case, its Tasks and its Alerts fit on one desktop screen without scrolling around.
 
 The system is shadcn/ui ("radix-nova" style, neutral base colour) kept close to stock on purpose. Buttons, inputs, menus, dialogs, tables and the sidebar behave the way people expect from any modern web app, and no part of the interface needs learning. Argus's own character shows in a few domain markers: Severity shown by badge weight, the dashed "Internal" badge, monospace Case references, the live-status dot and tinted presence avatars.
 
-The app is light mode only. Dark tokens exist in `src/index.css` (shadcn's defaults), but nothing switches to them.
+The app supports light and dark mode. By default it follows the device's setting; anyone can choose System, Light or Dark under Theme in the account menu (remembered per browser, via `next-themes` with the `.dark` class). Both themes come from the same tokens in `src/index.css`, so every surface and signal colour has a light and a dark value.
 
 **Key Characteristics:**
-- Neutral greyscale surfaces; colour appears only where something needs attention.
+- Neutral greyscale surfaces in light and dark mode; colour mainly signals what needs attention, with occasional tasteful decoration.
 - Dense: 14px body, 32px controls, 8px default gap.
 - Stock shadcn/ui components with no custom styling of their own.
 - Flat: hairline borders and rings rather than shadows.
@@ -132,7 +132,9 @@ The app is light mode only. Dark tokens exist in `src/index.css` (shadcn's defau
 
 ## Colors
 
-A neutral greyscale working surface, with a small set of signal colours that each mean one thing.
+A neutral greyscale working surface in both themes, a small set of signal colours that each mean one thing, and room for a little decorative colour.
+
+The frontmatter lists the light-mode values. Every token also has a dark-mode value under `.dark` in `src/index.css`; signal colours are tokens (`bg-notice`, `text-overdue`, `bg-mention` and so on), never raw Tailwind palette classes, so they switch with the theme.
 
 ### Primary
 - **Ink Black** (primary): primary buttons, Critical Severity badges, active selections. A near-black neutral, not a brand hue; the strongest emphasis the UI has.
@@ -152,11 +154,18 @@ A neutral greyscale working surface, with a small set of signal colours that eac
 - **Live Green** (live) and **Reconnecting Amber** (reconnecting): the status dot beside the live-connection label.
 - **Overdue Red** (overdue-ink, overdue-border): the overdue Task badge.
 - **Mention Blue** (mention-surface, mention-ink): @mentions highlighted inside Discussion messages.
-- **Presence tints** (sky, amber, emerald, rose, violet and lime at Tailwind's 200 step): avatar backgrounds, chosen from each person's id so the same person always gets the same tint.
+- **Presence tints** (sky, amber, emerald, rose, violet and lime at Tailwind's 200 step): avatar backgrounds, chosen from each person's id so the same person always gets the same tint. They keep the same pastel and dark initials in both themes.
+
+### Decorative colour
+Decorative colour is allowed: a tint behind an empty state, a coloured icon, an accent on a sign-in page or a chart. Use it sparingly, so a working screen still reads as neutral at a glance, and never in a hue or strength that could be mistaken for a signal above (amber reads as a warning, red as an error).
 - **Operator Slate** (operator-chrome): the header of the Operator console only, which marks it as a different place from an Organization's workspace.
 
 ### Named Rules
-**The Attention Rule.** Colour is used where it draws attention to something the person should notice: a warning, an error, something overdue, a connection state, another person. It is never decoration, and a neutral surface is the default.
+**The Attention Rule.** Colour's first job is to draw attention to something the person should notice: a warning, an error, something overdue, a connection state, another person. A neutral surface is the default.
+
+**The Sparing Decoration Rule.** Decorative colour is welcome when it is sparing and tasteful: a small touch per screen, soft in strength, and never louder than a signal colour or confusable with one.
+
+**The Both Themes Rule.** Every colour is a token with a light and a dark value. A colour that only works in one theme isn't finished.
 
 **The One Amber Rule.** Every warning uses the same Amber Notice treatment (amber-300 border, amber-50 fill, amber-950 text). Don't invent a second warning style.
 
@@ -189,7 +198,7 @@ The layout is built and checked on desktop. The sidebar collapses to a sheet on 
 
 ## Elevation & Depth
 
-Flat. Surfaces sit on the page with a hairline: cards use a 1px ring of foreground at 10%, and panels use the border grey. Shadows appear only on things floating above the page, such as menus, popovers, the mention picker, toasts and dialogs. They use shadcn's defaults (`shadow-sm` to `shadow-lg`) and are never used to emphasise content.
+Flat. In dark mode, cards and popovers sit one step lighter than the page (`card` over `background`) instead of relying on shadows. Surfaces sit on the page with a hairline: cards use a 1px ring of foreground at 10%, and panels use the border grey. Shadows appear only on things floating above the page, such as menus, popovers, the mention picker, toasts and dialogs. They use shadcn's defaults (`shadow-sm` to `shadow-lg`) and are never used to emphasise content.
 
 ### Named Rules
 **The Float-Only Shadow Rule.** A shadow means "this is floating above the page". Content in the page flow never gets one.
@@ -246,7 +255,9 @@ Familiar and unremarkable: stock shadcn/ui, added with `bunx shadcn@latest add` 
 ### Do:
 - **Do** use stock shadcn/ui components and add new ones with `bunx shadcn@latest add`.
 - **Do** keep working screens at 14px body and 12px label, with 32px controls and 8px gaps.
-- **Do** use colour only to draw attention (warnings, errors, overdue, live state, people), and use the existing signal colour for that meaning.
+- **Do** use the existing signal colour for its meaning (warnings, errors, overdue, live state, mentions, people).
+- **Do** use decorative colour sparingly and tastefully, softer than any signal colour.
+- **Do** define every new colour as a token with light and dark values in `src/index.css`, and check the screen in both themes.
 - **Do** put every warning in the Amber Notice style, inline next to what it is about.
 - **Do** set references, hashes, IPs and keys in monospace.
 - **Do** pair every colour signal with words or a shape (a label, a dashed or heavy outline) so it never relies on colour alone.
@@ -254,6 +265,7 @@ Familiar and unremarkable: stock shadcn/ui, added with `bunx shadcn@latest add` 
 ### Don't:
 - **Don't** restyle shadcn/ui components locally or add custom variants for one screen.
 - **Don't** put shadows on content in the page flow; they are only for menus, popovers, toasts and dialogs.
-- **Don't** use colour as decoration, such as tinted page backgrounds, gradients or coloured section headings.
+- **Don't** let decorative colour dominate a working screen, or use amber or red decoratively where it could be read as a warning or error.
+- **Don't** use raw Tailwind palette classes (`bg-amber-50`, `text-red-700`) for anything that must work in both themes; use a token.
 - **Don't** use a solid red fill for destructive buttons; use the red-tint destructive variant.
 - **Don't** create a second warning style next to Amber Notice.

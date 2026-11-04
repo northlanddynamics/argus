@@ -8,6 +8,15 @@
 @theme inline {
     --font-heading: var(--font-sans);
     --font-sans: 'Geist Variable', sans-serif;
+    --color-notice: var(--notice);
+    --color-notice-border: var(--notice-border);
+    --color-notice-foreground: var(--notice-foreground);
+    --color-live: var(--live);
+    --color-reconnecting: var(--reconnecting);
+    --color-overdue: var(--overdue);
+    --color-overdue-border: var(--overdue-border);
+    --color-mention: var(--mention);
+    --color-mention-foreground: var(--mention-foreground);
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -81,6 +90,16 @@
     --sidebar-accent-foreground: oklch(0.205 0 0);
     --sidebar-border: oklch(0.922 0 0);
     --sidebar-ring: oklch(0.708 0 0);
+    /* Signal colours: each means one thing (DESIGN.md, Colors). */
+    --notice: oklch(0.987 0.022 95.277);
+    --notice-border: oklch(0.879 0.169 91.605);
+    --notice-foreground: oklch(0.279 0.077 45.635);
+    --live: oklch(0.723 0.219 149.579);
+    --reconnecting: oklch(0.769 0.188 70.08);
+    --overdue: oklch(0.505 0.213 27.518);
+    --overdue-border: oklch(0.808 0.114 19.571);
+    --mention: oklch(0.951 0.026 236.824);
+    --mention-foreground: oklch(0.391 0.09 240.876);
 }
 
 .dark {
@@ -109,12 +128,21 @@
     --chart-5: oklch(0.269 0 0);
     --sidebar: oklch(0.205 0 0);
     --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.922 0 0);
+    --sidebar-primary-foreground: oklch(0.205 0 0);
     --sidebar-accent: oklch(0.269 0 0);
     --sidebar-accent-foreground: oklch(0.985 0 0);
     --sidebar-border: oklch(1 0 0 / 10%);
     --sidebar-ring: oklch(0.556 0 0);
+    --notice: oklch(0.25 0.045 62);
+    --notice-border: oklch(0.473 0.137 46.201);
+    --notice-foreground: oklch(0.962 0.059 95.617);
+    --live: oklch(0.792 0.209 151.711);
+    --reconnecting: oklch(0.828 0.189 84.429);
+    --overdue: oklch(0.808 0.114 19.571);
+    --overdue-border: oklch(0.444 0.177 26.899);
+    --mention: oklch(0.293 0.066 243.157);
+    --mention-foreground: oklch(0.901 0.058 230.902);
 }
 
 @layer base {
@@ -126,5 +154,8 @@
     }
   html {
     @apply font-sans;
+    }
+  ::selection {
+    @apply bg-primary text-primary-foreground;
     }
 }
