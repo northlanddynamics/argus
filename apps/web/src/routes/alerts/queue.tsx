@@ -29,6 +29,7 @@ import { api } from "@/lib/api";
 import { caseRef, SEVERITIES, type Severity, severityLabel } from "@/lib/cases";
 import { assetTypeLabel, observableTypeLabel, shownObservable } from "@/lib/observables";
 import { cn } from "@/lib/utils";
+import { exactTime } from "@/lib/when";
 import {
   AttachAlertsDialog,
   type BulkOutcome,
@@ -50,7 +51,8 @@ export const validateAlertQueueSearch = (search: Record<string, unknown>): Alert
   alert: typeof search.alert === "string" && search.alert ? search.alert : undefined,
 });
 
-const time = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+/** When an Alert arrived, compactly: "Nov 3, 14:02". */
+const received = (iso: string) => new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
 /** The Alert queue: Alerts from the Organization's Integrations, newest first, refreshing live. */
 export function AlertQueuePage() {
@@ -152,54 +154,34 @@ export function AlertQueuePage() {
           </AlertDescription>
         </Alert>
       )}
-      <Card>
-        <CardContent className="grid items-end gap-4 sm:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
-          <div className="grid gap-2">
-            <Label htmlFor="alert-status">Alert Status</Label>
-            <NativeSelect id="alert-status" value={status} onChange={(e) => setSearch({ status: e.target.value as AlertStatus | "any" })}>
-              <NativeSelectOption value="any">Any</NativeSelectOption>
-              {ALERT_STATUSES.map((s) => (
-                <NativeSelectOption key={s} value={s}>
-                  {alertStatusLabel[s]}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="alert-severity">Severity</Label>
-            <NativeSelect
-              id="alert-severity"
-              value={search.severity ?? ""}
-              onChange={(e) => setSearch({ severity: (e.target.value || undefined) as Severity | undefined })}
-            >
-              <NativeSelectOption value="">Any</NativeSelectOption>
-              {SEVERITIES.map((s) => (
-                <NativeSelectOption key={s} value={s}>
-                  {severityLabel[s]}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="alert-integration">Integration</Label>
-            <NativeSelect
-              id="alert-integration"
-              value={search.integration ?? ""}
-              onChange={(e) => setSearch({ integration: e.target.value || undefined })}
-            >
-              <NativeSelectOption value="">Any</NativeSelectOption>
-              {integrations.data?.map((i) => (
-                <NativeSelectOption key={i.id} value={i.id}>
-                  {i.name}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            {loaded && `${loaded.length} ${status === "any" ? "Alerts" : alertStatusLabel[status]} · new Alerts appear live`}
-          </p>
-        </CardContent>
-      </Card>
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
+        <Filter
+          label="Alert Status"
+          id="alert-status"
+          value={status}
+          options={[...ALERT_STATUSES, "any"] as const}
+          labels={{ ...alertStatusLabel, any: "Any" }}
+          onChange={(next) => setSearch({ status: next === "new" ? undefined : next })}
+        />
+        <Filter
+          label="Severity"
+          id="alert-severity"
+          value={search.severity ?? ""}
+          options={["", ...SEVERITIES] as const}
+          labels={{ "": "Any", ...severityLabel }}
+          onChange={(next) => setSearch({ severity: next || undefined })}
+        />
+        {((integrations.data?.length ?? 0) > 1 || search.integration) && (
+          <Filter
+            label="Integration"
+            id="alert-integration"
+            value={search.integration ?? ""}
+            options={["", ...(integrations.data?.map((i) => i.id) ?? [])]}
+            labels={{ "": "Any", ...Object.fromEntries(integrations.data?.map((i) => [i.id, i.name]) ?? []) }}
+            onChange={(next) => setSearch({ integration: next || undefined })}
+          />
+        )}
+      </div>
       {outcome && <OutcomeNotice outcome={outcome} onReselect={reselect} onDismiss={() => setOutcome(null)} />}
       {selected.size > 0 && (
         <div
@@ -253,12 +235,11 @@ export function AlertQueuePage() {
       )}
       <div className={cn("grid items-start gap-4", showing && "lg:grid-cols-[1fr_340px]")}>
       {!(alerts.isError && !loaded) && (
-      <Card>
-        <CardContent>
-          <Table>
+      <Card className="@container py-0">
+          <Table className="table-fixed">
             <TableHeader>
               <TableRow>
-                <TableHead className="w-8">
+                <TableHead scope="col" className="w-10 pl-4">
                   <Checkbox
                     aria-label="Select all Alerts shown"
                     checked={allSelected}
@@ -267,30 +248,28 @@ export function AlertQueuePage() {
                     }}
                   />
                 </TableHead>
-                <TableHead>Severity</TableHead>
-                <TableHead>Detection</TableHead>
-                <TableHead>Host / user</TableHead>
-                <TableHead>Integration</TableHead>
-                <TableHead>Received</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead scope="col" className="w-28">Severity</TableHead>
+                <TableHead scope="col">Detection</TableHead>
+                <TableHead scope="col" className="hidden w-40 @3xl:table-cell">Host / user</TableHead>
+                <TableHead scope="col" className="hidden w-36 @3xl:table-cell">Received</TableHead>
+                <TableHead scope="col" className="w-32 pr-4">Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {alerts.isPending &&
                 Array.from({ length: 8 }, (_, i) => (
                   <TableRow key={i} className="hover:bg-transparent" aria-hidden>
-                    <TableCell><Skeleton className="size-4" /></TableCell>
+                    <TableCell className="pl-4"><Skeleton className="size-4" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
-                    <TableCell><Skeleton className="h-4 w-64" /></TableCell>
-                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-                    <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-                    <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-4/5" /></TableCell>
+                    <TableCell className="hidden @3xl:table-cell"><Skeleton className="h-4 w-24" /></TableCell>
+                    <TableCell className="hidden @3xl:table-cell"><Skeleton className="h-4 w-16" /></TableCell>
+                    <TableCell className="pr-4"><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
                   </TableRow>
                 ))}
               {alerts.isPending && (
                 <TableRow className="sr-only">
-                  <TableCell colSpan={7} role="status">Loading Alerts…</TableCell>
+                  <TableCell colSpan={6} role="status">Loading Alerts…</TableCell>
                 </TableRow>
               )}
               {loaded?.map((a) => (
@@ -300,7 +279,7 @@ export function AlertQueuePage() {
                   data-state={selected.has(a.id) ? "selected" : undefined}
                   className={cn(showing === a.id && "bg-muted")}
                 >
-                  <TableCell>
+                  <TableCell className="pl-4">
                     <Checkbox
                       aria-label={`Select ${a.externalId}`}
                       checked={selected.has(a.id)}
@@ -311,56 +290,75 @@ export function AlertQueuePage() {
                     <SeverityBadge severity={a.severity} />
                   </TableCell>
                   <TableCell>
-                    <button type="button" className="text-left font-medium hover:underline" onClick={() => setShowing(a.id)}>
+                    <button
+                      type="button"
+                      className="block max-w-full truncate text-left font-medium hover:underline"
+                      title={a.title}
+                      onClick={() => setShowing(a.id)}
+                    >
                       {a.title}
                     </button>
-                    <div className="font-mono text-xs text-muted-foreground">
-                      {a.externalId} · {alertKindLabel[a.kind]}
+                    <div className="truncate text-xs text-muted-foreground">
+                      <span className="font-mono">{a.externalId}</span> · {alertKindLabel[a.kind]}
+                      {(integrations.data?.length ?? 0) > 1 && ` · ${a.integration.name}`}
+                      <span className="@3xl:hidden">
+                        {(a.host ?? a.userName) && " · "}
+                        <span className="font-mono">{[a.host, a.userName].filter(Boolean).join(" / ")}</span>
+                      </span>
                     </div>
                   </TableCell>
-                  <TableCell>
-                    <div>{a.host ?? "—"}</div>
-                    {a.userName && <div className="text-xs text-muted-foreground">{a.userName}</div>}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{a.integration.name}</TableCell>
-                  <TableCell className="text-muted-foreground" title={new Date(a.receivedAt).toLocaleString()}>
-                    {time(a.receivedAt)}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{alertStatusLabel[a.status]}</Badge>
-                    {a.case && (
-                      <Link
-                        to="/cases/$number"
-                        params={{ number: String(a.case.number) }}
-                        className="ml-1 font-mono text-xs text-primary underline"
-                        title={a.case.title}
-                      >
-                        {caseRef(a.case.number)}
-                      </Link>
+                  <TableCell className="hidden font-mono text-xs @3xl:table-cell">
+                    <div className="truncate" title={a.host ?? undefined}>
+                      {a.host ?? <span className="font-sans text-muted-foreground">No host</span>}
+                    </div>
+                    {a.userName && (
+                      <div className="truncate text-muted-foreground" title={a.userName}>
+                        {a.userName}
+                      </div>
                     )}
+                  </TableCell>
+                  <TableCell className="hidden text-muted-foreground tabular-nums @3xl:table-cell" title={exactTime(a.receivedAt)}>
+                    {received(a.receivedAt)}
+                  </TableCell>
+                  <TableCell className="pr-4">
+                    <div className="flex flex-wrap items-center gap-1">
+                      <Badge variant="outline">{alertStatusLabel[a.status]}</Badge>
+                      {a.case && (
+                        <Link
+                          to="/cases/$number"
+                          params={{ number: String(a.case.number) }}
+                          className="font-mono text-xs underline underline-offset-4"
+                          title={a.case.title}
+                        >
+                          {caseRef(a.case.number)}
+                        </Link>
+                      )}
+                    </div>
                     {a.dismissalReason && (
-                      <div className="text-xs text-muted-foreground">{dismissalReasonLabel[a.dismissalReason]}</div>
+                      <div className="mt-0.5 truncate text-xs text-muted-foreground">{dismissalReasonLabel[a.dismissalReason]}</div>
                     )}
                   </TableCell>
                 </TableRow>
               ))}
               {loaded?.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-muted-foreground">
+                  <TableCell colSpan={6} className="text-muted-foreground">
                     No Alerts here.
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
-        </CardContent>
       </Card>
       )}
       {showing && <AlertPanel id={showing} onClose={() => setShowing(null)} />}
       </div>
-      {limit !== null && loaded && loaded.length >= limit && (
+      {loaded && loaded.length > 0 && (
         <p role="status" className="text-xs text-muted-foreground">
-          Showing the newest {limit} Alerts. Narrow the filters to see older ones.
+          {limit !== null && loaded.length >= limit
+            ? `Showing the newest ${limit} Alerts. Narrow the filters to see older ones.`
+            : `${loaded.length} ${status === "any" ? (loaded.length === 1 ? "Alert" : "Alerts") : `${alertStatusLabel[status]} ${loaded.length === 1 ? "Alert" : "Alerts"}`}`}
+          {" · new Alerts appear live"}
         </p>
       )}
     </div>
@@ -553,19 +551,19 @@ function AlertPanel({ id, onClose }: { id: string; onClose: () => void }) {
           </Badge>
         </div>
         <div>
-          <h2 className="text-lg font-semibold">{a.title}</h2>
-          <p className="font-mono text-xs text-muted-foreground">
-            {a.externalId} · {alertKindLabel[a.kind]} · {a.integration.name}
+          <h2 className="text-base font-semibold">{a.title}</h2>
+          <p className="text-xs text-muted-foreground">
+            <span className="font-mono">{a.externalId}</span> · {alertKindLabel[a.kind]} · {a.integration.name}
           </p>
         </div>
         {a.description && <p>{a.description}</p>}
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
           <dt className="text-muted-foreground">Host</dt>
-          <dd>{a.host ?? "—"}</dd>
+          <dd className={cn("min-w-0 break-all", a.host ? "font-mono text-xs leading-5" : "text-muted-foreground")}>{a.host ?? "None"}</dd>
           <dt className="text-muted-foreground">User</dt>
-          <dd>{a.userName ?? "—"}</dd>
+          <dd className={cn("min-w-0 break-all", a.userName ? "font-mono text-xs leading-5" : "text-muted-foreground")}>{a.userName ?? "None"}</dd>
           <dt className="text-muted-foreground">Received</dt>
-          <dd>{new Date(a.receivedAt).toLocaleString()}</dd>
+          <dd>{exactTime(a.receivedAt)}</dd>
           {a.attached && (
             <>
               <dt className="text-muted-foreground">Attached</dt>
@@ -649,5 +647,36 @@ function AlertPanel({ id, onClose }: { id: string; onClose: () => void }) {
         />
       </CardContent>
     </Card>
+  );
+}
+
+function Filter<T extends string>({
+  label,
+  id,
+  value,
+  options,
+  labels,
+  onChange,
+}: {
+  label: string;
+  id: string;
+  value: T;
+  options: readonly T[];
+  labels: Record<T, string>;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <Label htmlFor={id} className="text-xs font-normal text-muted-foreground">
+        {label}
+      </Label>
+      <NativeSelect size="sm" id={id} value={value} onChange={(e) => onChange(e.target.value as T)}>
+        {options.map((o) => (
+          <NativeSelectOption key={o} value={o}>
+            {labels[o]}
+          </NativeSelectOption>
+        ))}
+      </NativeSelect>
+    </div>
   );
 }
