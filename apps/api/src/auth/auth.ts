@@ -1,4 +1,5 @@
 import { passkey } from "@better-auth/passkey";
+import { sso } from "@better-auth/sso";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
@@ -7,6 +8,7 @@ import type { Clock } from "../clock";
 import type { Db } from "../db/client";
 import { isGuestAccount, mayUseMagicLink, startGuestSession } from "../guests/guest-sessions";
 import type { Mailer } from "../mail";
+import { ssoUserResolver } from "../sso/sso";
 import { OPERATOR_ROLE, ac, orgRoles, serviceAc, serviceRoles } from "./roles";
 import { TOTP_ENROLLMENT_PATHS, TOTP_ENROLLMENT_REQUIRED, totpEnrollmentPending } from "./totp-enrollment";
 
@@ -23,6 +25,14 @@ const ORGANIZATION_READ_PATHS = new Set([
 
 /** The only Better Auth endpoints a Guest's session may call: Guests have no password, passkey or TOTP. */
 const GUEST_PATHS = new Set(["/get-session", "/sign-out", "/sign-in/magic-link", "/magic-link/verify"]);
+
+/**
+ * The `sso` plugin's endpoints the identity provider and browsers may reach: sign-in (`/sign-in/sso`),
+ * where assertions arrive, and Argus's service provider metadata. Connections are managed in Argus.
+ */
+const SSO_PUBLIC_PATHS = ["/sso/saml2/sp/acs/", "/sso/saml2/sp/metadata"];
+/** Public whatever session the browser holds: an assertion arriving is a sign-in, and the metadata is the same for all. */
+const isSsoPublicPath = (path: string) => SSO_PUBLIC_PATHS.some((p) => path.startsWith(p));
 
 /** How long a magic link works for. */
 export const MAGIC_LINK_TTL_SECONDS = 15 * 60;
@@ -43,9 +53,13 @@ export function createAuth({ db, baseUrl, secret, mailer, clock }: AuthDeps) {
     baseURL: baseUrl,
     basePath: "/api/auth",
     secret,
-    database: drizzleAdapter(db, { provider: "pg" }),
+    // Transactions: the SSO plugin resolves each SAML sign-in to a Member inside one.
+    database: drizzleAdapter(db, { provider: "pg", transaction: true }),
     // No self-serve sign-up: accounts are created from invitations only.
     emailAndPassword: { enabled: true, disableSignUp: true, minPasswordLength: 12 },
+    session: {
+      additionalFields: { signedInWithSso: { type: "boolean", required: false, defaultValue: false, input: false } },
+    },
     plugins: [
       admin({ ac: serviceAc, roles: serviceRoles, defaultRole: "user", adminRoles: [OPERATOR_ROLE] }),
       organization({
@@ -61,6 +75,21 @@ export function createAuth({ db, baseUrl, secret, mailer, clock }: AuthDeps) {
         },
       }),
       twoFactor({ issuer: "Argus" }),
+      // SAML per Organization. Admins configure it in Argus (`sso/sso.ts`), never through the plugin's endpoints.
+      sso({
+        providersLimit: 0,
+        organizationProvisioning: { disabled: true },
+        resolveUser: ssoUserResolver({ db, clock }),
+        saml: { requireTimestamps: true, algorithms: { onDeprecated: "reject" } },
+        schema: {
+          ssoProvider: {
+            additionalFields: {
+              provisionAnalysts: { type: "boolean", required: true, defaultValue: false, input: false },
+              updatedAt: { type: "date", required: true, input: false },
+            },
+          },
+        },
+      }),
       passkey({ rpName: "Argus", origin: baseUrl }),
       // Guests sign in with an emailed link. Accounts come only from Guest invitations.
       magicLink({
@@ -94,6 +123,10 @@ export function createAuth({ db, baseUrl, secret, mailer, clock }: AuthDeps) {
         if (ctx.path.startsWith("/two-factor/verify-") && ctx.body?.trustDevice) {
           throw new APIError("BAD_REQUEST", { message: "Trusted devices are not supported" });
         }
+        // SSO connections are managed through Argus, so each change lands in the Organization Audit Log.
+        if (ctx.path.startsWith("/sso/") && !isSsoPublicPath(ctx.path)) {
+          throw new APIError("FORBIDDEN", { message: "Manage single sign-on in Argus settings" });
+        }
         // Membership changes go through Argus so each one lands in the Organization Audit Log.
         if (ctx.path.startsWith("/organization/") && !ORGANIZATION_READ_PATHS.has(ctx.path)) {
           throw new APIError("FORBIDDEN", { message: "Manage Members in Argus settings" });
@@ -103,7 +136,7 @@ export function createAuth({ db, baseUrl, secret, mailer, clock }: AuthDeps) {
         if (session && !GUEST_PATHS.has(ctx.path) && (await isGuestAccount(db, session.user))) {
           throw new APIError("FORBIDDEN", { message: "Guests sign in with an email link only" });
         }
-        if (TOTP_ENROLLMENT_PATHS.has(ctx.path)) return;
+        if (TOTP_ENROLLMENT_PATHS.has(ctx.path) || isSsoPublicPath(ctx.path)) return;
         if (session && totpEnrollmentPending(session)) {
           throw new APIError("FORBIDDEN", {
             message: "Set up two-factor authentication to continue",
@@ -115,12 +148,13 @@ export function createAuth({ db, baseUrl, secret, mailer, clock }: AuthDeps) {
     databaseHooks: {
       session: {
         create: {
-          // A Member works in the one Organization they belong to.
-          before: async (session) => {
+          // A Member works in the one Organization they belong to. Sessions started by SSO are marked: they need no TOTP.
+          before: async (session, ctx) => {
             const membership = await db.query.member.findFirst({
               where: (m, { eq }) => eq(m.userId, session.userId),
             });
-            return { data: { ...session, activeOrganizationId: membership?.organizationId ?? null } };
+            const signedInWithSso = !!ctx?.path.startsWith("/sso/");
+            return { data: { ...session, activeOrganizationId: membership?.organizationId ?? null, signedInWithSso } };
           },
           // A Guest's session is timed by Argus from the moment it starts.
           after: async (session) => {

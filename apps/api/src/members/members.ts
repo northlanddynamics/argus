@@ -8,6 +8,7 @@ import type { Db, Tx } from "../db/client";
 import { account, member, passkey, session, user } from "../db/schema";
 import type { Membership } from "./membership";
 import { publish } from "../realtime/signals";
+import { ssoProviderIdOf } from "../sso/sso";
 
 /**
  * The Members of one Organization: who they are, their roles, removing them and moving ownership.
@@ -90,7 +91,8 @@ export function memberStore({ db, clock }: { db: Db; clock: Clock }) {
         .where(eq(member.organizationId, me.organizationId))
         .orderBy(asc(member.createdAt), asc(user.createdAt));
       const userIds = rows.map((r) => r.userId);
-      const [passkeys, passwords, lastActive] = userIds.length
+      const ssoProviderId = ssoProviderIdOf(me.organizationId);
+      const [passkeys, passwords, lastActive, ssoLinked] = userIds.length
         ? await Promise.all([
             db.select({ userId: passkey.userId, n: count() }).from(passkey).where(inArray(passkey.userId, userIds)).groupBy(passkey.userId),
             db
@@ -102,8 +104,12 @@ export function memberStore({ db, clock }: { db: Db; clock: Clock }) {
               .from(session)
               .where(inArray(session.userId, userIds))
               .groupBy(session.userId),
+            db
+              .select({ userId: account.userId })
+              .from(account)
+              .where(and(inArray(account.userId, userIds), eq(account.providerId, ssoProviderId))),
           ])
-        : [[], [], []];
+        : [[], [], [], []];
       return rows.map((r) => ({
         id: r.id,
         userId: r.userId,
@@ -114,6 +120,8 @@ export function memberStore({ db, clock }: { db: Db; clock: Clock }) {
           password: passwords.some((p) => p.userId === r.userId),
           totp: !!r.totp,
           passkeys: passkeys.find((p) => p.userId === r.userId)?.n ?? 0,
+          /** Has signed in through the Organization's identity provider. */
+          sso: ssoLinked.some((a) => a.userId === r.userId),
         },
         lastActiveAt: lastActive.find((s) => s.userId === r.userId)?.at?.toISOString() ?? null,
       }));

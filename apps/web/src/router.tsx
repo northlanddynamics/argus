@@ -21,7 +21,8 @@ import { OrgAuditLogPage } from "@/routes/settings/audit-log";
 import { SettingsLayout } from "@/routes/settings/layout";
 import { IntegrationsPage } from "@/routes/settings/integrations";
 import { MembersPage } from "@/routes/settings/members";
-import { SignInPage } from "@/routes/sign-in";
+import { SsoPage } from "@/routes/settings/sso";
+import { SignInPage, validateSignInSearch } from "@/routes/sign-in";
 
 export { queryClient };
 
@@ -144,6 +145,12 @@ const membersRoute = createRoute({
   component: MembersPage,
 });
 
+const ssoRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/sso",
+  component: SsoPage,
+});
+
 const integrationsRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/integrations",
@@ -159,6 +166,7 @@ const orgAuditLogRoute = createRoute({
 const signInRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/sign-in",
+  validateSearch: validateSignInSearch,
   component: SignInPage,
 });
 
@@ -181,7 +189,7 @@ export const router = createRouter({
       homeRoute,
       caseRoute.addChildren([caseOverviewRoute, caseTimelineRoute, caseTasksRoute, caseEvidenceRoute, caseObservablesRoute, caseAuditLogRoute]),
       alertsRoute,
-      settingsRoute.addChildren([settingsIndexRoute, membersRoute, integrationsRoute, orgAuditLogRoute]),
+      settingsRoute.addChildren([settingsIndexRoute, membersRoute, ssoRoute, integrationsRoute, orgAuditLogRoute]),
     ]),
     operatorRoute,
     signInRoute,

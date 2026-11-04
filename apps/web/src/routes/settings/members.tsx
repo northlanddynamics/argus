@@ -22,8 +22,8 @@ async function ok(res: Response, fallback: string) {
   if (!res.ok) throw new Error(await errorMessage(res, fallback));
 }
 
-const signInMethods = (s: { password: boolean; totp: boolean; passkeys: number }) =>
-  [s.password && (s.totp ? "Password + TOTP" : "Password"), s.passkeys > 0 && "passkey"].filter(Boolean).join(", ") || "—";
+const signInMethods = (s: { password: boolean; totp: boolean; passkeys: number; sso: boolean }) =>
+  [s.password && (s.totp ? "Password + TOTP" : "Password"), s.passkeys > 0 && "passkey", s.sso && "SSO"].filter(Boolean).join(", ") || "—";
 
 const lastActive = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : "—");
 
