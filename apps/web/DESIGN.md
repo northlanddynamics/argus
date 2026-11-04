@@ -240,7 +240,7 @@ Familiar and unremarkable: stock shadcn/ui, added with `bunx shadcn@latest add` 
 - **Error / Disabled:** `aria-invalid` turns the border red with a faint red ring; disabled fields fade to 50%.
 
 ### Navigation
-- **Sidebar:** shadcn's sidebar in Sidebar Mist, listing Cases with their monospace references. It collapses, and the choice is remembered.
+- **Sidebar:** shadcn's sidebar in Sidebar Mist: an icon rail, then the work queue. The queue splits open Cases into Assigned to me, Assigned to others and Unassigned; each Member can hide, collapse, sort (Severity or last change) and reorder the sections, remembered per browser. The open Case is a white row with a hairline ring, and rows flash briefly when they change live but hold still under the pointer. It collapses, and the choice is remembered; it starts collapsed in Settings and the Dashboard.
 - **Breadcrumbs:** in the sticky header. The Organization name is medium weight; links are muted until hovered, and the current page is in foreground.
 
 ### Notices

@@ -177,8 +177,8 @@ describe("Guest sign-in", () => {
       guest: {
         organization: { name: "Acme Security" },
         cases: [
-          { organization: { name: "Acme Security" }, number: restricted, title: "Restricted, but theirs", expiresAt: null },
-          { organization: { name: "Acme Security" }, number: theirs, title: "Theirs", expiresAt: null },
+          { organization: { name: "Acme Security" }, number: restricted, title: "Restricted, but theirs", status: "new", expiresAt: null },
+          { organization: { name: "Acme Security" }, number: theirs, title: "Theirs", status: "new", expiresAt: null },
         ],
         sessionEndsAt: new Date(a.t.clock.now().getTime() + 12 * HOUR).toISOString(),
       },

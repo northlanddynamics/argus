@@ -28,6 +28,8 @@ export async function guestCasesOf(db: Db | Tx, userId: string, at: Date) {
       organizationName: organization.name,
       number: cases.number,
       title: cases.title,
+      severity: cases.severity,
+      status: cases.status,
       expiresAt: caseGuests.expiresAt,
     })
     .from(caseGuests)
@@ -39,6 +41,8 @@ export async function guestCasesOf(db: Db | Tx, userId: string, at: Date) {
     organization: { id: r.organizationId, name: r.organizationName },
     number: r.number,
     title: r.title,
+    severity: r.severity,
+    status: r.status,
     expiresAt: r.expiresAt?.toISOString() ?? null,
   }));
 }
