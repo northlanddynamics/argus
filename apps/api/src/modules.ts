@@ -14,6 +14,7 @@ import { memberStore } from "./members/members";
 import { notificationStore } from "./notifications/notifications";
 import { organizationStore } from "./organizations/organizations";
 import { tagStore } from "./tags/tags";
+import { teamsChannelStore } from "./teams/teams";
 import { taskStore } from "./tasks/tasks";
 import { timelineStore } from "./timeline/timeline";
 
@@ -41,6 +42,7 @@ export function createModules(deps: Deps) {
     integrations: integrationStore(deps),
     alerts: alertStore(deps),
     notifications: notificationStore(deps),
+    teamsChannel: teamsChannelStore(deps),
   };
 }
 

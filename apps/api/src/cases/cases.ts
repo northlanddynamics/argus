@@ -12,6 +12,7 @@ import type { Membership, Participant } from "../members/membership";
 import { memberName } from "../members/members";
 import { notify, type Notice, participantsOf, sendNotificationEmails } from "../notifications/notifications";
 import { publish } from "../realtime/signals";
+import { queueTeamsPost, sendTeamsPosts } from "../teams/teams";
 import { taskCounts } from "../tasks/task-counts";
 import { hasTag, tagsOfCase } from "../tags/case-tags";
 import { type CaseActor, type CaseAuditEntry, listCaseAudit, recordCaseAudit, type CaseAuditFilter } from "./case-audit-log";
@@ -218,7 +219,7 @@ export async function insertCase(tx: Tx, me: Membership, input: OpenCaseInput, n
   return { id, number: last + 1 };
 }
 
-export function caseStore(deps: Pick<Deps, "db" | "clock" | "mailer" | "baseUrl">) {
+export function caseStore(deps: Pick<Deps, "db" | "clock" | "mailer" | "baseUrl" | "teams" | "credentials">) {
   const { db, clock } = deps;
   /** The Case's internal id, or throws `CaseNotFound` when `me` can't see it. */
   const findId = async (me: Actor, number: number) => {
@@ -280,7 +281,16 @@ export function caseStore(deps: Pick<Deps, "db" | "clock" | "mailer" | "baseUrl"
     view,
 
     async open(me: Membership, input: OpenCaseInput) {
-      const { number } = await db.transaction((tx) => insertCase(tx, me, input, clock.now()));
+      const { number } = await db.transaction(async (tx) => {
+        const now = clock.now();
+        const opened = await insertCase(tx, me, input, now);
+        if (input.severity === "critical") {
+          const announcement = { organizationId: me.organizationId, caseId: opened.id, actorId: me.userId };
+          await queueTeamsPost(tx, { ...announcement, kind: "case_opened", severity: "critical" }, now);
+        }
+        return opened;
+      });
+      await sendTeamsPosts(deps);
       return view(me, number);
     },
 
@@ -384,13 +394,15 @@ export function caseStore(deps: Pick<Deps, "db" | "clock" | "mailer" | "baseUrl"
         if (set.assigneeId) notices.push({ recipientId: set.assigneeId, kind: "case_assigned", actorId: me.userId });
         if (set.severity === "critical") {
           for (const recipientId of participantsOf(next)) notices.push({ recipientId, kind: "severity_critical", actorId: me.userId });
+          const announcement = { organizationId: me.organizationId, caseId: current.id, actorId: me.userId };
+          await queueTeamsPost(tx, { ...announcement, kind: "severity_critical", severity: "critical" }, now);
         }
         await notify(tx, next, notices, now);
         const before = { restricted: current.restricted, assigneeId: current.assigneeId };
         await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id, before });
         return next;
       });
-      await sendNotificationEmails(deps);
+      await Promise.all([sendNotificationEmails(deps), sendTeamsPosts(deps)]);
       return canSeeCase(me, result) ? view(me, number) : null;
     },
 

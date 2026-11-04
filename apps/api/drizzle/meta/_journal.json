@@ -183,6 +183,13 @@
       "when": 1793746260589,
       "tag": "0025_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1793750216343,
+      "tag": "0026_teams_channel",
+      "breakpoints": true
     }
   ]
 }

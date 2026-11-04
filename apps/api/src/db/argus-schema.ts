@@ -20,6 +20,7 @@ import { CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabula
 import { STORED_LINK_TYPES } from "../case-links/vocabulary";
 import { ASSET_TYPES, OBSERVABLE_TYPES } from "../observables/vocabulary";
 import { NOTIFICATION_KINDS } from "../notifications/vocabulary";
+import { TEAMS_POST_KINDS } from "../teams/vocabulary";
 import { type Citation, PROMOTION_SOURCES } from "../timeline/vocabulary";
 import {
   ALERT_KINDS,
@@ -905,4 +906,55 @@ export const notifications = pgTable(
     index("notifications_recipient_idx").on(t.recipientId, t.seq),
     index("notifications_email_pending_idx").on(t.seq).where(sql`${t.emailPending}`),
   ],
+);
+
+/**
+ * The Organization's Teams channel: the incoming webhook its posts go to, sealed at rest like
+ * Integration credentials, since anyone holding the URL can post to the channel.
+ */
+export const teamsChannels = pgTable("teams_channels", {
+  organizationId: text("organization_id")
+    .primaryKey()
+    .references(() => organization.id, { onDelete: "restrict" }),
+  webhookUrl: text("webhook_url").notNull(),
+  /** The webhook's host and last four characters, so Admins can tell which one is in use. */
+  urlHint: text("url_hint").notNull(),
+  updatedById: text("updated_by_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "restrict" }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+});
+
+/**
+ * Posts to the Organization's Teams channel, queued in the transaction that made the change and
+ * sent after it commits (`teams/teams.ts`). They name the Case by id, so each is written from the
+ * Case as it is when sent; a Restricted Case gets a link only.
+ */
+export const teamsPosts = pgTable(
+  "teams_posts",
+  {
+    id: text("id").primaryKey(),
+    seq: bigserial("seq", { mode: "number" }).notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    caseId: text("case_id")
+      .notNull()
+      .references(() => cases.id, { onDelete: "restrict" }),
+    kind: text("kind", { enum: TEAMS_POST_KINDS }).notNull(),
+    /** The Case's Severity when it happened. */
+    severity: text("severity", { enum: SEVERITIES }).notNull(),
+    /** How many Alerts the Case was opened from; null when it wasn't. */
+    alertCount: integer("alert_count"),
+    actorId: text("actor_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    pending: boolean("pending").notNull().default(true),
+    attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull(),
+    lastError: text("last_error"),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+  },
+  (t) => [index("teams_posts_due_idx").on(t.nextAttemptAt).where(sql`${t.pending}`)],
 );

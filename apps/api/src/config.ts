@@ -9,6 +9,7 @@ import { credentialSealer } from "./integrations/credentials";
 import { unconfiguredEvidenceStorage } from "./evidence/storage";
 import { consoleMailer, smtpMailer } from "./mail";
 import { postgresSignals } from "./realtime/signals";
+import { httpTeamsPoster } from "./teams/teams-webhook";
 
 const required = (name: string) => {
   const value = process.env[name];
@@ -47,6 +48,7 @@ export function depsFromEnv(): Deps & { close: () => Promise<void> } {
     db,
     auth,
     mailer,
+    teams: httpTeamsPoster,
     clock: systemClock,
     signals: postgresSignals(sql),
     baseUrl,

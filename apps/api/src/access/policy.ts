@@ -136,6 +136,8 @@ export const organizationPolicy = {
   canManageCaseRoles: managesOrganization,
   /** Add Integrations, rotate their credentials, pause and resume them, and see which credentials are in use. */
   canManageIntegrations: managesOrganization,
+  /** Set, test and remove the Organization's Teams channel webhook, and see which one is in use. */
+  canManageTeamsChannel: managesOrganization,
   /** Transfer ownership and delete the Organization. */
   canActAsOwner: (actor: Actor) => actor.role === "owner",
 };

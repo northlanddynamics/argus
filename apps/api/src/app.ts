@@ -13,6 +13,7 @@ import { meRoutes } from "./routes/me";
 import { notificationRoutes } from "./routes/notifications";
 import { operatorRoutes } from "./routes/operator";
 import { organizationRoutes } from "./routes/organization";
+import { teamsChannelRoutes } from "./routes/teams-channel";
 
 /**
  * Builds the HTTP API. Everything outside the process comes in through `deps`; `live` is this
@@ -48,6 +49,7 @@ export function createApi(deps: Deps, live: Live = createLive(deps)) {
     .route("/alerts", alertRoutes(deps, modules))
     .route("/integrations", integrationRoutes(deps, modules))
     .route("/notifications", notificationRoutes(deps, modules))
+    .route("/teams-channel", teamsChannelRoutes(deps, modules))
     .route("/live", liveRoutes(deps, live));
 }
 

@@ -15,6 +15,7 @@ import { captureOutbox } from "../mail";
 import { createLive } from "../realtime/live";
 import { type ClientMessage, LIVE_PATH, type ServerMessage } from "../realtime/messages";
 import { postgresSignals } from "../realtime/signals";
+import { captureTeams } from "../teams/teams-webhook";
 import { createTestDb } from "./db";
 
 /**
@@ -51,6 +52,7 @@ export async function buildTestApp({
   cleanups.push(drop);
   const clock = fakeClock();
   const outbox = captureOutbox();
+  const teams = captureTeams();
   const authSecret = "test-secret-test-secret-test-secret";
   const auth = createAuth({ db, baseUrl: BASE_URL, secret: authSecret, mailer: outbox.mailer, clock });
   const evidence = memoryEvidenceStorage();
@@ -59,6 +61,7 @@ export async function buildTestApp({
     auth,
     clock,
     mailer: outbox.mailer,
+    teams: teams.poster,
     signals: postgresSignals(sql),
     baseUrl: BASE_URL,
     evidence: { storage: evidence.storage, maxBytes: evidenceMaxBytes },
@@ -266,6 +269,8 @@ export async function buildTestApp({
     onCleanup: (cleanup: () => Promise<void>) => void cleanups.push(cleanup),
     clock,
     outbox,
+    /** Posts to Teams channels, and `failNext(n)` to make the next ones fail. */
+    teams,
     /** Evidence files as stored, by storage key. */
     evidenceObjects: evidence.objects,
     live,
