@@ -43,6 +43,7 @@ export const session = pgTable(
       .references(() => user.id, { onDelete: "cascade" }),
     impersonatedBy: text("impersonated_by"),
     activeOrganizationId: text("active_organization_id"),
+    signedInWithSso: boolean("signed_in_with_sso").default(false),
   },
   (table) => [index("session_userId_idx").on(table.userId)],
 );
@@ -157,6 +158,21 @@ export const twoFactor = pgTable(
   ],
 );
 
+export const ssoProvider = pgTable("sso_provider", {
+  id: text("id").primaryKey(),
+  issuer: text("issuer").notNull(),
+  oidcConfig: text("oidc_config"),
+  samlConfig: text("saml_config"),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  providerId: text("provider_id").notNull().unique(),
+  organizationId: text("organization_id"),
+  domain: text("domain").notNull(),
+  provisionAnalysts: boolean("provision_analysts").default(false).notNull(),
+  updatedAt: timestamp("updated_at").notNull(),
+});
+
 export const passkey = pgTable(
   "passkey",
   {
@@ -186,6 +202,7 @@ export const userRelations = relations(user, ({ many }) => ({
   members: many(member),
   invitations: many(invitation),
   twoFactors: many(twoFactor),
+  ssoProviders: many(ssoProvider),
   passkeys: many(passkey),
 }));
 
@@ -233,6 +250,13 @@ export const invitationRelations = relations(invitation, ({ one }) => ({
 export const twoFactorRelations = relations(twoFactor, ({ one }) => ({
   user: one(user, {
     fields: [twoFactor.userId],
+    references: [user.id],
+  }),
+}));
+
+export const ssoProviderRelations = relations(ssoProvider, ({ one }) => ({
+  user: one(user, {
+    fields: [ssoProvider.userId],
     references: [user.id],
   }),
 }));

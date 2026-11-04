@@ -138,6 +138,8 @@ export const organizationPolicy = {
   canManageIntegrations: managesOrganization,
   /** Set, test and remove the Organization's Teams channel webhook, and see which one is in use. */
   canManageTeamsChannel: managesOrganization,
+  /** Enable, change and disable SAML single sign-on, and see how it is configured. */
+  canManageSso: managesOrganization,
   /** Transfer ownership and delete the Organization. */
   canActAsOwner: (actor: Actor) => actor.role === "owner",
 };

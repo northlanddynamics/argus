@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@better-auth/passkey": "1.7.14",
+    "@better-auth/sso": "1.7.14",
     "@hono/bun": "^1.0.1",
     "@hono/zod-validator": "^0.9.1",
     "better-auth": "^1.7.14",
@@ -41,6 +42,7 @@
     "auth": "1.7.14",
     "drizzle-kit": "^0.31.11",
     "playwright": "1.63.0",
+    "samlify": "2.15.1",
     "typescript": "^7.0.2"
   }
 }

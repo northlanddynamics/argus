@@ -13,6 +13,7 @@ import { invitationStore } from "./invitations/invitations";
 import { memberStore } from "./members/members";
 import { notificationStore } from "./notifications/notifications";
 import { organizationStore } from "./organizations/organizations";
+import { ssoStore } from "./sso/sso";
 import { tagStore } from "./tags/tags";
 import { teamsChannelStore } from "./teams/teams";
 import { taskStore } from "./tasks/tasks";
@@ -43,6 +44,7 @@ export function createModules(deps: Deps) {
     alerts: alertStore(deps),
     notifications: notificationStore(deps),
     teamsChannel: teamsChannelStore(deps),
+    sso: ssoStore(deps),
   };
 }
 

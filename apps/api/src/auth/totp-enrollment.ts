@@ -14,6 +14,7 @@ export const TOTP_ENROLLMENT_PATHS = new Set([
   // Signing in again replaces the session rather than using it.
   "/sign-in/email",
   "/sign-in/passkey",
+  "/sign-in/sso",
   "/passkey/generate-authenticate-options",
   "/two-factor/enable",
   "/two-factor/verify-totp",
@@ -24,7 +25,8 @@ type SessionLike = { user: Record<string, unknown>; session: Record<string, unkn
 /**
  * A Member (the session carries their Organization) whose TOTP isn't confirmed.
  * Members can only register a passkey from a full session, so a passkey session
- * always belongs to a Member who has already enrolled.
+ * always belongs to a Member who has already enrolled. TOTP goes with passwords: a
+ * session started through the Organization's identity provider (SSO) needs none.
  */
 export const totpEnrollmentPending = ({ user, session }: SessionLike) =>
-  !!session.activeOrganizationId && !user.twoFactorEnabled;
+  !!session.activeOrganizationId && !user.twoFactorEnabled && !session.signedInWithSso;

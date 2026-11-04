@@ -12,6 +12,9 @@ export function SettingsLayout() {
         <Link to="/settings/members" className={sideLink}>
           Members
         </Link>
+        <Link to="/settings/sso" className={sideLink}>
+          Single sign-on
+        </Link>
         <Link to="/settings/integrations" className={sideLink}>
           Integrations
         </Link>

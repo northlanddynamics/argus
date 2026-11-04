@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
-import { type FormEvent, useState } from "react";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { type FormEvent, useRef, useState } from "react";
 import { AuthCard } from "@/components/sign-in/auth-card";
 import { ErrorAlert } from "@/components/sign-in/error-alert";
 import { TotpChallenge } from "@/components/sign-in/totp-challenge";
@@ -13,11 +13,25 @@ import { api, authClient } from "@/lib/api";
 
 type Step = { kind: "credentials" } | { kind: "totp" } | { kind: "enroll"; password: string };
 
+/** Where SSO sends people back when their identity provider's answer didn't get them in. */
+export type SignInSearch = { error?: string; error_description?: string };
+
+export const validateSignInSearch = (search: Record<string, unknown>): SignInSearch => ({
+  error: typeof search.error === "string" ? search.error : undefined,
+  error_description: typeof search.error_description === "string" ? search.error_description : undefined,
+});
+
+/** Why an SSO sign-in came back without a session, in words. */
+const ssoError = ({ error, error_description }: SignInSearch) =>
+  error ? (error_description ?? "Single sign-on didn't sign you in.").replace(/_/g, " ") : null;
+
 export function SignInPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const search = useSearch({ from: "/sign-in" });
+  const emailRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<Step>({ kind: "credentials" });
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(ssoError(search));
   const [pending, setPending] = useState(false);
 
   const enterArgus = async () => {
@@ -59,6 +73,27 @@ export function SignInPage() {
     await enterArgus();
   };
 
+  /** Sends the browser to the identity provider of the Organization that signs in the email's domain. */
+  const signInWithSso = async () => {
+    const email = emailRef.current?.value.trim() ?? "";
+    if (!email || !emailRef.current?.checkValidity()) {
+      setError("Enter your work email to sign in with SSO");
+      return;
+    }
+    setError(null);
+    setPending(true);
+    const result = await authClient.$fetch<{ url: string }>("/sign-in/sso", {
+      method: "POST",
+      body: { email, callbackURL: "/", errorCallbackURL: "/sign-in" },
+    });
+    if (result.error) {
+      setPending(false);
+      setError(result.error.status === 404 ? "Single sign-on isn't set up for this email domain" : (result.error.message ?? "SSO sign-in failed"));
+      return;
+    }
+    window.location.assign(result.data.url);
+  };
+
   if (step.kind === "totp") return <TotpChallenge onSignedIn={enterArgus} />;
   if (step.kind === "enroll") return <TotpEnrollment password={step.password} onDone={enterArgus} />;
 
@@ -67,7 +102,7 @@ export function SignInPage() {
       <form className="grid gap-4" onSubmit={onSubmit}>
         <div className="grid gap-2">
           <Label htmlFor="email">Work email</Label>
-          <Input id="email" name="email" type="email" autoComplete="username webauthn" required />
+          <Input ref={emailRef} id="email" name="email" type="email" autoComplete="username webauthn" required />
         </div>
         <div className="grid gap-2">
           <Label htmlFor="password">Password</Label>
@@ -84,6 +119,9 @@ export function SignInPage() {
         </div>
         <Button type="button" variant="outline" onClick={signInWithPasskey}>
           Sign in with a passkey
+        </Button>
+        <Button type="button" variant="outline" disabled={pending} onClick={signInWithSso}>
+          Sign in with SSO (SAML)
         </Button>
         <p className="text-sm text-muted-foreground">No self-serve sign-up. Ask your Organization's Admin for an invite.</p>
         <p className="text-sm text-muted-foreground">
