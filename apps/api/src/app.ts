@@ -10,6 +10,7 @@ import { integrationRoutes } from "./routes/integrations";
 import { invitationRoutes } from "./routes/invitations";
 import { liveRoutes } from "./routes/live";
 import { meRoutes } from "./routes/me";
+import { metricsRoutes } from "./routes/metrics";
 import { notificationRoutes } from "./routes/notifications";
 import { operatorRoutes } from "./routes/operator";
 import { organizationRoutes } from "./routes/organization";
@@ -54,6 +55,7 @@ export function createApi(deps: Deps, live: Live = createLive(deps)) {
     .route("/teams-channel", teamsChannelRoutes(deps, modules))
     .route("/sso", ssoRoutes(deps, modules))
     .route("/search", searchRoutes(deps, modules))
+    .route("/metrics", metricsRoutes(deps, modules))
     .route("/live", liveRoutes(deps, live));
 }
 

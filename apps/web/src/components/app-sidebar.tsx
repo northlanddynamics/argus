@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useMatchRoute, useParams } from "@tanstack/react-router";
-import { BriefcaseIcon, LockIcon, SettingsIcon, ShieldIcon, SirenIcon } from "lucide-react";
+import { BriefcaseIcon, ChartColumnIcon, LockIcon, SettingsIcon, ShieldIcon, SirenIcon } from "lucide-react";
 import { type ComponentProps, useDeferredValue, useState } from "react";
 import { SeverityBadge } from "@/components/case-badges";
 import { NavUser } from "@/components/nav-user";
@@ -115,6 +115,21 @@ function NavRail({ me }: { me: Me }) {
                     <Link to="/alerts" onClick={closeMobile}>
                       <SirenIcon />
                       <span>Alerts</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
+              {me.organization && !me.guest && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={!!matchRoute({ to: "/dashboard" })}
+                    tooltip={{ children: "Dashboard", hidden: false }}
+                    className="px-2.5 md:px-2"
+                  >
+                    <Link to="/dashboard" onClick={closeMobile}>
+                      <ChartColumnIcon />
+                      <span>Dashboard</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

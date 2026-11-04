@@ -14,7 +14,8 @@
     "./alerts/vocabulary": "./src/alerts/vocabulary.ts",
     "./internal/vocabulary": "./src/internal/vocabulary.ts",
     "./case-reports/vocabulary": "./src/case-reports/vocabulary.ts",
-    "./search/vocabulary": "./src/search/vocabulary.ts"
+    "./search/vocabulary": "./src/search/vocabulary.ts",
+    "./metrics/vocabulary": "./src/metrics/vocabulary.ts"
   },
   "scripts": {
     "dev": "bun --watch src/server.ts",

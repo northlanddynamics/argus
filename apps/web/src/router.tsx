@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { createRootRouteWithContext, createRoute, createRouter, Outlet, redirect } from "@tanstack/react-router";
 import { meQuery } from "@/lib/api";
+import { validateDashboardSearch } from "@/lib/metrics";
 import { validateSearchPageSearch } from "@/lib/search";
 import { queryClient } from "@/lib/query-client";
 import { canManage } from "@/lib/roles";
@@ -16,6 +17,7 @@ import { CaseEvidencePage } from "@/routes/cases/evidence";
 import { CaseObservablesPage } from "@/routes/cases/observables";
 import { CaseTasksPage } from "@/routes/cases/tasks";
 import { CaseTimelinePage } from "@/routes/cases/timeline";
+import { DashboardPage } from "@/routes/dashboard";
 import { HomePage } from "@/routes/guest-home";
 import { GuestSignInPage, validateGuestSignInSearch } from "@/routes/guest-sign-in";
 import { SearchPage } from "@/routes/search";
@@ -112,6 +114,17 @@ const alertsRoute = createRoute({
   component: AlertQueuePage,
 });
 
+/** The Metrics dashboard: Members only. */
+const dashboardRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/dashboard",
+  validateSearch: validateDashboardSearch,
+  beforeLoad: ({ context }) => {
+    if (!context.me.organization) throw redirect({ to: "/" });
+  },
+  component: DashboardPage,
+});
+
 /** Global search, for Members and Guests; the API decides what each finds. */
 const searchRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -199,6 +212,7 @@ export const router = createRouter({
       homeRoute,
       caseRoute.addChildren([caseOverviewRoute, caseTimelineRoute, caseTasksRoute, caseEvidenceRoute, caseObservablesRoute, caseAuditLogRoute]),
       alertsRoute,
+      dashboardRoute,
       searchRoute,
       settingsRoute.addChildren([settingsIndexRoute, membersRoute, ssoRoute, integrationsRoute, orgAuditLogRoute]),
     ]),

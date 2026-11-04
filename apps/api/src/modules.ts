@@ -12,6 +12,7 @@ import { internalStore } from "./internal/internal";
 import { assetStore, observableStore } from "./observables/observables";
 import { invitationStore } from "./invitations/invitations";
 import { memberStore } from "./members/members";
+import { metricsStore } from "./metrics/metrics";
 import { notificationStore } from "./notifications/notifications";
 import { organizationStore } from "./organizations/organizations";
 import { searchStore } from "./search/search";
@@ -51,6 +52,7 @@ export function createModules(deps: Deps) {
     teamsChannel: teamsChannelStore(deps),
     sso: ssoStore(deps),
     search: searchStore(deps),
+    metrics: metricsStore(deps),
     caseReports: caseReportStore(deps, readers),
   };
 }

@@ -3,6 +3,7 @@ import { type ClientMessage, LIVE_PATH, type ServerMessage, type Viewer } from "
 import { useEffect, useSyncExternalStore } from "react";
 import { alertsKey, integrationsKey } from "@/lib/alerts";
 import { casesKey } from "@/lib/cases";
+import { metricsKey } from "@/lib/metrics";
 import { notificationsKey } from "@/lib/notifications";
 import { queryClient } from "@/lib/query-client";
 
@@ -138,10 +139,12 @@ class LiveConnection {
           queryKey: casesKey,
           predicate: ({ queryKey }) => typeof queryKey[1] !== "number" || queryKey[1] === message.number,
         });
+        void this.#queries.invalidateQueries({ queryKey: metricsKey });
         return;
       case "alerts":
         void this.#queries.invalidateQueries({ queryKey: alertsKey });
         void this.#queries.invalidateQueries({ queryKey: integrationsKey });
+        void this.#queries.invalidateQueries({ queryKey: metricsKey });
         return;
       case "notifications":
         void this.#queries.invalidateQueries({ queryKey: notificationsKey });
