@@ -58,6 +58,9 @@ const listQuery = z.object({
     .refine((t) => normaliseTag(t) !== null, TAG_EXPECTED)
     .transform((t) => normaliseTag(t) ?? t)
     .optional(),
+  access: z.enum(["restricted", "guests"]).optional(),
+  sort: z.enum(["updated", "severity", "number"]).optional(),
+  order: z.enum(["asc", "desc"]).optional(),
 });
 
 const changeBody = z.object({

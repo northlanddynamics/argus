@@ -224,6 +224,8 @@ Familiar and unremarkable: stock shadcn/ui, added with `bunx shadcn@latest add` 
 - **Status:** a thin outline; a Closed Case reads "Closed · Benign".
 - **Internal:** a dashed outline at 50% foreground, the marker for anything hidden from Guests.
 - **Overdue:** a thin outline in Overdue Red.
+- **Access:** a thin outline with its icon and the words: a lock and "Restricted", people and "2 Guests".
+- **Tag:** the secondary (grey-fill) pill, "#bec".
 
 ### Cards / Containers
 - **Corner Style:** 14px.

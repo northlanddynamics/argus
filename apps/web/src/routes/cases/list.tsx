@@ -1,11 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { LockIcon } from "lucide-react";
+import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon, LockIcon, UsersIcon, XIcon } from "lucide-react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { SeverityBadge, StatusBadge } from "@/components/case-badges";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/lib/api";
 import {
   CASE_TYPES,
@@ -22,145 +28,354 @@ import {
 } from "@/lib/cases";
 import { normaliseTag, tagLabel, tagsInUseQuery } from "@/lib/tags";
 import { cn } from "@/lib/utils";
+import { exactTime, when } from "@/lib/when";
 import { OpenCaseDialog } from "@/routes/cases/open-case-dialog";
 
 export const CASE_VIEWS = ["mine", "unassigned", "open", "closed"] as const;
 export type CaseListView = (typeof CASE_VIEWS)[number];
-export type CaseListSearch = { view?: CaseListView; status?: Status; severity?: Severity; caseType?: CaseType; tag?: string };
+const ACCESS = ["restricted", "guests"] as const;
+type Access = (typeof ACCESS)[number];
+const SORTS = ["updated", "severity", "number"] as const;
+type Sort = (typeof SORTS)[number];
+type Order = "asc" | "desc";
+export type CaseListSearch = {
+  view?: CaseListView;
+  status?: Status;
+  severity?: Severity;
+  caseType?: CaseType;
+  tag?: string;
+  access?: Access;
+  sort?: Sort;
+  order?: Order;
+};
 
 const pick = <T extends string>(list: readonly T[], value: unknown) => (list.includes(value as T) ? (value as T) : undefined);
 
-/** Reads the list's view and filters from the URL, ignoring anything unknown. */
+/** Reads the list's view, filters and sort from the URL, ignoring anything unknown. */
 export const validateCaseListSearch = (search: Record<string, unknown>): CaseListSearch => ({
   view: pick(CASE_VIEWS, search.view),
   status: pick(STATUSES, search.status),
   severity: pick(SEVERITIES, search.severity),
   caseType: pick(CASE_TYPES, search.caseType),
   tag: typeof search.tag === "string" ? (normaliseTag(search.tag) ?? undefined) : undefined,
+  access: pick(ACCESS, search.access),
+  sort: pick(SORTS, search.sort),
+  order: pick(["asc", "desc"] as const, search.order),
 });
 
 const viewLabel: Record<CaseListView, string> = { mine: "My Cases", unassigned: "Unassigned", open: "All open", closed: "Closed" };
+const accessLabel: Record<Access, string> = { restricted: "Restricted", guests: "With Guests" };
+const sortLabel: Record<Sort, string> = { updated: "last change", severity: "Severity", number: "Case number" };
+/** Statuses a Case in the open views can have; the Closed view has only one. */
+const OPEN_STATUSES = STATUSES.filter((s) => s !== "closed");
+const FILTERS = ["status", "severity", "caseType", "tag", "access"] as const;
+const noFilters = { status: undefined, severity: undefined, caseType: undefined, tag: undefined, access: undefined };
 
-const ago = (iso: string) => {
-  const minutes = Math.round((Date.now() - Date.parse(iso)) / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes} min ago`;
-  if (minutes < 60 * 24) return `${Math.round(minutes / 60)} h ago`;
-  return new Date(iso).toLocaleDateString();
-};
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** Rows whose Case changed since the list last loaded, for a moment, so a row that moves can be followed. */
+function useJustChanged(cases: { number: number; updatedAt: string }[] | undefined) {
+  const seen = useRef<Map<number, string> | null>(null);
+  const [changed, setChanged] = useState<Set<number>>(new Set());
+  useEffect(() => {
+    if (!cases) return;
+    const before = seen.current;
+    seen.current = new Map(cases.map((c) => [c.number, c.updatedAt]));
+    if (!before) return;
+    const moved = new Set(cases.filter((c) => before.has(c.number) && before.get(c.number) !== c.updatedAt).map((c) => c.number));
+    if (moved.size === 0) return;
+    setChanged(moved);
+    const clear = setTimeout(() => setChanged(new Set()), 2000);
+    return () => clearTimeout(clear);
+  }, [cases]);
+  return changed;
+}
+
+/** j and k move between the Cases in the list, Enter opens the one in focus. */
+function useRowKeys(table: React.RefObject<HTMLTableElement | null>) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || (e.key !== "j" && e.key !== "k")) return;
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable=true], [role=dialog]")) return;
+      const links = [...(table.current?.querySelectorAll<HTMLAnchorElement>("a[data-case-link]") ?? [])];
+      if (links.length === 0) return;
+      const at = links.indexOf(document.activeElement as HTMLAnchorElement);
+      const next = at === -1 ? 0 : Math.min(Math.max(at + (e.key === "j" ? 1 : -1), 0), links.length - 1);
+      e.preventDefault();
+      links[next]?.focus();
+      links[next]?.closest("tr")?.scrollIntoView({ block: "nearest" });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [table]);
+}
 
 export function CasesPage() {
   const search = useSearch({ from: "/_app/" });
   const navigate = useNavigate({ from: "/" });
   const view = search.view ?? "mine";
+  const sort = search.sort ?? "updated";
+  const order = search.order ?? "desc";
   const setSearch = (next: Partial<CaseListSearch>) => navigate({ search: (prev) => ({ ...prev, ...next }) });
+  const filtered = FILTERS.some((f) => search[f] !== undefined);
+  const table = useRef<HTMLTableElement>(null);
+  useRowKeys(table);
 
   const cases = useQuery({
     queryKey: [...casesKey, { ...search, view }],
     queryFn: async () => {
       const res = await api.cases.$get({ query: { ...search, view } });
-      if (!res.ok) throw new Error("Could not load Cases");
+      if (!res.ok) throw new Error(`The server answered ${res.status}`);
       return res.json();
     },
   });
+  const rows = cases.data?.cases;
   const counts = cases.data?.counts;
+  const justChanged = useJustChanged(rows);
   const tagsInUse = useQuery(tagsInUseQuery);
   const tagOptions = [...new Set([...(tagsInUse.data?.map((t) => t.tag) ?? []), ...(search.tag ? [search.tag] : [])])].toSorted();
   const tagLabels = Object.fromEntries(tagOptions.map((t) => [t, tagLabel(t)]));
 
+  /** Clicking a column sorts by it, newest or most severe first; clicking it again reverses. */
+  const sortBy = (column: Sort) => {
+    const nextOrder: Order = column === sort && order === "desc" ? "asc" : "desc";
+    setSearch({ sort: column === "updated" ? undefined : column, order: nextOrder === "desc" ? undefined : nextOrder });
+  };
+  const sortable = (column: Sort, label: string) => {
+    const active = sort === column;
+    const Icon = !active ? ChevronsUpDownIcon : order === "desc" ? ArrowDownIcon : ArrowUpIcon;
+    return {
+      "aria-sort": active ? (order === "desc" ? "descending" : "ascending") : undefined,
+      children: (
+        <button
+          type="button"
+          onClick={() => sortBy(column)}
+          className="-ml-1 inline-flex items-center gap-1 rounded-md px-1 py-0.5 outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          {label}
+          <Icon className={cn("size-3.5", !active && "text-muted-foreground")} aria-hidden />
+        </button>
+      ),
+    } as const;
+  };
+
+  const openCase = (number: number) => navigate({ to: "/cases/$number", params: { number: String(number) } });
+  const shown = rows?.length ?? 0;
+  const total = counts?.[view] ?? 0;
+
   return (
     <div className="mx-auto grid w-full grid-cols-1 max-w-6xl gap-4">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Cases</h1>
-          <p className="text-sm text-muted-foreground">Every Case you can see, filtered by view, Status, Severity, Case Type and Tag.</p>
-        </div>
+        <h1 className="text-2xl font-semibold tracking-tight">Cases</h1>
         <OpenCaseDialog />
       </div>
-      <div className="flex flex-wrap items-end justify-between gap-4 border-b">
-        <nav className="flex gap-1 overflow-x-auto" aria-label="Case views">
-          {CASE_VIEWS.map((v) => (
-            <button
-              key={v}
-              type="button"
-              aria-current={v === view ? "page" : undefined}
-              className={cn(
-                "-mb-px shrink-0 border-b-2 px-3 py-2 text-sm whitespace-nowrap text-muted-foreground",
-                v === view ? "border-foreground font-medium text-foreground" : "border-transparent hover:text-foreground",
-              )}
-              onClick={() => setSearch({ view: v })}
-            >
-              {viewLabel[v]}
-              {counts && v !== "closed" && <span className="text-xs text-muted-foreground tabular-nums">{` ${counts[v]}`}</span>}
-            </button>
-          ))}
-        </nav>
-        <div className="flex flex-wrap items-center gap-3 pb-2">
-          <Filter label="Status" id="filter-status" value={search.status} options={STATUSES} labels={statusLabel} onChange={(status) => setSearch({ status })} />
+      <div className="grid gap-3">
+        <Tabs value={view} activationMode="manual">
+          <TabsList variant="line" aria-label="Case views" className="w-full justify-start overflow-x-auto overflow-y-hidden border-b">
+            {CASE_VIEWS.map((v) => (
+              <TabsTrigger key={v} value={v} className="flex-none" asChild>
+                <Link to="/" search={{ ...search, view: v, status: v === "closed" || search.status === "closed" ? undefined : search.status }}>
+                  {viewLabel[v]}
+                  {counts && <span className="text-xs text-muted-foreground tabular-nums">{` ${counts[v]}`}</span>}
+                </Link>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
+          {view !== "closed" && (
+            <Filter label="Status" id="filter-status" value={search.status} options={search.status === "closed" ? STATUSES : OPEN_STATUSES} labels={statusLabel} onChange={(status) => setSearch({ status })} />
+          )}
           <Filter label="Severity" id="filter-severity" value={search.severity} options={SEVERITIES} labels={severityLabel} onChange={(severity) => setSearch({ severity })} />
           <Filter label="Case Type" id="filter-type" value={search.caseType} options={CASE_TYPES} labels={caseTypeLabel} onChange={(caseType) => setSearch({ caseType })} />
           <Filter label="Tag" id="filter-tag" value={search.tag} options={tagOptions} labels={tagLabels} onChange={(tag) => setSearch({ tag })} />
+          <Filter label="Access" id="filter-access" value={search.access} options={ACCESS} labels={accessLabel} onChange={(access) => setSearch({ access })} />
+          {filtered && (
+            <Button variant="ghost" size="sm" onClick={() => setSearch(noFilters)}>
+              <XIcon aria-hidden />
+              Clear
+            </Button>
+          )}
         </div>
       </div>
-      <Card className="py-0">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="pl-4">Case</TableHead>
-              <TableHead>Title</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Severity</TableHead>
-              <TableHead>Case Type</TableHead>
-              <TableHead>Assignee</TableHead>
-              <TableHead className="pr-4">Updated</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {cases.data?.cases.map((c) => (
-              <TableRow key={c.number}>
-                <TableCell className="pl-4 font-mono text-xs text-muted-foreground">
-                  <Link to="/cases/$number" params={{ number: String(c.number) }} className="hover:underline">
-                    {caseRef(c.number)}
-                  </Link>
-                </TableCell>
-                <TableCell className="whitespace-normal">
-                  <span className="flex items-center gap-1.5">
-                    {c.restricted && <LockIcon className="size-3.5 shrink-0" role="img" aria-label="Restricted" />}
-                    <Link to="/cases/$number" params={{ number: String(c.number) }} className="font-medium hover:underline">
+
+      {cases.isError && (
+        <Alert variant="destructive">
+          <AlertTitle>Cases couldn't be loaded</AlertTitle>
+          <AlertDescription>
+            {rows
+              ? "The list below may be out of date. Try again, or reload the page."
+              : "No Cases are shown because the list didn't load, not because there are none. Try again, or reload the page."}
+          </AlertDescription>
+          <AlertAction>
+            <Button variant="outline" size="sm" disabled={cases.isFetching} onClick={() => cases.refetch()}>
+              Try again
+            </Button>
+          </AlertAction>
+        </Alert>
+      )}
+
+      {!(cases.isError && !rows) && (
+        <Card className="py-0">
+          <Table ref={table}>
+            <TableCaption className="sr-only">
+              {`${viewLabel[view]}, ${filtered ? "filtered, " : ""}sorted by ${sortLabel[sort]}, ${order === "desc" ? "descending" : "ascending"}`}
+            </TableCaption>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead scope="col" className="w-20 pl-4" {...sortable("number", "Case")} />
+                <TableHead scope="col" className="w-28" {...sortable("severity", "Severity")} />
+                <TableHead scope="col">Title</TableHead>
+                <TableHead scope="col">Status</TableHead>
+                <TableHead scope="col">Assignee</TableHead>
+                <TableHead scope="col" className="pr-4" {...sortable("updated", "Updated")} />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {cases.isPending &&
+                Array.from({ length: 6 }, (_, i) => (
+                  <TableRow key={i} className="hover:bg-transparent" aria-hidden>
+                    <TableCell className="pl-4"><Skeleton className="h-4 w-10" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-64" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                    <TableCell className="pr-4"><Skeleton className="h-4 w-14" /></TableCell>
+                  </TableRow>
+                ))}
+              {cases.isPending && (
+                <TableRow className="sr-only">
+                  <TableCell colSpan={6} role="status">Loading Cases…</TableCell>
+                </TableRow>
+              )}
+              {rows?.map((c) => (
+                <TableRow
+                  key={c.number}
+                  className={cn(
+                    "cursor-pointer [&>td]:align-baseline transition-colors duration-700 focus-within:bg-muted/50",
+                    justChanged.has(c.number) && "bg-muted duration-0",
+                  )}
+                  onClick={(e) => {
+                    if ((e.target as HTMLElement).closest("a, button") || window.getSelection()?.toString()) return;
+                    openCase(c.number);
+                  }}
+                >
+                  <TableCell className="pl-4 font-mono text-xs text-muted-foreground">{caseRef(c.number)}</TableCell>
+                  <TableCell>
+                    <SeverityBadge severity={c.severity} />
+                  </TableCell>
+                  <TableCell className="min-w-56 whitespace-normal">
+                    <Link
+                      to="/cases/$number"
+                      params={{ number: String(c.number) }}
+                      data-case-link
+                      className="rounded-sm font-medium outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+                    >
                       {c.title}
                     </Link>
-                  </span>
-                  {c.tags.length > 0 && (
-                    <span className="mt-1 flex flex-wrap gap-1">
+                    <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                      {c.restricted && (
+                        <Badge variant="outline">
+                          <LockIcon aria-hidden />
+                          Restricted
+                        </Badge>
+                      )}
+                      {c.guests !== null && c.guests > 0 && (
+                        <Badge variant="outline" title="Guests from outside the Organization can see this Case">
+                          <UsersIcon aria-hidden />
+                          {plural(c.guests, "Guest", "Guests")}
+                        </Badge>
+                      )}
+                      <span>{caseTypeLabel[c.caseType]}</span>
+                      {c.alerts > 0 && <span>{plural(c.alerts, "Alert", "Alerts")}</span>}
                       {c.tags.map((t) => (
-                        <span key={t} className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                        <Badge key={t} variant="secondary">
                           {tagLabel(t)}
-                        </span>
+                        </Badge>
                       ))}
                     </span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <StatusBadge status={c.status} resolution={c.resolution} />
-                </TableCell>
-                <TableCell>
-                  <SeverityBadge severity={c.severity} />
-                </TableCell>
-                <TableCell>{caseTypeLabel[c.caseType]}</TableCell>
-                <TableCell className={cn(!c.assignee && "text-muted-foreground")}>{c.assignee?.name ?? "Unassigned"}</TableCell>
-                <TableCell className="pr-4 text-muted-foreground">{ago(c.updatedAt)}</TableCell>
-              </TableRow>
-            ))}
-            {cases.data?.cases.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
-                  No Cases here.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </Card>
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status={c.status} resolution={c.resolution} />
+                  </TableCell>
+                  <TableCell className={cn(!c.assignee && "text-muted-foreground")}>{c.assignee?.name ?? "Unassigned"}</TableCell>
+                  <TableCell className="pr-4 text-muted-foreground tabular-nums" title={exactTime(c.updatedAt)}>
+                    {when(c.updatedAt)}
+                  </TableCell>
+                </TableRow>
+              ))}
+              {rows?.length === 0 && (
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={6} className="py-10 text-center whitespace-normal">
+                    <EmptyState view={view} filtered={filtered} unassigned={counts?.unassigned ?? 0} onClear={() => setSearch(noFilters)} />
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
+
+      {rows && rows.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          <p role="status">
+            {total > shown
+              ? `Showing the first ${shown} of ${total} Cases. Narrow the filters to see the rest.`
+              : plural(shown, "Case", "Cases")}
+          </p>
+          <p>
+            <kbd className="font-sans font-medium text-foreground">j</kbd> and <kbd className="font-sans font-medium text-foreground">k</kbd> move between
+            Cases, <kbd className="font-sans font-medium text-foreground">Enter</kbd> opens one
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** What an empty list means here, and where to go next. */
+function EmptyState({ view, filtered, unassigned, onClear }: { view: CaseListView; filtered: boolean; unassigned: number; onClear: () => void }) {
+  if (filtered) {
+    return (
+      <div className="grid justify-items-center gap-2">
+        <p className="font-medium">No Cases match these filters</p>
+        <Button variant="outline" size="sm" onClick={onClear}>
+          Clear filters
+        </Button>
+      </div>
+    );
+  }
+  const message: Record<CaseListView, { title: string; next?: React.ReactNode }> = {
+    mine: {
+      title: "No open Cases are assigned to you",
+      next:
+        unassigned > 0 ? (
+          <Link to="/" search={{ view: "unassigned" }} className="underline underline-offset-4 hover:text-foreground">
+            {`See ${plural(unassigned, "Unassigned Case", "Unassigned Cases")}`}
+          </Link>
+        ) : undefined,
+    },
+    unassigned: { title: "Every open Case has an Assignee" },
+    open: {
+      title: "No open Cases",
+      next: (
+        <Fragment>
+          Open one with Open Case, or from the{" "}
+          <Link to="/alerts" className="underline underline-offset-4 hover:text-foreground">
+            Alert queue
+          </Link>
+          .
+        </Fragment>
+      ),
+    },
+    closed: { title: "No Cases have been Closed yet" },
+  };
+  const { title, next } = message[view];
+  return (
+    <div className="grid justify-items-center gap-1">
+      <p className="font-medium">{title}</p>
+      {next && <p className="text-muted-foreground">{next}</p>}
     </div>
   );
 }
@@ -181,7 +396,7 @@ function Filter<T extends string>({
   onChange: (value: T | undefined) => void;
 }) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1.5">
       <Label htmlFor={id} className="text-xs font-normal text-muted-foreground">
         {label}
       </Label>
