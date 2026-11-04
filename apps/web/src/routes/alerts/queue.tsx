@@ -398,7 +398,8 @@ export function AlertQueuePage() {
                   data-testid={`alert-${a.externalId}`}
                   data-alert-id={a.id}
                   data-state={selected.has(a.id) ? "selected" : undefined}
-                  className={cn("focus-within:bg-muted/50", showing === a.id && "bg-muted")}
+                  // A half-strength fill: muted text on the full grey wash falls short of 4.5:1.
+                  className={cn("focus-within:bg-muted/50 data-[state=selected]:bg-muted/50", showing === a.id && "bg-muted/50")}
                 >
                   <TableCell className="pl-4">
                     <Checkbox
@@ -714,7 +715,7 @@ function AlertPanel({ id, onClose, onAct }: { id: string; onClose: () => void; o
           </Badge>
         </div>
         <div>
-          <h2 className="text-base font-semibold">{a.title}</h2>
+          <h2 className="text-base font-semibold text-balance">{a.title}</h2>
           <p className="text-xs text-muted-foreground">
             <span className="font-mono">{a.externalId}</span> · {alertKindLabel[a.kind]} · {a.integration.name}
           </p>

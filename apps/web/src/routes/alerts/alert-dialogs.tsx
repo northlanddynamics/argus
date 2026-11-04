@@ -3,11 +3,14 @@ import { useNavigate } from "@tanstack/react-router";
 import { type FormEvent, type ReactNode, useState } from "react";
 import { RichTextEditor } from "@/components/rich-text-editor";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Field, FieldContent, FieldDescription, FieldLabel, FieldLegend, FieldSet, FieldTitle } from "@/components/ui/field";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import {
   type AlertDetail,
@@ -33,7 +36,6 @@ import {
   severityLabel,
   statusLabel,
 } from "@/lib/cases";
-import { cn } from "@/lib/utils";
 
 /** What a bulk action did, for the queue's notice: `verb` is "attached to C-12", "dismissed"…; `note` adds what else follows from it. */
 export type BulkOutcome = BulkResult & { verb: string; note?: string };
@@ -58,17 +60,19 @@ function useOpenCases(enabled: boolean, filter: string) {
   return { ...cases, matching };
 }
 
-/** A list of Cases to choose one from, as radio cards. */
+/** Cases to choose one from, as radio cards; `children` adds choices of its own to the same group. */
 function CasePicker({
   enabled,
   value,
   onChange,
   exclude,
+  children,
 }: {
   enabled: boolean;
-  value: number | null;
-  onChange: (number: number) => void;
+  value: string | null;
+  onChange: (value: string) => void;
   exclude?: number;
+  children?: ReactNode;
 }) {
   const [filter, setFilter] = useState("");
   const cases = useOpenCases(enabled, filter);
@@ -77,29 +81,28 @@ function CasePicker({
     <div className="grid gap-2">
       <Label htmlFor="case-filter">Find a Case</Label>
       <Input id="case-filter" placeholder="C-1041 or words in the title" value={filter} onChange={(e) => setFilter(e.target.value)} />
-      <div className="grid max-h-64 gap-2 overflow-y-auto" role="radiogroup" aria-label="Case">
+      <RadioGroup aria-label="Case" value={value ?? ""} onValueChange={onChange} className="max-h-64 overflow-y-auto p-0.5">
         {shown?.map((c) => (
-          <label
-            key={c.number}
-            className={cn(
-              "flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2 text-sm",
-              value === c.number && "border-primary ring-1 ring-primary",
-            )}
-          >
-            <input type="radio" name="case" className="mt-1" checked={value === c.number} onChange={() => onChange(c.number)} />
-            <span className="grid">
-              <span>
-                <span className="font-semibold">{caseRef(c.number)}</span> {c.title}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {statusLabel[c.status]} · {severityLabel[c.severity]}
-                {c.assignee && ` · ${c.assignee.name}`}
-              </span>
-            </span>
-          </label>
+          <FieldLabel key={c.number} htmlFor={`case-${c.number}`}>
+            <Field orientation="horizontal">
+              <RadioGroupItem value={String(c.number)} id={`case-${c.number}`} />
+              <FieldContent>
+                <FieldTitle>
+                  <span className="font-mono text-xs text-muted-foreground">{caseRef(c.number)}</span> {c.title}
+                </FieldTitle>
+                <FieldDescription className="text-xs">
+                  {statusLabel[c.status]} · {severityLabel[c.severity]}
+                  {c.assignee && ` · ${c.assignee.name}`}
+                </FieldDescription>
+              </FieldContent>
+            </Field>
+          </FieldLabel>
         ))}
+        {cases.isPending && enabled && <p className="text-sm text-muted-foreground">Loading open Cases…</p>}
+        {cases.isError && <p className="text-sm text-destructive">Couldn't load Cases. Close this and try again.</p>}
         {shown?.length === 0 && <p className="text-sm text-muted-foreground">No open Case matches.</p>}
-      </div>
+        {children}
+      </RadioGroup>
     </div>
   );
 }
@@ -123,7 +126,7 @@ async function failure(res: Response, fallback: string) {
 }
 
 function Note({ children }: { children: ReactNode }) {
-  return <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">{children}</p>;
+  return <p className="rounded-md border px-3 py-2 text-xs text-muted-foreground">{children}</p>;
 }
 
 /** Posts a bulk action and reads its result; anything but a result is an error. */
@@ -294,7 +297,7 @@ export function AttachAlertsDialog({
             if (target) attach.mutate(target);
           }}
         >
-          <CasePicker enabled={open} value={target} onChange={setTarget} />
+          <CasePicker enabled={open} value={target === null ? null : String(target)} onChange={(v) => setTarget(Number(v))} />
           <Note>Alerts already attached elsewhere are moved; both Cases’ Audit Logs record it.</Note>
           <Failure error={attach.error} />
           <DialogFooter>
@@ -358,21 +361,19 @@ export function DismissAlertsDialog({
             if (reason) dismiss.mutate(reason);
           }}
         >
-          <fieldset className="grid gap-2">
-            <legend className="mb-2 text-sm font-medium">Dismissal Reason (required)</legend>
-            {DISMISSAL_REASONS.map((r) => (
-              <label
-                key={r}
-                className={cn(
-                  "flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm",
-                  reason === r && "border-primary ring-1 ring-primary",
-                )}
-              >
-                <input type="radio" name="reason" value={r} checked={reason === r} onChange={() => setReason(r)} />
-                {dismissalReasonLabel[r]}
-              </label>
-            ))}
-          </fieldset>
+          <FieldSet>
+            <FieldLegend variant="label">Dismissal Reason (required)</FieldLegend>
+            <RadioGroup value={reason ?? ""} onValueChange={(v) => setReason(v as DismissalReason)} className="sm:grid-cols-2">
+              {DISMISSAL_REASONS.map((r) => (
+                <FieldLabel key={r} htmlFor={`dismissal-${r}`}>
+                  <Field orientation="horizontal">
+                    <RadioGroupItem value={r} id={`dismissal-${r}`} />
+                    <FieldTitle>{dismissalReasonLabel[r]}</FieldTitle>
+                  </Field>
+                </FieldLabel>
+              ))}
+            </RadioGroup>
+          </FieldSet>
           <div className="grid gap-2">
             <Label htmlFor="dismiss-comment">Comment (optional)</Label>
             <Textarea id="dismiss-comment" maxLength={2000} value={comment} onChange={(e) => setComment(e.target.value)} />
@@ -445,25 +446,33 @@ export function MoveAlertDialog({
           }}
         >
           {current && (
-            <p className="text-sm">
-              Currently on{" "}
-              <span className="rounded-full border px-2 py-0.5 text-xs">
-                {caseRef(current.number)} {current.title}
-              </span>
+            <p className="flex flex-wrap items-center gap-1.5 text-sm">
+              Currently on
+              <Badge variant="outline">
+                <span className="font-mono">{caseRef(current.number)}</span> {current.title}
+              </Badge>
             </p>
           )}
-          {!detachOnly && <CasePicker enabled={open} value={typeof target === "number" ? target : null} onChange={setTarget} exclude={current?.number} />}
-          <label
-            className={cn(
-              "flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm",
-              target === "detach" && "border-primary ring-1 ring-primary",
-            )}
-          >
-            <input type="radio" name="case" checked={target === "detach"} onChange={() => setTarget("detach")} />
-            <span>
-              <span className="font-semibold">Detach</span> — return to the queue as New
-            </span>
-          </label>
+          {detachOnly ? (
+            <p className="text-sm">It goes back to the Alert queue as New.</p>
+          ) : (
+            <CasePicker
+              enabled={open}
+              value={target === null ? null : String(target)}
+              onChange={(v) => setTarget(v === "detach" ? "detach" : Number(v))}
+              exclude={current?.number}
+            >
+              <FieldLabel htmlFor="move-detach">
+                <Field orientation="horizontal">
+                  <RadioGroupItem value="detach" id="move-detach" />
+                  <FieldContent>
+                    <FieldTitle>Detach</FieldTitle>
+                    <FieldDescription className="text-xs">Back to the Alert queue as New, on no Case</FieldDescription>
+                  </FieldContent>
+                </Field>
+              </FieldLabel>
+            </CasePicker>
+          )}
           <Note>Both Cases’ Audit Logs record a move; a detachment is recorded in this Case’s.</Note>
           <Failure error={move.error} />
           <DialogFooter>
