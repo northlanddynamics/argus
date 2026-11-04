@@ -1,18 +1,21 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { useState } from "react";
+import { XIcon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { SeverityBadge } from "@/components/case-badges";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   ago,
   ALERT_STATUSES,
+  type AlertKind,
   alertKindLabel,
   type AlertDetail,
   alertQuery,
@@ -25,9 +28,10 @@ import {
   integrationsQuery,
 } from "@/lib/alerts";
 import { api } from "@/lib/api";
-import { caseRef, SEVERITIES, type Severity, severityLabel } from "@/lib/cases";
+import { type CaseType, caseRef, SEVERITIES, type Severity, severityLabel } from "@/lib/cases";
 import { assetTypeLabel, observableTypeLabel, shownObservable } from "@/lib/observables";
 import { cn } from "@/lib/utils";
+import { exactTime } from "@/lib/when";
 import {
   AttachAlertsDialog,
   type BulkOutcome,
@@ -49,7 +53,65 @@ export const validateAlertQueueSearch = (search: Record<string, unknown>): Alert
   alert: typeof search.alert === "string" && search.alert ? search.alert : undefined,
 });
 
-const time = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+/** When an Alert arrived, compactly: "Nov 3, 14:02". */
+const received = (iso: string) => new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
+type BulkKind = "open" | "attach" | "dismiss";
+/** An Alert as the Member saw it when they picked it for an action. */
+type Picked = { version: number; severity: Severity; kind: AlertKind; externalId: string; title: string };
+type AlertRow = { id: string } & Picked;
+const pickedOf = (a: AlertRow): Picked => ({ version: a.version, severity: a.severity, kind: a.kind, externalId: a.externalId, title: a.title });
+/** The Case Type a Case opened from an Alert of each kind most often is; the Member can change it. */
+const caseTypeFor: Record<AlertKind, CaseType> = { epp: "malware", idp: "account_compromise", mobile: "malware" };
+const shortcut = { o: "open", a: "attach", d: "dismiss" } as const;
+const noFilters = { status: undefined, severity: undefined, integration: undefined };
+/**
+ * Host / user and Received give way when the queue is narrow (the Alert panel is open). Their cells
+ * stay in the row, emptied and without padding, so the cells after them keep their columns.
+ */
+const narrowHidden = "overflow-hidden px-0 @3xl:px-2";
+
+/**
+ * Keyboard triage: j and k move between Alerts, x selects the one in focus, Escape closes the
+ * Alert panel, and with Alerts selected o, a and d open a Case, attach or dismiss them.
+ */
+function useQueueKeys(
+  table: React.RefObject<HTMLTableElement | null>,
+  on: { toggle: (id: string) => void; act: (kind: BulkKind) => void; close: (() => void) | null },
+) {
+  const handlers = useRef(on);
+  useEffect(() => {
+    handlers.current = on;
+  });
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("input:not([type=checkbox]), textarea, select, [contenteditable=true], [role=dialog]")) return;
+      const titles = [...(table.current?.querySelectorAll<HTMLButtonElement>("button[data-alert-title]") ?? [])];
+      const row = target?.closest<HTMLElement>("tr[data-alert-id]");
+      if (e.key === "j" || e.key === "k") {
+        if (!titles.length) return;
+        const at = row ? titles.findIndex((b) => b.closest("tr") === row) : -1;
+        const next = at === -1 ? 0 : Math.min(Math.max(at + (e.key === "j" ? 1 : -1), 0), titles.length - 1);
+        e.preventDefault();
+        titles[next]?.focus();
+        titles[next]?.closest("tr")?.scrollIntoView({ block: "nearest" });
+      } else if (e.key === "x" && row) {
+        e.preventDefault();
+        handlers.current.toggle(row.dataset.alertId!);
+      } else if (e.key === "Escape" && handlers.current.close) {
+        e.preventDefault();
+        handlers.current.close();
+      } else if (e.key in shortcut) {
+        e.preventDefault();
+        handlers.current.act(shortcut[e.key as keyof typeof shortcut]);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [table]);
+}
 
 /** The Alert queue: Alerts from the Organization's Integrations, newest first, refreshing live. */
 export function AlertQueuePage() {
@@ -60,46 +122,113 @@ export function AlertQueuePage() {
 
   const integrations = useQuery(integrationsQuery);
   const alerts = useQuery({
-    queryKey: [...alertsKey, { ...search, status }],
+    // Not keyed on the Alert shown in the panel: opening one mustn't reload the queue.
+    queryKey: [...alertsKey, { status, severity: search.severity, integration: search.integration }],
     queryFn: async () => {
       const res = await api.alerts.$get({
         query: { ...(status !== "any" && { status }), severity: search.severity, integration: search.integration },
       });
       if (!res.ok) throw new Error("Could not load Alerts");
-      return (await res.json()).alerts;
+      return res.json();
     },
   });
+  const limit = alerts.data?.limit ?? null;
 
-  /** Selected Alerts: id → the version shown when it was selected, so changes since are caught. */
-  const [selected, setSelected] = useState<Map<string, number>>(new Map());
+  /** Selected Alerts: id → the Alert as shown when it was selected, so changes since are caught. */
+  const [selected, setSelected] = useState<Map<string, Picked>>(new Map());
   const [outcome, setOutcome] = useState<BulkOutcome | null>(null);
   const showing = search.alert ?? null;
   const setShowing = (alert: string | null) => setSearch({ alert: alert ?? undefined });
-  const [dialog, setDialog] = useState<"open" | "attach" | "dismiss" | null>(null);
+  const filtered = status !== "new" || search.severity !== undefined || search.integration !== undefined;
+  /** Changes the filters; the last action's notice is about Alerts that may no longer be shown, so it goes. */
+  const filter = (next: Partial<AlertQueueSearch>) => {
+    setOutcome(null);
+    setSearch(next);
+  };
+  /** The bulk action being confirmed, and the Alerts it acts on: the selection, or the one in the panel. */
+  // Kept after the dialog closes (`open` false): its outcome arrives then, and is told about these Alerts.
+  const [dialog, setDialog] = useState<{ kind: BulkKind; picked: Map<string, Picked>; open: boolean } | null>(null);
+  const closeDialog = (open: boolean) => !open && setDialog((d) => d && { ...d, open: false });
+  /** Set when an action has finished: its controls are gone, so focus goes to its notice rather than back to them. */
+  const justDone = useRef(false);
+  const afterDialog = (event: Event) => {
+    if (!justDone.current) return;
+    justDone.current = false;
+    event.preventDefault();
+    document.getElementById("alert-outcome")?.focus();
+  };
+  const table = useRef<HTMLTableElement>(null);
+  /** The row last checked or unchecked, where a shift-click range starts. */
+  const anchor = useRef<number | null>(null);
 
-  const rows = alerts.data ?? [];
-  const selection = [...selected].map(([id, version]) => ({ id, version }));
+  const loaded = alerts.data?.alerts;
+  const rows = loaded ?? [];
+  /** Integrations that aren't bringing Alerts in: paused, disconnected or in error. */
+  const unhealthy = integrations.data?.filter((i) => i.paused || i.health === "error" || i.health === "disconnected") ?? [];
   const allSelected = rows.length > 0 && rows.every((a) => selected.has(a.id));
-  const toggle = (a: { id: string; version: number }, on: boolean) =>
+  /** Selected Alerts the current filters don't show. */
+  const hiddenSelected = [...selected.keys()].filter((id) => !rows.some((a) => a.id === id)).length;
+  const setPicked = (list: readonly AlertRow[], on: boolean) =>
     setSelected((prev) => {
       const next = new Map(prev);
-      if (on) next.set(a.id, a.version);
-      else next.delete(a.id);
+      for (const a of list) {
+        if (on) next.set(a.id, pickedOf(a));
+        else next.delete(a.id);
+      }
       return next;
     });
-  const severities = rows.filter((a) => selected.has(a.id)).map((a) => a.severity);
-  const highest = SEVERITIES.find((s) => severities.includes(s)) ?? "medium";
+  /** Checks or unchecks the Alert in row `index`; with Shift, every row from the last one checked. */
+  const check = (index: number, on: boolean, range: boolean) => {
+    const from = range && anchor.current !== null ? Math.min(anchor.current, index) : index;
+    const to = range && anchor.current !== null ? Math.max(anchor.current, index) : index;
+    setPicked(rows.slice(from, to + 1), on);
+    anchor.current = index;
+  };
+  const act = (kind: BulkKind, picked = selected) => {
+    if (picked.size) setDialog({ kind, picked, open: true });
+  };
+  const dialogSelection = [...(dialog?.picked ?? [])].map(([id, p]) => ({ id, version: p.version }));
+  const dialogPicked = [...(dialog?.picked.values() ?? [])];
+  const highest = SEVERITIES.find((s) => dialogPicked.some((p) => p.severity === s)) ?? "medium";
+  // The most serious Alert names the Case to start with.
+  const lead = dialogPicked.find((p) => p.severity === highest);
+  const suggested = {
+    title: lead ? (dialogPicked.length > 1 ? `${lead.title} and ${dialogPicked.length - 1} more` : lead.title) : "",
+    caseType: lead ? caseTypeFor[lead.kind] : ("malware" as const),
+  };
   const done = (result: BulkOutcome) => {
-    setOutcome(result);
-    setSelected(new Map());
+    const known = dialog?.picked ?? new Map<string, Picked>();
+    // Name each refused Alert as the Member saw it, even one the server no longer shows them.
+    const refused = result.refused.map((r) => ({ ...r, externalId: r.externalId ?? known.get(r.id)?.externalId ?? null, title: r.title ?? known.get(r.id)?.title ?? null }));
+    setOutcome({ ...result, refused });
+    justDone.current = true;
+    setSelected((prev) => {
+      const next = new Map(prev);
+      for (const id of known.keys()) next.delete(id);
+      return next;
+    });
   };
   /** Selects the refused Alerts again, as they are now. */
   const reselect = () => {
     if (!outcome) return;
     const refused = new Set(outcome.refused.map((r) => r.id));
-    setSelected(new Map(rows.filter((a) => refused.has(a.id)).map((a) => [a.id, a.version])));
+    setSelected(new Map(rows.filter((a) => refused.has(a.id)).map((a) => [a.id, pickedOf(a)])));
     setOutcome(null);
   };
+  const closePanel = () => {
+    const id = showing;
+    setShowing(null);
+    // Back to the row it was opened from, so j and k carry on from there.
+    requestAnimationFrame(() => table.current?.querySelector<HTMLButtonElement>(`button[data-alert-title="${id}"]`)?.focus());
+  };
+  useQueueKeys(table, {
+    toggle: (id) => {
+      const index = rows.findIndex((a) => a.id === id);
+      if (index !== -1) check(index, !selected.has(id), false);
+    },
+    act: (kind) => act(kind),
+    close: showing ? closePanel : null,
+  });
 
   return (
     <div className="mx-auto grid w-full grid-cols-1 max-w-6xl gap-4">
@@ -108,218 +237,337 @@ export function AlertQueuePage() {
         <ul className="text-sm text-muted-foreground" aria-label="Integrations">
           {integrations.data?.map((i) => (
             <li key={i.id}>
-              {i.name} · {healthWord(i).toLowerCase()} · {i.lastEventAt ? `last event ${ago(i.lastEventAt)}` : "no events yet"}
+              {i.name}: {healthWord(i)}, {i.lastEventAt ? `last event ${ago(i.lastEventAt)}` : "no events yet"}
             </li>
           ))}
-          {integrations.data?.length === 0 && <li>No Integrations yet: an Admin adds one in Settings.</li>}
+          {integrations.data?.length === 0 && (
+            <li>
+              No Integrations yet: an Admin adds one in{" "}
+              <Link to="/settings/integrations" className="underline underline-offset-4 hover:text-foreground">
+                Settings
+              </Link>
+              .
+            </li>
+          )}
         </ul>
       </div>
-      <Card>
-        <CardContent className="grid items-end gap-4 sm:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
-          <div className="grid gap-2">
-            <Label htmlFor="alert-status">Alert Status</Label>
-            <NativeSelect id="alert-status" value={status} onChange={(e) => setSearch({ status: e.target.value as AlertStatus | "any" })}>
-              <NativeSelectOption value="any">Any</NativeSelectOption>
-              {ALERT_STATUSES.map((s) => (
-                <NativeSelectOption key={s} value={s}>
-                  {alertStatusLabel[s]}
-                </NativeSelectOption>
+      {unhealthy.length > 0 && (
+        <Alert className="border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80">
+          <AlertTitle>
+            {unhealthy.length === 1 ? `${unhealthy[0]!.name} isn't bringing in Alerts` : `${unhealthy.length} Integrations aren't bringing in Alerts`}
+          </AlertTitle>
+          <AlertDescription>
+            <ul>
+              {unhealthy.map((i) => (
+                <li key={i.id}>
+                  {i.name}: {healthWord(i)}
+                  {i.healthDetail && ` (${i.healthDetail})`}
+                  {i.lastEventAt ? `, last event ${ago(i.lastEventAt)}` : ", no events yet"}.
+                </li>
               ))}
-            </NativeSelect>
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="alert-severity">Severity</Label>
-            <NativeSelect
-              id="alert-severity"
-              value={search.severity ?? ""}
-              onChange={(e) => setSearch({ severity: (e.target.value || undefined) as Severity | undefined })}
-            >
-              <NativeSelectOption value="">Any</NativeSelectOption>
-              {SEVERITIES.map((s) => (
-                <NativeSelectOption key={s} value={s}>
-                  {severityLabel[s]}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="alert-integration">Integration</Label>
-            <NativeSelect
-              id="alert-integration"
-              value={search.integration ?? ""}
-              onChange={(e) => setSearch({ integration: e.target.value || undefined })}
-            >
-              <NativeSelectOption value="">Any</NativeSelectOption>
-              {integrations.data?.map((i) => (
-                <NativeSelectOption key={i.id} value={i.id}>
-                  {i.name}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            {alerts.data && `${alerts.data.length} ${status === "any" ? "Alerts" : alertStatusLabel[status]} · new Alerts appear live`}
-          </p>
-        </CardContent>
-      </Card>
-      {outcome && <OutcomeNotice outcome={outcome} onReselect={reselect} onDismiss={() => setOutcome(null)} />}
-      {selected.size > 0 && (
-        <div
-          className="flex flex-wrap items-center gap-2 rounded-lg bg-foreground px-4 py-3 text-background"
-          role="toolbar"
-          aria-label="Selected Alerts"
-        >
-          <span className="mr-2 font-semibold">{selected.size} selected</span>
-          <Button size="sm" onClick={() => setDialog("open")}>
-            Open Case
-          </Button>
-          <Button size="sm" variant="secondary" onClick={() => setDialog("attach")}>
-            Attach to Case…
-          </Button>
-          <Button size="sm" variant="secondary" onClick={() => setDialog("dismiss")}>
-            Dismiss…
-          </Button>
-          <Button size="sm" variant="secondary" className="ml-auto" onClick={() => setSelected(new Map())}>
-            Clear selection
-          </Button>
-        </div>
+            </ul>
+            <p>
+              New detections may be missing from the queue until it's running again. An Admin can check it in{" "}
+              <Link to="/settings/integrations" className="underline underline-offset-4">
+                Settings
+              </Link>
+              .
+            </p>
+          </AlertDescription>
+        </Alert>
       )}
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
+        <Filter
+          label="Alert Status"
+          id="alert-status"
+          value={status}
+          options={[...ALERT_STATUSES, "any"] as const}
+          labels={{ ...alertStatusLabel, any: "Any" }}
+          onChange={(next) => filter({ status: next === "new" ? undefined : next })}
+        />
+        <Filter
+          label="Severity"
+          id="alert-severity"
+          value={search.severity ?? ""}
+          options={["", ...SEVERITIES] as const}
+          labels={{ "": "Any", ...severityLabel }}
+          onChange={(next) => filter({ severity: next || undefined })}
+        />
+        {((integrations.data?.length ?? 0) > 1 || search.integration) && (
+          <Filter
+            label="Integration"
+            id="alert-integration"
+            value={search.integration ?? ""}
+            options={["", ...(integrations.data?.map((i) => i.id) ?? [])]}
+            labels={{ "": "Any", ...Object.fromEntries(integrations.data?.map((i) => [i.id, i.name]) ?? []) }}
+            onChange={(next) => filter({ integration: next || undefined })}
+          />
+        )}
+      </div>
+      {outcome && <OutcomeNotice outcome={outcome} onReselect={reselect} onDismiss={() => setOutcome(null)} />}
       <OpenCaseFromAlertsDialog
-        open={dialog === "open"}
-        onOpenChange={(o) => setDialog(o ? "open" : null)}
-        selection={selection}
+        open={dialog?.open === true && dialog.kind === "open"}
+        onOpenChange={closeDialog}
+        onCloseAutoFocus={afterDialog}
+        selection={dialogSelection}
         highest={highest}
+        suggested={suggested}
         onDone={done}
       />
-      <AttachAlertsDialog open={dialog === "attach"} onOpenChange={(o) => setDialog(o ? "attach" : null)} selection={selection} onDone={done} />
-      <DismissAlertsDialog
-        open={dialog === "dismiss"}
-        onOpenChange={(o) => setDialog(o ? "dismiss" : null)}
-        selection={selection}
-        onDone={done}
-      />
+      <AttachAlertsDialog open={dialog?.open === true && dialog.kind === "attach"} onOpenChange={closeDialog} onCloseAutoFocus={afterDialog} selection={dialogSelection} onDone={done} />
+      <DismissAlertsDialog open={dialog?.open === true && dialog.kind === "dismiss"} onOpenChange={closeDialog} onCloseAutoFocus={afterDialog} selection={dialogSelection} onDone={done} />
+      {alerts.isError && (
+        <Alert variant="destructive">
+          <AlertTitle>Alerts couldn't be loaded</AlertTitle>
+          <AlertDescription>
+            {loaded
+              ? "The queue below may be out of date. Try again, or reload the page."
+              : "No Alerts are shown because the queue didn't load, not because there are none. Try again, or reload the page."}
+          </AlertDescription>
+          <AlertAction>
+            <Button variant="outline" size="sm" disabled={alerts.isFetching} onClick={() => alerts.refetch()}>
+              Try again
+            </Button>
+          </AlertAction>
+        </Alert>
+      )}
       <div className={cn("grid items-start gap-4", showing && "lg:grid-cols-[1fr_340px]")}>
-      <Card>
-        <CardContent>
-          <Table>
+      {!(alerts.isError && !loaded) && (
+      <Card className="@container py-0">
+          <Table ref={table} className="table-fixed">
+            {/* Column widths live here, so the header row can turn into the selection toolbar without moving them. */}
+            <colgroup>
+              <col className="w-10" />
+              <col className="w-28" />
+              <col />
+              <col className="w-0 @3xl:w-40" />
+              <col className="w-0 @3xl:w-36" />
+              <col className="w-32" />
+            </colgroup>
             <TableHeader>
-              <TableRow>
-                <TableHead className="w-8">
+              <TableRow className={cn("hover:bg-transparent", selected.size > 0 && "bg-muted/50")}>
+                <TableHead scope="col" className="pl-4">
                   <Checkbox
                     aria-label="Select all Alerts shown"
                     checked={allSelected}
-                    onCheckedChange={(on) => {
-                      for (const a of rows) toggle(a, on === true);
-                    }}
+                    onCheckedChange={() => setPicked(rows, !allSelected)}
                   />
                 </TableHead>
-                <TableHead>Severity</TableHead>
-                <TableHead>Detection</TableHead>
-                <TableHead>Host / user</TableHead>
-                <TableHead>Integration</TableHead>
-                <TableHead>Received</TableHead>
-                <TableHead>Status</TableHead>
+                {selected.size > 0 ? (
+                  // While Alerts are selected, the header row holds what can be done with them.
+                  <TableHead colSpan={5} className="pr-4">
+                    <div role="toolbar" aria-label="Selected Alerts" className="flex items-center gap-2">
+                      <span className="mr-1 font-medium tabular-nums">
+                        {selected.size} selected
+                        {hiddenSelected > 0 && <span className="font-normal text-muted-foreground">{` · ${hiddenSelected} not shown by these filters`}</span>}
+                      </span>
+                      <Button size="sm" onClick={() => act("open")}>
+                        Open Case
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => act("attach")}>
+                        Attach to Case…
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => act("dismiss")}>
+                        Dismiss…
+                      </Button>
+                      <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setSelected(new Map())}>
+                        Clear selection
+                      </Button>
+                    </div>
+                  </TableHead>
+                ) : (
+                  <>
+                    <TableHead scope="col">Severity</TableHead>
+                    <TableHead scope="col">Alert</TableHead>
+                    <TableHead scope="col" className={narrowHidden}><span className="hidden @3xl:inline">Host / user</span></TableHead>
+                    <TableHead scope="col" className={narrowHidden}><span className="hidden @3xl:inline">Received</span></TableHead>
+                    <TableHead scope="col" className="pr-4">Alert Status</TableHead>
+                  </>
+                )}
               </TableRow>
             </TableHeader>
             <TableBody>
-              {alerts.data?.map((a) => (
+              {alerts.isPending &&
+                Array.from({ length: 8 }, (_, i) => (
+                  <TableRow key={i} className="hover:bg-transparent" aria-hidden>
+                    <TableCell className="pl-4"><Skeleton className="size-4" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-4/5" /></TableCell>
+                    <TableCell className={narrowHidden}><Skeleton className="hidden h-4 w-24 @3xl:block" /></TableCell>
+                    <TableCell className={narrowHidden}><Skeleton className="hidden h-4 w-16 @3xl:block" /></TableCell>
+                    <TableCell className="pr-4"><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
+                  </TableRow>
+                ))}
+              {alerts.isPending && (
+                <TableRow className="sr-only">
+                  <TableCell colSpan={6} role="status">Loading Alerts…</TableCell>
+                </TableRow>
+              )}
+              {loaded?.map((a, index) => (
                 <TableRow
                   key={a.id}
                   data-testid={`alert-${a.externalId}`}
+                  data-alert-id={a.id}
                   data-state={selected.has(a.id) ? "selected" : undefined}
-                  className={cn(showing === a.id && "bg-muted")}
+                  // A half-strength fill: muted text on the full grey wash falls short of 4.5:1.
+                  className={cn("focus-within:bg-muted/50 data-[state=selected]:bg-muted/50", showing === a.id && "bg-muted/50")}
                 >
-                  <TableCell>
+                  <TableCell className="pl-4">
                     <Checkbox
                       aria-label={`Select ${a.externalId}`}
                       checked={selected.has(a.id)}
-                      onCheckedChange={(on) => toggle(a, on === true)}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        check(index, !selected.has(a.id), e.shiftKey);
+                      }}
                     />
                   </TableCell>
                   <TableCell>
                     <SeverityBadge severity={a.severity} />
                   </TableCell>
                   <TableCell>
-                    <button type="button" className="text-left font-medium hover:underline" onClick={() => setShowing(a.id)}>
+                    <button
+                      type="button"
+                      data-alert-title={a.id}
+                      aria-current={showing === a.id ? "true" : undefined}
+                      className="block max-w-full truncate rounded-sm text-left font-medium outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+                      title={a.title}
+                      onClick={() => setShowing(a.id)}
+                    >
                       {a.title}
                     </button>
-                    <div className="font-mono text-xs text-muted-foreground">
-                      {a.externalId} · {alertKindLabel[a.kind]}
+                    <div className="truncate text-xs text-muted-foreground">
+                      <span className="font-mono">{a.externalId}</span> · {alertKindLabel[a.kind]}
+                      {(integrations.data?.length ?? 0) > 1 && ` · ${a.integration.name}`}
+                      <span className="@3xl:hidden">
+                        {(a.host ?? a.userName) && " · "}
+                        <span className="font-mono">{[a.host, a.userName].filter(Boolean).join(" / ")}</span>
+                      </span>
                     </div>
                   </TableCell>
-                  <TableCell>
-                    <div>{a.host ?? "—"}</div>
-                    {a.userName && <div className="text-xs text-muted-foreground">{a.userName}</div>}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{a.integration.name}</TableCell>
-                  <TableCell className="text-muted-foreground" title={new Date(a.receivedAt).toLocaleString()}>
-                    {time(a.receivedAt)}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{alertStatusLabel[a.status]}</Badge>
-                    {a.case && (
-                      <Link
-                        to="/cases/$number"
-                        params={{ number: String(a.case.number) }}
-                        className="ml-1 font-mono text-xs text-primary underline"
-                        title={a.case.title}
-                      >
-                        {caseRef(a.case.number)}
-                      </Link>
+                  <TableCell className={cn(narrowHidden, "font-mono text-xs")}>
+                    <div className="hidden @3xl:block">
+                    <div className="truncate" title={a.host ?? undefined}>
+                      {a.host ?? <span className="font-sans text-muted-foreground">No host</span>}
+                    </div>
+                    {a.userName && (
+                      <div className="truncate text-muted-foreground" title={a.userName}>
+                        {a.userName}
+                      </div>
                     )}
+                    </div>
+                  </TableCell>
+                  <TableCell className={cn(narrowHidden, "text-muted-foreground tabular-nums")} title={exactTime(a.receivedAt)}>
+                    <span className="hidden @3xl:inline">{received(a.receivedAt)}</span>
+                  </TableCell>
+                  <TableCell className="pr-4">
+                    <div className="flex flex-wrap items-center gap-1">
+                      <Badge variant="outline">{alertStatusLabel[a.status]}</Badge>
+                      {a.case && (
+                        <Link
+                          to="/cases/$number"
+                          params={{ number: String(a.case.number) }}
+                          className="font-mono text-xs underline underline-offset-4"
+                          title={a.case.title}
+                        >
+                          {caseRef(a.case.number)}
+                        </Link>
+                      )}
+                    </div>
                     {a.dismissalReason && (
-                      <div className="text-xs text-muted-foreground">{dismissalReasonLabel[a.dismissalReason]}</div>
+                      <div className="mt-0.5 truncate text-xs text-muted-foreground">{dismissalReasonLabel[a.dismissalReason]}</div>
                     )}
                   </TableCell>
                 </TableRow>
               ))}
-              {alerts.data?.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-muted-foreground">
-                    No Alerts here.
+              {loaded?.length === 0 && (
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={6} className="py-10 text-center whitespace-normal">
+                    {filtered ? (
+                      <div className="grid justify-items-center gap-2">
+                        <p className="font-medium">No Alerts match these filters</p>
+                        <Button variant="outline" size="sm" onClick={() => filter(noFilters)}>
+                          Show New Alerts
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="grid justify-items-center gap-1">
+                        <p className="font-medium">No New Alerts</p>
+                        <p className="text-muted-foreground">
+                          {integrations.data?.length
+                            ? "New detections appear here as they arrive."
+                            : "Alerts arrive here once an Admin adds an Integration."}
+                        </p>
+                      </div>
+                    )}
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
-        </CardContent>
       </Card>
-      {showing && <AlertPanel id={showing} onClose={() => setShowing(null)} />}
+      )}
+      {showing && <AlertPanel id={showing} onClose={closePanel} onAct={(kind, a) => act(kind, new Map([[a.id, pickedOf(a)]]))} />}
       </div>
+      {loaded && loaded.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <p role="status">
+          {limit !== null && loaded.length >= limit
+            ? `Showing the newest ${limit} Alerts. Narrow the filters to see older ones.`
+            : `${loaded.length} ${status === "any" ? (loaded.length === 1 ? "Alert" : "Alerts") : `${alertStatusLabel[status]} ${loaded.length === 1 ? "Alert" : "Alerts"}`}`}
+          {" · new Alerts appear live"}
+        </p>
+        <p>
+          <Key>j</Key> <Key>k</Key> move · <Key>x</Key> selects · <Key>Enter</Key> opens · <Key>Esc</Key> closes · with Alerts selected,{" "}
+          <Key>o</Key> opens a Case, <Key>a</Key> attaches, <Key>d</Key> dismisses
+        </p>
+        </div>
+      )}
     </div>
   );
 }
+
+const alertCount = (n: number) => `${n} ${n === 1 ? "Alert" : "Alerts"}`;
+
+const Key = ({ children }: { children: string }) => <kbd className="font-sans font-medium text-foreground">{children}</kbd>;
 
 /** After a bulk action: how many Alerts it applied to, and each one it refused and why. */
 function OutcomeNotice({ outcome, onReselect, onDismiss }: { outcome: BulkOutcome; onReselect: () => void; onDismiss: () => void }) {
   const total = outcome.applied.length + outcome.refused.length;
   if (!outcome.refused.length) {
     return (
-      <Alert role="status">
+      <Alert role="status" id="alert-outcome" tabIndex={-1} className="outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
         <AlertTitle>
-          {outcome.applied.length} {outcome.applied.length === 1 ? "Alert" : "Alerts"} {outcome.verb}
+          {alertCount(outcome.applied.length)} {outcome.verb}
         </AlertTitle>
-        <AlertDescription>
-          <Button size="sm" variant="outline" onClick={onDismiss}>
-            Dismiss notice
+        <AlertAction>
+          <Button size="sm" variant="ghost" onClick={onDismiss}>
+            Close
           </Button>
-        </AlertDescription>
+        </AlertAction>
       </Alert>
     );
   }
   return (
-    <Alert role="status" className="border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80">
+    <Alert
+      role="status"
+      id="alert-outcome"
+      tabIndex={-1}
+      className="outline-none focus-visible:ring-3 focus-visible:ring-ring/50 border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80"
+    >
       <AlertTitle>
-        {outcome.refused.length} of {total} {total === 1 ? "Alert was" : "Alerts were"} not {outcome.verb.split(";")[0]}
+        {outcome.refused.length} of {alertCount(total)} {outcome.refused.length === 1 ? "was" : "were"} not {outcome.verb}
       </AlertTitle>
       <AlertDescription className="grid gap-2">
         <ul className="text-sm">
           {outcome.refused.map((r) => (
             <li key={r.id}>
-              <span className="font-mono">{r.externalId ?? r.id}</span> {r.detail}
+              {r.title && <span className="font-medium">{r.title} </span>}
+              <span className="font-mono text-xs">({r.externalId ?? r.id})</span> {r.detail}
             </li>
           ))}
         </ul>
+        {outcome.note && <p className="text-sm">{outcome.note}</p>}
         {outcome.applied.length > 0 && (
           <p className="text-sm">
             The other {outcome.applied.length} {outcome.applied.length === 1 ? "was" : "were"} {outcome.verb}.
@@ -327,10 +575,10 @@ function OutcomeNotice({ outcome, onReselect, onDismiss }: { outcome: BulkOutcom
         )}
         <div className="flex gap-2">
           <Button size="sm" variant="outline" onClick={onReselect}>
-            Select the {outcome.refused.length} again
+            Select {outcome.refused.length === 1 ? "it" : `these ${outcome.refused.length}`} again
           </Button>
-          <Button size="sm" variant="outline" onClick={onDismiss}>
-            Dismiss notice
+          <Button size="sm" variant="ghost" onClick={onDismiss}>
+            Close
           </Button>
         </div>
       </AlertDescription>
@@ -338,17 +586,24 @@ function OutcomeNotice({ outcome, onReselect, onDismiss }: { outcome: BulkOutcom
   );
 }
 
-/** One Alert in full, beside the queue, with Move and Detach while it is on a Case. */
-/** Observables or Assets an Alert names, as badges. */
 /** The Alert's comments in Falcon, as last fetched; opening the Alert asks the worker to fetch them again. */
 function FalconComments({ comments: c, attached }: { comments: AlertDetail["falconComments"]; attached: boolean }) {
+  /** Refreshing for longer than Falcon usually takes: the worker may be down or Falcon unreachable. */
+  // The fetch it has been waiting on since, keyed by when comments were last fetched: a new refresh starts unflagged.
+  const [slowSince, setSlowSince] = useState<string | null | false>(false);
+  const slow = c.refreshing && slowSince === c.syncedAt;
+  useEffect(() => {
+    if (!c.refreshing) return;
+    const timer = setTimeout(() => setSlowSince(c.syncedAt), 20_000);
+    return () => clearTimeout(timer);
+  }, [c.refreshing, c.syncedAt]);
   return (
     <section aria-label="Comments in Falcon" className="grid gap-1">
       <div className="flex items-baseline justify-between gap-2">
         <h3 className="text-xs font-medium text-muted-foreground">Comments in Falcon</h3>
         {c.refreshing ? (
           <span role="status" className="text-xs text-muted-foreground">
-            Refreshing from Falcon…
+            {slow ? "Falcon hasn't answered yet; these may be out of date" : "Refreshing from Falcon…"}
           </span>
         ) : (
           c.syncedAt && (
@@ -381,6 +636,7 @@ function FalconComments({ comments: c, attached }: { comments: AlertDetail["falc
   );
 }
 
+/** Observables or Assets an Alert names, as badges. */
 function Extracted({ label, items }: { label: string; items: { id: string; text: string; title: string }[] }) {
   return (
     <section aria-label={label} className="grid gap-1">
@@ -400,41 +656,97 @@ function Extracted({ label, items }: { label: string; items: { id: string; text:
   );
 }
 
-function AlertPanel({ id, onClose }: { id: string; onClose: () => void }) {
+/**
+ * One Alert in full, beside the queue: Open Case, Attach and Dismiss while it isn't on a Case, Move
+ * and Detach while it is on an open one.
+ */
+function AlertPanel({ id, onClose, onAct }: { id: string; onClose: () => void; onAct: (kind: BulkKind, alert: AlertRow) => void }) {
   const alert = useQuery(alertQuery(id));
   const [moving, setMoving] = useState<"move" | "detach" | null>(null);
   const a = alert.data;
-  if (!a) return null;
+  if (alert.isPending) {
+    return (
+      <Card role="region" aria-label="Alert" aria-busy className="self-start">
+        <CardContent className="grid gap-3">
+          <span className="sr-only" role="status">
+            Loading the Alert…
+          </span>
+          <div className="flex justify-between">
+            <Skeleton className="h-5 w-16 rounded-full" />
+            <Skeleton className="h-5 w-16 rounded-full" />
+          </div>
+          <Skeleton className="h-5 w-4/5" />
+          <Skeleton className="h-3 w-1/2" />
+          <Skeleton className="h-16 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+  if (!a) {
+    return (
+      <Card role="region" aria-label="Alert" className="self-start">
+        <CardContent className="grid gap-3 text-sm">
+          {alert.isError ? (
+            <>
+              <p className="font-medium">This Alert couldn't be loaded</p>
+              <p className="text-muted-foreground">Try again, or reload the page.</p>
+            </>
+          ) : (
+            <>
+              <p className="font-medium">This Alert isn't available</p>
+              <p className="text-muted-foreground">It may have been removed from the queue, or the link may be wrong.</p>
+            </>
+          )}
+          <div className="flex gap-2">
+            {alert.isError && (
+              <Button size="sm" variant="outline" disabled={alert.isFetching} onClick={() => alert.refetch()}>
+                Try again
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" className="ml-auto" onClick={onClose}>
+              Close
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
   const onCase = a.attached?.case ?? null;
   const editable = onCase !== null && onCase.status !== "closed";
   return (
-    <Card aria-label="Alert" className="self-start">
+    <Card role="region" aria-label="Alert" className="self-start">
       <CardContent className="grid gap-3 text-sm">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
           <SeverityBadge severity={a.severity} />
-          <Badge variant="outline">
-            {alertStatusLabel[a.status]}
-            {onCase && (
-              <Link to="/cases/$number" params={{ number: String(onCase.number) }} className="ml-1 text-primary underline">
-                {caseRef(onCase.number)}
-              </Link>
-            )}
-          </Badge>
+          <Badge variant="outline">{alertStatusLabel[a.status]}</Badge>
+          {onCase && (
+            <Link
+              to="/cases/$number"
+              params={{ number: String(onCase.number) }}
+              className="font-mono text-xs underline underline-offset-4"
+              title={onCase.title}
+            >
+              {caseRef(onCase.number)}
+            </Link>
+          )}
+          <Button size="icon-sm" variant="ghost" className="-my-1 ml-auto" aria-label="Close the Alert" onClick={onClose}>
+            <XIcon aria-hidden />
+          </Button>
         </div>
         <div>
-          <h2 className="text-lg font-semibold">{a.title}</h2>
-          <p className="font-mono text-xs text-muted-foreground">
-            {a.externalId} · {alertKindLabel[a.kind]} · {a.integration.name}
+          <h2 className="text-base font-semibold text-balance">{a.title}</h2>
+          <p className="text-xs text-muted-foreground">
+            <span className="font-mono">{a.externalId}</span> · {alertKindLabel[a.kind]} · {a.integration.name}
           </p>
         </div>
         {a.description && <p>{a.description}</p>}
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
           <dt className="text-muted-foreground">Host</dt>
-          <dd>{a.host ?? "—"}</dd>
+          <dd className={cn("min-w-0 break-all", a.host ? "font-mono text-xs leading-5" : "text-muted-foreground")}>{a.host ?? "None"}</dd>
           <dt className="text-muted-foreground">User</dt>
-          <dd>{a.userName ?? "—"}</dd>
+          <dd className={cn("min-w-0 break-all", a.userName ? "font-mono text-xs leading-5" : "text-muted-foreground")}>{a.userName ?? "None"}</dd>
           <dt className="text-muted-foreground">Received</dt>
-          <dd>{new Date(a.receivedAt).toLocaleString()}</dd>
+          <dd>{exactTime(a.receivedAt)}</dd>
           {a.attached && (
             <>
               <dt className="text-muted-foreground">Attached</dt>
@@ -488,28 +800,44 @@ function AlertPanel({ id, onClose }: { id: string; onClose: () => void }) {
           items={a.indicators.assets.map((x) => ({ id: x.id, text: `${assetTypeLabel[x.type]} ${x.value}`, title: x.value }))}
         />
         {a.indicators.observables.length + a.indicators.assets.length > 0 && (
-          <p className="text-xs text-muted-foreground">Attaching this Alert adds these to the Case.</p>
+          <p className="text-xs text-muted-foreground">
+            {onCase ? `These are on ${caseRef(onCase.number)} too.` : "Attaching this Alert adds these to its Case."}
+          </p>
         )}
         <FalconComments comments={a.falconComments} attached={a.attached !== null} />
         <details>
           <summary className="cursor-pointer text-muted-foreground">Raw payload</summary>
           <pre className="mt-2 max-h-64 overflow-auto rounded bg-muted p-2 text-xs">{JSON.stringify(a.payload, null, 2)}</pre>
         </details>
-        <div className="flex flex-wrap gap-2 border-t pt-3">
-          {editable && (
-            <>
-              <Button size="sm" variant="outline" onClick={() => setMoving("move")}>
-                Move to another Case…
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => setMoving("detach")}>
-                Detach
-              </Button>
-            </>
-          )}
-          <Button size="sm" variant="ghost" className="ml-auto" onClick={onClose}>
-            Close
-          </Button>
-        </div>
+        {(a.status !== "attached" || editable) && (
+          <div className="flex flex-wrap gap-2 border-t pt-3">
+            {a.status !== "attached" && (
+              <>
+                <Button size="sm" onClick={() => onAct("open", a)}>
+                  Open Case
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => onAct("attach", a)}>
+                  Attach to Case…
+                </Button>
+                {a.status === "new" && (
+                  <Button size="sm" variant="outline" onClick={() => onAct("dismiss", a)}>
+                    Dismiss…
+                  </Button>
+                )}
+              </>
+            )}
+            {editable && (
+              <>
+                <Button size="sm" variant="outline" onClick={() => setMoving("move")}>
+                  Move to another Case…
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setMoving("detach")}>
+                  Detach
+                </Button>
+              </>
+            )}
+          </div>
+        )}
         <MoveAlertDialog
           open={moving !== null}
           onOpenChange={(o) => setMoving(o ? moving : null)}
@@ -518,5 +846,36 @@ function AlertPanel({ id, onClose }: { id: string; onClose: () => void }) {
         />
       </CardContent>
     </Card>
+  );
+}
+
+function Filter<T extends string>({
+  label,
+  id,
+  value,
+  options,
+  labels,
+  onChange,
+}: {
+  label: string;
+  id: string;
+  value: T;
+  options: readonly T[];
+  labels: Record<T, string>;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <Label htmlFor={id} className="text-xs font-normal text-muted-foreground">
+        {label}
+      </Label>
+      <NativeSelect size="sm" id={id} value={value} onChange={(e) => onChange(e.target.value as T)}>
+        {options.map((o) => (
+          <NativeSelectOption key={o} value={o}>
+            {labels[o]}
+          </NativeSelectOption>
+        ))}
+      </NativeSelect>
+    </div>
   );
 }

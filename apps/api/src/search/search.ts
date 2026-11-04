@@ -1,5 +1,5 @@
 import { and, desc, eq, exists, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
-import { isGuest, visibleCases, visibleItems } from "../access/policy";
+import { isGuest, visibleAlerts, visibleCases, visibleItems } from "../access/policy";
 import type { AlertStatus } from "../alerts/vocabulary";
 import type { Severity, Status } from "../cases/vocabulary";
 import type { Db } from "../db/client";
@@ -116,8 +116,16 @@ export function searchStore({ db }: { db: Db }) {
           .innerJoin(cases, eq(links.caseId, cases.id))
           .where(and(eq(links.itemId, items.id), isNull(links.unlinkedAt), visibleCases(me))),
       ),
-      // Members see every Alert, so they see what each one names too.
-      isGuest(me) ? undefined : exists(db.select({ one: sql`1` }).from(alertLinks).where(eq(alertLinks.itemId, items.id))),
+      // Members see what the Alerts they can see name too.
+      isGuest(me)
+        ? undefined
+        : exists(
+            db
+              .select({ one: sql`1` })
+              .from(alertLinks)
+              .innerJoin(alerts, eq(alertLinks.alertId, alerts.id))
+              .where(and(eq(alertLinks.itemId, items.id), visibleAlerts(me, alerts.caseId))),
+          ),
     );
 
   /** The Cases each of `ids` is linked to that `me` can see, newest first. */
@@ -220,8 +228,8 @@ export function searchStore({ db }: { db: Db }) {
             where ${and(
               eq(alerts.organizationId, me.organizationId),
               matches(alerts.search),
-              // Guests find only the Alerts on their Cases that they are shown.
-              isGuest(me) ? and(visibleCases(me), visibleItems(me, alerts.internal)) : undefined,
+              // Guests find only the Alerts on their Cases that they are shown; Members those not on a Case they can't see.
+              isGuest(me) ? and(visibleCases(me), visibleItems(me, alerts.internal)) : visibleAlerts(me, alerts.caseId),
             )}`,
           ...(["observables", "assets"] as const).map((key, i) => {
             const kind = itemKinds[key];
