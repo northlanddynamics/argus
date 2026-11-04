@@ -14,6 +14,7 @@ import { invitationStore } from "./invitations/invitations";
 import { memberStore } from "./members/members";
 import { notificationStore } from "./notifications/notifications";
 import { organizationStore } from "./organizations/organizations";
+import { searchStore } from "./search/search";
 import { ssoStore } from "./sso/sso";
 import { tagStore } from "./tags/tags";
 import { teamsChannelStore } from "./teams/teams";
@@ -49,6 +50,7 @@ export function createModules(deps: Deps) {
     notifications: notificationStore(deps),
     teamsChannel: teamsChannelStore(deps),
     sso: ssoStore(deps),
+    search: searchStore(deps),
     caseReports: caseReportStore(deps, readers),
   };
 }

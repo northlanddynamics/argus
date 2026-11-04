@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { createRootRouteWithContext, createRoute, createRouter, Outlet, redirect } from "@tanstack/react-router";
 import { meQuery } from "@/lib/api";
+import { validateSearchPageSearch } from "@/lib/search";
 import { queryClient } from "@/lib/query-client";
 import { canManage } from "@/lib/roles";
 import { AppShell } from "@/components/app-shell";
@@ -17,6 +18,7 @@ import { CaseTasksPage } from "@/routes/cases/tasks";
 import { CaseTimelinePage } from "@/routes/cases/timeline";
 import { HomePage } from "@/routes/guest-home";
 import { GuestSignInPage, validateGuestSignInSearch } from "@/routes/guest-sign-in";
+import { SearchPage } from "@/routes/search";
 import { OrgAuditLogPage } from "@/routes/settings/audit-log";
 import { SettingsLayout } from "@/routes/settings/layout";
 import { IntegrationsPage } from "@/routes/settings/integrations";
@@ -110,6 +112,14 @@ const alertsRoute = createRoute({
   component: AlertQueuePage,
 });
 
+/** Global search, for Members and Guests; the API decides what each finds. */
+const searchRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/search",
+  validateSearch: validateSearchPageSearch,
+  component: SearchPage,
+});
+
 const operatorRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/operator",
@@ -189,6 +199,7 @@ export const router = createRouter({
       homeRoute,
       caseRoute.addChildren([caseOverviewRoute, caseTimelineRoute, caseTasksRoute, caseEvidenceRoute, caseObservablesRoute, caseAuditLogRoute]),
       alertsRoute,
+      searchRoute,
       settingsRoute.addChildren([settingsIndexRoute, membersRoute, ssoRoute, integrationsRoute, orgAuditLogRoute]),
     ]),
     operatorRoute,

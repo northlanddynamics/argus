@@ -4,6 +4,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { GuestSession } from "@/components/guest-nav";
 import { LiveIndicator } from "@/components/live-indicator";
 import { NotificationBell } from "@/components/notification-bell";
+import { SearchBox } from "@/components/search-box";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -50,6 +51,7 @@ function crumbsWithin(pathname: string, me: Me): Crumb[] {
     return crumbs;
   }
   if (area === "alerts") return [{ label: "Alerts" }];
+  if (area === "search") return [{ label: "Search" }];
   if (area === "settings") return [{ label: "Settings", to: "/settings" }, ...(id && settingsSections[id] ? [{ label: settingsSections[id] }] : [])];
   return [{ label: cases }];
 }
@@ -90,7 +92,8 @@ export function AppShell() {
                 ))}
               </BreadcrumbList>
             </Breadcrumb>
-            <div className="ml-auto flex items-center gap-4">
+            <div className="ml-auto flex min-w-0 items-center gap-4">
+              <SearchBox />
               {me.guest && <GuestSession guest={me.guest} />}
               <LiveIndicator />
               <NotificationBell />
