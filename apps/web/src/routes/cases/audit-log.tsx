@@ -74,6 +74,7 @@ export const actionLabel: Record<CaseAuditAction, string> = {
   "alert.falcon_tags_changed": "Changed Falcon tags of Alert",
   "item.marked_internal": "Marked Internal",
   "item.shown_to_guests": "Showed to Guests",
+  "case.report_exported": "Exported",
 };
 
 /** A recorded value as people read it: "In Progress" rather than "in_progress". */

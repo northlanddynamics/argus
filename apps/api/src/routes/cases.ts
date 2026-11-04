@@ -35,6 +35,7 @@ import {
 import { CITATION_KINDS, PROMOTION_SOURCES } from "../timeline/vocabulary";
 import { downloadHeaders, mediaType, viewHeaders } from "./evidence-http";
 import { GuestCannotSeeInternal, INTERNAL_ITEM_KINDS, ItemNotFound } from "../internal/internal";
+import { REPORT_FORMATS, REPORT_VARIANTS } from "../case-reports/vocabulary";
 
 const numberParam = z.object({ number: z.coerce.number().int().positive() });
 const isoDate = z.string().refine((s) => !Number.isNaN(Date.parse(s)), "Not a date");
@@ -193,6 +194,8 @@ const internalBody = z.object({
   internal: z.boolean(),
 });
 
+const reportQuery = z.object({ variant: z.enum(REPORT_VARIANTS), format: z.enum(REPORT_FORMATS) });
+
 const notFound = { error: "Case not found" } as const;
 
 /** The result, or null if the Member can't see the Case (another Organization's, or Restricted). */
@@ -211,12 +214,27 @@ const closedConflict = (e: unknown) => {
 /**
  * Cases: open, list, view, change, close, reopen, the Case Summary, Tasks, Case Role assignments, the
  * Discussion, the Timeline, Evidence, Observables and Assets, Case Links, Tags, Guests, and the Case
- * Audit Log, attached Alerts, and Internal markings. Guests may use the routes not marked
+ * Audit Log, attached Alerts, Internal markings, and Case Reports. Guests may use the routes not marked
  * `membersOnly`, and see and do what the modules let them.
  */
 export const caseRoutes = (
   deps: Deps,
-  { cases: store, tasks, caseRoles, discussion, timeline, evidence, observables, assets, caseLinks, tags, guests, alerts, internal }: Modules,
+  {
+    cases: store,
+    tasks,
+    caseRoles,
+    discussion,
+    timeline,
+    evidence,
+    observables,
+    assets,
+    caseLinks,
+    tags,
+    guests,
+    alerts,
+    internal,
+    caseReports,
+  }: Modules,
 ) => {
   const origin = new URL(deps.baseUrl).origin;
 
@@ -645,6 +663,22 @@ export const caseRoutes = (
         if (e instanceof NotPermitted) return c.json({ error: INTERNAL_REFUSED }, 403);
         if (e instanceof GuestCannotSeeInternal) return c.json({ error: e.message }, 400);
         return c.json(closedConflict(e), 409);
+      }
+    })
+    .get("/:number/report", zValidator("param", numberParam), zValidator("query", reportQuery), async (c) => {
+      const { variant, format } = c.req.valid("query");
+      try {
+        const report = await unlessNotFound(caseReports.export(c.get("participant"), c.req.valid("param").number, variant, format));
+        if (!report) return c.json(notFound, 404);
+        return c.body(report.body as Uint8Array<ArrayBuffer>, 200, {
+          "content-type": report.contentType,
+          "content-disposition": `attachment; filename="${report.fileName}"`,
+          "cache-control": "private, no-store",
+          "x-content-type-options": "nosniff",
+        });
+      } catch (e) {
+        if (e instanceof NotPermitted) return c.json({ error: "Guests can export only the Guest-safe Case Report" }, 403);
+        throw e;
       }
     })
     .get("/:number/audit-log", zValidator("param", numberParam), zValidator("query", auditQuery), async (c) => {
