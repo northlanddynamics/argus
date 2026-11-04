@@ -40,7 +40,8 @@ import {
 /** What a bulk action did, for the queue's notice: `verb` is "attached to C-12", "dismissed"…; `note` adds what else follows from it. */
 export type BulkOutcome = BulkResult & { verb: string; note?: string };
 
-type DialogProps = { open: boolean; onOpenChange: (open: boolean) => void };
+/** `onCloseAutoFocus`: where focus goes once the dialog has closed; call `preventDefault` to send it elsewhere than the opener. */
+type DialogProps = { open: boolean; onOpenChange: (open: boolean) => void; onCloseAutoFocus?: (event: Event) => void };
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
@@ -142,6 +143,7 @@ async function bulk(res: Response, fallback: string): Promise<BulkResult> {
 export function OpenCaseFromAlertsDialog({
   open,
   onOpenChange,
+  onCloseAutoFocus,
   selection,
   highest,
   suggested,
@@ -201,7 +203,7 @@ export function OpenCaseFromAlertsDialog({
         }
       }}
     >
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-2xl" onCloseAutoFocus={onCloseAutoFocus}>
         <DialogHeader>
           <DialogTitle>Open Case from {plural(selection.length, "Alert")}</DialogTitle>
         </DialogHeader>
@@ -259,6 +261,7 @@ export function OpenCaseFromAlertsDialog({
 export function AttachAlertsDialog({
   open,
   onOpenChange,
+  onCloseAutoFocus,
   selection,
   onDone,
 }: DialogProps & { selection: AlertSelection; onDone: (outcome: BulkOutcome) => void }) {
@@ -286,7 +289,7 @@ export function AttachAlertsDialog({
         }
       }}
     >
-      <DialogContent>
+      <DialogContent onCloseAutoFocus={onCloseAutoFocus}>
         <DialogHeader>
           <DialogTitle>Attach {plural(selection.length, "Alert")} to a Case</DialogTitle>
         </DialogHeader>
@@ -318,6 +321,7 @@ export function AttachAlertsDialog({
 export function DismissAlertsDialog({
   open,
   onOpenChange,
+  onCloseAutoFocus,
   selection,
   onDone,
 }: DialogProps & { selection: AlertSelection; onDone: (outcome: BulkOutcome) => void }) {
@@ -350,7 +354,7 @@ export function DismissAlertsDialog({
         }
       }}
     >
-      <DialogContent>
+      <DialogContent onCloseAutoFocus={onCloseAutoFocus}>
         <DialogHeader>
           <DialogTitle>Dismiss {plural(selection.length, "Alert")}</DialogTitle>
         </DialogHeader>

@@ -80,7 +80,9 @@ function useQueueKeys(
   on: { toggle: (id: string) => void; act: (kind: BulkKind) => void; close: (() => void) | null },
 ) {
   const handlers = useRef(on);
-  handlers.current = on;
+  useEffect(() => {
+    handlers.current = on;
+  });
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -144,7 +146,17 @@ export function AlertQueuePage() {
     setSearch(next);
   };
   /** The bulk action being confirmed, and the Alerts it acts on: the selection, or the one in the panel. */
-  const [dialog, setDialog] = useState<{ kind: BulkKind; picked: Map<string, Picked> } | null>(null);
+  // Kept after the dialog closes (`open` false): its outcome arrives then, and is told about these Alerts.
+  const [dialog, setDialog] = useState<{ kind: BulkKind; picked: Map<string, Picked>; open: boolean } | null>(null);
+  const closeDialog = (open: boolean) => !open && setDialog((d) => d && { ...d, open: false });
+  /** Set when an action has finished: its controls are gone, so focus goes to its notice rather than back to them. */
+  const justDone = useRef(false);
+  const afterDialog = (event: Event) => {
+    if (!justDone.current) return;
+    justDone.current = false;
+    event.preventDefault();
+    document.getElementById("alert-outcome")?.focus();
+  };
   const table = useRef<HTMLTableElement>(null);
   /** The row last checked or unchecked, where a shift-click range starts. */
   const anchor = useRef<number | null>(null);
@@ -172,15 +184,11 @@ export function AlertQueuePage() {
     setPicked(rows.slice(from, to + 1), on);
     anchor.current = index;
   };
-  /** The Alerts the last action was started on; the dialog has closed by the time its outcome arrives. */
-  const acting = useRef<Map<string, Picked>>(new Map());
   const act = (kind: BulkKind, picked = selected) => {
-    if (!picked.size) return;
-    acting.current = picked;
-    setDialog({ kind, picked });
+    if (picked.size) setDialog({ kind, picked, open: true });
   };
-  const dialogSelection = [...(dialog?.picked ?? acting.current)].map(([id, p]) => ({ id, version: p.version }));
-  const dialogPicked = [...(dialog?.picked ?? acting.current).values()];
+  const dialogSelection = [...(dialog?.picked ?? [])].map(([id, p]) => ({ id, version: p.version }));
+  const dialogPicked = [...(dialog?.picked.values() ?? [])];
   const highest = SEVERITIES.find((s) => dialogPicked.some((p) => p.severity === s)) ?? "medium";
   // The most serious Alert names the Case to start with.
   const lead = dialogPicked.find((p) => p.severity === highest);
@@ -189,10 +197,11 @@ export function AlertQueuePage() {
     caseType: lead ? caseTypeFor[lead.kind] : ("malware" as const),
   };
   const done = (result: BulkOutcome) => {
-    const known = acting.current;
+    const known = dialog?.picked ?? new Map<string, Picked>();
     // Name each refused Alert as the Member saw it, even one the server no longer shows them.
     const refused = result.refused.map((r) => ({ ...r, externalId: r.externalId ?? known.get(r.id)?.externalId ?? null, title: r.title ?? known.get(r.id)?.title ?? null }));
     setOutcome({ ...result, refused });
+    justDone.current = true;
     setSelected((prev) => {
       const next = new Map(prev);
       for (const id of known.keys()) next.delete(id);
@@ -297,15 +306,16 @@ export function AlertQueuePage() {
       </div>
       {outcome && <OutcomeNotice outcome={outcome} onReselect={reselect} onDismiss={() => setOutcome(null)} />}
       <OpenCaseFromAlertsDialog
-        open={dialog?.kind === "open"}
-        onOpenChange={(o) => !o && setDialog(null)}
+        open={dialog?.open === true && dialog.kind === "open"}
+        onOpenChange={closeDialog}
+        onCloseAutoFocus={afterDialog}
         selection={dialogSelection}
         highest={highest}
         suggested={suggested}
         onDone={done}
       />
-      <AttachAlertsDialog open={dialog?.kind === "attach"} onOpenChange={(o) => !o && setDialog(null)} selection={dialogSelection} onDone={done} />
-      <DismissAlertsDialog open={dialog?.kind === "dismiss"} onOpenChange={(o) => !o && setDialog(null)} selection={dialogSelection} onDone={done} />
+      <AttachAlertsDialog open={dialog?.open === true && dialog.kind === "attach"} onOpenChange={closeDialog} onCloseAutoFocus={afterDialog} selection={dialogSelection} onDone={done} />
+      <DismissAlertsDialog open={dialog?.open === true && dialog.kind === "dismiss"} onOpenChange={closeDialog} onCloseAutoFocus={afterDialog} selection={dialogSelection} onDone={done} />
       {alerts.isError && (
         <Alert variant="destructive">
           <AlertTitle>Alerts couldn't be loaded</AlertTitle>
@@ -517,20 +527,18 @@ export function AlertQueuePage() {
   );
 }
 
+const alertCount = (n: number) => `${n} ${n === 1 ? "Alert" : "Alerts"}`;
+
 const Key = ({ children }: { children: string }) => <kbd className="font-sans font-medium text-foreground">{children}</kbd>;
 
 /** After a bulk action: how many Alerts it applied to, and each one it refused and why. */
 function OutcomeNotice({ outcome, onReselect, onDismiss }: { outcome: BulkOutcome; onReselect: () => void; onDismiss: () => void }) {
   const total = outcome.applied.length + outcome.refused.length;
-  // The action's controls are gone once it is done, so focus moves here rather than to the page.
-  const notice = useRef<HTMLDivElement>(null);
-  useEffect(() => notice.current?.focus(), [outcome]);
-  const alerts = (n: number) => `${n} ${n === 1 ? "Alert" : "Alerts"}`;
   if (!outcome.refused.length) {
     return (
-      <Alert role="status" ref={notice} tabIndex={-1} className="outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+      <Alert role="status" id="alert-outcome" tabIndex={-1} className="outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
         <AlertTitle>
-          {alerts(outcome.applied.length)} {outcome.verb}
+          {alertCount(outcome.applied.length)} {outcome.verb}
         </AlertTitle>
         <AlertAction>
           <Button size="sm" variant="ghost" onClick={onDismiss}>
@@ -543,12 +551,12 @@ function OutcomeNotice({ outcome, onReselect, onDismiss }: { outcome: BulkOutcom
   return (
     <Alert
       role="status"
-      ref={notice}
+      id="alert-outcome"
       tabIndex={-1}
       className="outline-none focus-visible:ring-3 focus-visible:ring-ring/50 border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80"
     >
       <AlertTitle>
-        {outcome.refused.length} of {alerts(total)} {outcome.refused.length === 1 ? "was" : "were"} not {outcome.verb}
+        {outcome.refused.length} of {alertCount(total)} {outcome.refused.length === 1 ? "was" : "were"} not {outcome.verb}
       </AlertTitle>
       <AlertDescription className="grid gap-2">
         <ul className="text-sm">
@@ -581,13 +589,14 @@ function OutcomeNotice({ outcome, onReselect, onDismiss }: { outcome: BulkOutcom
 /** The Alert's comments in Falcon, as last fetched; opening the Alert asks the worker to fetch them again. */
 function FalconComments({ comments: c, attached }: { comments: AlertDetail["falconComments"]; attached: boolean }) {
   /** Refreshing for longer than Falcon usually takes: the worker may be down or Falcon unreachable. */
-  const [slow, setSlow] = useState(false);
+  // The fetch it has been waiting on since, keyed by when comments were last fetched: a new refresh starts unflagged.
+  const [slowSince, setSlowSince] = useState<string | null | false>(false);
+  const slow = c.refreshing && slowSince === c.syncedAt;
   useEffect(() => {
-    setSlow(false);
     if (!c.refreshing) return;
-    const timer = setTimeout(() => setSlow(true), 20_000);
+    const timer = setTimeout(() => setSlowSince(c.syncedAt), 20_000);
     return () => clearTimeout(timer);
-  }, [c.refreshing]);
+  }, [c.refreshing, c.syncedAt]);
   return (
     <section aria-label="Comments in Falcon" className="grid gap-1">
       <div className="flex items-baseline justify-between gap-2">
