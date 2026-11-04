@@ -54,7 +54,6 @@ test("an Analyst's dashboard counts the Cases they can see, drills down to the C
     await figure("Open Cases").getByText("1", { exact: true }).waitFor();
     await figure("Open Cases").getByText("0 Critical · 1 unassigned").waitFor();
     await figure("Mean time to acknowledge").getByText("45 min").waitFor();
-    await page.screenshot({ path: process.env.DASHBOARD_SCREENSHOT ?? "/dev/null", fullPage: true });
 
     // Another Member opens a Case: the dashboard refreshes without a reload.
     await owner.api.cases.$post({ json: { title: "Lost laptop", caseType: "data_loss", severity: "high" } });
