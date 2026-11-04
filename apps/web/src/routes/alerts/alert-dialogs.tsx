@@ -35,8 +35,8 @@ import {
 } from "@/lib/cases";
 import { cn } from "@/lib/utils";
 
-/** What a bulk action did, for the queue's notice: `verb` is "attached to C-12", "dismissed"… */
-export type BulkOutcome = BulkResult & { verb: string };
+/** What a bulk action did, for the queue's notice: `verb` is "attached to C-12", "dismissed"…; `note` adds what else follows from it. */
+export type BulkOutcome = BulkResult & { verb: string; note?: string };
 
 type DialogProps = { open: boolean; onOpenChange: (open: boolean) => void };
 
@@ -48,7 +48,7 @@ function useOpenCases(enabled: boolean, filter: string) {
     queryKey: [...casesKey, "attach-candidates"],
     queryFn: async () => {
       const res = await api.cases.$get({ query: { view: "open" } });
-      if (!res.ok) throw new Error("Could not load Cases");
+      if (!res.ok) throw new Error("Couldn't load Cases");
       return (await res.json()).cases.toSorted((a, b) => b.number - a.number);
     },
     enabled,
@@ -113,24 +113,42 @@ function Failure({ error }: { error: Error | null }) {
   );
 }
 
+/**
+ * Why a request failed, in words a Member can act on: the server's own explanation when it gives one
+ * (a Case was Closed, not found…), or `fallback` and a suggestion to try again when it had a problem.
+ */
+async function failure(res: Response, fallback: string) {
+  if (res.status >= 500) return `${fallback}: Argus had a problem on its side. Try again in a moment.`;
+  return errorMessage(res, fallback);
+}
+
 function Note({ children }: { children: ReactNode }) {
   return <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">{children}</p>;
 }
 
 /** Posts a bulk action and reads its result; anything but a result is an error. */
 async function bulk(res: Response, fallback: string): Promise<BulkResult> {
-  if (!res.ok) throw new Error(await errorMessage(res, fallback));
+  if (!res.ok) throw new Error(await failure(res, fallback));
   return (await res.json()) as BulkResult;
 }
 
-/** "Open Case from N Alerts": a new Case with the selected Alerts attached; Severity defaults to the highest of theirs. */
+/**
+ * "Open Case from N Alerts": a new Case with the selected Alerts attached. Severity defaults to the
+ * highest of theirs; the title and Case Type start from the most serious Alert.
+ */
 export function OpenCaseFromAlertsDialog({
   open,
   onOpenChange,
   selection,
   highest,
+  suggested,
   onDone,
-}: DialogProps & { selection: AlertSelection; highest: Severity; onDone: (outcome: BulkOutcome) => void }) {
+}: DialogProps & {
+  selection: AlertSelection;
+  highest: Severity;
+  suggested: { title: string; caseType: CaseType };
+  onDone: (outcome: BulkOutcome) => void;
+}) {
   const [summary, setSummary] = useState<CaseSummary>(emptySummary);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -142,14 +160,18 @@ export function OpenCaseFromAlertsDialog({
         const body = (await res.json()) as { refused?: Refusal[] };
         return { case: null, applied: [], refused: body.refused ?? [] };
       }
-      if (!res.ok) throw new Error(await errorMessage(res, "Could not open the Case"));
+      if (!res.ok) throw new Error(await failure(res, "Couldn't open the Case"));
       return (await res.json()) as BulkResult & { case: { number: number } };
     },
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: alertsKey });
       await queryClient.invalidateQueries({ queryKey: casesKey });
       onOpenChange(false);
-      onDone({ ...result, verb: result.case ? `attached to ${caseRef(result.case.number)}` : "attached; no Case was opened" });
+      onDone(
+        result.case
+          ? { ...result, verb: `attached to ${caseRef(result.case.number)}` }
+          : { ...result, verb: "attached", note: "No Case was opened, because none of the Alerts could be attached." },
+      );
       if (result.case && !result.refused.length) await navigate({ to: "/cases/$number", params: { number: String(result.case.number) } });
     },
   });
@@ -183,12 +205,12 @@ export function OpenCaseFromAlertsDialog({
         <form className="grid gap-4" onSubmit={onSubmit}>
           <div className="grid gap-2">
             <Label htmlFor="from-alerts-title">Title</Label>
-            <Input id="from-alerts-title" name="title" required maxLength={300} />
+            <Input id="from-alerts-title" name="title" required maxLength={300} defaultValue={suggested.title} key={suggested.title} />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-2">
               <Label htmlFor="from-alerts-type">Case Type</Label>
-              <NativeSelect id="from-alerts-type" name="caseType" defaultValue="malware">
+              <NativeSelect id="from-alerts-type" name="caseType" defaultValue={suggested.caseType} key={suggested.caseType}>
                 {CASE_TYPES.map((t) => (
                   <NativeSelectOption key={t} value={t}>
                     {caseTypeLabel[t]}
@@ -242,7 +264,7 @@ export function AttachAlertsDialog({
 
   const attach = useMutation({
     mutationFn: async (number: number) =>
-      bulk(await api.alerts.attach.$post({ json: { case: number, alerts: selection } }), "Could not attach the Alerts"),
+      bulk(await api.alerts.attach.$post({ json: { case: number, alerts: selection } }), "Couldn't attach the Alerts"),
     onSuccess: async (result, number) => {
       await queryClient.invalidateQueries({ queryKey: alertsKey });
       onOpenChange(false);
@@ -304,7 +326,7 @@ export function DismissAlertsDialog({
     mutationFn: async (chosen: DismissalReason) =>
       bulk(
         await api.alerts.dismiss.$post({ json: { reason: chosen, comment: comment.trim() || undefined, alerts: selection } }),
-        "Could not dismiss the Alerts",
+        "Couldn't dismiss the Alerts",
       ),
     onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: alertsKey });
@@ -389,7 +411,7 @@ export function MoveAlertDialog({
         to === "detach"
           ? await api.alerts[":id"].detach.$post({ param, json: { version: alert.version } })
           : await api.alerts[":id"].move.$post({ param, json: { case: to, version: alert.version } });
-      if (!res.ok) throw new Error(await errorMessage(res, "Could not move the Alert"));
+      if (!res.ok) throw new Error(await failure(res, to === "detach" ? "Couldn't detach the Alert" : "Couldn't move the Alert"));
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: alertsKey });

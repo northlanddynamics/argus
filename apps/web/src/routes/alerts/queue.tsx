@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   ago,
   ALERT_STATUSES,
+  type AlertKind,
   alertKindLabel,
   type AlertDetail,
   alertQuery,
@@ -26,7 +27,7 @@ import {
   integrationsQuery,
 } from "@/lib/alerts";
 import { api } from "@/lib/api";
-import { caseRef, SEVERITIES, type Severity, severityLabel } from "@/lib/cases";
+import { type CaseType, caseRef, SEVERITIES, type Severity, severityLabel } from "@/lib/cases";
 import { assetTypeLabel, observableTypeLabel, shownObservable } from "@/lib/observables";
 import { cn } from "@/lib/utils";
 import { exactTime } from "@/lib/when";
@@ -56,10 +57,13 @@ const received = (iso: string) => new Date(iso).toLocaleString(undefined, { mont
 
 type BulkKind = "open" | "attach" | "dismiss";
 /** An Alert as the Member saw it when they picked it for an action. */
-type Picked = { version: number; severity: Severity; externalId: string; title: string };
+type Picked = { version: number; severity: Severity; kind: AlertKind; externalId: string; title: string };
 type AlertRow = { id: string } & Picked;
-const pickedOf = (a: AlertRow): Picked => ({ version: a.version, severity: a.severity, externalId: a.externalId, title: a.title });
+const pickedOf = (a: AlertRow): Picked => ({ version: a.version, severity: a.severity, kind: a.kind, externalId: a.externalId, title: a.title });
+/** The Case Type a Case opened from an Alert of each kind most often is; the Member can change it. */
+const caseTypeFor: Record<AlertKind, CaseType> = { epp: "malware", idp: "account_compromise", mobile: "malware" };
 const shortcut = { o: "open", a: "attach", d: "dismiss" } as const;
+const noFilters = { status: undefined, severity: undefined, integration: undefined };
 /**
  * Host / user and Received give way when the queue is narrow (the Alert panel is open). Their cells
  * stay in the row, emptied and without padding, so the cells after them keep their columns.
@@ -132,6 +136,12 @@ export function AlertQueuePage() {
   const [outcome, setOutcome] = useState<BulkOutcome | null>(null);
   const showing = search.alert ?? null;
   const setShowing = (alert: string | null) => setSearch({ alert: alert ?? undefined });
+  const filtered = status !== "new" || search.severity !== undefined || search.integration !== undefined;
+  /** Changes the filters; the last action's notice is about Alerts that may no longer be shown, so it goes. */
+  const filter = (next: Partial<AlertQueueSearch>) => {
+    setOutcome(null);
+    setSearch(next);
+  };
   /** The bulk action being confirmed, and the Alerts it acts on: the selection, or the one in the panel. */
   const [dialog, setDialog] = useState<{ kind: BulkKind; picked: Map<string, Picked> } | null>(null);
   const table = useRef<HTMLTableElement>(null);
@@ -169,8 +179,14 @@ export function AlertQueuePage() {
     setDialog({ kind, picked });
   };
   const dialogSelection = [...(dialog?.picked ?? acting.current)].map(([id, p]) => ({ id, version: p.version }));
-  const dialogSeverities = [...(dialog?.picked ?? acting.current).values()].map((p) => p.severity);
-  const highest = SEVERITIES.find((s) => dialogSeverities.includes(s)) ?? "medium";
+  const dialogPicked = [...(dialog?.picked ?? acting.current).values()];
+  const highest = SEVERITIES.find((s) => dialogPicked.some((p) => p.severity === s)) ?? "medium";
+  // The most serious Alert names the Case to start with.
+  const lead = dialogPicked.find((p) => p.severity === highest);
+  const suggested = {
+    title: lead ? (dialogPicked.length > 1 ? `${lead.title} and ${dialogPicked.length - 1} more` : lead.title) : "",
+    caseType: lead ? caseTypeFor[lead.kind] : ("malware" as const),
+  };
   const done = (result: BulkOutcome) => {
     const known = acting.current;
     // Name each refused Alert as the Member saw it, even one the server no longer shows them.
@@ -211,7 +227,7 @@ export function AlertQueuePage() {
         <ul className="text-sm text-muted-foreground" aria-label="Integrations">
           {integrations.data?.map((i) => (
             <li key={i.id}>
-              {i.name} · {healthWord(i).toLowerCase()} · {i.lastEventAt ? `last event ${ago(i.lastEventAt)}` : "no events yet"}
+              {i.name}: {healthWord(i)}, {i.lastEventAt ? `last event ${ago(i.lastEventAt)}` : "no events yet"}
             </li>
           ))}
           {integrations.data?.length === 0 && (
@@ -257,7 +273,7 @@ export function AlertQueuePage() {
           value={status}
           options={[...ALERT_STATUSES, "any"] as const}
           labels={{ ...alertStatusLabel, any: "Any" }}
-          onChange={(next) => setSearch({ status: next === "new" ? undefined : next })}
+          onChange={(next) => filter({ status: next === "new" ? undefined : next })}
         />
         <Filter
           label="Severity"
@@ -265,7 +281,7 @@ export function AlertQueuePage() {
           value={search.severity ?? ""}
           options={["", ...SEVERITIES] as const}
           labels={{ "": "Any", ...severityLabel }}
-          onChange={(next) => setSearch({ severity: next || undefined })}
+          onChange={(next) => filter({ severity: next || undefined })}
         />
         {((integrations.data?.length ?? 0) > 1 || search.integration) && (
           <Filter
@@ -274,7 +290,7 @@ export function AlertQueuePage() {
             value={search.integration ?? ""}
             options={["", ...(integrations.data?.map((i) => i.id) ?? [])]}
             labels={{ "": "Any", ...Object.fromEntries(integrations.data?.map((i) => [i.id, i.name]) ?? []) }}
-            onChange={(next) => setSearch({ integration: next || undefined })}
+            onChange={(next) => filter({ integration: next || undefined })}
           />
         )}
       </div>
@@ -284,6 +300,7 @@ export function AlertQueuePage() {
         onOpenChange={(o) => !o && setDialog(null)}
         selection={dialogSelection}
         highest={highest}
+        suggested={suggested}
         onDone={done}
       />
       <AttachAlertsDialog open={dialog?.kind === "attach"} onOpenChange={(o) => !o && setDialog(null)} selection={dialogSelection} onDone={done} />
@@ -350,10 +367,10 @@ export function AlertQueuePage() {
                 ) : (
                   <>
                     <TableHead scope="col">Severity</TableHead>
-                    <TableHead scope="col">Detection</TableHead>
+                    <TableHead scope="col">Alert</TableHead>
                     <TableHead scope="col" className={narrowHidden}><span className="hidden @3xl:inline">Host / user</span></TableHead>
                     <TableHead scope="col" className={narrowHidden}><span className="hidden @3xl:inline">Received</span></TableHead>
-                    <TableHead scope="col" className="pr-4">Status</TableHead>
+                    <TableHead scope="col" className="pr-4">Alert Status</TableHead>
                   </>
                 )}
               </TableRow>
@@ -452,9 +469,25 @@ export function AlertQueuePage() {
                 </TableRow>
               ))}
               {loaded?.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-muted-foreground">
-                    No Alerts here.
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={6} className="py-10 text-center whitespace-normal">
+                    {filtered ? (
+                      <div className="grid justify-items-center gap-2">
+                        <p className="font-medium">No Alerts match these filters</p>
+                        <Button variant="outline" size="sm" onClick={() => filter(noFilters)}>
+                          Show New Alerts
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="grid justify-items-center gap-1">
+                        <p className="font-medium">No New Alerts</p>
+                        <p className="text-muted-foreground">
+                          {integrations.data?.length
+                            ? "New detections appear here as they arrive."
+                            : "Alerts arrive here once an Admin adds an Integration."}
+                        </p>
+                      </div>
+                    )}
                   </TableCell>
                 </TableRow>
               )}
@@ -490,17 +523,18 @@ function OutcomeNotice({ outcome, onReselect, onDismiss }: { outcome: BulkOutcom
   // The action's controls are gone once it is done, so focus moves here rather than to the page.
   const notice = useRef<HTMLDivElement>(null);
   useEffect(() => notice.current?.focus(), [outcome]);
+  const alerts = (n: number) => `${n} ${n === 1 ? "Alert" : "Alerts"}`;
   if (!outcome.refused.length) {
     return (
       <Alert role="status" ref={notice} tabIndex={-1} className="outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
         <AlertTitle>
-          {outcome.applied.length} {outcome.applied.length === 1 ? "Alert" : "Alerts"} {outcome.verb}
+          {alerts(outcome.applied.length)} {outcome.verb}
         </AlertTitle>
-        <AlertDescription>
-          <Button size="sm" variant="outline" onClick={onDismiss}>
-            Dismiss notice
+        <AlertAction>
+          <Button size="sm" variant="ghost" onClick={onDismiss}>
+            Close
           </Button>
-        </AlertDescription>
+        </AlertAction>
       </Alert>
     );
   }
@@ -509,9 +543,10 @@ function OutcomeNotice({ outcome, onReselect, onDismiss }: { outcome: BulkOutcom
       role="status"
       ref={notice}
       tabIndex={-1}
-      className="outline-none focus-visible:ring-3 focus-visible:ring-ring/50 border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80">
+      className="outline-none focus-visible:ring-3 focus-visible:ring-ring/50 border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80"
+    >
       <AlertTitle>
-        {outcome.refused.length} of {total} {total === 1 ? "Alert was" : "Alerts were"} not {outcome.verb.split(";")[0]}
+        {outcome.refused.length} of {alerts(total)} {outcome.refused.length === 1 ? "was" : "were"} not {outcome.verb}
       </AlertTitle>
       <AlertDescription className="grid gap-2">
         <ul className="text-sm">
@@ -522,6 +557,7 @@ function OutcomeNotice({ outcome, onReselect, onDismiss }: { outcome: BulkOutcom
             </li>
           ))}
         </ul>
+        {outcome.note && <p className="text-sm">{outcome.note}</p>}
         {outcome.applied.length > 0 && (
           <p className="text-sm">
             The other {outcome.applied.length} {outcome.applied.length === 1 ? "was" : "were"} {outcome.verb}.
@@ -529,10 +565,10 @@ function OutcomeNotice({ outcome, onReselect, onDismiss }: { outcome: BulkOutcom
         )}
         <div className="flex gap-2">
           <Button size="sm" variant="outline" onClick={onReselect}>
-            Select the {outcome.refused.length} again
+            Select {outcome.refused.length === 1 ? "it" : `these ${outcome.refused.length}`} again
           </Button>
-          <Button size="sm" variant="outline" onClick={onDismiss}>
-            Dismiss notice
+          <Button size="sm" variant="ghost" onClick={onDismiss}>
+            Close
           </Button>
         </div>
       </AlertDescription>
@@ -744,7 +780,9 @@ function AlertPanel({ id, onClose, onAct }: { id: string; onClose: () => void; o
           items={a.indicators.assets.map((x) => ({ id: x.id, text: `${assetTypeLabel[x.type]} ${x.value}`, title: x.value }))}
         />
         {a.indicators.observables.length + a.indicators.assets.length > 0 && (
-          <p className="text-xs text-muted-foreground">Attaching this Alert adds these to the Case.</p>
+          <p className="text-xs text-muted-foreground">
+            {onCase ? `These are on ${caseRef(onCase.number)} too.` : "Attaching this Alert adds these to its Case."}
+          </p>
         )}
         <FalconComments comments={a.falconComments} attached={a.attached !== null} />
         <details>
