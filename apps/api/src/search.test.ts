@@ -71,15 +71,30 @@ async function acme() {
     const res = await owner.api.alerts.attach.$post({ json: { case: number, alerts: [{ id, version }] } });
     if (res.status !== 200) throw new Error(`Could not attach: ${res.status}`);
   };
-  const search = async (as: Session, q: string, options: { kinds?: string; limit?: string } = {}) => {
+  type SearchQuery = { kinds?: string; page?: string; pageSize?: string };
+  /** One page of results as the API gives it: one list, best first. */
+  const searchPage = async (as: Session, q: string, options: SearchQuery = {}) => {
     const res = await as.api.search.$get({ query: { q, ...options } });
     const body = await res.json();
     if (!("results" in body)) throw new Error(`Could not search: ${res.status}`);
     return body.results;
   };
+  type Hits = Awaited<ReturnType<typeof searchPage>>["hits"];
+  const itemsOf = <K extends Hits[number]["kind"]>(hits: Hits, kind: K) =>
+    hits.flatMap((h) => (h.kind === kind ? [h.item as Extract<Hits[number], { kind: K }>["item"]] : []));
+  /** The first page's results sorted out by kind, each kind in rank order. */
+  const search = async (as: Session, q: string, options: SearchQuery = {}) => {
+    const { hits } = await searchPage(as, q, { pageSize: "50", ...options });
+    return {
+      cases: itemsOf(hits, "cases"),
+      alerts: itemsOf(hits, "alerts"),
+      observables: itemsOf(hits, "observables"),
+      assets: itemsOf(hits, "assets"),
+    };
+  };
   const caseNumbers = async (as: Session, q: string) => (await search(as, q)).cases.map((c) => c.number);
 
-  return { t, owner, ana, ben, open, summarise, observe, detect, attach, search, caseNumbers };
+  return { t, owner, ana, ben, open, summarise, observe, detect, attach, search, searchPage, caseNumbers };
 }
 
 describe("Global search", () => {
@@ -96,12 +111,12 @@ describe("Global search", () => {
     expect(await a.caseNumbers(a.ben, "ransomware -decryptor")).toEqual([ransom]);
     expect(await a.caseNumbers(a.ben, `C-${phish}`)).toEqual([phish]);
     expect(await a.caseNumbers(a.ben, "nothing-like-this")).toEqual([]);
-    expect(await a.search(a.ben, "  -- ")).toEqual({
-      cases: [],
-      alerts: [],
-      observables: [],
-      assets: [],
-      more: { cases: false, alerts: false, observables: false, assets: false },
+    expect(await a.searchPage(a.ben, "  -- ")).toEqual({
+      hits: [],
+      total: 0,
+      counts: { cases: 0, alerts: 0, observables: 0, assets: 0 },
+      page: 1,
+      pageSize: 20,
     });
   });
 
@@ -190,34 +205,47 @@ describe("Global search", () => {
     expect(await a.caseNumbers(a.ben, "lookalike dom")).toEqual([invoices]);
   });
 
-  test("searches only the kinds asked for, at most `limit` of each, and says when there are more", async () => {
+  test("one list of every kind, best first, a page at a time, with how many of each kind match", async () => {
     const a = await acme();
     const numbers = [];
     for (let i = 1; i <= 6; i++) numbers.push(await a.open(`Phishing wave ${i}`));
     await a.observe(numbers[0]!, "domain", "phishing-kit.example");
     const id = await a.detect("epp");
 
-    const top = await a.search(a.ben, "phishing", { limit: "5" });
-    expect(top.cases).toHaveLength(5);
-    expect(top.more).toEqual({ cases: true, alerts: false, observables: false, assets: false });
-    expect(top.observables.map((o) => o.value)).toEqual(["phishing-kit.example"]);
-    expect(top.cases.every((c) => typeof c.rank === "number" && c.rank > 0)).toBe(true);
+    const first = await a.searchPage(a.ben, "phishing", { pageSize: "3" });
+    expect(first).toMatchObject({ total: 7, counts: { cases: 6, alerts: 0, observables: 1, assets: 0 }, page: 1, pageSize: 3 });
+    expect(first.hits).toHaveLength(3);
+    const all = [
+      ...first.hits,
+      ...(await a.searchPage(a.ben, "phishing", { pageSize: "3", page: "2" })).hits,
+      ...(await a.searchPage(a.ben, "phishing", { pageSize: "3", page: "3" })).hits,
+    ];
+    // Every result exactly once across the pages, best first.
+    expect(all).toHaveLength(7);
+    const key = (h: (typeof all)[number]) => (h.kind === "cases" ? `case ${h.item.number}` : `${h.kind} ${h.item.id}`);
+    expect(new Set(all.map(key)).size).toBe(7);
+    expect(all.map((h) => h.rank)).toEqual(all.map((h) => h.rank).toSorted((x, y) => y - x));
+    expect(all.filter((h) => h.kind === "observables").map((h) => h.kind === "observables" && h.item.value)).toEqual(["phishing-kit.example"]);
+    expect((await a.searchPage(a.ben, "phishing", { pageSize: "3", page: "4" })).hits).toEqual([]);
 
-    const onlyItems = await a.search(a.ben, "phishing", { kinds: "observables,assets" });
-    expect([onlyItems.cases, onlyItems.alerts]).toEqual([[], []]);
-    expect(onlyItems.observables.map((o) => o.value)).toEqual(["phishing-kit.example"]);
+    // Narrowed to some kinds, the total and pages are theirs; the counts still cover every kind.
+    const onlyItems = await a.searchPage(a.ben, "phishing", { kinds: "observables,assets" });
+    expect(onlyItems.total).toBe(1);
+    expect(onlyItems.counts.cases).toBe(6);
+    expect(onlyItems.hits.map((h) => h.kind)).toEqual(["observables"]);
 
     const onlyAlerts = await a.search(a.ben, "FIN-LT-0231", { kinds: "alerts" });
     expect(onlyAlerts.alerts.map((x) => x.id)).toEqual([id]);
     expect([onlyAlerts.cases, onlyAlerts.observables, onlyAlerts.assets]).toEqual([[], [], []]);
 
     // A reference outranks every text match.
-    const byRef = await a.search(a.ben, String(numbers[3]));
-    expect(byRef.cases[0]?.number).toBe(numbers[3]);
-    expect(byRef.cases[0]!.rank).toBeGreaterThan(100);
+    const byRef = await a.searchPage(a.ben, String(numbers[3]));
+    expect(byRef.hits[0]).toMatchObject({ kind: "cases", item: { number: numbers[3] } });
+    expect(byRef.hits[0]!.rank).toBeGreaterThan(100);
 
     expect((await a.ben.api.search.$get({ query: { q: "x", kinds: "cases,tasks" } })).status as number).toBe(400);
-    expect((await a.ben.api.search.$get({ query: { q: "x", limit: "51" } })).status as number).toBe(400);
+    expect((await a.ben.api.search.$get({ query: { q: "x", pageSize: "51" } })).status as number).toBe(400);
+    expect((await a.ben.api.search.$get({ query: { q: "x", page: "0" } })).status as number).toBe(400);
   });
 
   test("signed-out people can't search", async () => {

@@ -8,7 +8,7 @@ import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from "@
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
 import { useMe } from "@/lib/api";
-import { type SearchKind, searchKindLabel, searchQuery, topHits } from "@/lib/search";
+import { hitKey, type SearchKind, searchKindLabel, searchQuery } from "@/lib/search";
 
 /** How many results the search box shows before "See all results". */
 const TOP = 5;
@@ -41,12 +41,13 @@ export function SearchPalette() {
   const [q, setQ] = useState("");
   const [kinds, setKinds] = useState<SearchKind[]>([]);
   const settled = useDebounced(q, 150);
-  const results = useQuery({ ...searchQuery({ q: settled, kinds, limit: TOP }), enabled: open && settled.trim().length > 0 });
-  const hits = results.data && settled.trim() ? topHits(results.data, TOP) : [];
+  const results = useQuery({ ...searchQuery({ q: settled, kinds, pageSize: TOP }), enabled: open && settled.trim().length > 0 });
+  const hits = results.data && settled.trim() ? results.data.hits : [];
+  const total = results.data && settled.trim() ? results.data.total : 0;
   // The highlight starts on the best result whenever the results change.
-  const hitsKey = hits.map((h) => h.key).join("|");
+  const hitsKey = hits.map(hitKey).join("|");
   const [highlight, setHighlight] = useState({ for: "", value: "" });
-  const highlighted = highlight.for === hitsKey ? highlight.value : (hits[0]?.key ?? "see-all");
+  const highlighted = highlight.for === hitsKey ? highlight.value : ((hits[0] ? hitKey(hits[0]) : "see-all"));
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -113,8 +114,8 @@ export function SearchPalette() {
                 <CommandGroup heading="Top results">
                   {hits.map((hit) => (
                     <CommandItem
-                      key={hit.key}
-                      value={hit.key}
+                      key={hitKey(hit)}
+                      value={hitKey(hit)}
                       onSelect={() => {
                         setOpen(false);
                         void openHit(hit);
@@ -129,7 +130,7 @@ export function SearchPalette() {
               {typed && (
                 <CommandItem value="see-all" onSelect={seeAll} className="mt-1 justify-between border-t py-2 text-muted-foreground [&>svg:last-child]:hidden">
                   <span>
-                    See all results for <span className="text-foreground">“{q.trim()}”</span>
+                    See all {total > hits.length ? `${total} ` : ""}results for <span className="text-foreground">“{q.trim()}”</span>
                   </span>
                   <ArrowRightIcon className="size-4" />
                 </CommandItem>

@@ -1,20 +1,22 @@
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate, useRouteContext, useSearch } from "@tanstack/react-router";
-import { SearchIcon } from "lucide-react";
+import { Link, useNavigate, useRouteContext, useSearch } from "@tanstack/react-router";
+import { ChevronLeftIcon, ChevronRightIcon, SearchIcon } from "lucide-react";
 import { useState } from "react";
 import { KindFilter } from "@/components/search/kind-filter";
 import { SearchHitLink, SearchHitRow } from "@/components/search/search-hit";
+import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMe } from "@/lib/api";
-import { hitsOf, parseKinds, SEARCH_KINDS, type SearchKind, searchKindLabel, searchQuery } from "@/lib/search";
+import { hitKey, parseKinds, SEARCH_KINDS, type SearchKind, type SearchPageSearch, searchKindLabel, searchQuery } from "@/lib/search";
 
-/** Results of each kind the page shows. */
-const LIMIT = 50;
+/** Results on a page. */
+const PAGE_SIZE = 20;
 
 /**
- * Every result of a search, grouped by kind in the same compact rows and with the same kind
- * toggles as the search box. The query and kinds live in the URL, so a search can be shared.
+ * Every result of a search as one list, best first across kinds, a page at a time: the same compact
+ * rows and kind toggles as the search box. The query, kinds and page live in the URL, so a search
+ * can be shared.
  */
 export function SearchPage() {
   const search = useSearch({ from: "/_app/search" });
@@ -23,23 +25,23 @@ export function SearchPage() {
   const guest = !!me.guest;
   const q = search.q ?? "";
   const kinds = parseKinds(search.kinds);
+  const page = search.page ?? 1;
+  /** A new query or new kinds start again from the first page. */
   const setSearch = (next: { q?: string; kinds?: SearchKind[] }) =>
     navigate({
       search: (prev) => {
         const nextKinds = next.kinds ?? parseKinds(prev.kinds);
-        return { q: (next.q ?? prev.q) || undefined, kinds: nextKinds.length ? nextKinds.join(",") : undefined };
+        return { q: (next.q ?? prev.q) || undefined, kinds: nextKinds.length ? nextKinds.join(",") : undefined, page: undefined };
       },
       replace: true,
     });
 
-  // Every kind is counted, so the toggles say what each holds even while some are off.
-  const results = useQuery(searchQuery({ q, kinds: [], limit: LIMIT }));
+  const results = useQuery(searchQuery({ q, kinds, page, pageSize: PAGE_SIZE }));
   const data = results.data;
-  const shown = (kinds.length ? kinds : SEARCH_KINDS).filter((k) => data && hitsOf(data, k).length);
-  const counts = data
-    ? Object.fromEntries(SEARCH_KINDS.map((k) => [k, `${hitsOf(data, k).length}${data.more[k] ? "+" : ""}`]))
-    : undefined;
-  const total = shown.reduce((n, k) => n + (data ? hitsOf(data, k).length : 0), 0);
+  const counts = data ? Object.fromEntries(SEARCH_KINDS.map((k) => [k, String(data.counts[k])])) : undefined;
+  const pages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
+  const first = (page - 1) * PAGE_SIZE + 1;
+  const pageSearch = (p: number): SearchPageSearch => ({ ...search, page: p > 1 ? p : undefined });
 
   return (
     <div className="mx-auto grid w-full max-w-4xl grid-cols-1 gap-4">
@@ -59,40 +61,67 @@ export function SearchPage() {
           ))}
         </div>
       )}
-      {q && data && !total && (
+      {q && data && !data.total && (
         <p className="py-8 text-center text-sm text-muted-foreground">
           Nothing {kinds.length ? `in ${kinds.map((k) => searchKindLabel[k]).join(", ")} ` : ""}matches “{q}”.
         </p>
       )}
+      {q && data && data.total > 0 && !data.hits.length && (
+        <p className="py-8 text-center text-sm text-muted-foreground">
+          There {pages === 1 ? "is only 1 page" : `are only ${pages} pages`} of results.{" "}
+          <Link to="/search" search={pageSearch(1)} className="underline">
+            Back to the first
+          </Link>
+        </p>
+      )}
 
-      {data && total > 0 && (
-        <div className={results.isPlaceholderData ? "grid grid-cols-1 gap-6 opacity-60 transition-opacity" : "grid grid-cols-1 gap-6"}>
-          {shown.map((kind) => {
-            const hits = hitsOf(data, kind);
-            return (
-              <section key={kind} aria-labelledby={`results-${kind}`}>
-                <h2 id={`results-${kind}`} className="mb-1 flex items-baseline gap-2 px-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                  {searchKindLabel[kind]}
-                  <span className="tabular-nums">{counts?.[kind]}</span>
-                </h2>
-                <ul className="divide-y rounded-lg border">
-                  {hits.map((hit) => (
-                    <li key={hit.key}>
-                      <SearchHitLink hit={hit} guest={guest} className="rounded-none px-3 py-2">
-                        <SearchHitRow hit={hit} query={q} />
-                      </SearchHitLink>
-                    </li>
-                  ))}
-                </ul>
-                {data.more[kind] && (
-                  <p className="mt-1 px-2 text-xs text-muted-foreground">Showing the best {LIMIT}. Add words to narrow it down.</p>
-                )}
-              </section>
-            );
-          })}
+      {data && data.hits.length > 0 && (
+        <div className={results.isPlaceholderData ? "grid grid-cols-1 gap-3 opacity-60 transition-opacity" : "grid grid-cols-1 gap-3"}>
+          <p className="px-1 text-xs text-muted-foreground tabular-nums" aria-live="polite">
+            {data.total === 1 ? "1 result" : `${first}–${first + data.hits.length - 1} of ${data.total} results, best first`}
+          </p>
+          <ul aria-label="Results" className="divide-y rounded-lg border">
+            {data.hits.map((hit) => (
+              <li key={hitKey(hit)}>
+                <SearchHitLink hit={hit} guest={guest} className="rounded-none px-3 py-2">
+                  <SearchHitRow hit={hit} query={q} showKind />
+                </SearchHitLink>
+              </li>
+            ))}
+          </ul>
+          {pages > 1 && (
+            <nav aria-label="Pages" className="flex items-center justify-between gap-2">
+              <PageLink to={pageSearch(page - 1)} disabled={page <= 1}>
+                <ChevronLeftIcon /> Previous
+              </PageLink>
+              <span className="text-sm text-muted-foreground tabular-nums">
+                Page {page} of {pages}
+              </span>
+              <PageLink to={pageSearch(page + 1)} disabled={page >= pages}>
+                Next <ChevronRightIcon />
+              </PageLink>
+            </nav>
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+function PageLink({ to, disabled, children }: { to: SearchPageSearch; disabled: boolean; children: React.ReactNode }) {
+  if (disabled) {
+    return (
+      <Button variant="outline" size="sm" disabled>
+        {children}
+      </Button>
+    );
+  }
+  return (
+    <Button variant="outline" size="sm" asChild>
+      <Link to="/search" search={to}>
+        {children}
+      </Link>
+    </Button>
   );
 }
 

@@ -4,15 +4,20 @@ import { api } from "@/lib/api";
 
 export { SEARCH_KINDS, type SearchKind, searchKindLabel } from "api/search/vocabulary";
 
-/** A search: the words, and the kinds to look through (every kind when empty). */
-export type SearchParams = { q: string; kinds: SearchKind[]; limit?: number };
+/** A search: the words, the kinds to list (every kind when empty) and which page. */
+export type SearchParams = { q: string; kinds: SearchKind[]; page?: number; pageSize?: number };
 
-export const searchQuery = ({ q, kinds, limit }: SearchParams) =>
+export const searchQuery = ({ q, kinds, page = 1, pageSize }: SearchParams) =>
   queryOptions({
-    queryKey: ["search", q.trim(), kinds.toSorted().join(","), limit ?? null],
+    queryKey: ["search", q.trim(), kinds.toSorted().join(","), page, pageSize ?? null],
     queryFn: async () => {
       const res = await api.search.$get({
-        query: { q: q.trim(), ...(kinds.length ? { kinds: kinds.join(",") } : {}), ...(limit ? { limit: String(limit) } : {}) },
+        query: {
+          q: q.trim(),
+          ...(kinds.length ? { kinds: kinds.join(",") } : {}),
+          ...(page > 1 ? { page: String(page) } : {}),
+          ...(pageSize ? { pageSize: String(pageSize) } : {}),
+        },
       });
       if (!res.ok) throw new Error("Could not search");
       return (await res.json()).results;
@@ -23,45 +28,25 @@ export const searchQuery = ({ q, kinds, limit }: SearchParams) =>
   });
 
 export type SearchResults = Awaited<ReturnType<ReturnType<typeof searchQuery>["queryFn"] & {}>>;
+/** One result, of any kind. */
+export type SearchHit = SearchResults["hits"][number];
 
-/** One result of any kind, as the search box and the results page list them. */
-export type SearchHit =
-  | { kind: "cases"; key: string; rank: number; item: SearchResults["cases"][number] }
-  | { kind: "alerts"; key: string; rank: number; item: SearchResults["alerts"][number] }
-  | { kind: "observables"; key: string; rank: number; item: SearchResults["observables"][number] }
-  | { kind: "assets"; key: string; rank: number; item: SearchResults["assets"][number] };
-
-/** The results of one kind as hits, best first. */
-export function hitsOf(results: SearchResults, kind: SearchKind): SearchHit[] {
-  switch (kind) {
-    case "cases":
-      return results.cases.map((item) => ({ kind, key: `case:${item.number}`, rank: item.rank, item }));
-    case "alerts":
-      return results.alerts.map((item) => ({ kind, key: `alert:${item.id}`, rank: item.rank, item }));
-    case "observables":
-      return results.observables.map((item) => ({ kind, key: `observable:${item.id}`, rank: item.rank, item }));
-    case "assets":
-      return results.assets.map((item) => ({ kind, key: `asset:${item.id}`, rank: item.rank, item }));
-  }
-}
-
-/** The best `n` results across every kind; ties go to the kind listed first. */
-export const topHits = (results: SearchResults, n: number) =>
-  SEARCH_KINDS.flatMap((kind) => hitsOf(results, kind))
-    .toSorted((a, b) => b.rank - a.rank)
-    .slice(0, n);
+/** A key for a result, unique across kinds. */
+export const hitKey = (hit: SearchHit) => (hit.kind === "cases" ? `case:${hit.item.number}` : `${hit.kind}:${hit.item.id}`);
 
 /** Reads the kinds from the URL (`kinds=cases,alerts`), ignoring anything unknown. */
 export const parseKinds = (value: unknown): SearchKind[] =>
   typeof value === "string" ? SEARCH_KINDS.filter((k) => value.split(",").includes(k)) : [];
 
-export type SearchPageSearch = { q?: string; kinds?: string };
+export type SearchPageSearch = { q?: string; kinds?: string; page?: number };
 
-/** Reads the results page's query and kinds from the URL: `/search?q=…&kinds=cases,alerts`. */
+/** Reads the results page's query, kinds and page from the URL: `/search?q=…&kinds=cases,alerts&page=2`. */
 export const validateSearchPageSearch = (search: Record<string, unknown>): SearchPageSearch => {
   const kinds = parseKinds(search.kinds);
+  const page = Number(search.page);
   return {
     q: typeof search.q === "string" && search.q ? search.q.slice(0, 200) : undefined,
     kinds: kinds.length ? kinds.join(",") : undefined,
+    page: Number.isInteger(page) && page > 1 ? Math.min(page, 10_000) : undefined,
   };
 };

@@ -6,7 +6,7 @@ import type { Db } from "../db/client";
 import { alertAssets, alertObservables, alerts, assets, caseAssets, caseObservables, cases, integrations, observables } from "../db/schema";
 import type { Participant } from "../members/membership";
 import type { AssetType, ObservableType } from "../observables/vocabulary";
-import { SEARCH_DEFAULT_LIMIT, SEARCH_KINDS, type SearchKind } from "./vocabulary";
+import { SEARCH_DEFAULT_PAGE_SIZE, SEARCH_KINDS, type SearchKind } from "./vocabulary";
 
 /**
  * Global search: Cases (by title and Case Summary), Alerts (by title, Falcon's id, host, user and
@@ -15,22 +15,34 @@ import { SEARCH_DEFAULT_LIMIT, SEARCH_KINDS, type SearchKind } from "./vocabular
  * and `-excluded`. Each word also matches as the start of a longer one, so results come as the query
  * is typed ("invo" finds invoice-portal.biz); whole-word matches rank higher.
  *
+ * Every kind is ranked on one scale and returned as one list, best first, a page at a time, with how
+ * many of each kind match. Typing a Case's reference ("C-12", or "12") puts that Case first.
+ *
  * Results go through the access policy like every other read:
  * - Cases: those `visibleCases` lets the actor see, so Restricted Cases never leak.
  * - Alerts: Members search the whole Alert queue, and are shown the Case an Alert is on only if they
  *   can see it. Guests find only Alerts attached to their Cases that aren't Internal.
  * - Observables and Assets: those linked to a Case the actor can see and, for Members, those an
  *   Alert names. Each lists the Cases it is linked to among those the actor can see.
- *
- * Typing a Case's reference ("C-12", or "12") finds that Case first, if the actor can see it.
  */
 
 type CaseRef = { number: number; title: string };
 
-/** How well a result matches, comparable across kinds: higher is better. */
-type Ranked = { rank: number };
-
-type ItemResult<Type extends string> = Ranked & {
+type CaseHit = { number: number; title: string; status: Status; severity: Severity; restricted: boolean };
+type AlertHit = {
+  id: string;
+  externalId: string;
+  title: string;
+  severity: Severity;
+  status: AlertStatus;
+  host: string | null;
+  userName: string | null;
+  integration: { name: string };
+  receivedAt: string;
+  /** The Case it is attached to, unless that is a Case the actor can't see. */
+  case: CaseRef | null;
+};
+type ItemHit<Type extends string> = {
   id: string;
   type: Type;
   value: string;
@@ -38,41 +50,33 @@ type ItemResult<Type extends string> = Ranked & {
   cases: CaseRef[];
 };
 
+/** One result: its kind, how well it matches (comparable across kinds; higher is better) and what it is. */
+export type SearchHit =
+  | { kind: "cases"; rank: number; item: CaseHit }
+  | { kind: "alerts"; rank: number; item: AlertHit }
+  | { kind: "observables"; rank: number; item: ItemHit<ObservableType> }
+  | { kind: "assets"; rank: number; item: ItemHit<AssetType> };
+
 export type SearchResults = {
-  cases: (Ranked & { number: number; title: string; status: Status; severity: Severity; restricted: boolean })[];
-  alerts: (Ranked & {
-    id: string;
-    externalId: string;
-    title: string;
-    severity: Severity;
-    status: AlertStatus;
-    host: string | null;
-    userName: string | null;
-    integration: { name: string };
-    receivedAt: string;
-    /** The Case it is attached to, unless that is a Case the actor can't see. */
-    case: CaseRef | null;
-  })[];
-  observables: ItemResult<ObservableType>[];
-  assets: ItemResult<AssetType>[];
-  /** For each kind, whether there are more results than were returned. */
-  more: Record<SearchKind, boolean>;
+  /** This page of results, best first. */
+  hits: SearchHit[];
+  /** How many results of the kinds searched there are in all. */
+  total: number;
+  /** How many results of each kind there are, whichever kinds were searched. */
+  counts: Record<SearchKind, number>;
+  page: number;
+  pageSize: number;
 };
 
 export type SearchOptions = {
-  /** Which kinds to search; all of them when empty or left out. */
+  /** Which kinds to list; all of them when empty or left out. */
   kinds?: readonly SearchKind[];
-  /** At most this many of each kind. */
-  limit?: number;
+  /** Which page, from 1. */
+  page?: number;
+  pageSize?: number;
 };
 
-const empty = (): SearchResults => ({
-  cases: [],
-  alerts: [],
-  observables: [],
-  assets: [],
-  more: { cases: false, alerts: false, observables: false, assets: false },
-});
+const noCounts = (): Record<SearchKind, number> => ({ cases: 0, alerts: 0, observables: 0, assets: 0 });
 
 /** The Case number a query names, as in "C-12", "c12", "#12" or "12"; else null. */
 const caseNumberIn = (query: string) => {
@@ -83,60 +87,12 @@ const caseNumberIn = (query: string) => {
 /** A Case named by its reference ranks above any text match. */
 const REFERENCE_RANK = 1000;
 
-/** Keeps the first `limit` rows and says whether there were more. */
-const page = <T>(rows: T[], limit: number) => ({ rows: rows.slice(0, limit), more: rows.length > limit });
-
 export function searchStore({ db }: { db: Db }) {
-  const observableKind = { items: observables, links: caseObservables, alertLinks: alertObservables };
-  const assetKind = { items: assets, links: caseAssets, alertLinks: alertAssets };
-  type Query = { matches: (column: SQL | AnyColumn) => SQL; rank: (column: AnyColumn) => SQL<number> };
-
-  async function searchItems(me: Participant, q: Query, kind: typeof observableKind, limit: number) {
-    const { items, links, alertLinks } = kind;
-    const onVisibleCase = exists(
-      db
-        .select({ one: sql`1` })
-        .from(links)
-        .innerJoin(cases, eq(links.caseId, cases.id))
-        .where(and(eq(links.itemId, items.id), isNull(links.unlinkedAt), visibleCases(me))),
-    );
-    // Members see every Alert, so they see what each one names too.
-    const namedByAlert = isGuest(me)
-      ? undefined
-      : exists(db.select({ one: sql`1` }).from(alertLinks).where(eq(alertLinks.itemId, items.id)));
-    const { rows, more } = page(
-      await db
-        .select({ id: items.id, type: items.type, value: items.value, rank: q.rank(items.search) })
-        .from(items)
-        .where(and(eq(items.organizationId, me.organizationId), q.matches(items.search), or(onVisibleCase, namedByAlert)))
-        .orderBy(desc(q.rank(items.search)), items.value)
-        .limit(limit + 1),
-      limit,
-    );
-    if (!rows.length) return { rows: [], more };
-    const linked = await db
-      .select({ itemId: links.itemId, number: cases.number, title: cases.title })
-      .from(links)
-      .innerJoin(cases, eq(links.caseId, cases.id))
-      .where(
-        and(
-          inArray(
-            links.itemId,
-            rows.map((r) => r.id),
-          ),
-          isNull(links.unlinkedAt),
-          visibleCases(me),
-        ),
-      )
-      .orderBy(desc(cases.number));
-    return {
-      rows: rows.map((r) => ({
-        ...r,
-        cases: linked.filter((l) => l.itemId === r.id).map(({ number, title }) => ({ number, title })),
-      })),
-      more,
-    };
-  }
+  const itemKinds = {
+    observables: { items: observables, links: caseObservables, alertLinks: alertObservables },
+    assets: { items: assets, links: caseAssets, alertLinks: alertAssets },
+  } as const;
+  type ItemKind = (typeof itemKinds)[keyof typeof itemKinds];
 
   /**
    * The query as a tsquery, and the same with every word also matching as a prefix; null when it
@@ -150,105 +106,177 @@ export function searchStore({ db }: { db: Db }) {
     return { exact: parsed.exact, prefix: parsed.exact.replace(/'((?:[^']|'')*)'/g, "'$1':*") };
   }
 
-  return {
-    /** What `query` finds that `me` can see, at most `limit` of each kind asked for, best first. */
-    async search(me: Participant, query: string, options: SearchOptions = {}): Promise<SearchResults> {
-      const text = query.trim();
-      const limit = options.limit ?? SEARCH_DEFAULT_LIMIT;
-      const wanted = new Set(options.kinds?.length ? options.kinds : SEARCH_KINDS);
-      const results = empty();
-      if (!text) return results;
-      const parsed = await parse(text);
-      const number = wanted.has("cases") ? caseNumberIn(text) : null;
-      if (!parsed && number === null) return results;
+  /** Observables or Assets `me` may find: linked to a Case they can see, or (Members) named by an Alert. */
+  const findableItem = (me: Participant, { items, links, alertLinks }: ItemKind) =>
+    or(
+      exists(
+        db
+          .select({ one: sql`1` })
+          .from(links)
+          .innerJoin(cases, eq(links.caseId, cases.id))
+          .where(and(eq(links.itemId, items.id), isNull(links.unlinkedAt), visibleCases(me))),
+      ),
+      // Members see every Alert, so they see what each one names too.
+      isGuest(me) ? undefined : exists(db.select({ one: sql`1` }).from(alertLinks).where(eq(alertLinks.itemId, items.id))),
+    );
 
-      // Cast, not `to_tsquery`, which would split the parsed words again.
-      const exact = sql`${parsed?.exact ?? ""}::tsquery`;
-      const prefix = sql`${parsed?.prefix ?? ""}::tsquery`;
-      const q: Query = {
-        matches: (column) => (parsed ? sql`${column} @@ ${prefix}` : sql`false`),
-        rank: (column) => (parsed ? sql<number>`(2 * ts_rank_cd(${column}, ${exact}) + ts_rank_cd(${column}, ${prefix}))::real` : sql<number>`0::real`),
-      };
+  /** The Cases each of `ids` is linked to that `me` can see, newest first. */
+  async function linkedCases(me: Participant, { links }: ItemKind, ids: string[]) {
+    if (!ids.length) return new Map<string, CaseRef[]>();
+    const rows = await db
+      .select({ itemId: links.itemId, number: cases.number, title: cases.title })
+      .from(links)
+      .innerJoin(cases, eq(links.caseId, cases.id))
+      .where(and(inArray(links.itemId, ids), isNull(links.unlinkedAt), visibleCases(me)))
+      .orderBy(desc(cases.number));
+    const byItem = new Map<string, CaseRef[]>();
+    for (const { itemId, number, title } of rows) byItem.set(itemId, [...(byItem.get(itemId) ?? []), { number, title }]);
+    return byItem;
+  }
 
-      if (wanted.has("cases")) {
-        const isReference = number === null ? sql`false` : sql`${cases.number} = ${number}`;
-        const rank = sql<number>`(case when ${isReference} then ${REFERENCE_RANK} else ${q.rank(cases.search)} end)::real`;
-        const found = page(
-          await db
-            .select({
-              number: cases.number,
-              title: cases.title,
-              status: cases.status,
-              severity: cases.severity,
-              restricted: cases.restricted,
-              rank,
-            })
-            .from(cases)
-            .where(and(visibleCases(me), or(q.matches(cases.search), isReference)))
-            .orderBy(desc(rank), desc(cases.updatedAt))
-            .limit(limit + 1),
-          limit,
-        );
-        results.cases = found.rows;
-        results.more.cases = found.more;
-      }
-      if (!parsed) return results;
+  async function itemHits(me: Participant, kind: ItemKind, ids: string[]) {
+    if (!ids.length) return new Map<string, ItemHit<string>>();
+    const { items } = kind;
+    const rows = await db.select({ id: items.id, type: items.type, value: items.value }).from(items).where(inArray(items.id, ids));
+    const linked = await linkedCases(me, kind, ids);
+    return new Map(rows.map((r) => [r.id, { ...r, cases: linked.get(r.id) ?? [] }]));
+  }
 
-      if (wanted.has("alerts")) {
-        const found = page(
-          await db
-            .select({
-              id: alerts.id,
-              externalId: alerts.externalId,
-              title: alerts.title,
-              severity: alerts.severity,
-              status: alerts.status,
-              host: alerts.host,
-              userName: alerts.userName,
-              integrationName: integrations.name,
-              receivedAt: alerts.receivedAt,
-              caseNumber: cases.number,
-              caseTitle: cases.title,
-              caseVisible: sql<boolean | null>`(${visibleCases(me)})`,
-              rank: q.rank(alerts.search),
-            })
-            .from(alerts)
-            .innerJoin(integrations, eq(alerts.integrationId, integrations.id))
-            .leftJoin(cases, eq(alerts.caseId, cases.id))
-            .where(
-              and(
-                eq(alerts.organizationId, me.organizationId),
-                q.matches(alerts.search),
-                // Guests find only the Alerts on their Cases that they are shown.
-                isGuest(me) ? and(visibleCases(me), visibleItems(me, alerts.internal)) : undefined,
-              ),
-            )
-            .orderBy(desc(q.rank(alerts.search)), desc(alerts.receivedAt), desc(alerts.seq))
-            .limit(limit + 1),
-          limit,
-        );
-        results.alerts = found.rows.map(({ integrationName, receivedAt, caseNumber, caseTitle, caseVisible, ...row }) => ({
+  async function caseHits(ids: string[]) {
+    if (!ids.length) return new Map<string, CaseHit>();
+    const rows = await db
+      .select({ id: cases.id, number: cases.number, title: cases.title, status: cases.status, severity: cases.severity, restricted: cases.restricted })
+      .from(cases)
+      .where(inArray(cases.id, ids));
+    return new Map(rows.map(({ id, ...row }) => [id, row]));
+  }
+
+  async function alertHits(me: Participant, ids: string[]) {
+    if (!ids.length) return new Map<string, AlertHit>();
+    const rows = await db
+      .select({
+        id: alerts.id,
+        externalId: alerts.externalId,
+        title: alerts.title,
+        severity: alerts.severity,
+        status: alerts.status,
+        host: alerts.host,
+        userName: alerts.userName,
+        integrationName: integrations.name,
+        receivedAt: alerts.receivedAt,
+        caseNumber: cases.number,
+        caseTitle: cases.title,
+        caseVisible: sql<boolean | null>`(${visibleCases(me)})`,
+      })
+      .from(alerts)
+      .innerJoin(integrations, eq(alerts.integrationId, integrations.id))
+      .leftJoin(cases, eq(alerts.caseId, cases.id))
+      .where(inArray(alerts.id, ids));
+    return new Map(
+      rows.map(({ integrationName, receivedAt, caseNumber, caseTitle, caseVisible, ...row }) => [
+        row.id,
+        {
           ...row,
           integration: { name: integrationName },
           receivedAt: receivedAt.toISOString(),
           case: caseNumber !== null && caseTitle !== null && caseVisible ? { number: caseNumber, title: caseTitle } : null,
-        }));
-        results.more.alerts = found.more;
-      }
+        },
+      ]),
+    );
+  }
 
-      const [observableResults, assetResults] = await Promise.all([
-        wanted.has("observables") ? searchItems(me, q, observableKind, limit) : null,
-        wanted.has("assets") ? searchItems(me, q, assetKind, limit) : null,
+  return {
+    /**
+     * What `query` finds that `me` can see, as one list best first, a page at a time: the kinds in
+     * `options.kinds` (all when none), with how many of every kind match.
+     */
+    async search(me: Participant, query: string, options: SearchOptions = {}): Promise<SearchResults> {
+      const text = query.trim();
+      const page = Math.max(1, options.page ?? 1);
+      const pageSize = options.pageSize ?? SEARCH_DEFAULT_PAGE_SIZE;
+      const wanted = options.kinds?.length ? SEARCH_KINDS.filter((k) => options.kinds!.includes(k)) : [...SEARCH_KINDS];
+      const none: SearchResults = { hits: [], total: 0, counts: noCounts(), page, pageSize };
+      if (!text) return none;
+      const parsed = await parse(text);
+      const number = caseNumberIn(text);
+      if (!parsed && number === null) return none;
+
+      // Cast, not `to_tsquery`, which would split the parsed words again.
+      const exact = sql`${parsed?.exact ?? ""}::tsquery`;
+      const prefix = sql`${parsed?.prefix ?? ""}::tsquery`;
+      const matches = (column: SQL | AnyColumn) => (parsed ? sql`${column} @@ ${prefix}` : sql`false`);
+      const rank = (column: AnyColumn) =>
+        parsed ? sql`(2 * ts_rank_cd(${column}, ${exact}) + ts_rank_cd(${column}, ${prefix}))` : sql`0`;
+
+      // Every match the actor may see, as (kind, id, rank, at); `at` breaks ties, newest first.
+      const isReference = number === null ? sql`false` : sql`${cases.number} = ${number}`;
+      const matching = sql.join(
+        [
+          sql`select 'cases' as kind, 0 as kind_order, ${cases.id} as id,
+            (case when ${isReference} then ${REFERENCE_RANK} else ${rank(cases.search)} end)::real as rank, ${cases.updatedAt} as at
+            from ${cases} where ${and(visibleCases(me), or(matches(cases.search), isReference))}`,
+          sql`select 'alerts', 1, ${alerts.id}, ${rank(alerts.search)}::real, ${alerts.receivedAt}
+            from ${alerts} left join ${cases} on ${eq(alerts.caseId, cases.id)}
+            where ${and(
+              eq(alerts.organizationId, me.organizationId),
+              matches(alerts.search),
+              // Guests find only the Alerts on their Cases that they are shown.
+              isGuest(me) ? and(visibleCases(me), visibleItems(me, alerts.internal)) : undefined,
+            )}`,
+          ...(["observables", "assets"] as const).map((key, i) => {
+            const kind = itemKinds[key];
+            return sql`select ${key}, ${2 + i}, ${kind.items.id}, ${rank(kind.items.search)}::real, ${kind.items.createdAt}
+              from ${kind.items} where ${and(eq(kind.items.organizationId, me.organizationId), matches(kind.items.search), findableItem(me, kind))}`;
+          }),
+        ],
+        sql` union all `,
+      );
+
+      const countRows = await db.execute<{ kind: SearchKind; n: number }>(
+        sql`select kind, count(*)::int as n from (${matching}) as matching group by kind`,
+      );
+      const counts = noCounts();
+      for (const { kind, n } of countRows) counts[kind] = Number(n);
+      const total = wanted.reduce((sum, k) => sum + counts[k], 0);
+
+      const pageRows = await db.execute<{ kind: SearchKind; id: string; rank: number }>(
+        sql`select kind, id, rank from (${matching}) as matching
+          where kind in (${sql.join(
+            wanted.map((k) => sql`${k}`),
+            sql`, `,
+          )})
+          order by rank desc, kind_order, at desc, id
+          limit ${pageSize} offset ${(page - 1) * pageSize}`,
+      );
+      const idsOf = (kind: SearchKind) => pageRows.filter((r) => r.kind === kind).map((r) => r.id);
+      const [caseItems, alertItems, observableItems, assetItems] = await Promise.all([
+        caseHits(idsOf("cases")),
+        alertHits(me, idsOf("alerts")),
+        itemHits(me, itemKinds.observables, idsOf("observables")),
+        itemHits(me, itemKinds.assets, idsOf("assets")),
       ]);
-      if (observableResults) {
-        results.observables = observableResults.rows as ItemResult<ObservableType>[];
-        results.more.observables = observableResults.more;
-      }
-      if (assetResults) {
-        results.assets = assetResults.rows as ItemResult<AssetType>[];
-        results.more.assets = assetResults.more;
-      }
-      return results;
+      const hits = pageRows.flatMap(({ kind, id, rank: score }): SearchHit[] => {
+        const r = Number(score);
+        switch (kind) {
+          case "cases": {
+            const item = caseItems.get(id);
+            return item ? [{ kind, rank: r, item }] : [];
+          }
+          case "alerts": {
+            const item = alertItems.get(id);
+            return item ? [{ kind, rank: r, item }] : [];
+          }
+          case "observables": {
+            const item = observableItems.get(id);
+            return item ? [{ kind, rank: r, item: item as ItemHit<ObservableType> }] : [];
+          }
+          case "assets": {
+            const item = assetItems.get(id);
+            return item ? [{ kind, rank: r, item: item as ItemHit<AssetType> }] : [];
+          }
+        }
+      });
+      return { hits, total, counts, page, pageSize };
     },
   };
 }

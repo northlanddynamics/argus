@@ -71,18 +71,53 @@ test("an Analyst searches from anywhere: top results as they type, narrowed by k
     await palette.getByRole("combobox", { name: "Search" }).fill("payroll");
     await options.filter({ hasText: "See all results" }).click();
     await page.waitForURL((url) => url.pathname === "/search" && url.searchParams.get("q") === "payroll" && url.searchParams.get("kinds") === "observables");
-    await page.getByRole("region", { name: /Observables/ }).getByRole("link", { name: /payroll-update\[\.\]example/ }).waitFor();
+    const list = page.getByRole("list", { name: "Results" });
+    await list.getByRole("link", { name: /payroll-update\[\.\]example/ }).waitFor();
+    expect(await list.getByRole("listitem").count()).toBe(1);
     const toggle = (name: RegExp) => page.getByRole("radio", { name }).or(page.getByRole("button", { name }));
     await toggle(/^Observables/).click();
     await page.waitForURL((url) => !url.searchParams.has("kinds"));
-    const casesSection = page.getByRole("region", { name: /Cases/ });
-    await casesSection.getByRole("link", { name: /C-1 Wire fraud attempt on payroll/ }).waitFor();
+    await list.getByRole("link", { name: /C-1 Wire fraud attempt on payroll/ }).waitFor();
+    await page.getByText("1–2 of 2 results").waitFor();
     expect(await page.getByText("Payroll director under investigation").count()).toBe(0);
     await toggle(/^Cases/).click();
     await page.waitForURL((url) => url.searchParams.get("kinds") === "cases");
-    await page.getByRole("region", { name: /Observables/ }).waitFor({ state: "detached" });
-    await casesSection.getByRole("link", { name: /C-1 Wire fraud attempt on payroll/ }).click();
+    await list.getByRole("link", { name: /payroll-update/ }).waitFor({ state: "detached" });
+    await list.getByRole("link", { name: /C-1 Wire fraud attempt on payroll/ }).click();
     await page.getByRole("heading", { name: "Wire fraud attempt on payroll" }).waitFor();
+  } finally {
+    await stop();
+  }
+}, 60_000);
+
+test("the results page is one list, best first, a page at a time", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    for (let i = 1; i <= 22; i++) {
+      await owner.api.cases.$post({ json: { title: `Lure wave ${i}`, caseType: "phishing", severity: "medium" } });
+    }
+    await owner.api.cases[":number"].observables.$post({ param: { number: "1" }, json: { type: "domain", value: "lure-kit.example" } });
+
+    const page = await browser.newPage();
+    await signIn(page, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
+    await page.goto(`${baseUrl}/search?q=lure`);
+    const list = page.getByRole("list", { name: "Results" });
+    await page.getByText("1–20 of 23 results").waitFor();
+    expect(await list.getByRole("listitem").count()).toBe(20);
+    await page.getByText("Page 1 of 2").waitFor();
+
+    await page.getByRole("link", { name: "Next" }).click();
+    await page.waitForURL((url) => url.searchParams.get("page") === "2");
+    await page.getByText("21–23 of 23 results").waitFor();
+    expect(await list.getByRole("listitem").count()).toBe(3);
+    expect(await page.getByRole("button", { name: "Next" }).isDisabled()).toBe(true);
+
+    // Narrowing the kinds starts again from the first page.
+    await page.getByRole("radio", { name: /^Observables/ }).or(page.getByRole("button", { name: /^Observables/ })).click();
+    await page.waitForURL((url) => url.searchParams.get("kinds") === "observables" && !url.searchParams.has("page"));
+    await page.getByText("1 result", { exact: true }).waitFor();
   } finally {
     await stop();
   }
