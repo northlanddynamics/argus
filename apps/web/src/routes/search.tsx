@@ -1,122 +1,154 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, useRouteContext, useSearch } from "@tanstack/react-router";
-import { LockIcon } from "lucide-react";
-import type { ReactNode } from "react";
-import { SeverityBadge, StatusBadge } from "@/components/case-badges";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { alertStatusLabel } from "@/lib/alerts";
+import { Link, useNavigate, useRouteContext, useSearch } from "@tanstack/react-router";
+import { ChevronLeftIcon, ChevronRightIcon, SearchIcon } from "lucide-react";
+import { useState } from "react";
+import { KindFilter } from "@/components/search/kind-filter";
+import { SearchHitLink, SearchHitRow } from "@/components/search/search-hit";
+import { Button } from "@/components/ui/button";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useMe } from "@/lib/api";
-import { caseRef } from "@/lib/cases";
-import { assetTypeLabel, defang, observableTypeLabel } from "@/lib/observables";
-import { searchQuery } from "@/lib/search";
+import { hitKey, parseKinds, SEARCH_KINDS, type SearchKind, type SearchPageSearch, searchKindLabel, searchQuery } from "@/lib/search";
 
-type CaseRef = { number: number; title: string };
+/** Results on a page. */
+const PAGE_SIZE = 20;
 
-function CaseLink({ c }: { c: CaseRef }) {
-  return (
-    <Link to="/cases/$number" params={{ number: String(c.number) }} className="hover:underline">
-      <span className="font-mono text-xs text-muted-foreground">{caseRef(c.number)}</span> {c.title}
-    </Link>
-  );
-}
-
-function Section({ title, count, children }: { title: string; count: number; children: ReactNode }) {
-  if (!count) return null;
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">
-          {title} <span className="font-normal text-muted-foreground">({count})</span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ul className="divide-y">{children}</ul>
-      </CardContent>
-    </Card>
-  );
-}
-
-type Item = { id: string; type: string; value: string; cases: CaseRef[] };
-
-/** Observables and Assets, each with the Cases it is linked to; `show` is how its value is written. */
-function Items<T extends Item>({ items, label, show }: { items: T[]; label: (item: T) => string; show: (item: T) => string }) {
-  return items.map((item) => (
-    <li key={item.id} className="flex flex-col gap-1 py-2 sm:flex-row sm:items-baseline sm:gap-3">
-      <Badge variant="outline" className="shrink-0">
-        {label(item)}
-      </Badge>
-      <span className="min-w-0 font-mono text-sm break-all">{show(item)}</span>
-      <span className="flex min-w-0 flex-wrap gap-x-3 text-sm sm:ml-auto">
-        {item.cases.length ? item.cases.map((c) => <CaseLink key={c.number} c={c} />) : <span className="text-muted-foreground">Named by an Alert only</span>}
-      </span>
-    </li>
-  ));
-}
-
-/** Global search: Cases, Alerts, Observables and Assets the signed-in person can see. */
+/**
+ * Every result of a search as one list, best first across kinds, a page at a time: the same compact
+ * rows and kind toggles as the search box. The query, kinds and page live in the URL, so a search
+ * can be shared.
+ */
 export function SearchPage() {
-  const { q = "" } = useSearch({ from: "/_app/search" });
+  const search = useSearch({ from: "/_app/search" });
+  const navigate = useNavigate({ from: "/search" });
   const me = useMe(useRouteContext({ from: "/_app" }).me);
-  const results = useQuery(searchQuery(q));
+  const guest = !!me.guest;
+  const q = search.q ?? "";
+  const kinds = parseKinds(search.kinds);
+  const page = search.page ?? 1;
+  /** A new query or new kinds start again from the first page. */
+  const setSearch = (next: { q?: string; kinds?: SearchKind[] }) =>
+    navigate({
+      search: (prev) => {
+        const nextKinds = next.kinds ?? parseKinds(prev.kinds);
+        return { q: (next.q ?? prev.q) || undefined, kinds: nextKinds.length ? nextKinds.join(",") : undefined, page: undefined };
+      },
+      replace: true,
+    });
+
+  const results = useQuery(searchQuery({ q, kinds, page, pageSize: PAGE_SIZE }));
   const data = results.data;
-  const total = data ? data.cases.length + data.alerts.length + data.observables.length + data.assets.length : 0;
+  const counts = data ? Object.fromEntries(SEARCH_KINDS.map((k) => [k, String(data.counts[k])])) : undefined;
+  const pages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
+  const first = (page - 1) * PAGE_SIZE + 1;
+  const pageSearch = (p: number): SearchPageSearch => ({ ...search, page: p > 1 ? p : undefined });
 
   return (
-    <div className="mx-auto grid w-full max-w-5xl grid-cols-1 gap-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Search</h1>
-        <p className="text-sm text-muted-foreground">
-          {me.guest
-            ? "Searches the Cases you've been invited to."
-            : 'Cases by title and Case Summary, Alerts, Observables and Assets. Use "quotes" for a phrase and -word to leave a word out.'}
-        </p>
+    <div className="mx-auto grid w-full max-w-4xl grid-cols-1 gap-4">
+      <h1 className="text-2xl font-semibold tracking-tight">Search</h1>
+      <SearchForm key={q} initial={q} guest={guest} onSearch={(next) => void setSearch({ q: next })} />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <KindFilter kinds={kinds} onChange={(next) => void setSearch({ kinds: next })} counts={q ? counts : undefined} className="flex-wrap" />
+        <p className="text-xs text-muted-foreground">"quotes" for a phrase · -word to leave out</p>
       </div>
-      {!q && <p className="text-sm text-muted-foreground">Type in the search box above and press Enter.</p>}
-      {q && results.isError && <p className="text-sm text-destructive">Could not search. Try again.</p>}
-      {q && data && !total && <p className="text-sm text-muted-foreground">Nothing matches “{q}”.</p>}
-      {data && (
-        <div className={results.isPlaceholderData ? "grid gap-4 opacity-60" : "grid gap-4"}>
-          <Section title="Cases" count={data.cases.length}>
-            {data.cases.map((c) => (
-              <li key={c.number} className="flex flex-wrap items-center gap-2 py-2">
-                <CaseLink c={c} />
-                {c.restricted && <LockIcon className="size-3.5 text-muted-foreground" aria-label="Restricted" />}
-                <span className="ml-auto flex gap-2">
-                  <SeverityBadge severity={c.severity} />
-                  <StatusBadge status={c.status} />
-                </span>
+
+      {!q && <p className="py-8 text-center text-sm text-muted-foreground">Type what you're looking for and press Enter.</p>}
+      {q && results.isError && <p className="py-8 text-center text-sm text-destructive">Could not search. Try again.</p>}
+      {q && results.isPending && (
+        <div className="grid grid-cols-1 gap-2">
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-11" />
+          ))}
+        </div>
+      )}
+      {q && data && !data.total && (
+        <p className="py-8 text-center text-sm text-muted-foreground">
+          Nothing {kinds.length ? `in ${kinds.map((k) => searchKindLabel[k]).join(", ")} ` : ""}matches “{q}”.
+        </p>
+      )}
+      {q && data && data.total > 0 && !data.hits.length && (
+        <p className="py-8 text-center text-sm text-muted-foreground">
+          There {pages === 1 ? "is only 1 page" : `are only ${pages} pages`} of results.{" "}
+          <Link to="/search" search={pageSearch(1)} className="underline">
+            Back to the first
+          </Link>
+        </p>
+      )}
+
+      {data && data.hits.length > 0 && (
+        <div className={results.isPlaceholderData ? "grid grid-cols-1 gap-3 opacity-60 transition-opacity" : "grid grid-cols-1 gap-3"}>
+          <p className="px-1 text-xs text-muted-foreground tabular-nums" aria-live="polite">
+            {data.total === 1 ? "1 result" : `${first}–${first + data.hits.length - 1} of ${data.total} results, best first`}
+          </p>
+          <ul aria-label="Results" className="divide-y rounded-lg border">
+            {data.hits.map((hit) => (
+              <li key={hitKey(hit)}>
+                <SearchHitLink hit={hit} guest={guest} className="rounded-none px-3 py-2">
+                  <SearchHitRow hit={hit} query={q} showKind />
+                </SearchHitLink>
               </li>
             ))}
-          </Section>
-          <Section title="Alerts" count={data.alerts.length}>
-            {data.alerts.map((a) => (
-              <li key={a.id} className="flex flex-wrap items-center gap-2 py-2">
-                {me.guest ? (
-                  <span>{a.title}</span>
-                ) : (
-                  <Link to="/alerts" search={{ status: "any", alert: a.id }} className="hover:underline">
-                    {a.title}
-                  </Link>
-                )}
-                <span className="text-sm text-muted-foreground">
-                  {[a.host, a.userName, a.integration.name].filter(Boolean).join(" · ")}
-                </span>
-                <span className="ml-auto flex flex-wrap items-center gap-2 text-sm">
-                  {a.case ? <CaseLink c={a.case} /> : <Badge variant="outline">{alertStatusLabel[a.status]}</Badge>}
-                  <SeverityBadge severity={a.severity} />
-                </span>
-              </li>
-            ))}
-          </Section>
-          <Section title="Observables" count={data.observables.length}>
-            <Items items={data.observables} label={(o) => observableTypeLabel[o.type]} show={(o) => defang(o.type, o.value)} />
-          </Section>
-          <Section title="Assets" count={data.assets.length}>
-            <Items items={data.assets} label={(a) => assetTypeLabel[a.type]} show={(a) => a.value} />
-          </Section>
+          </ul>
+          {pages > 1 && (
+            <nav aria-label="Pages" className="flex items-center justify-between gap-2">
+              <PageLink to={pageSearch(page - 1)} disabled={page <= 1}>
+                <ChevronLeftIcon /> Previous
+              </PageLink>
+              <span className="text-sm text-muted-foreground tabular-nums">
+                Page {page} of {pages}
+              </span>
+              <PageLink to={pageSearch(page + 1)} disabled={page >= pages}>
+                Next <ChevronRightIcon />
+              </PageLink>
+            </nav>
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+function PageLink({ to, disabled, children }: { to: SearchPageSearch; disabled: boolean; children: React.ReactNode }) {
+  if (disabled) {
+    return (
+      <Button variant="outline" size="sm" disabled>
+        {children}
+      </Button>
+    );
+  }
+  return (
+    <Button variant="outline" size="sm" asChild>
+      <Link to="/search" search={to}>
+        {children}
+      </Link>
+    </Button>
+  );
+}
+
+/** The page's own search field; it starts from the URL's query and searches on Enter. */
+function SearchForm({ initial, guest, onSearch }: { initial: string; guest: boolean; onSearch: (q: string) => void }) {
+  const [draft, setDraft] = useState(initial);
+  return (
+    <form
+      role="search"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSearch(draft.trim());
+      }}
+    >
+      <InputGroup className="h-10">
+        <InputGroupAddon>
+          <SearchIcon />
+        </InputGroupAddon>
+        <InputGroupInput
+          type="search"
+          aria-label="Search"
+          placeholder={guest ? "Search your Cases…" : "Search Cases, Alerts, Observables, Assets…"}
+          value={draft}
+          maxLength={200}
+          onChange={(e) => setDraft(e.target.value)}
+        />
+      </InputGroup>
+    </form>
   );
 }

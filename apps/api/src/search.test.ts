@@ -71,15 +71,30 @@ async function acme() {
     const res = await owner.api.alerts.attach.$post({ json: { case: number, alerts: [{ id, version }] } });
     if (res.status !== 200) throw new Error(`Could not attach: ${res.status}`);
   };
-  const search = async (as: Session, q: string) => {
-    const res = await as.api.search.$get({ query: { q } });
+  type SearchQuery = { kinds?: string; page?: string; pageSize?: string };
+  /** One page of results as the API gives it: one list, best first. */
+  const searchPage = async (as: Session, q: string, options: SearchQuery = {}) => {
+    const res = await as.api.search.$get({ query: { q, ...options } });
     const body = await res.json();
     if (!("results" in body)) throw new Error(`Could not search: ${res.status}`);
     return body.results;
   };
+  type Hits = Awaited<ReturnType<typeof searchPage>>["hits"];
+  const itemsOf = <K extends Hits[number]["kind"]>(hits: Hits, kind: K) =>
+    hits.flatMap((h) => (h.kind === kind ? [h.item as Extract<Hits[number], { kind: K }>["item"]] : []));
+  /** The first page's results sorted out by kind, each kind in rank order. */
+  const search = async (as: Session, q: string, options: SearchQuery = {}) => {
+    const { hits } = await searchPage(as, q, { pageSize: "50", ...options });
+    return {
+      cases: itemsOf(hits, "cases"),
+      alerts: itemsOf(hits, "alerts"),
+      observables: itemsOf(hits, "observables"),
+      assets: itemsOf(hits, "assets"),
+    };
+  };
   const caseNumbers = async (as: Session, q: string) => (await search(as, q)).cases.map((c) => c.number);
 
-  return { t, owner, ana, ben, open, summarise, observe, detect, attach, search, caseNumbers };
+  return { t, owner, ana, ben, open, summarise, observe, detect, attach, search, searchPage, caseNumbers };
 }
 
 describe("Global search", () => {
@@ -96,7 +111,13 @@ describe("Global search", () => {
     expect(await a.caseNumbers(a.ben, "ransomware -decryptor")).toEqual([ransom]);
     expect(await a.caseNumbers(a.ben, `C-${phish}`)).toEqual([phish]);
     expect(await a.caseNumbers(a.ben, "nothing-like-this")).toEqual([]);
-    expect(await a.search(a.ben, "  -- ")).toEqual({ cases: [], alerts: [], observables: [], assets: [] });
+    expect(await a.searchPage(a.ben, "  -- ")).toEqual({
+      hits: [],
+      total: 0,
+      counts: { cases: 0, alerts: 0, observables: 0, assets: 0 },
+      page: 1,
+      pageSize: 20,
+    });
   });
 
   test("Restricted Cases, and what is linked only to them, never leak", async () => {
@@ -170,6 +191,61 @@ describe("Global search", () => {
     expect(shown.status).toBe(200);
     expect((await a.search(guest, "EncodedPowerShellFromOffice")).alerts.map((x) => [x.id, x.case?.number])).toEqual([[onTheirs, theirs]]);
     expect((await a.search(guest, "unusual login")).alerts).toEqual([]);
+  });
+
+  test("words match as they are typed, whole words ranking first", async () => {
+    const a = await acme();
+    const portal = await a.open("Beaconing to an invoice portal");
+    await a.observe(portal, "domain", "invoice-portal.biz");
+    const invoices = await a.open("Invoices sent from a lookalike domain");
+
+    expect(await a.caseNumbers(a.ben, "invo")).toEqual(expect.arrayContaining([portal, invoices]));
+    expect(await a.caseNumbers(a.ben, "invoice")).toEqual([portal, invoices]);
+    expect((await a.search(a.ben, "invoice")).observables.map((o) => o.value)).toEqual(["invoice-portal.biz"]);
+    expect(await a.caseNumbers(a.ben, "lookalike dom")).toEqual([invoices]);
+  });
+
+  test("one list of every kind, best first, a page at a time, with how many of each kind match", async () => {
+    const a = await acme();
+    const numbers = [];
+    for (let i = 1; i <= 6; i++) numbers.push(await a.open(`Phishing wave ${i}`));
+    await a.observe(numbers[0]!, "domain", "phishing-kit.example");
+    const id = await a.detect("epp");
+
+    const first = await a.searchPage(a.ben, "phishing", { pageSize: "3" });
+    expect(first).toMatchObject({ total: 7, counts: { cases: 6, alerts: 0, observables: 1, assets: 0 }, page: 1, pageSize: 3 });
+    expect(first.hits).toHaveLength(3);
+    const all = [
+      ...first.hits,
+      ...(await a.searchPage(a.ben, "phishing", { pageSize: "3", page: "2" })).hits,
+      ...(await a.searchPage(a.ben, "phishing", { pageSize: "3", page: "3" })).hits,
+    ];
+    // Every result exactly once across the pages, best first.
+    expect(all).toHaveLength(7);
+    const key = (h: (typeof all)[number]) => (h.kind === "cases" ? `case ${h.item.number}` : `${h.kind} ${h.item.id}`);
+    expect(new Set(all.map(key)).size).toBe(7);
+    expect(all.map((h) => h.rank)).toEqual(all.map((h) => h.rank).toSorted((x, y) => y - x));
+    expect(all.filter((h) => h.kind === "observables").map((h) => h.kind === "observables" && h.item.value)).toEqual(["phishing-kit.example"]);
+    expect((await a.searchPage(a.ben, "phishing", { pageSize: "3", page: "4" })).hits).toEqual([]);
+
+    // Narrowed to some kinds, the total and pages are theirs; the counts still cover every kind.
+    const onlyItems = await a.searchPage(a.ben, "phishing", { kinds: "observables,assets" });
+    expect(onlyItems.total).toBe(1);
+    expect(onlyItems.counts.cases).toBe(6);
+    expect(onlyItems.hits.map((h) => h.kind)).toEqual(["observables"]);
+
+    const onlyAlerts = await a.search(a.ben, "FIN-LT-0231", { kinds: "alerts" });
+    expect(onlyAlerts.alerts.map((x) => x.id)).toEqual([id]);
+    expect([onlyAlerts.cases, onlyAlerts.observables, onlyAlerts.assets]).toEqual([[], [], []]);
+
+    // A reference outranks every text match.
+    const byRef = await a.searchPage(a.ben, String(numbers[3]));
+    expect(byRef.hits[0]).toMatchObject({ kind: "cases", item: { number: numbers[3] } });
+    expect(byRef.hits[0]!.rank).toBeGreaterThan(100);
+
+    expect((await a.ben.api.search.$get({ query: { q: "x", kinds: "cases,tasks" } })).status as number).toBe(400);
+    expect((await a.ben.api.search.$get({ query: { q: "x", pageSize: "51" } })).status as number).toBe(400);
+    expect((await a.ben.api.search.$get({ query: { q: "x", page: "0" } })).status as number).toBe(400);
   });
 
   test("signed-out people can't search", async () => {

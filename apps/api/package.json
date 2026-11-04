@@ -13,7 +13,8 @@
     "./tags/vocabulary": "./src/tags/vocabulary.ts",
     "./alerts/vocabulary": "./src/alerts/vocabulary.ts",
     "./internal/vocabulary": "./src/internal/vocabulary.ts",
-    "./case-reports/vocabulary": "./src/case-reports/vocabulary.ts"
+    "./case-reports/vocabulary": "./src/case-reports/vocabulary.ts",
+    "./search/vocabulary": "./src/search/vocabulary.ts"
   },
   "scripts": {
     "dev": "bun --watch src/server.ts",
