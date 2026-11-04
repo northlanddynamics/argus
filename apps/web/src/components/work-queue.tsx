@@ -217,7 +217,7 @@ export function WorkQueue({ me, current }: { me: Me; current: number | null }) {
         </div>
         <SidebarInput
           placeholder="Filter by title, C-number, Tag…"
-          aria-label="Filter the work queue by title, C-number, Tag, Status or Assignee"
+          aria-label="Filter the work queue"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />

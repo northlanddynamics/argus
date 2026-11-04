@@ -114,13 +114,17 @@ test("an Analyst opens a Case, assigns it, edits the Case Summary past a colleag
     expect(await page.getByLabel("Status").textContent()).toBe("In Progress");
     expect(await page.getByLabel("Assignee").textContent()).toBe("Ana Analyst");
 
-    // It shows in the Active Cases panel, and among Ana's own there.
-    const active = page.getByRole("navigation", { name: "Active Cases" });
-    await active.getByRole("link", { name: /Suspicious PowerShell on FIN-LT-0231/ }).and(page.locator("[aria-current=page]")).waitFor();
-    await page.getByRole("switch", { name: "Mine" }).click();
-    await active.getByRole("link", { name: /In Progress · Ana Analyst/ }).waitFor();
-    await page.getByLabel("Search Active Cases").fill("no such case");
-    await page.getByText("No Cases match.").waitFor();
+    // It shows in the work queue, under Assigned to me, and goes when that section is collapsed.
+    const queue = page.getByRole("navigation", { name: "Work queue" });
+    const row = queue.getByRole("link", { name: /^Suspicious PowerShell on FIN-LT-0231, C-1, High, In Progress, Ana Analyst/ });
+    await row.and(page.locator("[aria-current=page]")).waitFor();
+    await queue.getByRole("button", { name: /^Assigned to me/ }).click();
+    await row.waitFor({ state: "detached" });
+    await queue.getByRole("button", { name: /^Assigned to me/ }).click();
+    await row.waitFor();
+    await page.getByLabel(/^Filter the work queue/).fill("no such case");
+    await queue.getByText("No matches.").first().waitFor();
+    await page.getByLabel(/^Filter the work queue/).fill("");
 
     // It shows in My Cases.
     await page.getByRole("link", { name: "Cases", exact: true }).first().click();
@@ -778,7 +782,7 @@ test("the Owner invites a Guest to a Case; the Guest signs in by email link, rea
     await page.goto(t.magicLinkFor("k.patel@lawfirm.example")!);
 
     // Their Cases, from both Organizations.
-    await page.getByRole("heading", { name: "Your Cases" }).waitFor();
+    await page.getByRole("main").getByRole("heading", { name: "Your Cases" }).waitFor();
     await page.getByText("Guest access").waitFor();
     await page.getByText(/Session ends in 1[12] h/).waitFor();
     await page.getByText("One Guest account, invited by 2 Organizations.").waitFor();
@@ -853,7 +857,7 @@ test("a Member hides a Task and a message from Guests; the Guest sees the rest, 
     await page.getByRole("button", { name: "Email me a sign-in link" }).click();
     await page.getByText("a sign-in link is on its way").waitFor();
     await page.goto(t.magicLinkFor("k.patel@lawfirm.example")!);
-    await page.getByRole("heading", { name: "Your Cases" }).waitFor();
+    await page.getByRole("main").getByRole("heading", { name: "Your Cases" }).waitFor();
     await page.goto(`${baseUrl}/cases/1/tasks`);
     await page.getByRole("tab", { name: "Tasks 0/1" }).waitFor();
     await page.getByTestId("task-Assess notification duty").waitFor();
