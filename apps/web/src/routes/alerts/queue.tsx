@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SeverityBadge } from "@/components/case-badges";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -54,6 +54,53 @@ export const validateAlertQueueSearch = (search: Record<string, unknown>): Alert
 /** When an Alert arrived, compactly: "Nov 3, 14:02". */
 const received = (iso: string) => new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
+type BulkKind = "open" | "attach" | "dismiss";
+/** An Alert as the Member saw it when they picked it for an action. */
+type Picked = { version: number; severity: Severity; externalId: string; title: string };
+type AlertRow = { id: string } & Picked;
+const pickedOf = (a: AlertRow): Picked => ({ version: a.version, severity: a.severity, externalId: a.externalId, title: a.title });
+const shortcut = { o: "open", a: "attach", d: "dismiss" } as const;
+
+/**
+ * Keyboard triage: j and k move between Alerts, x selects the one in focus, Escape closes the
+ * Alert panel, and with Alerts selected o, a and d open a Case, attach or dismiss them.
+ */
+function useQueueKeys(
+  table: React.RefObject<HTMLTableElement | null>,
+  on: { toggle: (id: string) => void; act: (kind: BulkKind) => void; close: (() => void) | null },
+) {
+  const handlers = useRef(on);
+  handlers.current = on;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("input:not([type=checkbox]), textarea, select, [contenteditable=true], [role=dialog]")) return;
+      const titles = [...(table.current?.querySelectorAll<HTMLButtonElement>("button[data-alert-title]") ?? [])];
+      const row = target?.closest<HTMLElement>("tr[data-alert-id]");
+      if (e.key === "j" || e.key === "k") {
+        if (!titles.length) return;
+        const at = row ? titles.findIndex((b) => b.closest("tr") === row) : -1;
+        const next = at === -1 ? 0 : Math.min(Math.max(at + (e.key === "j" ? 1 : -1), 0), titles.length - 1);
+        e.preventDefault();
+        titles[next]?.focus();
+        titles[next]?.closest("tr")?.scrollIntoView({ block: "nearest" });
+      } else if (e.key === "x" && row) {
+        e.preventDefault();
+        handlers.current.toggle(row.dataset.alertId!);
+      } else if (e.key === "Escape" && handlers.current.close) {
+        e.preventDefault();
+        handlers.current.close();
+      } else if (e.key in shortcut) {
+        e.preventDefault();
+        handlers.current.act(shortcut[e.key as keyof typeof shortcut]);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [table]);
+}
+
 /** The Alert queue: Alerts from the Organization's Integrations, newest first, refreshing live. */
 export function AlertQueuePage() {
   const search = useSearch({ from: "/_app/alerts" });
@@ -63,7 +110,8 @@ export function AlertQueuePage() {
 
   const integrations = useQuery(integrationsQuery);
   const alerts = useQuery({
-    queryKey: [...alertsKey, { ...search, status }],
+    // Not keyed on the Alert shown in the panel: opening one mustn't reload the queue.
+    queryKey: [...alertsKey, { status, severity: search.severity, integration: search.integration }],
     queryFn: async () => {
       const res = await api.alerts.$get({
         query: { ...(status !== "any" && { status }), severity: search.severity, integration: search.integration },
@@ -74,39 +122,82 @@ export function AlertQueuePage() {
   });
   const limit = alerts.data?.limit ?? null;
 
-  /** Selected Alerts: id → the version shown when it was selected, so changes since are caught. */
-  const [selected, setSelected] = useState<Map<string, number>>(new Map());
+  /** Selected Alerts: id → the Alert as shown when it was selected, so changes since are caught. */
+  const [selected, setSelected] = useState<Map<string, Picked>>(new Map());
   const [outcome, setOutcome] = useState<BulkOutcome | null>(null);
   const showing = search.alert ?? null;
   const setShowing = (alert: string | null) => setSearch({ alert: alert ?? undefined });
-  const [dialog, setDialog] = useState<"open" | "attach" | "dismiss" | null>(null);
+  /** The bulk action being confirmed, and the Alerts it acts on: the selection, or the one in the panel. */
+  const [dialog, setDialog] = useState<{ kind: BulkKind; picked: Map<string, Picked> } | null>(null);
+  const table = useRef<HTMLTableElement>(null);
+  /** The row last checked or unchecked, where a shift-click range starts. */
+  const anchor = useRef<number | null>(null);
 
   const loaded = alerts.data?.alerts;
   const rows = loaded ?? [];
   /** Integrations that aren't bringing Alerts in: paused, disconnected or in error. */
   const unhealthy = integrations.data?.filter((i) => i.paused || i.health === "error" || i.health === "disconnected") ?? [];
-  const selection = [...selected].map(([id, version]) => ({ id, version }));
   const allSelected = rows.length > 0 && rows.every((a) => selected.has(a.id));
-  const toggle = (a: { id: string; version: number }, on: boolean) =>
+  /** Selected Alerts the current filters don't show. */
+  const hiddenSelected = [...selected.keys()].filter((id) => !rows.some((a) => a.id === id)).length;
+  const setPicked = (list: readonly AlertRow[], on: boolean) =>
     setSelected((prev) => {
       const next = new Map(prev);
-      if (on) next.set(a.id, a.version);
-      else next.delete(a.id);
+      for (const a of list) {
+        if (on) next.set(a.id, pickedOf(a));
+        else next.delete(a.id);
+      }
       return next;
     });
-  const severities = rows.filter((a) => selected.has(a.id)).map((a) => a.severity);
-  const highest = SEVERITIES.find((s) => severities.includes(s)) ?? "medium";
+  /** Checks or unchecks the Alert in row `index`; with Shift, every row from the last one checked. */
+  const check = (index: number, on: boolean, range: boolean) => {
+    const from = range && anchor.current !== null ? Math.min(anchor.current, index) : index;
+    const to = range && anchor.current !== null ? Math.max(anchor.current, index) : index;
+    setPicked(rows.slice(from, to + 1), on);
+    anchor.current = index;
+  };
+  /** The Alerts the last action was started on; the dialog has closed by the time its outcome arrives. */
+  const acting = useRef<Map<string, Picked>>(new Map());
+  const act = (kind: BulkKind, picked = selected) => {
+    if (!picked.size) return;
+    acting.current = picked;
+    setDialog({ kind, picked });
+  };
+  const dialogSelection = [...(dialog?.picked ?? acting.current)].map(([id, p]) => ({ id, version: p.version }));
+  const dialogSeverities = [...(dialog?.picked ?? acting.current).values()].map((p) => p.severity);
+  const highest = SEVERITIES.find((s) => dialogSeverities.includes(s)) ?? "medium";
   const done = (result: BulkOutcome) => {
-    setOutcome(result);
-    setSelected(new Map());
+    const known = acting.current;
+    // Name each refused Alert as the Member saw it, even one the server no longer shows them.
+    const refused = result.refused.map((r) => ({ ...r, externalId: r.externalId ?? known.get(r.id)?.externalId ?? null, title: r.title ?? known.get(r.id)?.title ?? null }));
+    setOutcome({ ...result, refused });
+    setSelected((prev) => {
+      const next = new Map(prev);
+      for (const id of known.keys()) next.delete(id);
+      return next;
+    });
   };
   /** Selects the refused Alerts again, as they are now. */
   const reselect = () => {
     if (!outcome) return;
     const refused = new Set(outcome.refused.map((r) => r.id));
-    setSelected(new Map(rows.filter((a) => refused.has(a.id)).map((a) => [a.id, a.version])));
+    setSelected(new Map(rows.filter((a) => refused.has(a.id)).map((a) => [a.id, pickedOf(a)])));
     setOutcome(null);
   };
+  const closePanel = () => {
+    const id = showing;
+    setShowing(null);
+    // Back to the row it was opened from, so j and k carry on from there.
+    requestAnimationFrame(() => table.current?.querySelector<HTMLButtonElement>(`button[data-alert-title="${id}"]`)?.focus());
+  };
+  useQueueKeys(table, {
+    toggle: (id) => {
+      const index = rows.findIndex((a) => a.id === id);
+      if (index !== -1) check(index, !selected.has(id), false);
+    },
+    act: (kind) => act(kind),
+    close: showing ? closePanel : null,
+  });
 
   return (
     <div className="mx-auto grid w-full grid-cols-1 max-w-6xl gap-4">
@@ -189,14 +280,16 @@ export function AlertQueuePage() {
           role="toolbar"
           aria-label="Selected Alerts"
         >
-          <span className="mr-2 font-semibold">{selected.size} selected</span>
-          <Button size="sm" onClick={() => setDialog("open")}>
+          <span className="mr-2 font-semibold">
+            {selected.size} selected{hiddenSelected > 0 && ` · ${hiddenSelected} not shown by these filters`}
+          </span>
+          <Button size="sm" onClick={() => act("open")}>
             Open Case
           </Button>
-          <Button size="sm" variant="secondary" onClick={() => setDialog("attach")}>
+          <Button size="sm" variant="secondary" onClick={() => act("attach")}>
             Attach to Case…
           </Button>
-          <Button size="sm" variant="secondary" onClick={() => setDialog("dismiss")}>
+          <Button size="sm" variant="secondary" onClick={() => act("dismiss")}>
             Dismiss…
           </Button>
           <Button size="sm" variant="secondary" className="ml-auto" onClick={() => setSelected(new Map())}>
@@ -205,19 +298,14 @@ export function AlertQueuePage() {
         </div>
       )}
       <OpenCaseFromAlertsDialog
-        open={dialog === "open"}
-        onOpenChange={(o) => setDialog(o ? "open" : null)}
-        selection={selection}
+        open={dialog?.kind === "open"}
+        onOpenChange={(o) => !o && setDialog(null)}
+        selection={dialogSelection}
         highest={highest}
         onDone={done}
       />
-      <AttachAlertsDialog open={dialog === "attach"} onOpenChange={(o) => setDialog(o ? "attach" : null)} selection={selection} onDone={done} />
-      <DismissAlertsDialog
-        open={dialog === "dismiss"}
-        onOpenChange={(o) => setDialog(o ? "dismiss" : null)}
-        selection={selection}
-        onDone={done}
-      />
+      <AttachAlertsDialog open={dialog?.kind === "attach"} onOpenChange={(o) => !o && setDialog(null)} selection={dialogSelection} onDone={done} />
+      <DismissAlertsDialog open={dialog?.kind === "dismiss"} onOpenChange={(o) => !o && setDialog(null)} selection={dialogSelection} onDone={done} />
       {alerts.isError && (
         <Alert variant="destructive">
           <AlertTitle>Alerts couldn't be loaded</AlertTitle>
@@ -236,16 +324,14 @@ export function AlertQueuePage() {
       <div className={cn("grid items-start gap-4", showing && "lg:grid-cols-[1fr_340px]")}>
       {!(alerts.isError && !loaded) && (
       <Card className="@container py-0">
-          <Table className="table-fixed">
+          <Table ref={table} className="table-fixed">
             <TableHeader>
               <TableRow>
                 <TableHead scope="col" className="w-10 pl-4">
                   <Checkbox
                     aria-label="Select all Alerts shown"
                     checked={allSelected}
-                    onCheckedChange={(on) => {
-                      for (const a of rows) toggle(a, on === true);
-                    }}
+                    onCheckedChange={(on) => setPicked(rows, on === true)}
                   />
                 </TableHead>
                 <TableHead scope="col" className="w-28">Severity</TableHead>
@@ -272,18 +358,22 @@ export function AlertQueuePage() {
                   <TableCell colSpan={6} role="status">Loading Alerts…</TableCell>
                 </TableRow>
               )}
-              {loaded?.map((a) => (
+              {loaded?.map((a, index) => (
                 <TableRow
                   key={a.id}
                   data-testid={`alert-${a.externalId}`}
+                  data-alert-id={a.id}
                   data-state={selected.has(a.id) ? "selected" : undefined}
-                  className={cn(showing === a.id && "bg-muted")}
+                  className={cn("focus-within:bg-muted/50", showing === a.id && "bg-muted")}
                 >
                   <TableCell className="pl-4">
                     <Checkbox
                       aria-label={`Select ${a.externalId}`}
                       checked={selected.has(a.id)}
-                      onCheckedChange={(on) => toggle(a, on === true)}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        check(index, !selected.has(a.id), e.shiftKey);
+                      }}
                     />
                   </TableCell>
                   <TableCell>
@@ -292,7 +382,9 @@ export function AlertQueuePage() {
                   <TableCell>
                     <button
                       type="button"
-                      className="block max-w-full truncate text-left font-medium hover:underline"
+                      data-alert-title={a.id}
+                      aria-current={showing === a.id ? "true" : undefined}
+                      className="block max-w-full truncate rounded-sm text-left font-medium outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
                       title={a.title}
                       onClick={() => setShowing(a.id)}
                     >
@@ -351,26 +443,37 @@ export function AlertQueuePage() {
           </Table>
       </Card>
       )}
-      {showing && <AlertPanel id={showing} onClose={() => setShowing(null)} />}
+      {showing && <AlertPanel id={showing} onClose={closePanel} onAct={(kind, a) => act(kind, new Map([[a.id, pickedOf(a)]]))} />}
       </div>
       {loaded && loaded.length > 0 && (
-        <p role="status" className="text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <p role="status">
           {limit !== null && loaded.length >= limit
             ? `Showing the newest ${limit} Alerts. Narrow the filters to see older ones.`
             : `${loaded.length} ${status === "any" ? (loaded.length === 1 ? "Alert" : "Alerts") : `${alertStatusLabel[status]} ${loaded.length === 1 ? "Alert" : "Alerts"}`}`}
           {" · new Alerts appear live"}
         </p>
+        <p>
+          <Key>j</Key> <Key>k</Key> move · <Key>x</Key> selects · <Key>Enter</Key> opens · <Key>Esc</Key> closes · with Alerts selected,{" "}
+          <Key>o</Key> opens a Case, <Key>a</Key> attaches, <Key>d</Key> dismisses
+        </p>
+        </div>
       )}
     </div>
   );
 }
 
+const Key = ({ children }: { children: string }) => <kbd className="font-sans font-medium text-foreground">{children}</kbd>;
+
 /** After a bulk action: how many Alerts it applied to, and each one it refused and why. */
 function OutcomeNotice({ outcome, onReselect, onDismiss }: { outcome: BulkOutcome; onReselect: () => void; onDismiss: () => void }) {
   const total = outcome.applied.length + outcome.refused.length;
+  // The action's controls are gone once it is done, so focus moves here rather than to the page.
+  const notice = useRef<HTMLDivElement>(null);
+  useEffect(() => notice.current?.focus(), [outcome]);
   if (!outcome.refused.length) {
     return (
-      <Alert role="status">
+      <Alert role="status" ref={notice} tabIndex={-1} className="outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
         <AlertTitle>
           {outcome.applied.length} {outcome.applied.length === 1 ? "Alert" : "Alerts"} {outcome.verb}
         </AlertTitle>
@@ -383,7 +486,11 @@ function OutcomeNotice({ outcome, onReselect, onDismiss }: { outcome: BulkOutcom
     );
   }
   return (
-    <Alert role="status" className="border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80">
+    <Alert
+      role="status"
+      ref={notice}
+      tabIndex={-1}
+      className="outline-none focus-visible:ring-3 focus-visible:ring-ring/50 border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80">
       <AlertTitle>
         {outcome.refused.length} of {total} {total === 1 ? "Alert was" : "Alerts were"} not {outcome.verb.split(";")[0]}
       </AlertTitle>
@@ -391,7 +498,8 @@ function OutcomeNotice({ outcome, onReselect, onDismiss }: { outcome: BulkOutcom
         <ul className="text-sm">
           {outcome.refused.map((r) => (
             <li key={r.id}>
-              <span className="font-mono">{r.externalId ?? r.id}</span> {r.detail}
+              {r.title && <span className="font-medium">{r.title} </span>}
+              <span className="font-mono text-xs">({r.externalId ?? r.id})</span> {r.detail}
             </li>
           ))}
         </ul>
@@ -483,13 +591,13 @@ function Extracted({ label, items }: { label: string; items: { id: string; text:
   );
 }
 
-function AlertPanel({ id, onClose }: { id: string; onClose: () => void }) {
+function AlertPanel({ id, onClose, onAct }: { id: string; onClose: () => void; onAct: (kind: BulkKind, alert: AlertRow) => void }) {
   const alert = useQuery(alertQuery(id));
   const [moving, setMoving] = useState<"move" | "detach" | null>(null);
   const a = alert.data;
   if (alert.isPending) {
     return (
-      <Card aria-label="Alert" aria-busy className="self-start">
+      <Card role="region" aria-label="Alert" aria-busy className="self-start">
         <CardContent className="grid gap-3">
           <span className="sr-only" role="status">
             Loading the Alert…
@@ -507,7 +615,7 @@ function AlertPanel({ id, onClose }: { id: string; onClose: () => void }) {
   }
   if (!a) {
     return (
-      <Card aria-label="Alert" className="self-start">
+      <Card role="region" aria-label="Alert" className="self-start">
         <CardContent className="grid gap-3 text-sm">
           {alert.isError ? (
             <>
@@ -537,7 +645,7 @@ function AlertPanel({ id, onClose }: { id: string; onClose: () => void }) {
   const onCase = a.attached?.case ?? null;
   const editable = onCase !== null && onCase.status !== "closed";
   return (
-    <Card aria-label="Alert" className="self-start">
+    <Card role="region" aria-label="Alert" className="self-start">
       <CardContent className="grid gap-3 text-sm">
         <div className="flex items-center justify-between gap-2">
           <SeverityBadge severity={a.severity} />
@@ -625,6 +733,21 @@ function AlertPanel({ id, onClose }: { id: string; onClose: () => void }) {
           <pre className="mt-2 max-h-64 overflow-auto rounded bg-muted p-2 text-xs">{JSON.stringify(a.payload, null, 2)}</pre>
         </details>
         <div className="flex flex-wrap gap-2 border-t pt-3">
+          {a.status !== "attached" && (
+            <>
+              <Button size="sm" onClick={() => onAct("open", a)}>
+                Open Case
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => onAct("attach", a)}>
+                Attach to Case…
+              </Button>
+              {a.status === "new" && (
+                <Button size="sm" variant="outline" onClick={() => onAct("dismiss", a)}>
+                  Dismiss…
+                </Button>
+              )}
+            </>
+          )}
           {editable && (
             <>
               <Button size="sm" variant="outline" onClick={() => setMoving("move")}>
