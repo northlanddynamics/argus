@@ -1,6 +1,7 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { api, errorMessage, type Me } from "@/lib/api";
+import { caseKey } from "@/lib/cases";
 
 export type GuestInfo = NonNullable<Me["guest"]>;
 export type GuestCase = GuestInfo["cases"][number];
@@ -31,4 +32,28 @@ export function useOpenGuestCase(guest: GuestInfo) {
     }
     await navigate({ to: "/cases/$number", params: { number: String(c.number) } });
   };
+}
+
+/** Under the Case's key, so its live signal refreshes them. */
+export const guestsKey = (number: number) => [...caseKey(number), "guests"] as const;
+
+/** The Case's Guest grants, expired ones included. Members only. */
+export function useGuests(number: number, enabled: boolean) {
+  return useQuery({
+    queryKey: guestsKey(number),
+    queryFn: async () => {
+      const res = await api.cases[":number"].guests.$get({ param: { number: String(number) } });
+      if (!res.ok) throw new Error(await errorMessage(res, "Could not load the Guests"));
+      const body = await res.json();
+      return "guests" in body ? body.guests : [];
+    },
+    enabled,
+  });
+}
+
+/** "Dana Counsel and Sam Insurer", "Dana Counsel, Sam Insurer and 2 others". */
+export function namesOf(names: string[]) {
+  if (names.length <= 1) return names.join("");
+  if (names.length <= 3) return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+  return `${names.slice(0, 2).join(", ")} and ${names.length - 2} others`;
 }

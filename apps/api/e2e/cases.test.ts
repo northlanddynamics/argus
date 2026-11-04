@@ -173,7 +173,7 @@ test("an Analyst closes a Case with a Resolution and it becomes read-only; the O
     // Closing needs a Resolution.
     await page.getByRole("button", { name: "Close Case" }).click();
     const dialog = page.getByRole("dialog", { name: "Close Case C-1" });
-    await dialog.getByText("The Case becomes read-only. Only an Admin can reopen it.").waitFor();
+    await dialog.getByText("The Case becomes read-only for everyone. Only an Admin can reopen it.").waitFor();
     expect(await dialog.getByRole("button", { name: "Close Case" }).isDisabled()).toBe(true);
     await dialog.getByLabel("False Positive").check();
     await dialog.getByRole("button", { name: "Close Case" }).click();
@@ -801,6 +801,7 @@ test("the Owner invites a Guest to a Case; the Guest signs in by email link, rea
 
     // Removed from the Acme Case, it disappears from their list.
     await dialog.getByRole("button", { name: "Remove Kim Patel" }).click();
+    await ownerPage.getByRole("alertdialog", { name: "Remove Kim Patel from C-1?" }).getByRole("button", { name: "Remove" }).click();
     await dialog.getByText("No Guests on this Case.").waitFor();
     await page.getByRole("link", { name: "Your Cases" }).first().click();
     await page.getByRole("main").getByRole("button", { name: /Vendor email compromise/ }).waitFor();
@@ -836,7 +837,8 @@ test("a Member hides a Task and a message from Guests; the Guest sees the rest, 
     const ownerPage = await browser.newPage();
     await signIn(ownerPage, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
     await ownerPage.goto(`${baseUrl}/cases/1/tasks`);
-    await ownerPage.getByRole("button", { name: "Mark Capture memory image Internal" }).click();
+    await ownerPage.getByRole("button", { name: "Visibility of Capture memory image: visible to Guests" }).click();
+    await ownerPage.getByRole("menuitem", { name: "Mark Internal" }).click();
     await ownerPage.getByTestId("task-Capture memory image").getByText("Internal").waitFor();
     await ownerPage.getByTestId("task-Assess notification duty").getByText("Visible to Guests").waitFor();
     await ownerPage.getByRole("tab", { name: "Timeline & Discussion" }).click();

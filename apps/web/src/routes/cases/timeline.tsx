@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { api, errorMessage } from "@/lib/api";
 import { Visibility } from "@/components/visibility";
 import { canMarkInternal, caseQuery, isReadOnly } from "@/lib/cases";
+import { useGuests } from "@/lib/guests";
 import { describeOccurredAt, occurredKindLabel, precisionLabel, type TimelineEntryView, timelineKey, timelineQuery, utc } from "@/lib/timeline";
 import { actionLabel } from "@/routes/cases/audit-log";
 import { useCaseNumber } from "@/routes/cases/case-layout";
@@ -28,10 +29,22 @@ import { EditEntryForm, NewEntryForm } from "@/routes/cases/timeline-entry-form"
 
 /** Case · Timeline & Discussion: the account of what happened, beside the conversation about it. */
 export function CaseTimelinePage() {
+  const number = useCaseNumber();
+  const { data: c } = useQuery(caseQuery(number));
+  const members = !!c && canMarkInternal(c);
+  const guests = useGuests(number, members);
+  const noGuests = members && guests.data !== undefined && !guests.data.some((g) => !g.expired);
   return (
-    <div className="grid items-start gap-6 lg:grid-cols-[3fr_2fr]">
-      <CaseTimeline />
-      <CaseDiscussion />
+    <div className="grid gap-4">
+      {noGuests && (
+        <p className="text-xs text-muted-foreground">
+          No Guests on this Case. Anything not marked Internal becomes visible to a Guest as soon as one is invited.
+        </p>
+      )}
+      <div className="grid items-start gap-6 lg:grid-cols-[3fr_2fr]">
+        <CaseTimeline />
+        <CaseDiscussion />
+      </div>
     </div>
   );
 }
@@ -125,7 +138,6 @@ function Entry({
             internal={e.internal}
             label={`entry “${e.body.slice(0, 40)}”`}
             canMark={canMark && live}
-            showVisible={false}
           />
         )}
         {!readOnly && live && (

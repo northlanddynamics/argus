@@ -1,8 +1,19 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { LockIcon, UsersIcon } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { DatePicker, parseDay } from "@/components/date-picker";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -20,10 +31,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, errorMessage } from "@/lib/api";
-import { type CaseView, caseKey, caseRef } from "@/lib/cases";
-import { expiryLabel } from "@/lib/guests";
-
-const guestsKey = (number: number) => [...caseKey(number), "guests"] as const;
+import { type CaseView, caseRef } from "@/lib/cases";
+import { expiryLabel, guestsKey, useGuests } from "@/lib/guests";
 
 type InviteInput = { email: string; name?: string; expiresAt: string | null };
 
@@ -47,6 +56,8 @@ export function CaseAccessDialog({
   const number = c.number;
   const guests = useGuests(number, c.can.work);
   const count = guests.data?.length ?? 0;
+  /** Lifting Restricted shows the Case to every Analyst, so it asks first. */
+  const [confirmingUnrestrict, setConfirmingUnrestrict] = useState(false);
   return (
     <Dialog>
       <DialogTrigger asChild>
@@ -71,7 +82,7 @@ export function CaseAccessDialog({
               id="case-restricted"
               checked={c.restricted}
               disabled={locked || !c.can.restrict}
-              onCheckedChange={(checked) => onRestrictedChange(checked === true)}
+              onCheckedChange={(checked) => (checked === true ? onRestrictedChange(true) : setConfirmingUnrestrict(true))}
             />
             <FieldContent>
               <FieldLabel htmlFor="case-restricted">Restricted</FieldLabel>
@@ -86,6 +97,20 @@ export function CaseAccessDialog({
               <AlertDescription>{error.message}</AlertDescription>
             </Alert>
           )}
+          <AlertDialog open={confirmingUnrestrict} onOpenChange={setConfirmingUnrestrict}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Lift Restricted on {caseRef(number)}?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Every Analyst in the Organization will be able to see this Case and everything on it.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Keep it Restricted</AlertDialogCancel>
+                <AlertDialogAction onClick={() => onRestrictedChange(false)}>Lift Restricted</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           {c.can.work && (
             <>
               <FieldSeparator />
@@ -96,19 +121,6 @@ export function CaseAccessDialog({
       </DialogContent>
     </Dialog>
   );
-}
-
-function useGuests(number: number, enabled: boolean) {
-  return useQuery({
-    queryKey: guestsKey(number),
-    queryFn: async () => {
-      const res = await api.cases[":number"].guests.$get({ param: { number: String(number) } });
-      if (!res.ok) throw new Error(await errorMessage(res, "Could not load the Guests"));
-      const body = await res.json();
-      return "guests" in body ? body.guests : [];
-    },
-    enabled,
-  });
 }
 
 /** The Case's Guests, removing them, and inviting more: email, optional name and optional expiry date. */
@@ -180,15 +192,26 @@ function GuestsSection({ c, guests }: { c: CaseView; guests: ReturnType<typeof u
                 <span className="text-xs text-muted-foreground">Access {expiryLabel(g.expiresAt)}</span>
               </span>
               {c.can.manageGuests && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  aria-label={`Remove ${g.guest.name}`}
-                  disabled={remove.isPending}
-                  onClick={() => remove.mutate(g.id)}
-                >
-                  Remove
-                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="outline" size="sm" aria-label={`Remove ${g.guest.name}`} disabled={remove.isPending}>
+                      Remove
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Remove {g.guest.name} from {caseRef(number)}?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        They lose access to this Case straight away. Everything they added stays on it. To let them back in, invite them
+                        again.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Keep {g.guest.name}</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => remove.mutate(g.id)}>Remove</AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               )}
             </li>
           ))}

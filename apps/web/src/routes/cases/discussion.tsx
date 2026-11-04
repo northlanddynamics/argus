@@ -168,7 +168,6 @@ function Message({
             internal={m.internal}
             label={`message from ${m.author.name}`}
             canMark={canMark}
-            showVisible={false}
           />
         )}
       </div>
