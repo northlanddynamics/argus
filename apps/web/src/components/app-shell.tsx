@@ -69,6 +69,13 @@ export function AppShell() {
   return (
     <TooltipProvider>
       <SidebarProvider defaultOpen={startsOpen()} style={{ "--sidebar-width": "350px" } as React.CSSProperties}>
+        {/* The first stop for the keyboard: past the sidebar and header to the page itself. */}
+        <a
+          href="#content"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-lg focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:shadow-md focus:ring-3 focus:ring-ring/50 focus:outline-none"
+        >
+          Skip to content
+        </a>
         <AppSidebar me={me} />
         <SidebarInset className="min-w-0">
           <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b bg-background px-4">
@@ -107,7 +114,7 @@ export function AppShell() {
               <NotificationBell />
             </div>
           </header>
-          <div className="flex-1 p-4 md:p-6">
+          <div id="content" tabIndex={-1} className="flex-1 p-4 outline-none md:p-6">
             <Outlet />
           </div>
         </SidebarInset>

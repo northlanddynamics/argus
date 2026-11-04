@@ -131,6 +131,9 @@ describe("Opening a Case from Alerts", () => {
       ["ldt:1", "attached", 2, body.case.number],
     ]);
     expect((await a.queue(a.ana, { case: String(body.case.number) })).map((x) => x.externalId)).toEqual(["ldt:2", "ldt:1"]);
+    const listed = await (await a.ana.api.cases.$get({ query: {} })).json();
+    if (!("cases" in listed)) throw new Error("Could not list Cases");
+    expect(listed.cases.find((x) => x.number === body.case.number)?.alerts).toBe(2);
     expect((await a.caseAudit(body.case.number)).toSorted()).toEqual([
       ["alert.attached", "Credential dumping attempt (ldt:2)", null, `C-${body.case.number}`],
       ["alert.attached", "Encoded PowerShell from Office process (ldt:1)", null, `C-${body.case.number}`],

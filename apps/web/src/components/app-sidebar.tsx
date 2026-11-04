@@ -19,12 +19,12 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Switch } from "@/components/ui/switch";
-import { ago } from "@/lib/alerts";
 import { api, type Me } from "@/lib/api";
 import { caseRef, casesKey, statusLabel } from "@/lib/cases";
 import { expiryLabel, type GuestInfo, useOpenGuestCase } from "@/lib/guests";
 import { canManage } from "@/lib/roles";
 import { tagLabel } from "@/lib/tags";
+import { exactTime, when } from "@/lib/when";
 import { cn } from "@/lib/utils";
 
 /** The Case list query for the "All open" view with no filters, shared with the Case list page. */
@@ -36,10 +36,6 @@ const activeCasesQuery = {
     return res.json();
   },
 };
-
-/** "4 min ago" today, the date before that. */
-const when = (iso: string) =>
-  Date.now() - Date.parse(iso) < 86_400_000 ? ago(iso) : new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
 const itemClass =
   "flex w-full flex-col items-start gap-1.5 border-b px-4 py-3 text-left text-sm leading-tight last:border-b-0 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground";
@@ -215,7 +211,7 @@ function ActiveCasesPanel({ me }: { me: Me }) {
                   <div className="flex w-full items-center gap-2">
                     <span className="font-mono text-xs text-muted-foreground">{caseRef(c.number)}</span>
                     <SeverityBadge severity={c.severity} />
-                    <span className="ml-auto text-xs text-muted-foreground" title={new Date(c.updatedAt).toLocaleString()}>
+                    <span className="ml-auto text-xs text-muted-foreground" title={exactTime(c.updatedAt)}>
                       {when(c.updatedAt)}
                     </span>
                   </div>

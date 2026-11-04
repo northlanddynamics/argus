@@ -303,6 +303,59 @@ describe("Listing Cases", () => {
     expect((await list(owner, { view: "mine" })).cases.map((c) => c.title)).toEqual(["Olive's"]);
     expect((await list(analyst)).counts).toEqual({ mine: 1, unassigned: 1, open: 3, closed: 0 });
   });
+
+  test("counts follow the filters, so the count for the view is the whole match even past the list's limit", async () => {
+    const { owner, analyst, open, change, close, list, userId } = await acme();
+    const ana = await userId(analyst);
+    const mine = await open(owner, { title: "Mine, Critical", severity: "critical" });
+    await change(owner, mine.number, { assigneeId: ana });
+    await open(owner, { title: "Nobody's, Critical", severity: "critical" });
+    await open(owner, { title: "Nobody's, Low", severity: "low" });
+    const done = await open(owner, { title: "Closed, Critical", severity: "critical" });
+    expect((await close(owner, done.number, { resolution: "benign" })).status).toBe(200);
+
+    expect((await list(analyst, { severity: "critical" })).counts).toEqual({ mine: 1, unassigned: 1, open: 2, closed: 1 });
+    expect((await list(analyst)).counts).toEqual({ mine: 1, unassigned: 2, open: 3, closed: 1 });
+  });
+
+  test("sorts by Severity, number or last change, either way", async () => {
+    const { t, analyst, open, change, list } = await acme();
+    const low = await open(analyst, { title: "Low", severity: "low" });
+    t.clock.advance(1000);
+    await open(analyst, { title: "Critical", severity: "critical" });
+    t.clock.advance(1000);
+    await open(analyst, { title: "Medium", severity: "medium" });
+    t.clock.advance(1000);
+    await change(analyst, low.number, { status: "triage" });
+    const titles = async (query: Parameters<typeof list>[1]) => (await list(analyst, query)).cases.map((c) => c.title);
+
+    expect(await titles({})).toEqual(["Low", "Medium", "Critical"]);
+    expect(await titles({ sort: "severity" })).toEqual(["Critical", "Medium", "Low"]);
+    expect(await titles({ sort: "severity", order: "asc" })).toEqual(["Low", "Medium", "Critical"]);
+    expect(await titles({ sort: "number", order: "asc" })).toEqual(["Low", "Critical", "Medium"]);
+    expect(await titles({ sort: "updated", order: "asc" })).toEqual(["Critical", "Medium", "Low"]);
+  });
+
+  test("filters by access: Restricted Cases, or Cases a Guest can see, with how many Guests each has", async () => {
+    const { t, owner, open, change, list } = await acme();
+    const secret = await open(owner, { title: "Restricted" });
+    await change(owner, secret.number, { restricted: true });
+    const shared = await open(owner, { title: "Shared with counsel" });
+    const invite = (email: string, expiresAt?: string) =>
+      owner.api.cases[":number"].guests.$post({ param: { number: String(shared.number) }, json: { email, name: "Kim Patel", expiresAt } });
+    expect((await invite("kim@counsel.example")).status).toBe(201);
+    expect((await invite("lee@counsel.example", new Date(t.clock.now().getTime() + 60_000).toISOString())).status).toBe(201);
+    await open(owner, { title: "Ordinary" });
+
+    expect((await list(owner, { access: "restricted" })).cases.map((c) => c.title)).toEqual(["Restricted"]);
+    expect((await list(owner, { access: "guests" })).cases.map((c) => [c.title, c.guests])).toEqual([["Shared with counsel", 2]]);
+    expect((await list(owner, { access: "guests" })).counts.open).toBe(1);
+    expect((await list(owner)).cases.find((c) => c.title === "Ordinary")).toMatchObject({ guests: 0, alerts: 0, restricted: false });
+
+    // An expired grant no longer counts.
+    t.clock.advance(120_000);
+    expect((await list(owner, { access: "guests" })).cases.map((c) => [c.title, c.guests])).toEqual([["Shared with counsel", 1]]);
+  });
 });
 
 describe("Case Summary", () => {

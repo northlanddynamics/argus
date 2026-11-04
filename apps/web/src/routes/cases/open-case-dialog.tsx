@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import { PlusIcon } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { RichTextEditor } from "@/components/rich-text-editor";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -21,7 +22,7 @@ import {
   severityLabel,
 } from "@/lib/cases";
 
-/** "+ Open Case": title, Case Type, Severity and Case Summary; the new Case starts in New. */
+/** "Open Case": title, Case Type, Severity and Case Summary; the new Case starts in New. */
 export function OpenCaseDialog() {
   const [isOpen, setIsOpen] = useState(false);
   const [summary, setSummary] = useState<CaseSummary>(emptySummary);
@@ -64,7 +65,10 @@ export function OpenCaseDialog() {
       }}
     >
       <DialogTrigger asChild>
-        <Button>+ Open Case</Button>
+        <Button>
+          <PlusIcon aria-hidden />
+          Open Case
+        </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>

@@ -93,7 +93,7 @@ test("an Analyst opens a Case, assigns it, edits the Case Summary past a colleag
     await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
 
     // Open a Case.
-    await page.getByRole("button", { name: "+ Open Case" }).click();
+    await page.getByRole("button", { name: "Open Case", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Open a Case" });
     await dialog.getByLabel("Title").fill("Suspicious PowerShell on FIN-LT-0231");
     await dialog.getByLabel("Case Type").selectOption("malware");
@@ -124,7 +124,7 @@ test("an Analyst opens a Case, assigns it, edits the Case Summary past a colleag
 
     // It shows in My Cases.
     await page.getByRole("link", { name: "Cases", exact: true }).first().click();
-    await page.getByRole("button", { name: "My Cases 1" }).waitFor();
+    await page.getByRole("tab", { name: "My Cases 1" }).waitFor();
     await page.getByRole("link", { name: "Suspicious PowerShell on FIN-LT-0231", exact: true }).click();
 
     // Ana starts editing; Olive saves first; Ana's save is refused and her text kept.
@@ -185,7 +185,7 @@ test("an Analyst closes a Case with a Resolution and it becomes read-only; the O
     expect(await page.getByRole("button", { name: "Edit" }).count()).toBe(0);
     expect(await page.getByRole("button", { name: /Reopen/ }).count()).toBe(0);
     await page.getByRole("link", { name: "Cases", exact: true }).first().click();
-    await page.getByRole("button", { name: "Closed" }).click();
+    await page.getByRole("tab", { name: /^Closed/ }).click();
     await page.getByText("Closed · False Positive").waitFor();
 
     // The Owner reopens it.
@@ -238,16 +238,16 @@ test("an Analyst marks the Case assigned to them Restricted; a colleague can't s
     // Ben, another Analyst, finds no trace of it.
     const benPage = await browser.newPage();
     await signIn(benPage, baseUrl, "ben@acme.example", () => t.totpCode(ben.totp.secret));
-    await benPage.getByRole("button", { name: "All open 0" }).click();
-    await benPage.getByText("No Cases here.").waitFor();
+    await benPage.getByRole("tab", { name: "All open 0" }).click();
+    await benPage.getByText("No open Cases", { exact: true }).waitFor();
     await benPage.goto(`${baseUrl}/cases/1`);
     await benPage.getByText("There is no Case C-1 in your Organization.").waitFor();
 
     // The Owner sees it, locked, in the list, and the change in the Audit Log.
     const ownerPage = await browser.newPage();
     await signIn(ownerPage, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
-    await ownerPage.getByRole("button", { name: "All open 1" }).click();
-    await ownerPage.getByRole("img", { name: "Restricted" }).waitFor();
+    await ownerPage.getByRole("tab", { name: "All open 1" }).click();
+    await ownerPage.getByRole("table").getByText("Restricted", { exact: true }).waitFor();
     await ownerPage.getByRole("link", { name: "Departing employee bulk download", exact: true }).click();
     await ownerPage.getByRole("tab", { name: "Audit Log" }).click();
     await ownerPage.getByRole("cell", { name: "Changed Restricted" }).waitFor();
@@ -256,8 +256,8 @@ test("an Analyst marks the Case assigned to them Restricted; a colleague can't s
     // Ana hands it to Ben: she loses sight of it and lands on the list; Ben now sees it.
     await choose(page, "Assignee", "Ben Analyst");
     await page.waitForURL(`${baseUrl}/`);
-    await page.getByRole("button", { name: "All open 0" }).click();
-    await page.getByText("No Cases here.").waitFor();
+    await page.getByRole("tab", { name: "All open 0" }).click();
+    await page.getByText("No open Cases", { exact: true }).waitFor();
     await benPage.goto(`${baseUrl}/cases/1`);
     await benPage.getByRole("heading", { name: "Departing employee bulk download" }).waitFor();
   } finally {
@@ -276,11 +276,11 @@ test("Case pages and the Case list refresh live, and show who is viewing the Cas
     // Ana watches the list; a Case Olive opens appears without a reload.
     const page = await browser.newPage();
     await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
-    await page.getByRole("button", { name: "All open 0" }).click();
+    await page.getByRole("tab", { name: "All open 0" }).click();
     await page.getByRole("status").getByText("Live").waitFor();
     await owner.api.cases.$post({ json: { title: "Suspicious PowerShell on FIN-LT-0231", caseType: "malware", severity: "high" } });
     await page.getByRole("link", { name: "Suspicious PowerShell on FIN-LT-0231", exact: true }).waitFor();
-    await page.getByRole("button", { name: "All open 1" }).waitFor();
+    await page.getByRole("tab", { name: "All open 1" }).waitFor();
 
     // On the Case page, Ana sees Olive arrive, and Olive's change of Status.
     await page.getByRole("link", { name: "Suspicious PowerShell on FIN-LT-0231", exact: true }).click();

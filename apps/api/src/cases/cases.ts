@@ -1,11 +1,11 @@
-import { and, count, desc, eq, isNull, ne, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, isNull, ne, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { Tx } from "../db/client";
 import type { Deps } from "../deps";
-import { type Actor, canSeeCase, casePermissions, casePolicy, NotPermitted, visibleCases } from "../access/policy";
+import { type Actor, canSeeCase, casePermissions, casePolicy, isGuest, NotPermitted, visibleCases } from "../access/policy";
 import { caseRoleAssignmentsOf, caseRoleHolderIds } from "../case-roles/holders";
 import { guestGrantsOf } from "../guests/grants";
-import { alerts, cases, organization, user } from "../db/schema";
+import { alerts, caseGuests, cases, organization, user } from "../db/schema";
 import { caseClosedComment, queueWriteBacks } from "../crowdstrike/write-back";
 import { secureId } from "../ids";
 import type { Membership, Participant } from "../members/membership";
@@ -17,7 +17,7 @@ import { taskCounts } from "../tasks/task-counts";
 import { hasTag, tagsOfCase } from "../tags/case-tags";
 import { type CaseActor, type CaseAuditEntry, listCaseAudit, recordCaseAudit, type CaseAuditFilter } from "./case-audit-log";
 import { type CaseSummary, emptySummary } from "./case-summary";
-import { type CaseType, REOPENED_STATUS, type Resolution, resolutionLabel, type Severity, type Status } from "./vocabulary";
+import { type CaseType, REOPENED_STATUS, type Resolution, resolutionLabel, SEVERITIES, type Severity, type Status } from "./vocabulary";
 
 /**
  * Cases within one Organization. Every read and write goes through here and is limited by the
@@ -33,8 +33,23 @@ export type CaseChanges = {
   restricted?: boolean;
 };
 export type CaseListView = "open" | "mine" | "unassigned" | "closed";
+/** "restricted": Restricted Cases. "guests": Cases a Guest can see now. */
+export type CaseListAccess = "restricted" | "guests";
+/** "updated" (the default) and "number" go newest first when descending, "severity" Critical first. */
+export type CaseListSort = "updated" | "severity" | "number";
 /** `tag` in its stored form (`tags/vocabulary.ts`). */
-export type CaseListFilter = { view?: CaseListView; status?: Status; severity?: Severity; caseType?: CaseType; tag?: string };
+export type CaseListFilter = {
+  view?: CaseListView;
+  status?: Status;
+  severity?: Severity;
+  caseType?: CaseType;
+  tag?: string;
+  access?: CaseListAccess;
+  sort?: CaseListSort;
+  order?: "asc" | "desc";
+};
+/** The most Cases one list returns; `counts` still says how many match. */
+export const CASE_LIST_LIMIT = 500;
 
 export class CaseNotFound extends Error {}
 export class NotAMember extends Error {}
@@ -294,8 +309,13 @@ export function caseStore(deps: Pick<Deps, "db" | "clock" | "mailer" | "baseUrl"
       return view(me, number);
     },
 
-    /** The Cases `me` can see, in one of the list views, with the number of Cases in each view. */
+    /**
+     * The Cases `me` can see in one of the list views, matching `filter`, at most `CASE_LIST_LIMIT`.
+     * `counts` gives how many Cases match the same filters in each view, so the count for `view`
+     * is the full number even when the list stops at the limit.
+     */
     async list(me: Actor, filter: CaseListFilter = {}) {
+      const now = clock.now();
       const notClosed = ne(cases.status, "closed");
       const views: Record<CaseListView, SQL | undefined> = {
         open: notClosed,
@@ -303,29 +323,48 @@ export function caseStore(deps: Pick<Deps, "db" | "clock" | "mailer" | "baseUrl"
         unassigned: and(notClosed, isNull(cases.assigneeId)),
         closed: eq(cases.status, "closed"),
       };
-      const visible = visibleCases(me);
+      const countingGuests = sql`${caseGuests.caseId} = ${cases.id} and ${caseGuests.endedAt} is null and (${caseGuests.expiresAt} is null or ${caseGuests.expiresAt} > ${now.toISOString()}::timestamptz)`;
+      const access: Record<CaseListAccess, SQL> = {
+        restricted: eq(cases.restricted, true),
+        guests: sql`exists (select 1 from ${caseGuests} where ${countingGuests})`,
+      };
+      const matching = and(
+        visibleCases(me),
+        filter.status ? eq(cases.status, filter.status) : undefined,
+        filter.severity ? eq(cases.severity, filter.severity) : undefined,
+        filter.caseType ? eq(cases.caseType, filter.caseType) : undefined,
+        filter.tag ? hasTag(filter.tag) : undefined,
+        filter.access ? access[filter.access] : undefined,
+      );
+      // Critical ranks highest, so descending puts it first.
+      const severityRank = sql`case ${cases.severity} ${sql.join(
+        SEVERITIES.map((s, i) => sql`when ${s} then ${SEVERITIES.length - i}`),
+        sql` `,
+      )} end`;
+      const direction = filter.order === "asc" ? asc : desc;
+      const sortBy = { updated: cases.updatedAt, severity: severityRank, number: cases.number }[filter.sort ?? "updated"];
+      const guest = isGuest(me);
       const rows = await db
-        .select(listColumns)
+        .select({
+          ...listColumns,
+          // Guests don't learn who else has been let in.
+          guests: guest ? sql<null>`null` : sql<number>`(select count(*)::int from ${caseGuests} where ${countingGuests})`,
+          alerts: sql<number>`(select count(*)::int from ${alerts} where ${alerts.caseId} = ${cases.id}${guest ? sql` and not ${alerts.internal}` : sql``})`,
+        })
         .from(cases)
         .leftJoin(assignee, eq(cases.assigneeId, assignee.id))
-        .where(
-          and(
-            visible,
-            views[filter.view ?? "open"],
-            filter.status ? eq(cases.status, filter.status) : undefined,
-            filter.severity ? eq(cases.severity, filter.severity) : undefined,
-            filter.caseType ? eq(cases.caseType, filter.caseType) : undefined,
-            filter.tag ? hasTag(filter.tag) : undefined,
-          ),
-        )
-        .orderBy(desc(cases.updatedAt), desc(cases.number))
-        .limit(500);
+        .where(and(matching, views[filter.view ?? "open"]))
+        .orderBy(direction(sortBy), direction(cases.number))
+        .limit(CASE_LIST_LIMIT);
       const countOf = async (where: SQL | undefined) =>
-        (await db.select({ n: count() }).from(cases).where(and(visible, where)))[0]?.n ?? 0;
+        (await db.select({ n: count() }).from(cases).where(and(matching, where)))[0]?.n ?? 0;
       const [mine, unassigned, open, closed] = await Promise.all(
         (["mine", "unassigned", "open", "closed"] as const).map((v) => countOf(views[v])),
       );
-      return { cases: rows.map(listItem), counts: { mine, unassigned, open, closed } };
+      return {
+        cases: rows.map((row) => ({ ...listItem(row), guests: row.guests, alerts: row.alerts })),
+        counts: { mine, unassigned, open, closed },
+      };
     },
 
     /**
