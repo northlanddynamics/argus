@@ -691,7 +691,7 @@ test("an Analyst tags a Case, filters the list by Tag, links Cases and marks one
 
     // The Case list filters by Tag.
     await page.getByRole("link", { name: "Cases", exact: true }).first().click();
-    await page.getByRole("button", { name: /All open/ }).click();
+    await page.getByRole("tab", { name: /All open/ }).click();
     await page.getByRole("link", { name: "Beaconing host", exact: true }).waitFor();
     await page.getByLabel("Tag").selectOption("bec");
     await page.getByRole("cell").filter({ hasText: "#bec" }).filter({ hasText: "#finance" }).waitFor();
