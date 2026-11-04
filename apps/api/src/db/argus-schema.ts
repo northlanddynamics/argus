@@ -5,6 +5,7 @@ import {
   bigserial,
   boolean,
   check,
+  customType,
   date,
   index,
   integer,
@@ -32,6 +33,13 @@ import {
   WRITE_BACK_STATES,
 } from "../alerts/vocabulary";
 import { organization, session, user } from "./auth-schema";
+
+/**
+ * A Postgres `tsvector`: the words a row is found by in global search (`search/search.ts`). Each is a
+ * stored generated column, kept up to date by Postgres, under the `simple` configuration (no
+ * stemming or stop words, so hashes, IPs and host names stay whole) and with a GIN index.
+ */
+const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
 
 /**
  * The Organization Audit Log: who did what to the Organization's Members and configuration.
@@ -97,10 +105,17 @@ export const cases = pgTable(
       .references(() => user.id, { onDelete: "restrict" }),
     openedAt: timestamp("opened_at", { withTimezone: true }).notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+    /** Its title (weighted A) and the text of its Case Summary (B). */
+    search: tsvector("search")
+      .notNull()
+      .generatedAlwaysAs(
+        sql`setweight(to_tsvector('simple', title), 'A') || setweight(to_tsvector('simple', jsonb_path_query_array(summary, 'strict $.**.text')), 'B')`,
+      ),
   },
   (t) => [
     uniqueIndex("cases_org_number_idx").on(t.organizationId, t.number),
     index("cases_org_updated_idx").on(t.organizationId, t.updatedAt),
+    index("cases_search_idx").using("gin", t.search),
     check(
       "cases_closed_has_resolution",
       sql`(${t.status} = 'closed') = (${t.resolution} IS NOT NULL)
@@ -472,9 +487,14 @@ function heldOncePerOrganization(
       value: text("value").notNull(),
       matchKey: text("match_key").notNull(),
       createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+      /** Its value as shown and as normalised. */
+      search: tsvector("search")
+        .notNull()
+        .generatedAlwaysAs(sql`to_tsvector('simple', value || ' ' || match_key)`),
     },
     (t) => [
       uniqueIndex(`${names.items}_org_key_idx`).on(t.organizationId, t.type, t.matchKey),
+      index(`${names.items}_search_idx`).using("gin", t.search),
       check(`${names.items}_type`, sql`${t.type} IN (${sql.raw(types.map((x) => `'${x}'`).join(", "))})`),
     ],
   );
@@ -785,9 +805,16 @@ export const alerts = pgTable(
     falconCommentsDue: boolean("falcon_comments_due").notNull().default(false),
     falconCommentsSyncedAt: timestamp("falcon_comments_synced_at", { withTimezone: true }),
     falconCommentsError: text("falcon_comments_error"),
+    /** Its title, Falcon's id for it, host and user (weighted A), and its description (B). */
+    search: tsvector("search")
+      .notNull()
+      .generatedAlwaysAs(
+        sql`setweight(to_tsvector('simple', title || ' ' || external_id || ' ' || coalesce(host, '') || ' ' || coalesce(user_name, '')), 'A') || setweight(to_tsvector('simple', coalesce(description, '')), 'B')`,
+      ),
   },
   (t) => [
     uniqueIndex("alerts_integration_external_idx").on(t.integrationId, t.externalId),
+    index("alerts_search_idx").using("gin", t.search),
     index("alerts_org_received_idx").on(t.organizationId, t.receivedAt),
     index("alerts_case_idx").on(t.caseId),
     index("alerts_falcon_comments_due_idx").on(t.id).where(sql`${t.falconCommentsDue}`),
