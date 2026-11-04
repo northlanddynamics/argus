@@ -75,7 +75,7 @@ test("the Owner adds a CrowdStrike Integration; its detections appear live in an
     await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
     await page.getByRole("link", { name: "Alerts" }).click();
     await page.getByRole("heading", { name: "Alerts" }).waitFor();
-    await page.getByText("No Alerts here.").waitFor();
+    await page.getByText("No New Alerts").waitFor();
 
     const stream = falcon.tenant("falcon-client-0001");
     stream.detection("EppDetectionSummaryEvent", "ldt:8c4f:41", {
@@ -88,7 +88,7 @@ test("the Owner adds a CrowdStrike Integration; its detections appear live in an
     await page.getByTestId("alert-ldt:8c4f:41").getByText("Encoded PowerShell from Office process").waitFor();
     await page.getByTestId("alert-ldt:71aa:11").waitFor();
     expect(await page.getByTestId("alert-ldt:8c4f:41").getByText("Critical").isVisible()).toBe(true);
-    await page.getByText("CrowdStrike — Prod · connected · last event").waitFor();
+    await page.getByText("CrowdStrike — Prod: Connected, last event").waitFor();
 
     await page.getByLabel("Severity").selectOption("critical");
     await page.getByTestId("alert-ldt:71aa:11").waitFor({ state: "detached" });
@@ -133,20 +133,20 @@ test("an Analyst bulk-attaches Alerts to a Case, is told which changed meanwhile
     stream.detection("EppDetectionSummaryEvent", "ldt:2", { Name: "Credential dumping attempt", SeverityName: "Critical" });
     await stream.drained();
 
-    await page.getByRole("button", { name: "Attach to Case…" }).click();
+    await page.getByRole("toolbar", { name: "Selected Alerts" }).getByRole("button", { name: "Attach to Case…" }).click();
     const dialog = page.getByRole("dialog", { name: "Attach 3 Alerts to a Case" });
     await dialog.getByLabel("Find a Case").fill(`C-${number}`);
     await dialog.getByText("PowerShell on FIN-LT-0231").click();
     await dialog.getByRole("button", { name: "Attach" }).click();
-    await page.getByText("1 of 3 Alerts were not attached to").waitFor();
-    await page.getByText("ldt:2 changed since you selected it: it was updated from Falcon").waitFor();
+    await page.getByText("1 of 3 Alerts was not attached to").waitFor();
+    await page.getByText("Credential dumping attempt (ldt:2) changed since you selected it: it was updated from Falcon").waitFor();
     await page.getByText(`The other 2 were attached to C-${number}.`).waitFor();
     // The queue shows New Alerts: the attached ones leave it live.
     await page.getByTestId("alert-ldt:1").waitFor({ state: "detached" });
 
-    await page.getByRole("button", { name: "Select the 1 again" }).click();
+    await page.getByRole("button", { name: "Select it again" }).click();
     await page.getByLabel("Select ldt:4").check();
-    await page.getByRole("button", { name: "Open Case" }).click();
+    await page.getByRole("toolbar", { name: "Selected Alerts" }).getByRole("button", { name: "Open Case" }).click();
     const open = page.getByRole("dialog", { name: "Open Case from 2 Alerts" });
     expect(await open.getByLabel("Severity").inputValue()).toBe("critical");
     await open.getByLabel("Title").fill("Credential theft");
@@ -192,7 +192,7 @@ test("an Alert shows the Observables and Assets it names; attaching it adds them
     await page.getByRole("region", { name: "Extracted Assets" }).getByText("Account d.howe").waitFor();
 
     await page.getByLabel("Select ldt:1").check();
-    await page.getByRole("button", { name: "Attach to Case…" }).click();
+    await page.getByRole("toolbar", { name: "Selected Alerts" }).getByRole("button", { name: "Attach to Case…" }).click();
     const dialog = page.getByRole("dialog", { name: "Attach 1 Alert to a Case" });
     await dialog.getByLabel("Find a Case").fill(`C-${number}`);
     await dialog.getByText("PowerShell on FIN-LT-0231").click();
@@ -240,7 +240,7 @@ test("opening an Alert refreshes its Falcon comments without waiting; once attac
     await inFalcon.getByText("CrowdStrike: jsmith@acme.example").waitFor();
 
     await page.getByLabel("Select ldt:1").check();
-    await page.getByRole("button", { name: "Attach to Case…" }).click();
+    await page.getByRole("toolbar", { name: "Selected Alerts" }).getByRole("button", { name: "Attach to Case…" }).click();
     const dialog = page.getByRole("dialog", { name: "Attach 1 Alert to a Case" });
     await dialog.getByLabel("Find a Case").fill(`C-${number}`);
     await dialog.getByText("PowerShell on FIN-LT-0231").click();

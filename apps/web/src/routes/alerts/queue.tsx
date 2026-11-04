@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { XIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { SeverityBadge } from "@/components/case-badges";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -257,7 +258,7 @@ export function AlertQueuePage() {
               ))}
             </ul>
             <p>
-              New detections may be missing from the queue until it reconnects. An Admin can check it in{" "}
+              New detections may be missing from the queue until it's running again. An Admin can check it in{" "}
               <Link to="/settings/integrations" className="underline underline-offset-4">
                 Settings
               </Link>
@@ -577,8 +578,6 @@ function OutcomeNotice({ outcome, onReselect, onDismiss }: { outcome: BulkOutcom
   );
 }
 
-/** One Alert in full, beside the queue, with Move and Detach while it is on a Case. */
-/** Observables or Assets an Alert names, as badges. */
 /** The Alert's comments in Falcon, as last fetched; opening the Alert asks the worker to fetch them again. */
 function FalconComments({ comments: c, attached }: { comments: AlertDetail["falconComments"]; attached: boolean }) {
   /** Refreshing for longer than Falcon usually takes: the worker may be down or Falcon unreachable. */
@@ -628,6 +627,7 @@ function FalconComments({ comments: c, attached }: { comments: AlertDetail["falc
   );
 }
 
+/** Observables or Assets an Alert names, as badges. */
 function Extracted({ label, items }: { label: string; items: { id: string; text: string; title: string }[] }) {
   return (
     <section aria-label={label} className="grid gap-1">
@@ -647,6 +647,10 @@ function Extracted({ label, items }: { label: string; items: { id: string; text:
   );
 }
 
+/**
+ * One Alert in full, beside the queue: Open Case, Attach and Dismiss while it isn't on a Case, Move
+ * and Detach while it is on an open one.
+ */
 function AlertPanel({ id, onClose, onAct }: { id: string; onClose: () => void; onAct: (kind: BulkKind, alert: AlertRow) => void }) {
   const alert = useQuery(alertQuery(id));
   const [moving, setMoving] = useState<"move" | "detach" | null>(null);
@@ -703,16 +707,22 @@ function AlertPanel({ id, onClose, onAct }: { id: string; onClose: () => void; o
   return (
     <Card role="region" aria-label="Alert" className="self-start">
       <CardContent className="grid gap-3 text-sm">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
           <SeverityBadge severity={a.severity} />
-          <Badge variant="outline">
-            {alertStatusLabel[a.status]}
-            {onCase && (
-              <Link to="/cases/$number" params={{ number: String(onCase.number) }} className="ml-1 text-primary underline">
-                {caseRef(onCase.number)}
-              </Link>
-            )}
-          </Badge>
+          <Badge variant="outline">{alertStatusLabel[a.status]}</Badge>
+          {onCase && (
+            <Link
+              to="/cases/$number"
+              params={{ number: String(onCase.number) }}
+              className="font-mono text-xs underline underline-offset-4"
+              title={onCase.title}
+            >
+              {caseRef(onCase.number)}
+            </Link>
+          )}
+          <Button size="icon-sm" variant="ghost" className="-my-1 ml-auto" aria-label="Close the Alert" onClick={onClose}>
+            <XIcon aria-hidden />
+          </Button>
         </div>
         <div>
           <h2 className="text-base font-semibold text-balance">{a.title}</h2>
@@ -790,36 +800,35 @@ function AlertPanel({ id, onClose, onAct }: { id: string; onClose: () => void; o
           <summary className="cursor-pointer text-muted-foreground">Raw payload</summary>
           <pre className="mt-2 max-h-64 overflow-auto rounded bg-muted p-2 text-xs">{JSON.stringify(a.payload, null, 2)}</pre>
         </details>
-        <div className="flex flex-wrap gap-2 border-t pt-3">
-          {a.status !== "attached" && (
-            <>
-              <Button size="sm" onClick={() => onAct("open", a)}>
-                Open Case
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => onAct("attach", a)}>
-                Attach to Case…
-              </Button>
-              {a.status === "new" && (
-                <Button size="sm" variant="outline" onClick={() => onAct("dismiss", a)}>
-                  Dismiss…
+        {(a.status !== "attached" || editable) && (
+          <div className="flex flex-wrap gap-2 border-t pt-3">
+            {a.status !== "attached" && (
+              <>
+                <Button size="sm" onClick={() => onAct("open", a)}>
+                  Open Case
                 </Button>
-              )}
-            </>
-          )}
-          {editable && (
-            <>
-              <Button size="sm" variant="outline" onClick={() => setMoving("move")}>
-                Move to another Case…
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => setMoving("detach")}>
-                Detach
-              </Button>
-            </>
-          )}
-          <Button size="sm" variant="ghost" className="ml-auto" onClick={onClose}>
-            Close
-          </Button>
-        </div>
+                <Button size="sm" variant="outline" onClick={() => onAct("attach", a)}>
+                  Attach to Case…
+                </Button>
+                {a.status === "new" && (
+                  <Button size="sm" variant="outline" onClick={() => onAct("dismiss", a)}>
+                    Dismiss…
+                  </Button>
+                )}
+              </>
+            )}
+            {editable && (
+              <>
+                <Button size="sm" variant="outline" onClick={() => setMoving("move")}>
+                  Move to another Case…
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setMoving("detach")}>
+                  Detach
+                </Button>
+              </>
+            )}
+          </div>
+        )}
         <MoveAlertDialog
           open={moving !== null}
           onOpenChange={(o) => setMoving(o ? moving : null)}
