@@ -21,6 +21,8 @@ import { type DashboardPeriod, OPEN_STATUSES, type OpenStatus } from "./vocabula
  *   period (and not reopened since).
  * - Alert volume: the Alerts received within the period. The Dismissal rate is the share of those
  *   that have been decided (attached to a Case or dismissed) that were dismissed.
+ * - Alerts awaiting a decision: every Alert still New, whenever it was received, and when the oldest
+ *   of them arrived.
  *
  * Case figures count only the Cases `visibleCases` lets the actor see, so Restricted Cases count
  * only for those who can see them. Alert figures likewise leave out the Alerts on Cases the actor
@@ -45,6 +47,8 @@ export type DashboardMetrics = {
     total: number;
     unassigned: number;
     bySeverity: Record<Severity, Record<OpenStatus, number>>;
+    /** The unassigned ones among `bySeverity`. */
+    unassignedBySeverity: Record<Severity, Record<OpenStatus, number>>;
   };
   meanTimeToAcknowledge: { ms: number | null; cases: number };
   meanTimeToClose: { ms: number | null; cases: number };
@@ -57,6 +61,8 @@ export type DashboardMetrics = {
     /** `dismissed / (attached + dismissed)`, or null when none have been decided. */
     dismissalRate: number | null;
     dismissalsByReason: Record<DismissalReason, number>;
+    /** The Alerts still New, received in any period, and when the oldest of them arrived (ISO). */
+    awaitingDecision: { count: number; oldestReceivedAt: string | null };
   };
   /** Mean times per day (7 days) or per week (30 and 90 days), oldest first. */
   trend: MetricsTrendPoint[];
@@ -98,12 +104,18 @@ export function metricsStore({ db, clock }: { db: Db; clock: Clock }) {
         .from(cases)
         .where(and(visibleCases(me), ne(cases.status, "closed")))
         .groupBy(cases.severity, cases.status);
-      const bySeverity = Object.fromEntries(SEVERITIES.map((s) => [s, zeros(OPEN_STATUSES)])) as Record<Severity, Record<OpenStatus, number>>;
-      for (const r of openRows) bySeverity[r.severity][r.status as OpenStatus] += Number(r.n);
+      const grid = () => Object.fromEntries(SEVERITIES.map((s) => [s, zeros(OPEN_STATUSES)])) as Record<Severity, Record<OpenStatus, number>>;
+      const bySeverity = grid();
+      const unassignedBySeverity = grid();
+      for (const r of openRows) {
+        bySeverity[r.severity][r.status as OpenStatus] += Number(r.n);
+        unassignedBySeverity[r.severity][r.status as OpenStatus] += Number(r.unassigned);
+      }
       const openCases = {
         total: openRows.reduce((sum, r) => sum + Number(r.n), 0),
         unassigned: openRows.reduce((sum, r) => sum + Number(r.unassigned), 0),
         bySeverity,
+        unassignedBySeverity,
       };
 
       // A Case is acknowledged at its first Audit Log entry moving it out of New, by a Status change or by closing it.
@@ -132,13 +144,17 @@ export function metricsStore({ db, clock }: { db: Db; clock: Clock }) {
 
       const inPeriod = and(eq(alerts.organizationId, me.organizationId), gte(alerts.receivedAt, from), visibleAlerts(me, alerts.caseId));
       const day = sql<string>`to_char(${alerts.receivedAt} at time zone 'UTC', 'YYYY-MM-DD')`;
-      const [dayRows, statusRows] = await Promise.all([
+      const [dayRows, statusRows, [awaiting]] = await Promise.all([
         db.select({ day, n: sql<number>`count(*)::int` }).from(alerts).where(inPeriod).groupBy(day),
         db
           .select({ status: alerts.status, reason: alerts.dismissalReason, n: sql<number>`count(*)::int` })
           .from(alerts)
           .where(inPeriod)
           .groupBy(alerts.status, alerts.dismissalReason),
+        db
+          .select({ n: sql<number>`count(*)::int`, oldest: sql<Date | string | null>`min(${alerts.receivedAt})` })
+          .from(alerts)
+          .where(and(eq(alerts.organizationId, me.organizationId), eq(alerts.status, "new"), visibleAlerts(me, alerts.caseId))),
       ]);
       const perDayCount = new Map(dayRows.map((r) => [r.day, Number(r.n)]));
       const perDay = Array.from({ length: days }, (_, i) => {
@@ -170,6 +186,10 @@ export function metricsStore({ db, clock }: { db: Db; clock: Clock }) {
           dismissed,
           dismissalRate: attached + dismissed ? dismissed / (attached + dismissed) : null,
           dismissalsByReason,
+          awaitingDecision: {
+            count: Number(awaiting?.n ?? 0),
+            oldestReceivedAt: awaiting?.oldest ? new Date(awaiting.oldest).toISOString() : null,
+          },
         },
         trend,
       };

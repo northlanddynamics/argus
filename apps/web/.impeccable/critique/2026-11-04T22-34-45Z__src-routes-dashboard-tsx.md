@@ -10,6 +10,7 @@ target_fingerprint: "sha256:fc49f876817c2c652950bfba91df9cfe1df3c00e0f331ffa49b5
 target_path: /home/user/argus/apps/web/src/routes/dashboard.tsx
 timestamp: 2026-11-04T22-34-45Z
 slug: src-routes-dashboard-tsx
+closed: true
 ---
 Method: dual-agent (A: design review · B: detector + browser)
 

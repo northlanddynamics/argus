@@ -106,6 +106,9 @@ describe("Metrics dashboard", () => {
     expect(openCases.bySeverity.high.new).toBe(1);
     expect(openCases.bySeverity.low.resolved).toBe(1);
     expect(openCases.bySeverity.medium).toEqual({ new: 0, triage: 0, in_progress: 0, awaiting_info: 0, resolved: 0 });
+    // The assigned Critical one is In Progress; the unassigned one is still New.
+    expect(openCases.unassignedBySeverity.critical).toEqual({ new: 1, triage: 0, in_progress: 0, awaiting_info: 0, resolved: 0 });
+    expect(openCases.unassignedBySeverity.low.resolved).toBe(1);
   });
 
   test("mean time to acknowledge is opened → first move out of New; mean time to close is opened → Closed", async () => {
@@ -194,6 +197,9 @@ describe("Metrics dashboard", () => {
     expect(quarter.alerts.received).toBe(6);
     expect(quarter.alerts.dismissalsByReason.other).toBe(1);
     expect(quarter.alerts.perDay).toHaveLength(90);
+
+    // Only today's is still New; awaiting a decision counts it whatever the period.
+    for (const metrics of [month, quarter]) expect(metrics.alerts.awaitingDecision).toEqual({ count: 1, oldestReceivedAt: "2026-01-01T09:00:00.000Z" });
 
     const week = await a.dashboard(a.owner, "7");
     expect(week.alerts.received).toBe(5);
