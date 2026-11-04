@@ -139,11 +139,9 @@ describe("Global search", () => {
     expect(found.observables.map((o) => [o.value, o.cases.map((c) => c.number)])).toEqual([["exfil-drop.example", [secret]]]);
   });
 
-  test("finds Alerts and the Observables and Assets they name; the Case is shown only to those who can see it", async () => {
+  test("finds Alerts and the Observables and Assets they name, except on Cases the searcher can't see", async () => {
     const a = await acme();
-    const secret = await a.open("Restricted malware Case", true);
     const id = await a.detect("epp");
-    await a.attach(secret, id);
 
     const byHost = await a.search(a.ben, "FIN-LT-0231");
     expect(byHost.alerts.map((x) => [x.id, x.case])).toEqual([[id, null]]);
@@ -151,6 +149,13 @@ describe("Global search", () => {
     expect((await a.search(a.ben, "EncodedPowerShellFromOffice")).alerts.map((x) => x.id)).toEqual([id]);
     expect((await a.search(a.ben, "185.220.101.4")).observables.map((o) => o.value)).toEqual(["185.220.101.4"]);
     expect((await a.search(a.ben, "invoice-portal.biz")).observables.map((o) => o.type)).toEqual(["domain"]);
+
+    const secret = await a.open("Restricted malware Case", true);
+    await a.attach(secret, id);
+    const hidden = await a.search(a.ben, "FIN-LT-0231");
+    expect([hidden.alerts, hidden.assets]).toEqual([[], []]);
+    expect((await a.search(a.ben, "EncodedPowerShellFromOffice")).alerts).toEqual([]);
+    expect((await a.search(a.ben, "185.220.101.4")).observables).toEqual([]);
 
     const asAna = await a.search(a.ana, "FIN-LT-0231");
     expect(asAna.alerts.map((x) => x.case?.number)).toEqual([secret]);

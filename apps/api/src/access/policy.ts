@@ -16,6 +16,8 @@ import { caseGuests, caseRoleAssignments, cases } from "../db/schema";
  * - Guests never see Internal items (Tasks, Discussion messages, Timeline Entries, Evidence and
  *   attached Alerts marked Internal), nor hear about changes to them. On what they can see they
  *   participate: they post in the Discussion, own and complete Tasks, and add Evidence.
+ * - Members see the Alerts that are on no Case or on a Case they can see. An Alert on a Case they
+ *   can't see, its Falcon comments included, is hidden from them like the Case itself.
  * - Nobody sees anything outside the Organization they are acting in.
  *
  * A Case the actor can't see is reported as not found, so its existence doesn't leak.
@@ -93,6 +95,13 @@ export function visibleCases(actor: Actor): SQL {
   );
   return and(inOrganization, or(eq(cases.restricted, false), eq(cases.assigneeId, actor.userId), holdsCaseRole)) as SQL;
 }
+
+/**
+ * The Alerts a Member sees in the Alert queue, search and metrics: those on no Case or on a Case
+ * they can see, as a condition on the alert table's `case_id` column.
+ */
+export const visibleAlerts = (actor: MemberActor, caseId: AnyPgColumn): SQL =>
+  or(isNull(caseId), exists(sql`(select 1 from ${cases} where ${cases.id} = ${caseId} and ${visibleCases(actor)})`)) as SQL;
 
 /** An item within a Case that can be marked Internal. */
 export type InternalFact = { internal: boolean };

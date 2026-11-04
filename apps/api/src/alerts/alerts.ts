@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { visibleCases, visibleItems } from "../access/policy";
+import { visibleAlerts, visibleCases, visibleItems } from "../access/policy";
 import { recordOrgAudit } from "../audit/org-audit-log";
 import { recordCaseAudit } from "../cases/case-audit-log";
 import { actorOf, CaseClosed, CaseNotFound, insertCase, type OpenCaseInput } from "../cases/cases";
@@ -21,7 +21,7 @@ import { queueTeamsPost, sendTeamsPosts } from "../teams/teams";
 
 /**
  * Alerts: detections received from the Organization's Integrations. Every Member sees the Alert
- * queue; Guests never do. Alerts arrive through the worker (`recordDetection`).
+ * queue, except the Alerts on Cases they can't see (`visibleAlerts`); Guests never do. Alerts arrive through the worker (`recordDetection`).
  *
  * Attaching an Alert to a Case makes it Internal, hidden from the Case's Guests, until a Member
  * shows it to them (`internal/`). It also links the Observables and Assets the Alert names to the
@@ -58,8 +58,6 @@ export type RefusalReason =
   | "changed"
   /** It is already on the Case it would be attached to. */
   | "already_on_case"
-  /** It is on a Case the actor can't see. */
-  | "on_hidden_case"
   /** It is on a Closed Case, which can't lose Alerts. */
   | "on_closed_case"
   /** Only an Alert that isn't on a Case is dismissed; detach it first. */
@@ -102,7 +100,7 @@ export class AlertNotFound extends Error {
 export type AlertFilter = { status?: AlertStatus; severity?: Severity; integrationId?: string; caseNumber?: number };
 
 /** The most Alerts the queue shows at once, newest first. */
-const QUEUE_LIMIT = 500;
+export const QUEUE_LIMIT = 500;
 
 /**
  * Records a detection from `integration`: a new Alert with Status New, or, for a `CompositeId` already
@@ -332,21 +330,24 @@ const refusal = (id: string, alert: LockedAlert | undefined, reason: RefusalReas
   detail,
 });
 
-/** Where an Alert is now, in words, naming its Case only if `me` can see it. */
+/** Where an Alert `me` can see is now, in words. */
 function whereNow(alert: LockedAlert, onCase: LockedCase | undefined) {
   switch (alert.status) {
     case "new":
       return "is New";
     case "attached":
-      return onCase?.visible ? `is attached to ${caseRef(onCase.number)}` : "is attached to a Case you can't see";
+      return `is attached to ${caseRef(onCase!.number)}`;
     case "dismissed":
       return alert.dismissedByName ? `was dismissed by ${alert.dismissedByName}` : "was dismissed";
   }
 }
 
-/** Why `alert` (selected at `version`) can't be acted on as selected, if it can't. */
+/**
+ * Why `alert` (selected at `version`) can't be acted on as selected, if it can't. An Alert on a Case
+ * `me` can't see is not found, as if it didn't exist.
+ */
 function staleness(id: string, alert: LockedAlert | undefined, version: number, caseOf: Map<string, LockedCase>) {
-  if (!alert) return refusal(id, undefined, "not_found", "was not found");
+  if (!alert || (alert.caseId && !caseOf.get(alert.caseId)?.visible)) return refusal(id, undefined, "not_found", "was not found");
   if (alert.version === version) return null;
   const now = whereNow(alert, alert.caseId ? caseOf.get(alert.caseId) : undefined);
   // Its Status may not have moved: then Falcon updated the detection.
@@ -360,8 +361,7 @@ function attachRefusal(id: string, alert: LockedAlert | undefined, version: numb
   if (!alert.caseId) return null;
   const from = caseOf.get(alert.caseId);
   if (alert.caseId === targetId) return refusal(id, alert, "already_on_case", `is already attached to ${caseRef(from!.number)}`);
-  if (!from?.visible) return refusal(id, alert, "on_hidden_case", "is attached to a Case you can't see");
-  if (from.status === "closed") return refusal(id, alert, "on_closed_case", `is attached to ${caseRef(from.number)}, which is Closed`);
+  if (from!.status === "closed") return refusal(id, alert, "on_closed_case", `is attached to ${caseRef(from!.number)}, which is Closed`);
   return null;
 }
 
@@ -484,7 +484,7 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
     });
 
   return {
-    /** The Alert queue: the Organization's Alerts matching `filter`, newest first. */
+    /** The Alert queue: the Organization's Alerts `me` can see that match `filter`, newest first. */
     async list(me: Membership, filter: AlertFilter = {}) {
       let caseId: string | undefined;
       if (filter.caseNumber !== undefined) caseId = (await caseNumbered(db, me, filter.caseNumber)).id;
@@ -507,7 +507,6 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
           internal: alerts.internal,
           caseNumber: cases.number,
           caseTitle: cases.title,
-          caseVisible: sql<boolean | null>`(${visibleCases(me)})`,
         })
         .from(alerts)
         .innerJoin(integrations, eq(alerts.integrationId, integrations.id))
@@ -515,6 +514,7 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
         .where(
           and(
             eq(alerts.organizationId, me.organizationId),
+            visibleAlerts(me, alerts.caseId),
             filter.status ? eq(alerts.status, filter.status) : undefined,
             filter.severity ? eq(alerts.severity, filter.severity) : undefined,
             filter.integrationId ? eq(alerts.integrationId, filter.integrationId) : undefined,
@@ -523,11 +523,11 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
         )
         .orderBy(desc(alerts.receivedAt), desc(alerts.seq))
         .limit(QUEUE_LIMIT);
-      return rows.map(({ integrationId, integrationName, detectedAt, receivedAt, caseNumber, caseTitle, caseVisible, ...row }) => ({
+      return rows.map(({ integrationId, integrationName, detectedAt, receivedAt, caseNumber, caseTitle, ...row }) => ({
         ...row,
         integration: { id: integrationId, name: integrationName },
-        /** The Case it is attached to, unless that is a Case `me` can't see. */
-        case: caseNumber !== null && caseTitle !== null && caseVisible ? { number: caseNumber, title: caseTitle } : null,
+        /** The Case it is attached to. */
+        case: caseNumber !== null && caseTitle !== null ? { number: caseNumber, title: caseTitle } : null,
         detectedAt: detectedAt?.toISOString() ?? null,
         receivedAt: receivedAt.toISOString(),
       }));
@@ -587,9 +587,16 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
     /**
      * One Alert in full, with its detection as Falcon sent it and its comments in Falcon as last
      * fetched. Opening it asks for its comments again, unless they were fetched just now; the worker
-     * fetches them, and `falconComments.refreshing` says so meanwhile.
+     * fetches them, and `falconComments.refreshing` says so meanwhile. Throws `AlertNotFound` for an
+     * Alert on a Case `me` can't see.
      */
     async get(me: Membership, id: string) {
+      const [visible] = await db
+        .select({ id: alerts.id })
+        .from(alerts)
+        .where(and(eq(alerts.organizationId, me.organizationId), eq(alerts.id, id), visibleAlerts(me, alerts.caseId)))
+        .limit(1);
+      if (!visible) throw new AlertNotFound();
       await requestCommentSync(db, [id], clock.now(), { ifStale: true });
       const [row] = await db
         .select({
@@ -612,7 +619,6 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
           caseNumber: cases.number,
           caseTitle: cases.title,
           caseStatus: cases.status,
-          caseVisible: sql<boolean | null>`(${visibleCases(me)})`,
           attachedById: attachedBy.id,
           attachedByName: attachedBy.name,
           attachedAt: alerts.attachedAt,
@@ -633,10 +639,9 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
         .leftJoin(cases, eq(alerts.caseId, cases.id))
         .leftJoin(attachedBy, eq(alerts.attachedById, attachedBy.id))
         .leftJoin(dismissedBy, eq(alerts.dismissedById, dismissedBy.id))
-        .where(and(eq(alerts.organizationId, me.organizationId), eq(alerts.id, id)))
+        .where(and(eq(alerts.organizationId, me.organizationId), eq(alerts.id, id), visibleAlerts(me, alerts.caseId)))
         .limit(1);
       if (!row) throw new AlertNotFound();
-      const visible = row.caseNumber !== null && !!row.caseVisible;
       return {
         id: row.id,
         externalId: row.externalId,
@@ -660,11 +665,11 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
         falcon: { status: row.falconStatus, assignee: row.falconAssignee, tags: row.falconTags },
         /** The comments made on it in Falcon, as last fetched. */
         falconComments: await falconCommentsOf(db, row),
-        /** Set while it is Attached; `case` is null when that Case is one `me` can't see. */
+        /** Set while it is Attached, with the Case it is on. */
         attached:
-          row.status === "attached" && row.attachedAt
+          row.status === "attached" && row.attachedAt && row.caseNumber !== null
             ? {
-                case: visible ? { number: row.caseNumber!, title: row.caseTitle!, status: row.caseStatus! } : null,
+                case: { number: row.caseNumber, title: row.caseTitle!, status: row.caseStatus! },
                 by: row.attachedById ? { id: row.attachedById, name: row.attachedByName ?? "" } : null,
                 at: row.attachedAt.toISOString(),
               }
@@ -723,8 +728,7 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
         const stale = staleness(id, alert, version, caseOf);
         if (stale || !alert) throw new AlertRefused(stale!);
         const from = alert.caseId ? caseOf.get(alert.caseId) : undefined;
-        if (!alert.caseId) throw new AlertRefused(refusal(id, alert, "not_attached", "isn't attached to a Case"));
-        if (!from?.visible) throw new AlertRefused(refusal(id, alert, "on_hidden_case", "is attached to a Case you can't see"));
+        if (!alert.caseId || !from) throw new AlertRefused(refusal(id, alert, "not_attached", "isn't attached to a Case"));
         if (from.status === "closed") throw new CaseClosed();
         await tx
           .update(alerts)
@@ -769,9 +773,8 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
             continue;
           }
           if (alert.status === "attached") {
-            const on = alert.caseId ? caseOf.get(alert.caseId) : undefined;
-            const where = on?.visible ? caseRef(on.number) : "a Case you can't see";
-            result.refused.push(refusal(id, alert, "attached", `is attached to ${where}; detach it before dismissing it`));
+            const on = caseOf.get(alert.caseId!)!;
+            result.refused.push(refusal(id, alert, "attached", `is attached to ${caseRef(on.number)}; detach it before dismissing it`));
             continue;
           }
           await tx

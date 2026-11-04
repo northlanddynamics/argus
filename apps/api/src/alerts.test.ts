@@ -238,21 +238,24 @@ describe("Attaching Alerts to a Case", () => {
     expect((await a.attach(9999, await a.select("ldt:1"))).status).toBe(404);
   });
 
-  test("an Alert on a Restricted Case is shown without its Case to those who can't see it, and they can't move it", async () => {
+  test("an Alert on a Restricted Case is hidden, with its comments, from those who can't see the Case, and they can't act on it", async () => {
     const a = await acme();
     const hidden = await a.open(a.owner, "Insider matter");
     await a.owner.api.cases[":number"].$patch({ param: param(hidden), json: { restricted: true } });
     const mine = await a.open(a.ana);
     await a.detect("ldt:1", "Credential dumping attempt");
-    await a.attach(hidden, await a.select("ldt:1"), a.owner);
-
     const seen = await a.alert("ldt:1");
-    expect([seen.status, seen.case]).toEqual(["attached", null]);
-    expect((await a.detail(seen.id)).attached).toMatchObject({ case: null });
-    const { body } = await a.attach(mine, [{ id: seen.id, version: seen.version }]);
-    expect(body).toMatchObject({ applied: [], refused: [{ reason: "on_hidden_case", detail: "is attached to a Case you can't see" }] });
-    expect((await a.detach(seen.id, seen.version)).status).toBe(409);
+    await a.attach(hidden, [{ id: seen.id, version: seen.version }], a.owner);
+
+    expect((await a.queue()).map((x) => x.externalId)).not.toContain("ldt:1");
+    expect((await a.queue(a.ana, { status: "attached" })).map((x) => x.externalId)).not.toContain("ldt:1");
+    expect((await a.ana.api.alerts[":id"].$get({ param: { id: seen.id } })).status).toBe(404);
+    const current = (await a.alert("ldt:1", a.owner)).version;
+    const { body } = await a.attach(mine, [{ id: seen.id, version: current }]);
+    expect(body).toMatchObject({ applied: [], refused: [{ reason: "not_found", detail: "was not found", externalId: null, title: null }] });
+    expect((await a.detach(seen.id, current)).status).toBe(404);
     expect((await a.alert("ldt:1", a.owner)).case?.number).toBe(hidden);
+    expect((await a.detail(seen.id, a.owner)).attached).toMatchObject({ case: { number: hidden } });
   });
 
   test("an Alert is on at most one Case", async () => {

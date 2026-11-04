@@ -1,5 +1,5 @@
 import { and, eq, gte, isNull, ne, sql } from "drizzle-orm";
-import { visibleCases } from "../access/policy";
+import { visibleAlerts, visibleCases } from "../access/policy";
 import { DISMISSAL_REASONS, type DismissalReason } from "../alerts/vocabulary";
 import type { Clock } from "../clock";
 import { SEVERITIES, type Severity } from "../cases/vocabulary";
@@ -23,8 +23,8 @@ import { type DashboardPeriod, OPEN_STATUSES, type OpenStatus } from "./vocabula
  *   that have been decided (attached to a Case or dismissed) that were dismissed.
  *
  * Case figures count only the Cases `visibleCases` lets the actor see, so Restricted Cases count
- * only for those who can see them. Members see the whole Alert queue, so Alert figures are the
- * Organization's.
+ * only for those who can see them. Alert figures likewise leave out the Alerts on Cases the actor
+ * can't see (`visibleAlerts`).
  */
 
 /** Mean times over one stretch of the period. `null` when nothing was acknowledged (or closed) then. */
@@ -130,7 +130,7 @@ export function metricsStore({ db, clock }: { db: Db; clock: Clock }) {
         meanTimeToCloseMs: meanIn(closed, i),
       }));
 
-      const inPeriod = and(eq(alerts.organizationId, me.organizationId), gte(alerts.receivedAt, from));
+      const inPeriod = and(eq(alerts.organizationId, me.organizationId), gte(alerts.receivedAt, from), visibleAlerts(me, alerts.caseId));
       const day = sql<string>`to_char(${alerts.receivedAt} at time zone 'UTC', 'YYYY-MM-DD')`;
       const [dayRows, statusRows] = await Promise.all([
         db.select({ day, n: sql<number>`count(*)::int` }).from(alerts).where(inPeriod).groupBy(day),
