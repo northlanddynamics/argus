@@ -60,7 +60,9 @@ test("an Analyst's dashboard counts the Cases they can see, drills down to the C
     await figure("Open Cases").getByText("0 Critical · 2 unassigned").waitFor();
 
     // A count drills down to the Case list with those filters.
-    await page.getByRole("link", { name: "1 High New" }).click();
+    // The unassigned Critical in New would be marked; Ben can't see it, so nothing is.
+    expect(await page.getByRole("link", { name: /Critical Cases? in New with no Assignee/ }).count()).toBe(0);
+    await page.getByRole("link", { name: "1 High Case, New" }).click();
     await page.waitForURL((url) => url.pathname === "/" && url.searchParams.get("severity") === "high" && url.searchParams.get("status") === "new");
     const list = page.getByRole("table");
     await list.getByRole("link", { name: "Lost laptop" }).waitFor();
