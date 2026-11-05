@@ -78,9 +78,24 @@ async function acme({ responseActions = true }: { responseActions?: boolean } = 
     if (!("entries" in body)) throw new Error("Could not read the Audit Log");
     return body.entries;
   };
-  const retry = (as: Session, id: string) => as.api.cases[":number"]["response-actions"][":id"].retry.$post({ param: { ...param(number), id } });
+  const retry = (as: Session, id: string, on = number) => as.api.cases[":number"]["response-actions"][":id"].retry.$post({ param: { ...param(on), id } });
+  const dismiss = async (as: Session, id: string, on = number) => {
+    const res = await as.api.cases[":number"]["response-actions"][":id"].dismiss.$post({ param: { ...param(on), id } });
+    return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+  };
+  /** Opens another Case as Ana; returns its number. */
+  const open = async (title: string) => {
+    const body = await (await ana.api.cases.$post({ json: { title, caseType: "phishing", severity: "medium" } })).json();
+    if (!("case" in body)) throw new Error("Could not open a Case");
+    return body.case.number;
+  };
+  const listOn = async (as: Session, on: number) => {
+    const body = await (await as.api.cases[":number"]["response-actions"].$get({ param: param(on) })).json();
+    if (!("responseActions" in body)) throw new Error("Could not list Response Actions");
+    return body.responseActions;
+  };
 
-  return { t, owner, ana, guest, number, integrationId, add, tenant, falcon, sender, worker, link, take, list, timeline, auditLog, retry };
+  return { t, owner, ana, guest, number, integrationId, add, tenant, falcon, sender, worker, link, take, list, timeline, auditLog, retry, dismiss, open, listOn };
 }
 
 describe("Taking a Falcon IOC Response Action", () => {
@@ -388,5 +403,261 @@ describe("The record of a Response Action", () => {
     expect(section).toContain("Falcon custom IOC:** `Domain evil[.]example`");
     expect(section).not.toContain(SHA256);
     expect(guestSafe).not.toContain("CrowdStrike — Prod");
+  });
+});
+
+/** Exhausts every send attempt while Falcon refuses them. */
+const failAll = async (a: Awaited<ReturnType<typeof acme>>) => {
+  a.tenant.refuseIocs = "Creating a custom IOC in Falcon failed: 403 access denied";
+  for (let i = 0; i < MAX_RESPONSE_ACTION_ATTEMPTS; i++) {
+    await a.worker.tick();
+    a.t.clock.advance(60 * 60_000);
+  }
+  a.tenant.refuseIocs = null;
+};
+
+describe("Already present: never sending twice, never overwriting", () => {
+  test("a value already sent from another Case to the same Integration is recorded already present, and nothing is sent", async () => {
+    const a = await acme();
+    const first = await a.take(a.ana, await a.link("domain", "evil.example"));
+    await a.worker.tick();
+    const sentAt = a.t.clock.now().toISOString();
+    a.t.clock.advance(60_000);
+
+    const other = await a.open("Second wave");
+    const again = await a.take(a.ana, await a.link("domain", "evil.example", other), { on: other });
+    expect(again).toMatchObject({
+      status: 201,
+      body: {
+        responseAction: {
+          state: "active",
+          origin: "already_present",
+          presentFrom: { case: { number: a.number, title: "Phishing at Acme" }, at: sentAt },
+          sentAt: null,
+        },
+      },
+    });
+    await a.worker.tick();
+    expect(a.tenant.iocsCreated).toHaveLength(1);
+    expect(first.body.responseAction!.id).not.toBe(again.body.responseAction!.id);
+
+    // A different Integration is a different tool: it is sent there.
+    const eu = await a.add("CrowdStrike — EU", "falcon-client-0002", true);
+    const toEu = await a.take(a.ana, (await a.listOn(a.ana, other))[0]!.observable.id, { on: other, integration: eu });
+    expect(toEu.body.responseAction).toMatchObject({ state: "pending", origin: "created", presentFrom: null });
+    await a.worker.tick();
+    expect(a.falcon.tenant("falcon-client-0002").iocsCreated).toHaveLength(1);
+  });
+
+  test("one still waiting to be sent counts too, and so does one sent from the same Case", async () => {
+    const a = await acme();
+    const domain = await a.link("domain", "evil.example");
+    await a.take(a.ana, domain);
+    const twice = await a.take(a.owner, domain);
+    expect(twice.body.responseAction).toMatchObject({ state: "active", origin: "already_present", presentFrom: { case: { number: a.number } } });
+    await a.worker.tick();
+    expect(a.tenant.iocsCreated).toHaveLength(1);
+  });
+
+  test("at most one Pending or Active created Response Action per Integration, kind and value, even when Cases send at once", async () => {
+    const a = await acme();
+    const cases = [a.number, await a.open("Two"), await a.open("Three"), await a.open("Four")];
+    const ids = await Promise.all(cases.map((n) => a.link("ip", "185.220.101.4", n)));
+    const taken = await Promise.all(cases.map((n, i) => a.take(a.ana, ids[i]!, { on: n })));
+    expect(taken.map((x) => x.status)).toEqual([201, 201, 201, 201]);
+    expect(taken.filter((x) => x.body.responseAction!.state === "pending")).toHaveLength(1);
+    await a.worker.tick();
+    expect(a.tenant.iocsCreated).toHaveLength(1);
+  });
+
+  test("a Failed one doesn't hold the value; retried once another was sent, it is recorded already present", async () => {
+    const a = await acme();
+    const failed = await a.take(a.ana, await a.link("domain", "evil.example"));
+    await failAll(a);
+
+    const other = await a.open("Second wave");
+    const sent = await a.take(a.ana, await a.link("domain", "evil.example", other), { on: other });
+    expect(sent.body.responseAction).toMatchObject({ state: "pending", origin: "created" });
+    await a.worker.tick();
+
+    const retried = await a.retry(a.ana, failed.body.responseAction!.id);
+    expect(await retried.json()).toMatchObject({
+      responseAction: { state: "active", origin: "already_present", presentFrom: { case: { number: other } }, lastError: null },
+    });
+    await a.worker.tick();
+    expect(a.tenant.iocsCreated).toHaveLength(1);
+  });
+
+  test("a value Falcon already holds is recorded already present in Falcon, and the IOC is left as it was", async () => {
+    const a = await acme();
+    const existing = {
+      type: "sha256" as const,
+      value: SHA256,
+      action: "detect" as const,
+      severity: "low" as const,
+      platforms: ["windows"],
+      appliedGlobally: true as const,
+      source: "Console",
+      description: "Added by hand",
+    };
+    const heldId = a.tenant.holdIoc(existing);
+    const { body } = await a.take(a.ana, await a.link("sha256", SHA256), { action: "prevent" });
+    await a.worker.tick();
+
+    expect(a.tenant.iocsCreated).toEqual([]);
+    expect(a.tenant.iocsDeleted).toEqual([]);
+    expect(a.tenant.iocs.get(heldId)).toEqual({ ...existing, id: heldId });
+    expect((await a.list(a.ana)).responseActions).toMatchObject([
+      { id: body.responseAction!.id, state: "active", origin: "in_tool", presentFrom: null, sentAt: null, lastError: null },
+    ]);
+
+    // It doesn't hold the value for Argus: another Case sending it looks in Falcon again.
+    const other = await a.open("Second wave");
+    const again = await a.take(a.ana, await a.link("sha256", SHA256, other), { on: other });
+    expect(again.body.responseAction).toMatchObject({ state: "pending", origin: "created" });
+    await a.worker.tick();
+    expect((await a.listOn(a.ana, other))[0]).toMatchObject({ state: "active", origin: "in_tool" });
+    expect(a.tenant.iocsCreated).toEqual([]);
+  });
+
+  test("a failed look-up in Falcon is retried like a failed send", async () => {
+    const a = await acme();
+    a.tenant.holdIoc({
+      type: "domain",
+      value: "evil.example",
+      action: "detect",
+      severity: "low",
+      platforms: ["windows"],
+      appliedGlobally: true,
+      source: "Console",
+      description: "",
+    });
+    await a.take(a.ana, await a.link("domain", "evil.example"));
+    a.tenant.failNextIocCalls = 1;
+    await a.worker.tick();
+    expect((await a.list(a.ana)).responseActions).toMatchObject([{ state: "pending", lastError: "Calling IOC Management in Falcon failed: 503" }]);
+    a.t.clock.advance(30_000);
+    await a.worker.tick();
+    expect((await a.list(a.ana)).responseActions).toMatchObject([{ state: "active", origin: "in_tool", lastError: null }]);
+    expect(a.tenant.iocsCreated).toEqual([]);
+  });
+
+  test("an already present record can be dismissed: it is Removed, Falcon is left alone, and it is on the Timeline and in the Audit Log", async () => {
+    const a = await acme();
+    a.tenant.holdIoc({
+      type: "domain",
+      value: "held.example",
+      action: "detect",
+      severity: "low",
+      platforms: ["windows"],
+      appliedGlobally: true,
+      source: "Console",
+      description: "",
+    });
+    const inTool = await a.take(a.ana, await a.link("domain", "held.example"));
+    const created = await a.take(a.ana, await a.link("domain", "evil.example"));
+    const present = await a.take(a.ana, (await a.list(a.ana)).responseActions[1]!.observable.id);
+    await a.worker.tick();
+    const iocs = new Map(a.tenant.iocs);
+
+    // Only "already present" records can be dismissed; Argus removes what it created instead.
+    expect(await a.dismiss(a.ana, created.body.responseAction!.id)).toEqual({
+      status: 409,
+      body: { error: "Only an Active Response Action that was already present can be dismissed" },
+    });
+    expect((await a.dismiss(a.guest, inTool.body.responseAction!.id)).status).toBe(403);
+    expect((await a.dismiss(a.ana, "no-such-action")).status).toBe(404);
+
+    a.t.clock.advance(60_000);
+    for (const id of [inTool.body.responseAction!.id, present.body.responseAction!.id]) {
+      const dismissed = await a.dismiss(a.owner, id);
+      expect(dismissed).toMatchObject({
+        status: 200,
+        body: { responseAction: { state: "removed", dismissedBy: { name: "Olive Owner" }, dismissedAt: a.t.clock.now().toISOString() } },
+      });
+    }
+    expect((await a.dismiss(a.owner, present.body.responseAction!.id)).status).toBe(409);
+    expect(a.tenant.iocs).toEqual(iocs);
+    expect(a.tenant.iocsDeleted).toEqual([]);
+    // The created one still holds the value.
+    expect((await a.list(a.ana)).responseActions.map((r) => [r.origin, r.state])).toEqual([
+      ["in_tool", "removed"],
+      ["created", "active"],
+      ["already_present", "removed"],
+    ]);
+
+    const bodies = (await a.timeline(a.ana)).map((e) => ({ body: e.body, by: e.recordedBy.name }));
+    expect(bodies).toEqual(
+      expect.arrayContaining([
+        {
+          body: "Response Action by Ana Analyst: Domain evil[.]example was already sent to CrowdStrike Falcon as a custom IOC by Argus, so nothing was sent again.",
+          by: "Ana Analyst",
+        },
+        { body: "Response Action: Domain held[.]example was already in CrowdStrike Falcon as a custom IOC, so Argus left it unchanged.", by: "Ana Analyst" },
+        {
+          body: "Response Action dismissed by Olive Owner: this Case no longer records Domain held[.]example as already in CrowdStrike Falcon; CrowdStrike Falcon was left unchanged.",
+          by: "Olive Owner",
+        },
+        {
+          body: "Response Action dismissed by Olive Owner: this Case no longer records Domain evil[.]example as already in CrowdStrike Falcon; CrowdStrike Falcon was left unchanged.",
+          by: "Olive Owner",
+        },
+      ]),
+    );
+    const entries = (await a.auditLog()).filter((e) => e.action.startsWith("response_action."));
+    expect(entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: "response_action.already_present",
+          actor: expect.objectContaining({ name: "Ana Analyst" }),
+          target: "Falcon custom IOC: Domain evil[.]example",
+          after: "Already present: sent by Argus before; nothing was sent",
+        }),
+        expect.objectContaining({
+          action: "response_action.already_in_tool",
+          actor: expect.objectContaining({ type: "system", name: "Argus" }),
+          target: "Falcon custom IOC: Domain held[.]example",
+          after: "Already present in CrowdStrike Falcon; nothing was written",
+        }),
+        expect.objectContaining({
+          action: "response_action.dismissed",
+          actor: expect.objectContaining({ name: "Olive Owner" }),
+          target: "Falcon custom IOC: Domain held[.]example",
+          after: "Dismissed; CrowdStrike Falcon left unchanged",
+        }),
+      ]),
+    );
+  });
+
+  test("dismissing is refused on a Closed Case", async () => {
+    const a = await acme();
+    const domain = await a.link("domain", "evil.example");
+    await a.take(a.ana, domain);
+    const present = await a.take(a.ana, domain);
+    await a.ana.api.cases[":number"].close.$post({ param: param(a.number), json: { resolution: "true_positive" } });
+    expect((await a.dismiss(a.owner, present.body.responseAction!.id)).status).toBe(409);
+  });
+
+  test("a Restricted Case the viewer can't see is referred to without being named", async () => {
+    const a = await acme();
+    const secret = await a.open("Executive mailbox compromise");
+    const me = await (await a.owner.api.me.$get()).json();
+    if (!("user" in me)) throw new Error("Not signed in");
+    await a.take(a.ana, await a.link("domain", "evil.example", secret), { on: secret });
+    await a.owner.api.cases[":number"].$patch({ param: param(secret), json: { assigneeId: me.user.id, restricted: true } });
+    await a.worker.tick();
+
+    const present = await a.take(a.ana, await a.link("domain", "evil.example"));
+    expect(present.body.responseAction).toMatchObject({ origin: "already_present", presentFrom: { case: null } });
+    expect((await a.list(a.ana)).responseActions[0]!.presentFrom).toMatchObject({ case: null });
+    expect((await a.list(a.owner)).responseActions[0]!.presentFrom).toMatchObject({ case: { number: secret, title: "Executive mailbox compromise" } });
+    expect((await a.list(a.guest)).responseActions[0]!.presentFrom).toMatchObject({ case: null });
+
+    const everything = JSON.stringify([await a.timeline(a.ana), await a.auditLog()]);
+    expect(everything).not.toContain("Executive mailbox compromise");
+    expect(everything).not.toContain(`C-${secret}`);
+    const report = await (await a.ana.api.cases[":number"].report.$get({ param: param(a.number), query: { variant: "complete", format: "markdown" } })).text();
+    expect(report).toContain("sent from another Case on");
+    expect(report).not.toContain(`C-${secret}`);
   });
 });

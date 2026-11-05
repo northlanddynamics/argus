@@ -1,4 +1,5 @@
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { casePolicy, NotPermitted, visibleCases, visibleItems } from "../access/policy";
 import { actorOf, CaseNotFound, lockCase } from "../cases/cases";
 import { type CaseActor, recordCaseAudit } from "../cases/case-audit-log";
@@ -17,7 +18,9 @@ import {
   falconAllowsPrevent,
   falconIocActionLabel,
   falconIocType,
+  LIVE_STATES,
   type ResponseActionKind,
+  type ResponseActionOrigin,
   type ResponseActionState,
 } from "./vocabulary";
 
@@ -33,6 +36,14 @@ import {
  *
  * What Argus records is that it sent something, never that it is in force now: someone may have
  * changed it in the tool since.
+ *
+ * Argus never sends the same thing twice and never overwrites what is already in a tool. When the
+ * Organization already has a Pending or Active Response Action that Argus created for the same
+ * Integration, kind and target, from any Case, a new one is recorded Active and "already present",
+ * pointing at it, and nothing is queued. The sender looks each one up in the tool before creating
+ * it, and records it "already present in the tool" if it is there. Either kind of "already present"
+ * record can be dismissed from its Case: it is Removed, and the tool is left alone. Restricted Cases
+ * a viewer can't see are never named.
  */
 
 /** The Observable isn't of a type the Integration's Provider takes. */
@@ -52,6 +63,12 @@ export class ResponseActionNotFound extends Error {
 export class NotRetryable extends Error {
   constructor() {
     super("Only a Failed Response Action can be retried");
+  }
+}
+/** Only an Active "already present" record can be dismissed: Argus removes what it created instead. */
+export class NotDismissable extends Error {
+  constructor() {
+    super("Only an Active Response Action that was already present can be dismissed");
   }
 }
 
@@ -86,6 +103,16 @@ export type ResponseActionView = {
   sentAt: string | null;
   /** Why the latest attempt failed, while it is being retried or has Failed. Never told to Guests. */
   lastError: string | null;
+  /** Whether Argus created it, or found it already sent from a Case or already in the tool. */
+  origin: ResponseActionOrigin;
+  /**
+   * For one already sent from a Case: that Case, unless the viewer can't see it, and when Argus sent
+   * it (or was asked to, if it hasn't yet).
+   */
+  presentFrom: { case: { number: number; title: string } | null; at: string } | null;
+  /** Who dismissed it from this Case, and when. */
+  dismissedBy: Person | null;
+  dismissedAt: string | null;
 };
 
 /** The Integrations a Response Action can be sent to, as the Case offers them. */
@@ -103,13 +130,16 @@ const paramsOf = (r: Pick<Row, "falconAction" | "severity">) =>
   `${falconIocActionLabel[r.falconAction!]}, severity ${severityLabel[r.severity!]}`;
 
 /** What happened to a Response Action, as its Timeline Entry and Case Audit Log entry say it. */
-export type StateChange = "requested" | "sent" | "failed" | "retried";
+export type StateChange = "requested" | "sent" | "failed" | "retried" | "already_present" | "in_tool" | "dismissed";
 
 const auditAction: Record<StateChange, CaseAuditAction> = {
   requested: "response_action.requested",
   sent: "response_action.sent",
   failed: "response_action.failed",
   retried: "response_action.retried",
+  already_present: "response_action.already_present",
+  in_tool: "response_action.already_in_tool",
+  dismissed: "response_action.dismissed",
 };
 
 /** The Timeline Entry's text: the Provider, never the Integration's name, and never an error. */
@@ -125,26 +155,48 @@ function timelineBody(change: StateChange, r: Row, o: { type: ObservableType; va
       return `Response Action failed: Argus could not send ${what} to ${tool} as a custom IOC.`;
     case "retried":
       return `Response Action retried by ${by}: send ${what} to ${tool} as a custom IOC (${paramsOf(r)}).`;
+    case "already_present":
+      return `Response Action by ${by}: ${what} was already sent to ${tool} as a custom IOC by Argus, so nothing was sent again.`;
+    case "in_tool":
+      return `Response Action: ${what} was already in ${tool} as a custom IOC, so Argus left it unchanged.`;
+    case "dismissed":
+      return `Response Action dismissed by ${by}: this Case no longer records ${what} as already in ${tool}; ${tool} was left unchanged.`;
+  }
+}
+
+/** What the Case Audit Log says of a change, unless an error says it instead. */
+function auditDetail(change: StateChange, r: Row) {
+  const tool = `${providerLabel.crowdstrike} Falcon`;
+  switch (change) {
+    case "already_present":
+      return "Already present: sent by Argus before; nothing was sent";
+    case "in_tool":
+      return `Already present in ${tool}; nothing was written`;
+    case "dismissed":
+      return `Dismissed; ${tool} left unchanged`;
+    default:
+      return paramsOf(r);
   }
 }
 
 /**
  * Records a change to Response Action `r` on its Case, in the transaction that makes it: a Timeline
- * Entry recorded by the Member who took it (Internal when it is), a Case Audit Log entry by `actor`,
- * and the Case's signal. `detail` goes in the Audit Log only, such as an error.
+ * Entry recorded by the Member who took it, or by `by` (Internal when it is), a Case Audit Log entry
+ * by `actor`, and the Case's signal. `detail` goes in the Audit Log only, such as an error.
  */
 export async function recordStateChange(
   tx: Tx,
-  { r, observable, change, actor, now, detail }: {
+  { r, observable, change, actor, now, detail, by }: {
     r: Row;
     observable: { type: ObservableType; value: string };
     change: StateChange;
     actor: CaseActor;
     now: Date;
     detail?: string | null;
+    by?: { id: string; name: string };
   },
 ) {
-  const [taker] = await tx.select({ name: user.name }).from(user).where(eq(user.id, r.createdById));
+  const [taker] = by ? [by] : await tx.select({ name: user.name }).from(user).where(eq(user.id, r.createdById));
   await tx.insert(timelineEntries).values({
     id: secureId(),
     organizationId: r.organizationId,
@@ -158,7 +210,7 @@ export async function recordStateChange(
     internal: r.internal,
     responseActionId: r.id,
     version: 1,
-    recordedById: r.createdById,
+    recordedById: by?.id ?? r.createdById,
     recordedAt: now,
   });
   await recordCaseAudit(tx, {
@@ -168,7 +220,7 @@ export async function recordStateChange(
     actor,
     action: auditAction[change],
     target: responseActionLabel(observable),
-    after: detail ?? paramsOf(r),
+    after: detail ?? auditDetail(change, r),
   });
   await publish(tx, { kind: "case", organizationId: r.organizationId, caseId: r.caseId, membersOnly: r.internal });
 }
@@ -184,6 +236,43 @@ const queueSend = (tx: Tx, organizationId: string, id: string, now: Date) =>
     nextAttemptAt: now,
     createdAt: now,
   });
+
+/**
+ * Holds, until the transaction ends, the right to create a Response Action for this Integration, kind
+ * and target, so two Cases sending the same thing at once can't both create it.
+ */
+const lockTarget = (tx: Tx, r: { integrationId: string; kind: ResponseActionKind; targetType: string; targetValue: string }) =>
+  tx.execute(sql`select pg_advisory_xact_lock(${TARGET_LOCK_NAMESPACE}, hashtext(${[r.integrationId, r.kind, r.targetType, r.targetValue].join("\n")}))`);
+/** The first half of the advisory lock key, naming Response Action target locks. */
+const TARGET_LOCK_NAMESPACE = 0x41524741;
+
+/**
+ * The Pending or Active Response Action that Argus created for this Integration, kind and target, if
+ * any (other than `except`). Call with the target locked.
+ */
+async function liveCreated(
+  tx: Tx,
+  r: { integrationId: string; kind: ResponseActionKind; targetType: string; targetValue: string },
+  except?: string,
+) {
+  const t = responseActions;
+  const [found] = await tx
+    .select({ id: t.id })
+    .from(t)
+    .where(
+      and(
+        eq(t.integrationId, r.integrationId),
+        eq(t.kind, r.kind),
+        eq(t.targetType, r.targetType),
+        eq(t.targetValue, r.targetValue),
+        eq(t.origin, "created"),
+        inArray(t.state, [...LIVE_STATES]),
+        except ? ne(t.id, except) : undefined,
+      ),
+    )
+    .limit(1);
+  return found?.id ?? null;
+}
 
 /** The Integrations in `me`'s Organization that take Falcon custom IOCs now. */
 async function eligible(db: Db | Tx, organizationId: string) {
@@ -221,6 +310,9 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
   /** The Response Actions on Case `caseId` that `me` may see, oldest first; `ids` narrows them. */
   async function select(me: Participant, caseId: string, ids?: readonly string[]): Promise<ResponseActionView[]> {
     const r = responseActions;
+    const originalAction = alias(responseActions, "original");
+    const originalCaseRow = alias(cases, "original_case");
+    const dismisser = alias(user, "dismisser");
     const rows = await db
       .select({
         row: r,
@@ -228,15 +320,28 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
         observableValue: observables.value,
         integrationName: integrations.name,
         requestedByName: user.name,
+        dismissedByName: dismisser.name,
+        original: { at: sql<Date>`coalesce(${originalAction.sentAt}, ${originalAction.createdAt})`.mapWith(originalAction.createdAt), caseId: originalAction.caseId },
+        originalCase: { number: originalCaseRow.number, title: originalCaseRow.title },
       })
       .from(r)
       .innerJoin(observables, eq(r.observableId, observables.id))
       .innerJoin(integrations, eq(r.integrationId, integrations.id))
       .innerJoin(user, eq(r.createdById, user.id))
+      .leftJoin(dismisser, eq(r.dismissedById, dismisser.id))
+      .leftJoin(originalAction, eq(r.presentFromId, originalAction.id))
+      .leftJoin(originalCaseRow, eq(originalAction.caseId, originalCaseRow.id))
       .where(and(eq(r.caseId, caseId), visibleItems(me, r.internal), ids ? inArray(r.id, [...ids]) : undefined))
       .orderBy(asc(r.seq));
     const insider = casePolicy.canSeeInternal(me);
-    return rows.map(({ row, observableType, observableValue, integrationName, requestedByName }) => ({
+    // The Cases the originals were sent from that `me` may see; the rest go unnamed.
+    const originalCaseIds = [...new Set(rows.flatMap((x) => (x.original?.caseId ? [x.original.caseId] : [])))];
+    const seen = new Set(
+      originalCaseIds.length
+        ? (await db.select({ id: cases.id }).from(cases).where(and(visibleCases(me), inArray(cases.id, originalCaseIds)))).map((c) => c.id)
+        : [],
+    );
+    return rows.map(({ row, observableType, observableValue, integrationName, requestedByName, dismissedByName, original, originalCase }) => ({
       id: row.id,
       kind: row.kind,
       state: row.state,
@@ -250,6 +355,13 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
       stateChangedAt: row.stateChangedAt.toISOString(),
       sentAt: row.sentAt?.toISOString() ?? null,
       lastError: insider ? row.lastError : null,
+      origin: row.origin,
+      presentFrom:
+        original?.caseId && originalCase
+          ? { case: seen.has(original.caseId) ? originalCase : null, at: original.at.toISOString() }
+          : null,
+      dismissedBy: row.dismissedById && dismissedByName ? { id: row.dismissedById, name: dismissedByName } : null,
+      dismissedAt: row.dismissedAt?.toISOString() ?? null,
     }));
   }
 
@@ -295,6 +407,10 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
           .for("share");
         if (!integration || !(await eligible(tx, me.organizationId)).some((i) => i.id === integration.id)) throw new IntegrationNotEligible();
 
+        const target = { integrationId: input.integrationId, kind: "falcon_ioc" as const, targetType: iocType, targetValue: linked.key };
+        await lockTarget(tx, target);
+        // Already sent by Argus, from this Case or another: recorded, and nothing is sent again.
+        const presentFromId = await liveCreated(tx, target);
         const [r] = await tx
           .insert(responseActions)
           .values({
@@ -302,27 +418,34 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
             organizationId: me.organizationId,
             caseId: current.id,
             observableId: input.observableId,
-            integrationId: input.integrationId,
-            kind: "falcon_ioc",
-            targetType: iocType,
-            targetValue: linked.key,
+            ...target,
             falconAction: input.action,
             severity: current.severity,
-            state: "pending",
+            state: presentFromId ? "active" : "pending",
+            origin: presentFromId ? "already_present" : "created",
+            presentFromId,
             internal: input.internal ?? false,
             createdById: me.userId,
             createdAt: now,
             stateChangedAt: now,
           })
           .returning();
-        await queueSend(tx, me.organizationId, id, now);
-        await recordStateChange(tx, { r: r!, observable, change: "requested", actor: actorOf(me), now });
+        if (presentFromId) {
+          await recordStateChange(tx, { r: r!, observable, change: "already_present", actor: actorOf(me), now });
+        } else {
+          await queueSend(tx, me.organizationId, id, now);
+          await recordStateChange(tx, { r: r!, observable, change: "requested", actor: actorOf(me), now });
+        }
         return current.id;
       });
       return (await select(me, caseId, [id]))[0]!;
     },
 
-    /** Tries a Failed Response Action again: it is Pending, and queued for the worker. Not on a Closed Case. */
+    /**
+     * Tries a Failed Response Action again: it is Pending, and queued for the worker. If Argus has sent
+     * the same thing from another Case since, it is recorded as already present instead. Not on a
+     * Closed Case.
+     */
     async retry(me: Membership, number: number, id: string) {
       if (!casePolicy.canWork(me)) throw new NotPermitted();
       const now = clock.now();
@@ -330,6 +453,17 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
         const current = await lockCase(tx, me, number);
         const { r, observable } = await lock(tx, current.id, id);
         if (r.state !== "failed") throw new NotRetryable();
+        await lockTarget(tx, r);
+        const presentFromId = await liveCreated(tx, r, r.id);
+        if (presentFromId) {
+          const [present] = await tx
+            .update(responseActions)
+            .set({ state: "active", origin: "already_present", presentFromId, stateChangedAt: now, lastError: null })
+            .where(eq(responseActions.id, id))
+            .returning();
+          await recordStateChange(tx, { r: present!, observable, change: "already_present", actor: actorOf(me), now, by: { id: me.userId, name: me.name } });
+          return current.id;
+        }
         const [pending] = await tx
           .update(responseActions)
           .set({ state: "pending", stateChangedAt: now, lastError: null })
@@ -337,6 +471,28 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
           .returning();
         await queueSend(tx, r.organizationId, id, now);
         await recordStateChange(tx, { r: pending!, observable, change: "retried", actor: actorOf(me), now });
+        return current.id;
+      });
+      return (await select(me, caseId, [id]))[0]!;
+    },
+
+    /**
+     * Dismisses an Active "already present" record from Case `number`: it is Removed, and the tool is
+     * left alone. Not on a Closed Case.
+     */
+    async dismiss(me: Membership, number: number, id: string) {
+      if (!casePolicy.canWork(me)) throw new NotPermitted();
+      const now = clock.now();
+      const caseId = await db.transaction(async (tx) => {
+        const current = await lockCase(tx, me, number);
+        const { r, observable } = await lock(tx, current.id, id);
+        if (r.state !== "active" || r.origin === "created") throw new NotDismissable();
+        const [dismissed] = await tx
+          .update(responseActions)
+          .set({ state: "removed", stateChangedAt: now, dismissedById: me.userId, dismissedAt: now })
+          .where(eq(responseActions.id, id))
+          .returning();
+        await recordStateChange(tx, { r: dismissed!, observable, change: "dismissed", actor: actorOf(me), now, by: { id: me.userId, name: me.name } });
         return current.id;
       });
       return (await select(me, caseId, [id]))[0]!;

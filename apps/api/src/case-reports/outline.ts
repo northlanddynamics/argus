@@ -176,6 +176,11 @@ export function outline(report: CaseReport): Block[] {
       title: [label(`${responseActionKindLabel[r.kind]}: `), mono(`${observableTypeLabel[r.observable.type]} ${defang(r.observable.type, r.observable.value)}`)],
       details: withInternal(r, [
         [label("State: "), text(responseActionStateLabel[r.state] + (r.sentAt ? `, sent ${utc(r.sentAt)}` : ""))],
+        ...(r.origin === "already_present" && r.presentFrom
+          ? [[label("Origin: "), text(`Already present (sent from ${r.presentFrom.case ? caseRef(r.presentFrom.case.number) : "another Case"} on ${utc(r.presentFrom.at)})`)]]
+          : []),
+        ...(r.origin === "in_tool" ? [[label("Origin: "), text("Already present in Falcon")]] : []),
+        ...(r.dismissedBy && r.dismissedAt ? [[label("Dismissed by: "), text(byAt(r.dismissedBy, r.dismissedAt))]] : []),
         ...(r.falcon
           ? [[label("Action: "), text(`${falconIocActionLabel[r.falcon.action]}, severity ${severityLabel[r.falcon.severity]}`)]]
           : []),

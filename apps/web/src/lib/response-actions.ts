@@ -41,6 +41,12 @@ export async function takeResponseAction(
   if (!res.ok) throw new Error(await errorMessage(res, "Could not take the Response Action"));
 }
 
+/** Dismisses an "already present" record from Case `number`, leaving the tool alone. */
+export async function dismissResponseAction(number: number, id: string) {
+  const res = await api.cases[":number"]["response-actions"][":id"].dismiss.$post({ param: { number: String(number), id } });
+  if (!res.ok) throw new Error(await errorMessage(res, "Could not dismiss the Response Action"));
+}
+
 /** Tries a Failed Response Action again. */
 export async function retryResponseAction(number: number, id: string) {
   const res = await api.cases[":number"]["response-actions"][":id"].retry.$post({ param: { number: String(number), id } });

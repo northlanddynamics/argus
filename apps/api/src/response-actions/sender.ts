@@ -20,6 +20,9 @@ import { recordStateChange } from "./response-actions";
  * `FOR UPDATE SKIP LOCKED`, so however many workers run, each is made by one. A failure is retried
  * with backoff; when the attempts run out the Response Action is Failed, and the Member who took it
  * is notified. Integrations that are paused, or whose Organization was deleted, are left alone.
+ *
+ * Before creating anything it looks the value up in the tool: if it is already there, the Response
+ * Action is Active and "already present in the tool", and nothing is written.
  */
 
 /** The most attempts made in one transaction. */
@@ -131,6 +134,21 @@ export function createResponseActionSender(
           const client = await clientFor(due.r.integrationId);
           if (!client) {
             await giveUp(tx, due, "The Integration no longer exists", now);
+            continue;
+          }
+          // Never overwrite what is already there: if Falcon holds it, nothing is written.
+          const held = await client.findIoc(due.r.targetType as FalconIocType, due.r.targetValue);
+          if (held) {
+            await tx
+              .update(o)
+              .set({ state: "done", attempts: due.attempt.attempts + 1, lastError: null, finishedAt: now })
+              .where(eq(o.id, due.attempt.id));
+            const [present] = await tx
+              .update(responseActions)
+              .set({ state: "active", origin: "in_tool", stateChangedAt: now, lastError: null })
+              .where(eq(responseActions.id, due.r.id))
+              .returning();
+            await recordStateChange(tx, { r: present!, observable: due.observable, change: "in_tool", actor: ARGUS, now });
             continue;
           }
           const externalId = await client.createIoc({

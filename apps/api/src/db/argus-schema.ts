@@ -24,7 +24,7 @@ import { PROVIDERS } from "../integrations/vocabulary";
 import { NOTIFICATION_KINDS } from "../notifications/vocabulary";
 import { TEAMS_POST_KINDS } from "../teams/vocabulary";
 import { type Citation, PROMOTION_SOURCES } from "../timeline/vocabulary";
-import { FALCON_IOC_ACTIONS, RESPONSE_ACTION_KINDS, RESPONSE_ACTION_STATES } from "../response-actions/vocabulary";
+import { FALCON_IOC_ACTIONS, RESPONSE_ACTION_KINDS, RESPONSE_ACTION_ORIGINS, RESPONSE_ACTION_STATES } from "../response-actions/vocabulary";
 import {
   ALERT_KINDS,
   ALERT_STATUSES,
@@ -1042,6 +1042,12 @@ export const teamsPosts = pgTable(
  * `severity` are a Falcon IOC's parameters, `severity` mapped from the Case's when it was taken.
  * `state_changed_at` is when it reached its state; `sent_at` when the tool accepted it.
  * `last_error` is why the latest attempt failed, while it is retrying or Failed.
+ *
+ * `origin` says whether Argus created it in the tool, found it `already_present` (sent by Argus from
+ * a Case before; `present_from_id` is that Response Action), or found it `in_tool` already. At most
+ * one Pending or Active `created` Response Action exists per Integration, kind and target, so Argus
+ * never sends the same thing twice. `dismissed_by_id` and `dismissed_at` say who dismissed an
+ * "already present" record from its Case, and when.
  */
 export const responseActions = pgTable(
   "response_actions",
@@ -1076,11 +1082,21 @@ export const responseActions = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
     stateChangedAt: timestamp("state_changed_at", { withTimezone: true }).notNull(),
     sentAt: timestamp("sent_at", { withTimezone: true }),
+    origin: text("origin", { enum: RESPONSE_ACTION_ORIGINS }).notNull().default("created"),
+    presentFromId: text("present_from_id").references((): AnyPgColumn => responseActions.id, { onDelete: "restrict" }),
+    dismissedById: text("dismissed_by_id").references(() => user.id, { onDelete: "restrict" }),
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
   },
   (t) => [
     index("response_actions_case_idx").on(t.caseId, t.seq),
     index("response_actions_observable_idx").on(t.observableId),
+    index("response_actions_present_from_idx").on(t.presentFromId).where(sql`${t.presentFromId} IS NOT NULL`),
+    uniqueIndex("response_actions_one_created_idx")
+      .on(t.integrationId, t.kind, t.targetType, t.targetValue)
+      .where(sql`${t.origin} = 'created' AND ${t.state} IN ('pending', 'active')`),
     check("response_actions_falcon", sql`(${t.kind} = 'falcon_ioc') = (${t.falconAction} IS NOT NULL AND ${t.severity} IS NOT NULL)`),
+    check("response_actions_present_from", sql`(${t.origin} = 'already_present') = (${t.presentFromId} IS NOT NULL)`),
+    check("response_actions_dismissed", sql`(${t.dismissedAt} IS NULL) = (${t.dismissedById} IS NULL)`),
   ],
 );
 
