@@ -141,8 +141,10 @@ class LiveConnection {
           predicate: ({ queryKey }) => typeof queryKey[1] !== "number" || queryKey[1] === message.number,
         });
         void this.#queries.invalidateQueries({ queryKey: metricsKey });
-        // A Case linking or unlinking something shows on that Observable's or Asset's page.
+        // A Case linking or unlinking something shows on that Observable's or Asset's page,
+        // and changes which Alerts correlate with it.
         void this.#queries.invalidateQueries({ queryKey: itemPagesKey });
+        void this.#queries.invalidateQueries({ queryKey: [...alertsKey, "correlations"] });
         return;
       case "alerts":
         void this.#queries.invalidateQueries({ queryKey: alertsKey });

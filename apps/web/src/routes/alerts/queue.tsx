@@ -1,8 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { XIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { SeverityBadge } from "@/components/case-badges";
+import { SeverityBadge, StatusBadge } from "@/components/case-badges";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ItemLink } from "@/components/item-link";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +18,8 @@ import {
   ALERT_STATUSES,
   type AlertKind,
   alertKindLabel,
+  type AlertCorrelation,
+  alertCorrelationsQuery,
   type AlertDetail,
   alertQuery,
   alertsKey,
@@ -659,6 +661,82 @@ function Extracted({ label, kind, items }: { label: string; kind: ItemKind; item
 }
 
 /**
+ * Correlation: the Cases this Alert may belong with, by the Observables and Assets they share (those
+ * on the Ignored list aside), strongest first. Argus never attaches on its own: the Member attaches
+ * from a suggestion, or for a Closed Case an Admin reopens it and attaches in one step; an Analyst
+ * only gets the link.
+ */
+function RelatedCases({ alert }: { alert: AlertDetail }) {
+  const related = useQuery(alertCorrelationsQuery(alert.id));
+  const queryClient = useQueryClient();
+  const attach = useMutation({
+    mutationFn: async (c: AlertCorrelation) => {
+      const res = await api.alerts.attach.$post({
+        json: { case: c.case.number, alerts: [{ id: alert.id, version: alert.version }], reopen: c.attach === "reopen_and_attach" },
+      });
+      const body = (await res.json()) as { error?: string; refused?: { externalId: string | null; detail: string }[] };
+      if (!res.ok) throw new Error(body.error ?? "Couldn't attach the Alert");
+      const refused = body.refused?.[0];
+      if (refused) throw new Error(`${refused.externalId ?? "The Alert"} ${refused.detail}`);
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: alertsKey }),
+  });
+  const list = related.data ?? [];
+  return (
+    <section aria-label="Related Cases" className="grid gap-1">
+      <h3 className="text-xs font-medium text-muted-foreground">Related Cases</h3>
+      {related.isPending ? (
+        <Skeleton className="h-10 w-full" />
+      ) : related.isError ? (
+        <p className="text-destructive">Couldn’t load the related Cases.</p>
+      ) : list.length === 0 ? (
+        <p className="text-muted-foreground">No other Case shares its Observables or Assets.</p>
+      ) : (
+        <ul className="grid gap-2">
+          {list.map((c) => (
+            <li key={c.case.number} className="grid gap-1.5 rounded border p-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  to="/cases/$number"
+                  params={{ number: String(c.case.number) }}
+                  className="min-w-0 font-medium underline-offset-4 hover:underline"
+                >
+                  <span className="font-mono text-xs">{caseRef(c.case.number)}</span> {c.case.title}
+                </Link>
+                <StatusBadge status={c.case.status} />
+                <span className="ml-auto text-xs text-muted-foreground">{c.sharedCount} shared</span>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {c.shared.map((s) => (
+                  <Badge key={`${s.kind}-${s.id}`} variant="outline" className="max-w-full truncate font-mono hover:bg-muted" title={s.value} asChild>
+                    <ItemLink kind={s.kind} id={s.id}>
+                      {s.kind === "observable"
+                        ? `${observableTypeLabel[s.type]} ${shownObservable(s.type, s.value)}`
+                        : `${assetTypeLabel[s.type]} ${s.value}`}
+                    </ItemLink>
+                  </Badge>
+                ))}
+              </div>
+              {c.attach ? (
+                <div>
+                  <Button size="sm" variant="outline" disabled={attach.isPending} onClick={() => attach.mutate(c)}>
+                    {c.attach === "reopen_and_attach" ? `Reopen ${caseRef(c.case.number)} and attach` : `Attach to ${caseRef(c.case.number)}`}
+                  </Button>
+                </div>
+              ) : (
+                c.case.status === "closed" &&
+                alert.attached?.case.status !== "closed" && <p className="text-xs text-muted-foreground">Closed: ask an Admin to reopen it to attach this Alert.</p>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {attach.error && <p className="text-xs text-destructive">{attach.error.message}</p>}
+    </section>
+  );
+}
+
+/**
  * One Alert in full, beside the queue: Open Case, Attach and Dismiss while it isn't on a Case, Move
  * and Detach while it is on an open one.
  */
@@ -808,6 +886,7 @@ function AlertPanel({ id, onClose, onAct }: { id: string; onClose: () => void; o
             {onCase ? `These are on ${caseRef(onCase.number)} too.` : "Attaching this Alert adds these to its Case."}
           </p>
         )}
+        <RelatedCases alert={a} />
         <FalconComments comments={a.falconComments} />
         <details>
           <summary className="cursor-pointer text-muted-foreground">Raw payload</summary>

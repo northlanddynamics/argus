@@ -1,4 +1,5 @@
 import { zValidator } from "@hono/zod-validator";
+import { NotPermitted } from "../access/policy";
 import { Hono } from "hono";
 import { z } from "zod";
 import { AlertNotFound, AlertRefused, NoAlertsToAttach, QUEUE_LIMIT } from "../alerts/alerts";
@@ -33,7 +34,12 @@ const openCaseBody = z.object({
   summary: caseSummarySchema.optional(),
   alerts: selection,
 });
-const attachBody = z.object({ case: z.number().int().positive(), alerts: selection });
+const attachBody = z.object({
+  case: z.number().int().positive(),
+  alerts: selection,
+  /** Reopen the Case first if it is Closed; Admins only. */
+  reopen: z.boolean().optional(),
+});
 const dismissBody = z.object({
   reason: z.enum(DISMISSAL_REASONS),
   comment: z.string().trim().max(2000).optional(),
@@ -68,11 +74,12 @@ export const alertRoutes = (deps: Deps, { alerts }: Modules) =>
       }
     })
     .post("/attach", zValidator("json", attachBody), async (c) => {
-      const { case: number, alerts: chosen } = c.req.valid("json");
+      const { case: number, alerts: chosen, reopen } = c.req.valid("json");
       try {
-        return c.json(await alerts.attach(c.get("membership"), number, chosen), 200);
+        return c.json(await alerts.attach(c.get("membership"), number, chosen, { reopen }), 200);
       } catch (e) {
         if (e instanceof CaseNotFound) return c.json(caseNotFound, 404);
+        if (e instanceof NotPermitted) return c.json({ error: "Only an Admin can reopen a Case" }, 403);
         if (e instanceof CaseClosed) return c.json({ error: e.message }, 409);
         throw e;
       }
@@ -84,6 +91,15 @@ export const alertRoutes = (deps: Deps, { alerts }: Modules) =>
     .get("/:id", async (c) => {
       try {
         return c.json({ alert: await alerts.get(c.get("membership"), c.req.param("id")) }, 200);
+      } catch (e) {
+        if (e instanceof AlertNotFound) return c.json({ error: e.message }, 404);
+        throw e;
+      }
+    })
+    /** Correlation: the Cases the Alert may belong with. */
+    .get("/:id/correlations", async (c) => {
+      try {
+        return c.json({ correlations: await alerts.correlations(c.get("membership"), c.req.param("id")) }, 200);
       } catch (e) {
         if (e instanceof AlertNotFound) return c.json({ error: e.message }, 404);
         throw e;
