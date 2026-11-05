@@ -1,13 +1,25 @@
 import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { casePolicy, isGuest, visibleAlerts, visibleCases } from "../access/policy";
+import { casePolicy, isGuest, NotPermitted, organizationPolicy, visibleAlerts, visibleCases } from "../access/policy";
+import { recordOrgAudit } from "../audit/org-audit-log";
 import type { AlertStatus } from "../alerts/vocabulary";
 import { actorOf, CaseNotFound, lockCase } from "../cases/cases";
 import { recordCaseAudit } from "../cases/case-audit-log";
 import type { CaseAuditAction, Severity, Status } from "../cases/vocabulary";
 import type { Clock } from "../clock";
 import type { Db, Tx } from "../db/client";
-import { alertAssets, alertObservables, alerts, assets, caseAssets, caseObservables, cases, observables, user } from "../db/schema";
+import {
+  alertAssets,
+  alertObservables,
+  alerts,
+  assets,
+  caseAssets,
+  caseObservables,
+  cases,
+  ignoredObservables,
+  observables,
+  user,
+} from "../db/schema";
 import { secureId } from "../ids";
 import type { Membership, Participant } from "../members/membership";
 import { publish } from "../realtime/signals";
@@ -36,6 +48,11 @@ import {
  * names to the Case, unless already linked (`linkAlertIndicators`); detaching it unlinks those links
  * again, but never one added by hand or one another Alert on the Case still names
  * (`unlinkAlertIndicators`). Linking by hand something an Alert linked makes it a hand-added link.
+ *
+ * Admins keep the Organization's Ignored Observables list, which takes Assets too: items too common
+ * to mean anything, which never drive a Correlation. Ignoring one changes nothing else about it.
+ * Each add and remove is recorded in the Organization Audit Log; removing ends the entry and keeps
+ * it (ADR 0003).
  */
 
 /** The value isn't a valid one of its type. */
@@ -103,9 +120,27 @@ export type ItemDetail<Type extends string> = {
   cases: ItemCase[];
   /** The Alerts naming it that the actor can see, in any Alert Status, newest first. Never for Guests. */
   alerts: ItemAlert[];
+  /** Set while it is on the Ignored list: who added it and when. Never told to Guests. */
+  ignored: IgnoredMark | null;
+};
+
+/** Who put an item on the Ignored list, and when. */
+export type IgnoredMark = { by: Person; at: string };
+
+/** An entry on the Ignored list, as Admin settings show it. */
+export type IgnoredEntry = {
+  kind: "observable" | "asset";
+  /** The Observable or Asset. */
+  id: string;
+  type: string;
+  value: string;
+  by: Person;
+  at: string;
 };
 
 type Kind<Type extends string> = {
+  /** Its name on the Ignored list. */
+  name: "observable" | "asset";
   items: typeof observables;
   links: typeof caseObservables;
   alertLinks: typeof alertObservables;
@@ -116,6 +151,8 @@ type Kind<Type extends string> = {
   label: (type: Type) => string;
   linked: CaseAuditAction;
   unlinked: CaseAuditAction;
+  /** The Ignored list's column naming this kind of item. */
+  ignoredItem: typeof ignoredObservables.observableId | typeof ignoredObservables.assetId;
 };
 
 function heldOnceStore<Type extends string>({ db, clock }: { db: Db; clock: Clock }, kind: Kind<Type>) {
@@ -249,6 +286,7 @@ function heldOnceStore<Type extends string>({ db, clock }: { db: Db; clock: Cloc
           .where(and(eq(kind.alertLinks.itemId, itemId), visibleAlerts(me, alerts.caseId)))
           .orderBy(desc(seenAt), desc(alerts.seq));
     if (!caseRows.length && !alertRows.length) throw new ItemNotFound(`${kind.noun} not found`);
+    const ignored = isGuest(me) ? null : await ignoredMark(db, kind.ignoredItem, itemId);
     const times = [...caseRows.map((c) => c.linkedAt.getTime()), ...alertRows.map((a) => a.seenAt.getTime())];
     return {
       id: item.id,
@@ -266,12 +304,64 @@ function heldOnceStore<Type extends string>({ db, clock }: { db: Db; clock: Cloc
         seenAt: at.toISOString(),
         case: caseNumber !== null && caseTitle !== null ? { number: caseNumber, title: caseTitle } : null,
       })),
+      ignored,
     };
+  }
+
+  /** The Organization's item `itemId`, locked; throws `ItemNotFound` if there's none. */
+  async function lockItem(tx: Tx, me: Membership, itemId: string) {
+    const [item] = await tx
+      .select({ id: items.id, type: items.type, value: items.value })
+      .from(items)
+      .where(and(eq(items.id, itemId), eq(items.organizationId, me.organizationId)))
+      .for("update");
+    if (!item) throw new ItemNotFound(`${kind.noun} not found`);
+    return item;
+  }
+
+  /**
+   * Puts item `itemId` on the Ignored list, or takes it off (`ignored` false). Admins only. Doing what
+   * is already so changes nothing; returns whether anything changed.
+   */
+  async function setIgnored(me: Membership, itemId: string, ignored: boolean) {
+    if (!organizationPolicy.canManageIgnoredObservables(me)) throw new NotPermitted();
+    const now = clock.now();
+    return db.transaction(async (tx) => {
+      const item = await lockItem(tx, me, itemId);
+      const [entry] = await tx
+        .select({ id: ignoredObservables.id })
+        .from(ignoredObservables)
+        .where(and(eq(kind.ignoredItem, itemId), isNull(ignoredObservables.endedAt)));
+      if (!!entry === ignored) return false;
+      if (entry) {
+        await tx.update(ignoredObservables).set({ endedById: me.userId, endedAt: now }).where(eq(ignoredObservables.id, entry.id));
+      } else {
+        await tx.insert(ignoredObservables).values({
+          id: secureId(),
+          organizationId: me.organizationId,
+          [kind.name === "observable" ? "observableId" : "assetId"]: itemId,
+          ignoredById: me.userId,
+          ignoredAt: now,
+        });
+      }
+      await recordOrgAudit(tx, {
+        organizationId: me.organizationId,
+        occurredAt: now,
+        actor: { type: "member", id: me.userId, name: me.name },
+        category: "ignored-observables",
+        action: ignored ? "ignored_observable.added" : "ignored_observable.removed",
+        target: describe(item.type as Type, item.value),
+      });
+      // Its page and, later, Correlations depend on it.
+      await publish(tx, { kind: "alerts", organizationId: me.organizationId });
+      return true;
+    });
   }
 
   return {
     list,
     detail,
+    setIgnored,
 
     /**
      * Links the Organization's `type` item with this value to the Case, first adding it to the
@@ -359,6 +449,7 @@ function heldOnceStore<Type extends string>({ db, clock }: { db: Db; clock: Cloc
 }
 
 const observableKind: Kind<ObservableType> = {
+  name: "observable",
   items: observables,
   links: caseObservables,
   alertLinks: alertObservables,
@@ -368,9 +459,11 @@ const observableKind: Kind<ObservableType> = {
   label: (type) => observableTypeLabel[type],
   linked: "observable.linked",
   unlinked: "observable.unlinked",
+  ignoredItem: ignoredObservables.observableId,
 };
 
 const assetKind: Kind<AssetType> = {
+  name: "asset",
   // Built by the same function as Observables' tables (`db/argus-schema.ts`), so the same shape.
   items: assets,
   links: caseAssets,
@@ -381,6 +474,7 @@ const assetKind: Kind<AssetType> = {
   label: (type) => assetTypeLabel[type],
   linked: "asset.linked",
   unlinked: "asset.unlinked",
+  ignoredItem: ignoredObservables.assetId,
 };
 
 export const observableStore = (deps: { db: Db; clock: Clock }) => heldOnceStore(deps, observableKind);
@@ -388,6 +482,54 @@ export const assetStore = (deps: { db: Db; clock: Clock }) => heldOnceStore(deps
 
 export type ObservableStore = ReturnType<typeof observableStore>;
 export type AssetStore = ReturnType<typeof assetStore>;
+
+/* The Ignored list. */
+
+/** Who put item `itemId` on the Ignored list and when, if it is on it. */
+async function ignoredMark(db: Db | Tx, column: Kind<string>["ignoredItem"], itemId: string): Promise<IgnoredMark | null> {
+  const [entry] = await db
+    .select({ byId: user.id, byName: user.name, at: ignoredObservables.ignoredAt })
+    .from(ignoredObservables)
+    .innerJoin(user, eq(ignoredObservables.ignoredById, user.id))
+    .where(and(eq(column, itemId), isNull(ignoredObservables.endedAt)));
+  return entry ? { by: { id: entry.byId, name: entry.byName }, at: entry.at.toISOString() } : null;
+}
+
+/**
+ * The Organization's Ignored list: every Observable and Asset on it, most recently added first.
+ * Members see it; Guests can't.
+ */
+export const ignoredObservableStore = ({ db }: { db: Db }) => ({
+  async list(me: Participant): Promise<IgnoredEntry[]> {
+    if (isGuest(me)) throw new NotPermitted();
+    const rows = await Promise.all(
+      KINDS.map(async (kind) =>
+        (
+          await db
+            .select({
+              id: kind.items.id,
+              type: kind.items.type,
+              value: kind.items.value,
+              byId: user.id,
+              byName: user.name,
+              at: ignoredObservables.ignoredAt,
+              seq: ignoredObservables.seq,
+            })
+            .from(ignoredObservables)
+            .innerJoin(kind.items, eq(kind.ignoredItem, kind.items.id))
+            .innerJoin(user, eq(ignoredObservables.ignoredById, user.id))
+            .where(and(eq(ignoredObservables.organizationId, me.organizationId), isNull(ignoredObservables.endedAt)))
+        ).map((r) => ({ ...r, kind: kind.name })),
+      ),
+    );
+    return rows
+      .flat()
+      .toSorted((x, y) => y.at.getTime() - x.at.getTime() || y.seq - x.seq)
+      .map((r) => ({ kind: r.kind, id: r.id, type: r.type, value: r.value, by: { id: r.byId, name: r.byName }, at: r.at.toISOString() }));
+  },
+});
+
+export type IgnoredObservableStore = ReturnType<typeof ignoredObservableStore>;
 
 /* Observables and Assets that Alerts name. */
 

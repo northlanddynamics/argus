@@ -24,6 +24,7 @@ import { GuestSignInPage, validateGuestSignInSearch } from "@/routes/guest-sign-
 import { SearchPage } from "@/routes/search";
 import { OrgAuditLogPage } from "@/routes/settings/audit-log";
 import { SettingsLayout } from "@/routes/settings/layout";
+import { IgnoredObservablesPage } from "@/routes/settings/ignored";
 import { IntegrationsPage } from "@/routes/settings/integrations";
 import { MembersPage } from "@/routes/settings/members";
 import { SsoPage } from "@/routes/settings/sso";
@@ -194,6 +195,12 @@ const integrationsRoute = createRoute({
   component: IntegrationsPage,
 });
 
+const ignoredRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/ignored",
+  component: IgnoredObservablesPage,
+});
+
 const orgAuditLogRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/audit-log",
@@ -230,7 +237,7 @@ export const router = createRouter({
       searchRoute,
       observableRoute,
       assetRoute,
-      settingsRoute.addChildren([settingsIndexRoute, membersRoute, ssoRoute, integrationsRoute, orgAuditLogRoute]),
+      settingsRoute.addChildren([settingsIndexRoute, membersRoute, ssoRoute, integrationsRoute, ignoredRoute, orgAuditLogRoute]),
     ]),
     operatorRoute,
     signInRoute,
