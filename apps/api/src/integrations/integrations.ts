@@ -2,25 +2,35 @@ import { and, asc, eq } from "drizzle-orm";
 import { NotPermitted, organizationPolicy } from "../access/policy";
 import { type FalconCloud, falconCloudLabel } from "../alerts/vocabulary";
 import { recordOrgAudit } from "../audit/org-audit-log";
-import type { FalconCredentials } from "../crowdstrike/falcon";
 import { writeBackCounts } from "../crowdstrike/write-back";
 import type { Tx } from "../db/client";
 import { integrations } from "../db/schema";
 import type { Deps } from "../deps";
 import { secureId } from "../ids";
+import { type ProviderCredentials, sealCredentials } from "./credentials";
+import { type Provider, providerCapabilities, providerLabel } from "./vocabulary";
 import type { Membership } from "../members/membership";
 import { publish } from "../realtime/signals";
 
 /**
- * Integrations as Admins manage them: add a CrowdStrike Integration, rotate its credentials, pause
- * and resume it, and allow or deny write-back to Falcon, each recorded in the Organization Audit Log. Every Member sees the Organization's
- * Integrations and how their streams are doing; only Admins see which credentials are in use.
+ * Integrations as Admins manage them: add one, rotate its credentials, pause and resume it, allow or
+ * deny write-back to Falcon, and turn Response Actions on or off, each recorded in the Organization
+ * Audit Log. What an Integration can do comes from its Provider (`vocabulary.ts`, ADR 0007). Every
+ * Member sees the Organization's Integrations and how their streams are doing; only Admins see which
+ * credentials are in use.
  * The stream itself is the worker's (`crowdstrike/stream-worker.ts`).
  */
 
 export class IntegrationNotFound extends Error {
   constructor() {
     super("No such Integration");
+  }
+}
+
+/** The Integration's Provider can't do what was asked of it. */
+export class NotSupportedByProvider extends Error {
+  constructor(provider: Provider, what: string) {
+    super(`${providerLabel[provider]} Integrations don't support ${what}`);
   }
 }
 
@@ -52,13 +62,22 @@ async function find(tx: Tx, me: Membership, id: string) {
 /**
  * `writeBack`: whether Argus may write Alert changes back to Falcon (ADR 0002). Off, the Integration
  * only reads: Alerts still arrive and follow changes made in Falcon, but nothing is sent to Falcon.
+ * `responseActions`: whether Response Actions may be taken through it (ADR 0007).
  */
-export type NewIntegration = { name: string; cloud: FalconCloud; credentials: FalconCredentials; writeBack: boolean };
+export type NewIntegration = {
+  provider: "crowdstrike";
+  name: string;
+  cloud: FalconCloud;
+  credentials: ProviderCredentials["crowdstrike"];
+  writeBack: boolean;
+  responseActions: boolean;
+};
 
 const writeBackLabel = (on: boolean) => (on ? "write-back on" : "read only");
+const responseActionsLabel = (on: boolean) => (on ? "Response Actions on" : "Response Actions off");
 
 export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, "db" | "clock" | "credentials">) {
-  const seal = (c: FalconCredentials) => sealer.seal(JSON.stringify({ clientId: c.clientId, clientSecret: c.clientSecret }));
+  const seal = (provider: Provider, c: ProviderCredentials[Provider]) => sealCredentials(sealer, provider, c);
 
   return {
     /** The Organization's Integrations, oldest first. */
@@ -76,11 +95,16 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
       );
       return rows.map((row) => ({
         id: row.id,
-        type: row.type,
+        provider: row.provider,
+        /** The Provider, under its older name. */
+        type: row.provider,
+        /** What its Provider lets it do. */
+        capabilities: providerCapabilities[row.provider],
         name: row.name,
         cloud: row.cloud,
         paused: row.paused,
         writeBack: row.writeBack,
+        responseActions: row.responseActions,
         health: row.health,
         healthDetail: row.healthDetail,
         healthChangedAt: row.healthChangedAt.toISOString(),
@@ -99,18 +123,18 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
       }));
     },
 
-    /** Adds a CrowdStrike Integration. A worker picks it up and connects. Admins only. */
+    /** Adds an Integration. A worker picks it up and connects, if its Provider sends Alerts. Admins only. */
     async create(me: Membership, input: NewIntegration) {
       if (!organizationPolicy.canManageIntegrations(me)) throw new NotPermitted();
       const now = clock.now();
       const id = secureId();
-      const sealed = await seal(input.credentials);
+      const sealed = await seal(input.provider, input.credentials);
       try {
         await db.transaction(async (tx) => {
           await tx.insert(integrations).values({
             id,
             organizationId: me.organizationId,
-            type: "crowdstrike",
+            provider: input.provider,
             name: input.name,
             cloud: input.cloud,
             credentials: sealed,
@@ -118,6 +142,7 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
             credentialsRevision: 1,
             credentialsUpdatedAt: now,
             writeBack: input.writeBack,
+            responseActions: input.responseActions,
             health: "connecting",
             healthChangedAt: now,
             createdById: me.userId,
@@ -130,7 +155,12 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
             category: "integrations",
             action: "integration.created",
             target: input.name,
-            after: `CrowdStrike ${falconCloudLabel[input.cloud]} · client ${hintOf(input.credentials.clientId)} · ${writeBackLabel(input.writeBack)}`,
+            after: [
+              `${providerLabel[input.provider]} ${falconCloudLabel[input.cloud]}`,
+              `client ${hintOf(input.credentials.clientId)}`,
+              writeBackLabel(input.writeBack),
+              ...(input.responseActions ? [responseActionsLabel(true)] : []),
+            ].join(" · "),
           });
           await publish(tx, { kind: "alerts", organizationId: me.organizationId });
         });
@@ -141,12 +171,12 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
       return { id, name: input.name };
     },
 
-    /** Replaces the Integration's Falcon API credentials; its worker reconnects with them. Admins only. */
-    async rotateCredentials(me: Membership, id: string, credentials: FalconCredentials) {
+    /** Replaces the Integration's API credentials; its worker reconnects with them. Admins only. */
+    async rotateCredentials(me: Membership, id: string, credentials: ProviderCredentials[Provider]) {
       if (!organizationPolicy.canManageIntegrations(me)) throw new NotPermitted();
-      const sealed = await seal(credentials);
       await db.transaction(async (tx) => {
         const row = await find(tx, me, id);
+        const sealed = await seal(row.provider, credentials);
         const now = clock.now();
         await tx
           .update(integrations)
@@ -205,6 +235,7 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
       if (!organizationPolicy.canManageIntegrations(me)) throw new NotPermitted();
       await db.transaction(async (tx) => {
         const row = await find(tx, me, id);
+        if (!providerCapabilities[row.provider].writesBack) throw new NotSupportedByProvider(row.provider, "write-back");
         if (row.writeBack === writeBack) return;
         const now = clock.now();
         await tx.update(integrations).set({ writeBack }).where(eq(integrations.id, id));
@@ -217,6 +248,33 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
           target: row.name,
           before: writeBackLabel(row.writeBack),
           after: writeBackLabel(writeBack),
+        });
+        await publish(tx, { kind: "alerts", organizationId: me.organizationId });
+      });
+    },
+
+    /**
+     * Turns Response Actions on or off for the Integration. Separate from write-back: a CrowdStrike
+     * Integration needs IOC Management write scope for them, not the Alerts write scope. Admins only.
+     * Doing what is already so changes nothing.
+     */
+    async setResponseActions(me: Membership, id: string, responseActions: boolean) {
+      if (!organizationPolicy.canManageIntegrations(me)) throw new NotPermitted();
+      await db.transaction(async (tx) => {
+        const row = await find(tx, me, id);
+        if (!providerCapabilities[row.provider].responseActions) throw new NotSupportedByProvider(row.provider, "Response Actions");
+        if (row.responseActions === responseActions) return;
+        const now = clock.now();
+        await tx.update(integrations).set({ responseActions }).where(eq(integrations.id, id));
+        await recordOrgAudit(tx, {
+          organizationId: me.organizationId,
+          occurredAt: now,
+          actor: actorOf(me),
+          category: "integrations",
+          action: responseActions ? "integration.response_actions_enabled" : "integration.response_actions_disabled",
+          target: row.name,
+          before: responseActionsLabel(row.responseActions),
+          after: responseActionsLabel(responseActions),
         });
         await publish(tx, { kind: "alerts", organizationId: me.organizationId });
       });

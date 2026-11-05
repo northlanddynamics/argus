@@ -1,3 +1,5 @@
+import type { Provider } from "./vocabulary";
+
 /**
  * Integration credentials at rest: sealed with AES-256-GCM under a key derived from the server's
  * credentials secret, so a database dump alone doesn't reveal them. Only the worker opens them, to
@@ -42,3 +44,25 @@ export function credentialSealer(secret: string): CredentialSealer {
     },
   };
 }
+
+/** API client credentials, as each Provider takes them. */
+export type ProviderCredentials = {
+  /** A Falcon API client. */
+  crowdstrike: { clientId: string; clientSecret: string };
+  /** A Mimecast API 2.0 application. */
+  mimecast: { clientId: string; clientSecret: string };
+};
+
+/** What is sealed for each Provider: its credentials, and nothing else that came with them. */
+const sealedFields: { [P in Provider]: (c: ProviderCredentials[P]) => ProviderCredentials[P] } = {
+  crowdstrike: ({ clientId, clientSecret }) => ({ clientId, clientSecret }),
+  mimecast: ({ clientId, clientSecret }) => ({ clientId, clientSecret }),
+};
+
+/** Seals `credentials` in the shape `provider` takes. */
+export const sealCredentials = <P extends Provider>(sealer: CredentialSealer, provider: P, credentials: ProviderCredentials[P]) =>
+  sealer.seal(JSON.stringify(sealedFields[provider](credentials)));
+
+/** Opens credentials `sealCredentials` sealed for `provider`. */
+export const openCredentials = async <P extends Provider>(sealer: CredentialSealer, _provider: P, sealed: string) =>
+  JSON.parse(await sealer.open(sealed)) as ProviderCredentials[P];

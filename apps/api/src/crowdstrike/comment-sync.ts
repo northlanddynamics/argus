@@ -4,6 +4,7 @@ import { alertFalconComments, alerts, cases, falconWriteBacks, integrations, org
 import type { Deps } from "../deps";
 import { postFalconComments } from "../discussion/discussion";
 import { secureId } from "../ids";
+import { providersThat } from "../integrations/vocabulary";
 import { publish } from "../realtime/signals";
 import type { FalconClient, FalconComment, FalconConnector } from "./falcon";
 import { streamConnection } from "./stream-state";
@@ -176,7 +177,14 @@ export function createCommentSyncer(
         .from(alerts)
         .innerJoin(integrations, eq(alerts.integrationId, integrations.id))
         .innerJoin(organization, eq(alerts.organizationId, organization.id))
-        .where(and(eq(alerts.falconCommentsDue, true), eq(integrations.paused, false), isNull(organization.deletedAt)))
+        .where(
+          and(
+            eq(alerts.falconCommentsDue, true),
+            eq(integrations.paused, false),
+            inArray(integrations.provider, providersThat("receivesAlerts")),
+            isNull(organization.deletedAt),
+          ),
+        )
         .orderBy(asc(alerts.seq))
         .limit(COMMENT_SYNC_BATCH)
         .for("update", { of: alerts, skipLocked: true });

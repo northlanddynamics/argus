@@ -1,11 +1,12 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { applyFalconUpdate, recordDetection } from "../alerts/alerts";
 import type { IntegrationHealth } from "../alerts/vocabulary";
 import { recordOrgAudit } from "../audit/org-audit-log";
 import type { Clock } from "../clock";
 import type { Db } from "../db/client";
 import { integrations, organization } from "../db/schema";
-import type { CredentialSealer } from "../integrations/credentials";
+import { type CredentialSealer, openCredentials } from "../integrations/credentials";
+import { providersThat } from "../integrations/vocabulary";
 import { publish } from "../realtime/signals";
 import { readDetection } from "./detections";
 import type { FalconConnection, StreamEvent } from "./falcon";
@@ -17,23 +18,23 @@ import { readFalconUpdate } from "./falcon-updates";
  * live signal.
  */
 
-/** The Integrations a worker should be streaming, unless paused, in Organizations that still exist. */
+/** The Integrations a worker should be streaming, unless paused: those whose Provider sends Alerts, in Organizations that still exist. */
 export async function streamTargets(db: Db) {
   return db
     .select({ id: integrations.id, paused: integrations.paused, credentialsRevision: integrations.credentialsRevision })
     .from(integrations)
     .innerJoin(organization, eq(integrations.organizationId, organization.id))
-    .where(isNull(organization.deletedAt));
+    .where(and(isNull(organization.deletedAt), inArray(integrations.provider, providersThat("receivesAlerts"))));
 }
 
 /** The name an Integration's stream is read under: one per Integration, as Falcon requires. */
 const appIdFor = (integrationId: string) => `argus${integrationId.slice(0, 16)}`;
 
-/** What it takes to connect an Integration's stream, credentials opened; null if it no longer exists. */
+/** What it takes to connect to Falcon for an Integration, credentials opened; null if it no longer exists or isn't CrowdStrike. */
 export async function streamConnection(db: Db, sealer: CredentialSealer, integrationId: string) {
   const [row] = await db.select().from(integrations).where(eq(integrations.id, integrationId)).limit(1);
-  if (!row) return null;
-  const credentials = JSON.parse(await sealer.open(row.credentials)) as FalconConnection["credentials"];
+  if (row?.provider !== "crowdstrike") return null;
+  const credentials = await openCredentials(sealer, row.provider, row.credentials);
   return {
     connection: { cloud: row.cloud, credentials, appId: appIdFor(row.id) } satisfies FalconConnection,
     credentialsRevision: row.credentialsRevision,

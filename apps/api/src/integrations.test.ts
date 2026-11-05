@@ -189,6 +189,68 @@ describe("Adding a CrowdStrike Integration", () => {
   });
 });
 
+describe("Providers and Response Actions", () => {
+  test("an Integration is CrowdStrike unless said otherwise, and Response Actions are off unless asked for", async () => {
+    const a = await acme();
+    const id = await a.addProd();
+    const acting = await a.addProd({ name: "CrowdStrike — Lab", clientId: "falcon-lab-0009", provider: "crowdstrike", responseActions: true });
+    expect(await a.integration(id, a.ana)).toMatchObject({
+      provider: "crowdstrike",
+      capabilities: { receivesAlerts: true, writesBack: true, responseActions: true },
+      responseActions: false,
+    });
+    expect((await a.integration(acting)).responseActions).toBe(true);
+    expect((await a.orgAudit())[0]).toMatchObject({
+      action: "integration.created",
+      after: "CrowdStrike US-1 · client …0009 · read only · Response Actions on",
+    });
+    expect((await a.add(a.admin, { name: "Mail", provider: "mimecast" as "crowdstrike" })).status).toBe(400);
+  });
+
+  test("only Admins turn Response Actions on and off, each change in the Organization Audit Log, apart from write-back", async () => {
+    const a = await acme();
+    const id = await a.addProd();
+    const param = { id };
+    const set = (as: typeof a.admin, enabled: boolean, on = param) => as.api.integrations[":id"]["response-actions"].$put({ param: on, json: { enabled } });
+
+    expect((await set(a.ana, true)).status).toBe(403);
+    expect((await a.integration(id)).responseActions).toBe(false);
+
+    expect((await set(a.admin, true)).status).toBe(200);
+    expect(await a.integration(id, a.ana)).toMatchObject({ responseActions: true, writeBack: false });
+    expect((await set(a.owner, true)).status).toBe(200);
+    expect((await set(a.ana, false)).status).toBe(403);
+    expect((await set(a.owner, false)).status).toBe(200);
+    expect((await a.integration(id)).responseActions).toBe(false);
+    expect((await set(a.admin, true, { id: "nope" })).status).toBe(404);
+
+    expect((await a.orgAudit()).map((e) => [e.action, e.actor.name, e.target, e.before, e.after])).toEqual([
+      ["integration.response_actions_disabled", "Olive Owner", "CrowdStrike — Prod", "Response Actions on", "Response Actions off"],
+      ["integration.response_actions_enabled", "Adam Admin", "CrowdStrike — Prod", "Response Actions off", "Response Actions on"],
+      ["integration.created", "Adam Admin", "CrowdStrike — Prod", null, "CrowdStrike US-1 · client …0001 · read only"],
+    ]);
+  });
+
+  test("workers stream only from Integrations whose Provider sends Alerts", async () => {
+    const a = await acme();
+    await a.addProd();
+    const mail = await a.addProd({ name: "Mail", clientId: "mimecast-app-0003" });
+    await a.t.deps.db.execute(sql`UPDATE integrations SET provider = 'mimecast' WHERE id = ${mail}`);
+    const w = a.worker();
+    await w.tick();
+    expect(a.falcon.tenant(CLIENT_ID).opened).toHaveLength(1);
+    expect(a.falcon.tenant("mimecast-app-0003").opened).toHaveLength(0);
+    expect(await a.integration(mail)).toMatchObject({
+      provider: "mimecast",
+      capabilities: { receivesAlerts: false, writesBack: false, responseActions: true },
+      workerId: null,
+    });
+    const param = { id: mail };
+    expect((await a.admin.api.integrations[":id"]["write-back"].$put({ param, json: { enabled: true } })).status).toBe(422);
+    expect((await a.admin.api.integrations[":id"]["response-actions"].$put({ param, json: { enabled: true } })).status).toBe(200);
+  });
+});
+
 describe("Event Streams ingest", () => {
   test("endpoint, identity and mobile detections become Alerts with Status New; other events are skipped", async () => {
     const a = await acme();
