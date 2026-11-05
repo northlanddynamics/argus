@@ -95,7 +95,63 @@ async function acme({ responseActions = true }: { responseActions?: boolean } = 
     return body.responseActions;
   };
 
-  return { t, owner, ana, guest, number, integrationId, add, tenant, falcon, sender, worker, link, take, list, timeline, auditLog, retry, dismiss, open, listOn };
+  /** Takes several at once as `as`; returns the status and body. */
+  const takeMany = async (
+    as: Session,
+    observableIds: string[],
+    {
+      action = "detect",
+      integrations = [integrationId],
+      confirmIgnored,
+      internal,
+      on = number,
+    }: { action?: "detect" | "prevent"; integrations?: string[]; confirmIgnored?: boolean; internal?: boolean; on?: number } = {},
+  ) => {
+    const res = await as.api.cases[":number"]["response-actions"].bulk.$post({
+      param: param(on),
+      json: { observableIds, integrationIds: integrations, action, confirmIgnored, internal },
+    });
+    return {
+      status: res.status,
+      body: (await res.json()) as Record<string, unknown> & {
+        responseActions?: { id: string; state: string; observable: { value: string }; integration: { id: string } | null }[];
+        skipped?: { observable: { id: string; type: string; value: string }; provider: string; reason: string }[];
+      },
+    };
+  };
+  /** Observable `id`'s page, as `as` sees it. */
+  const page = async (as: Session, id: string) => {
+    const body = await (await as.api.observables[":id"].$get({ param: { id } })).json();
+    if (!("item" in body)) throw new Error("Could not open the Observable's page");
+    return body.item;
+  };
+  const ignore = (id: string) => owner.api.observables[":id"].ignored.$put({ param: { id } });
+
+  return {
+    t,
+    owner,
+    ana,
+    guest,
+    number,
+    integrationId,
+    add,
+    tenant,
+    falcon,
+    sender,
+    worker,
+    link,
+    take,
+    takeMany,
+    page,
+    ignore,
+    list,
+    timeline,
+    auditLog,
+    retry,
+    dismiss,
+    open,
+    listOn,
+  };
 }
 
 describe("Taking a Falcon IOC Response Action", () => {
@@ -659,5 +715,192 @@ describe("Already present: never sending twice, never overwriting", () => {
     const report = await (await a.ana.api.cases[":number"].report.$get({ param: param(a.number), query: { variant: "complete", format: "markdown" } })).text();
     expect(report).toContain("sent from another Case on");
     expect(report).not.toContain(`C-${secret}`);
+  });
+});
+
+describe("Sending several Observables at once", () => {
+  test("one Response Action per Observable per Integration; Observables Falcon doesn't take are skipped with the reason", async () => {
+    const a = await acme();
+    a.t.clock.advance(1000);
+    const eu = await a.add("CrowdStrike — EU", "falcon-client-0002", true);
+    expect((await a.list(a.ana)).integrations.map((i) => i.name)).toEqual(["CrowdStrike — Prod", "CrowdStrike — EU"]);
+    const domain = await a.link("domain", "evil.example");
+    const url = await a.link("url", "https://evil.example/login");
+    const hash = await a.link("sha256", SHA256);
+    const email = await a.link("email", "ceo@evil.example");
+
+    const sent = await a.takeMany(a.ana, [domain, url, hash, email], { integrations: [a.integrationId, eu] });
+    expect(sent.status).toBe(201);
+    expect(sent.body.responseActions!.map((r) => [r.observable.value, r.integration!.id, r.state])).toEqual([
+      ["evil.example", a.integrationId, "pending"],
+      ["evil.example", eu, "pending"],
+      [SHA256, a.integrationId, "pending"],
+      [SHA256, eu, "pending"],
+    ]);
+    expect(sent.body.skipped).toEqual([
+      { observable: { id: url, type: "url", value: "https://evil.example/login" }, provider: "crowdstrike", reason: "Falcon takes no custom IOC for an URL" },
+      { observable: { id: email, type: "email", value: "ceo@evil.example" }, provider: "crowdstrike", reason: "Falcon takes no custom IOC for an Email" },
+    ]);
+
+    await a.worker.tick();
+    expect(a.tenant.iocsCreated.map((i) => i.value)).toEqual(["evil.example", SHA256]);
+    expect(a.falcon.tenant("falcon-client-0002").iocsCreated.map((i) => i.value)).toEqual(["evil.example", SHA256]);
+    expect((await a.list(a.ana)).responseActions.map((r) => r.state)).toEqual(["active", "active", "active", "active"]);
+    // Each is on the Timeline like one sent alone.
+    expect((await a.timeline(a.ana)).filter((e) => e.body.startsWith("Response Action taken by Ana Analyst"))).toHaveLength(4);
+  });
+
+  test("Prevent goes to the hashes; domains and IPs in a Prevent send are skipped", async () => {
+    const a = await acme();
+    const hash = await a.link("md5", "d41d8cd98f00b204e9800998ecf8427e");
+    const ip = await a.link("ip", "185.220.101.4");
+    const sent = await a.takeMany(a.ana, [hash, ip], { action: "prevent" });
+    expect(sent.body.responseActions!.map((r) => r.observable.value)).toEqual(["d41d8cd98f00b204e9800998ecf8427e"]);
+    expect(sent.body.skipped).toEqual([
+      { observable: { id: ip, type: "ip", value: "185.220.101.4" }, provider: "crowdstrike", reason: "Falcon can only Detect a domain or IP; Prevent is for hashes" },
+    ]);
+  });
+
+  test("a send where everything is skipped takes nothing", async () => {
+    const a = await acme();
+    const url = await a.link("url", "https://evil.example/login");
+    const sent = await a.takeMany(a.ana, [url]);
+    expect(sent).toMatchObject({ status: 200, body: { responseActions: [], skipped: [{ observable: { id: url } }] } });
+    expect((await a.list(a.ana)).responseActions).toEqual([]);
+  });
+
+  test("one already sent is recorded already present while the rest are sent", async () => {
+    const a = await acme();
+    const domain = await a.link("domain", "evil.example");
+    const ip = await a.link("ip", "185.220.101.4");
+    await a.take(a.ana, domain);
+    const sent = await a.takeMany(a.ana, [domain, ip]);
+    expect(sent.body.responseActions!.map((r) => [r.observable.value, r.state])).toEqual([
+      ["evil.example", "active"],
+      ["185.220.101.4", "pending"],
+    ]);
+    await a.worker.tick();
+    expect(a.tenant.iocsCreated.map((i) => i.value)).toEqual(["evil.example", "185.220.101.4"]);
+  });
+
+  test("an Integration that can't take them, or an Observable not on the Case, refuses the whole send", async () => {
+    const a = await acme();
+    const off = await a.add("CrowdStrike — Lab", "falcon-client-0003", false);
+    const domain = await a.link("domain", "evil.example");
+    expect(await a.takeMany(a.ana, [domain], { integrations: [a.integrationId, off] })).toEqual({
+      status: 400,
+      body: { error: "That Integration doesn't take Response Actions; an Admin can turn them on in its settings" },
+    });
+    const other = await a.open("Other");
+    const elsewhere = await a.link("ip", "185.220.101.4", other);
+    expect(await a.takeMany(a.ana, [domain, elsewhere])).toEqual({ status: 404, body: { error: "Some of those Observables aren't linked to this Case" } });
+    expect((await a.list(a.ana)).responseActions).toEqual([]);
+  });
+
+  test("Guests can't send several, and nobody can on a Closed Case", async () => {
+    const a = await acme();
+    const domain = await a.link("domain", "evil.example");
+    expect((await a.takeMany(a.guest, [domain])).status).toBe(403);
+    await a.ana.api.cases[":number"].close.$post({ param: param(a.number), json: { resolution: "true_positive" } });
+    expect((await a.takeMany(a.owner, [domain])).status).toBe(409);
+    expect((await a.list(a.owner)).responseActions).toEqual([]);
+  });
+});
+
+describe("Sending an Ignored Observable", () => {
+  test("is refused without confirmation, naming it, and goes ahead with it", async () => {
+    const a = await acme();
+    const domain = await a.link("domain", "microsoft.com");
+    const ip = await a.link("ip", "185.220.101.4");
+    await a.ignore(domain);
+
+    expect(await a.takeMany(a.ana, [ip, domain])).toEqual({
+      status: 409,
+      body: { error: "Domain microsoft[.]com is on the Ignored list; confirm to send it anyway", ignored: [{ id: domain, type: "domain", value: "microsoft.com" }] },
+    });
+    expect(await a.take(a.ana, domain)).toMatchObject({ status: 409, body: { ignored: [{ id: domain }] } });
+    expect((await a.list(a.ana)).responseActions).toEqual([]);
+
+    const sent = await a.takeMany(a.ana, [ip, domain], { confirmIgnored: true });
+    expect(sent.status).toBe(201);
+    expect(sent.body.responseActions!.map((r) => r.observable.value)).toEqual(["185.220.101.4", "microsoft.com"]);
+    await a.worker.tick();
+    expect(a.tenant.iocsCreated.map((i) => i.value)).toEqual(["185.220.101.4", "microsoft.com"]);
+  });
+
+  test("one taken alone goes ahead with confirmation; one that is skipped anyway needs none", async () => {
+    const a = await acme();
+    const domain = await a.link("domain", "microsoft.com");
+    const url = await a.link("url", "https://microsoft.com/");
+    await a.ignore(domain);
+    await a.ignore(url);
+    expect((await a.take(a.ana, domain, {})).status).toBe(409);
+    const res = await a.ana.api.cases[":number"]["response-actions"].$post({
+      param: param(a.number),
+      json: { observableId: domain, integrationId: a.integrationId, action: "detect", confirmIgnored: true },
+    });
+    expect(res.status).toBe(201);
+    expect(await a.takeMany(a.ana, [url])).toMatchObject({ status: 200, body: { skipped: [{ observable: { id: url } }] } });
+  });
+});
+
+describe("The Observable page lists its Response Actions", () => {
+  test("with Integration, state, Case and date, from Cases the viewer can see", async () => {
+    const a = await acme();
+    const domain = await a.link("domain", "evil.example");
+    await a.take(a.ana, domain);
+    await a.worker.tick();
+    const sentAt = a.t.clock.now().toISOString();
+    a.t.clock.advance(60_000);
+    const second = await a.open("Second wave");
+    await a.link("domain", "evil.example", second);
+    await a.takeMany(a.ana, [domain], { on: second });
+
+    expect((await a.page(a.ana, domain)).responseActions).toMatchObject([
+      { case: { number: second, title: "Second wave" }, state: "active", origin: "already_present", integration: { id: a.integrationId, name: "CrowdStrike — Prod" }, sentAt: null },
+      {
+        case: { number: a.number, title: "Phishing at Acme" },
+        kind: "falcon_ioc",
+        state: "active",
+        origin: "created",
+        integration: { id: a.integrationId, name: "CrowdStrike — Prod" },
+        falcon: { action: "detect", severity: "high" },
+        requestedAt: sentAt,
+        sentAt,
+      },
+    ]);
+
+    // Restricted to someone else, the second Case and its Response Action drop out for Ana.
+    const me = await (await a.owner.api.me.$get()).json();
+    if (!("user" in me)) throw new Error("Not signed in");
+    await a.owner.api.cases[":number"].$patch({ param: param(second), json: { assigneeId: me.user.id, restricted: true } });
+    expect((await a.page(a.ana, domain)).responseActions.map((r) => r.case.number)).toEqual([a.number]);
+    expect((await a.page(a.owner, domain)).responseActions).toHaveLength(2);
+  });
+
+  test("Guests see those on their Case that aren't Internal, without the Integration", async () => {
+    const a = await acme();
+    const domain = await a.link("domain", "evil.example");
+    const ip = await a.link("ip", "185.220.101.4");
+    await a.take(a.ana, domain);
+    await a.take(a.ana, ip, { internal: true });
+    const other = await a.open("Not shared");
+    await a.link("domain", "evil.example", other);
+    await a.take(a.ana, domain, { on: other });
+
+    expect((await a.page(a.guest, domain)).responseActions).toEqual([
+      expect.objectContaining({ case: { number: a.number, title: "Phishing at Acme" }, integration: null, state: "pending" }),
+    ]);
+    expect((await a.page(a.guest, ip)).responseActions).toEqual([]);
+    expect((await a.page(a.ana, ip)).responseActions).toMatchObject([{ internal: true, integration: { name: "CrowdStrike — Prod" } }]);
+  });
+
+  test("an Asset's page lists none", async () => {
+    const a = await acme();
+    const res = await a.ana.api.cases[":number"].assets.$post({ param: param(a.number), json: { type: "host", value: "FIN-LT-0231" } });
+    const body = await res.json();
+    if (!("asset" in body)) throw new Error("Could not link the Asset");
+    const item = await (await a.ana.api.assets[":id"].$get({ param: { id: body.asset.id } })).json();
+    expect(item).toMatchObject({ item: { responseActions: [] } });
   });
 });

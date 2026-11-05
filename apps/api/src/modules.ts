@@ -29,14 +29,15 @@ import { timelineStore } from "./timeline/timeline";
  * worker, a script), go through these; only they touch the database. See ADR 0006.
  */
 export function createModules(deps: Deps) {
+  const responseActions = responseActionStore(deps);
   const readers = {
     cases: caseStore(deps),
     tasks: taskStore(deps),
     timeline: timelineStore(deps),
     evidence: evidenceStore(deps),
-    observables: observableStore(deps),
+    observables: observableStore(deps, responseActions),
     assets: assetStore(deps),
-    responseActions: responseActionStore(deps),
+    responseActions,
   };
   return {
     ...readers,
