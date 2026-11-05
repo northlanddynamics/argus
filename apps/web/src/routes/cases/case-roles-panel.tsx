@@ -139,9 +139,6 @@ export function CaseRolesPanel({ number, caseRoles, readOnly }: { number: number
                 ))}
               </SelectContent>
             </Select>
-            {catalog.data && !catalog.data.some((r) => !r.retired) && (
-              <p className="text-xs text-muted-foreground">An Admin adds Case Roles in Settings · Members.</p>
-            )}
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" size="sm" onClick={() => setAdding(false)}>
                 Cancel

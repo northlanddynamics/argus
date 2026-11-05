@@ -152,7 +152,7 @@ function Message({
       <div className="flex items-baseline gap-2 text-sm">
         <span className="font-semibold">{m.author.name}</span>
         {m.falcon && (
-          <Badge variant="outline" title="A comment made in Falcon on an Alert attached to this Case">
+          <Badge variant="outline">
             Synced from Falcon
           </Badge>
         )}

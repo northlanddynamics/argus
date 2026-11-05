@@ -97,7 +97,7 @@ export function CloseCaseDialog({ number }: { number: number }) {
                     {plural(activeGuests, "Guest")} on this Case can still see it, read-only.
                   </li>
                 )}
-                <li>The Case becomes read-only for everyone. Only an Admin can reopen it.</li>
+                <li>The Case becomes read-only for everyone.</li>
               </ul>
             </AlertDescription>
           </Alert>

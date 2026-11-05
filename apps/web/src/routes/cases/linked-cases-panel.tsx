@@ -195,7 +195,6 @@ function LinkCaseDialog({ number }: { number: number }) {
               </AlertDescription>
             </Alert>
           )}
-          <p className="text-xs text-muted-foreground">Recorded in both Cases’ Audit Logs. Cases you can’t see aren’t offered.</p>
           {link.error && (
             <Alert variant="destructive">
               <AlertDescription>{link.error.message}</AlertDescription>

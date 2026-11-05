@@ -79,7 +79,6 @@ export function OrgAuditLogPage() {
     <>
       <div>
         <h1 className="text-2xl font-semibold">Organization Audit Log</h1>
-        <p className="text-sm text-muted-foreground">Admins and the Owner only · append-only</p>
       </div>
       <Card>
         <CardContent className="grid gap-4 sm:grid-cols-3">

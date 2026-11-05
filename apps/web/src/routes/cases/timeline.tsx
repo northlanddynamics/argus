@@ -14,7 +14,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { api, errorMessage } from "@/lib/api";
@@ -61,13 +61,11 @@ function CaseTimeline() {
     <section className="grid gap-4" aria-label="Timeline">
       <div className="flex items-baseline justify-between">
         <h2 className="text-lg font-semibold">Timeline</h2>
-        <span className="text-xs text-muted-foreground">Ordered by when it happened · times in UTC</span>
       </div>
       {!readOnly && (
         <Card>
           <CardHeader>
             <CardTitle>New Timeline Entry</CardTitle>
-            <CardDescription className="text-xs">Recorded-at is set automatically</CardDescription>
           </CardHeader>
           <CardContent>
             <NewEntryForm number={number} />

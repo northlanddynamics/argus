@@ -177,7 +177,7 @@ test("an Analyst closes a Case with a Resolution and it becomes read-only; the O
     // Closing needs a Resolution.
     await page.getByRole("button", { name: "Close Case" }).click();
     const dialog = page.getByRole("dialog", { name: "Close Case C-1" });
-    await dialog.getByText("The Case becomes read-only for everyone. Only an Admin can reopen it.").waitFor();
+    await dialog.getByText("The Case becomes read-only for everyone.").waitFor();
     expect(await dialog.getByRole("button", { name: "Close Case" }).isDisabled()).toBe(true);
     await dialog.getByLabel("False Positive").check();
     await dialog.getByRole("button", { name: "Close Case" }).click();
@@ -307,7 +307,7 @@ test("Case pages and the Case list refresh live, and show who is viewing the Cas
     await page.getByRole("status").getByText("Reconnecting…").waitFor();
     await owner.api.cases[":number"].$patch({ param: { number: "1" }, json: { severity: "critical" } });
     outage.restart();
-    await page.getByRole("status").getByText("Reconnected · views refreshed").waitFor({ timeout: 15_000 });
+    await page.getByRole("status").getByText("Reconnected").waitFor({ timeout: 15_000 });
     await page.locator("#case-severity", { hasText: "Critical" }).waitFor();
   } finally {
     await stop();

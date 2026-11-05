@@ -587,7 +587,7 @@ function OutcomeNotice({ outcome, onReselect, onDismiss }: { outcome: BulkOutcom
 }
 
 /** The Alert's comments in Falcon, as last fetched; opening the Alert asks the worker to fetch them again. */
-function FalconComments({ comments: c, attached }: { comments: AlertDetail["falconComments"]; attached: boolean }) {
+function FalconComments({ comments: c }: { comments: AlertDetail["falconComments"] }) {
   /** Refreshing for longer than Falcon usually takes: the worker may be down or Falcon unreachable. */
   // The fetch it has been waiting on since, keyed by when comments were last fetched: a new refresh starts unflagged.
   const [slowSince, setSlowSince] = useState<string | null | false>(false);
@@ -628,9 +628,6 @@ function FalconComments({ comments: c, attached }: { comments: AlertDetail["falc
         </ul>
       ) : (
         !c.refreshing && <p className="text-muted-foreground">None</p>
-      )}
-      {attached && c.comments.length > 0 && (
-        <p className="text-xs text-muted-foreground">These are in the Case’s Discussion too, as Internal messages.</p>
       )}
     </section>
   );
@@ -804,7 +801,7 @@ function AlertPanel({ id, onClose, onAct }: { id: string; onClose: () => void; o
             {onCase ? `These are on ${caseRef(onCase.number)} too.` : "Attaching this Alert adds these to its Case."}
           </p>
         )}
-        <FalconComments comments={a.falconComments} attached={a.attached !== null} />
+        <FalconComments comments={a.falconComments} />
         <details>
           <summary className="cursor-pointer text-muted-foreground">Raw payload</summary>
           <pre className="mt-2 max-h-64 overflow-auto rounded bg-muted p-2 text-xs">{JSON.stringify(a.payload, null, 2)}</pre>
