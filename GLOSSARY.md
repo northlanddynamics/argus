@@ -103,8 +103,16 @@ Why an Alert was dismissed without being attached to a Case: False Positive, Ben
 _Avoid_: Close reason, suppression
 
 **Integration**:
-An Organization's two-way connection to an external security tool: the tool sends Alerts into Argus, and Argus sends changes to those Alerts back.
+An Organization's connection to an external security tool, from a Provider such as CrowdStrike or Mimecast; depending on the Provider it receives Alerts, writes changes to those Alerts back, and takes Response Actions.
 _Avoid_: Connector, source, plugin, feed
+
+**Provider**:
+The external security tool an Integration connects to, which fixes what that Integration can do.
+_Avoid_: Vendor, platform, connector type
+
+**Correlation**:
+A suggestion that an Alert belongs with a Case because the Alert names Observables or Assets already linked to it; Argus only suggests, and an Analyst decides whether to attach.
+_Avoid_: Match, auto-link, cluster
 
 ### Record of a Case
 
@@ -149,3 +157,15 @@ _Avoid_: IOC, indicator, artifact, entity
 **Asset**:
 A thing the Organization owns or operates, such as a host or account, held once per Organization and linked to every Case that affects it.
 _Avoid_: Device, system, resource, entity
+
+**Ignored Observable**:
+An Observable (or Asset) an Admin has marked as too common to mean anything, such as a public resolver or the Organization's own mail domain; still held, linked and searchable, but never the basis of a Correlation.
+_Avoid_: Allowlist, whitelist, suppressed, excluded
+
+**Bulk Lookup**:
+Pasting free text into Argus to pull out every Observable it contains and see which are already known, and where.
+_Avoid_: Enrichment, IOC check, mass search
+
+**Response Action**:
+An action Argus takes in an external tool against one Observable linked to a Case, through an Integration, such as adding a custom IOC to Falcon or blocking a sender in Mimecast; always taken from a Case, and removable only by the Case that created it.
+_Avoid_: Block, containment, push, playbook, remediation
