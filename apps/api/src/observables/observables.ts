@@ -358,6 +358,54 @@ function heldOnceStore<Type extends string>({ db, clock }: { db: Db; clock: Cloc
     });
   }
 
+  /**
+   * Links the Organization's `type` item with this value to Case `current` (locked by `lockCase`),
+   * first adding it to the Organization if it's new. `linked` is false if it was already linked.
+   */
+  async function linkTo(tx: Tx, me: Membership, current: { id: string }, type: Type, normalised: Normalised, now: Date) {
+    await tx
+      .insert(items)
+      .values({
+        id: secureId(),
+        organizationId: me.organizationId,
+        type,
+        value: normalised.value,
+        matchKey: normalised.key,
+        createdAt: now,
+      })
+      .onConflictDoNothing();
+    const [item] = await tx
+      .select({ id: items.id, value: items.value })
+      .from(items)
+      .where(and(eq(items.organizationId, me.organizationId), eq(items.type, type), eq(items.matchKey, normalised.key)));
+    if (!item) throw new Error(`The ${kind.noun} was neither added nor found`);
+    const [already] = await tx
+      .select({ id: links.id, alertId: links.alertId })
+      .from(links)
+      .where(and(eq(links.caseId, current.id), eq(links.itemId, item.id), isNull(links.unlinkedAt)));
+    if (already && !already.alertId) return { itemId: item.id, linked: false };
+    // Linked by an Alert: it becomes a hand-added link, which detaching the Alert leaves.
+    if (already) await tx.update(links).set({ unlinkedById: me.userId, unlinkedAt: now }).where(eq(links.id, already.id));
+    await tx.insert(links).values({
+      id: secureId(),
+      organizationId: me.organizationId,
+      caseId: current.id,
+      itemId: item.id,
+      linkedById: me.userId,
+      linkedAt: now,
+    });
+    await recordCaseAudit(tx, {
+      organizationId: me.organizationId,
+      caseId: current.id,
+      occurredAt: now,
+      actor: actorOf(me),
+      action: kind.linked,
+      target: describe(type, item.value),
+    });
+    await announce(tx, me, item.id, current.id);
+    return { itemId: item.id, linked: true };
+  }
+
   return {
     list,
     detail,
@@ -372,53 +420,31 @@ function heldOnceStore<Type extends string>({ db, clock }: { db: Db; clock: Cloc
       const normalised = kind.normalise(type, raw);
       if (!normalised) throw new InvalidValue(kind.invalid(type));
       const now = clock.now();
-      const { itemId, linked } = await db.transaction(async (tx) => {
-        const current = await lockCase(tx, me, number);
-        await tx
-          .insert(items)
-          .values({
-            id: secureId(),
-            organizationId: me.organizationId,
-            type,
-            value: normalised.value,
-            matchKey: normalised.key,
-            createdAt: now,
-          })
-          .onConflictDoNothing();
-        const [item] = await tx
-          .select({ id: items.id, value: items.value })
-          .from(items)
-          .where(and(eq(items.organizationId, me.organizationId), eq(items.type, type), eq(items.matchKey, normalised.key)));
-        if (!item) throw new Error(`The ${kind.noun} was neither added nor found`);
-        const [already] = await tx
-          .select({ id: links.id, alertId: links.alertId })
-          .from(links)
-          .where(and(eq(links.caseId, current.id), eq(links.itemId, item.id), isNull(links.unlinkedAt)));
-        if (already && !already.alertId) return { itemId: item.id, linked: false };
-        // Linked by an Alert: it becomes a hand-added link, which detaching the Alert leaves.
-        if (already) await tx.update(links).set({ unlinkedById: me.userId, unlinkedAt: now }).where(eq(links.id, already.id));
-        await tx.insert(links).values({
-          id: secureId(),
-          organizationId: me.organizationId,
-          caseId: current.id,
-          itemId: item.id,
-          linkedById: me.userId,
-          linkedAt: now,
-        });
-        await recordCaseAudit(tx, {
-          organizationId: me.organizationId,
-          caseId: current.id,
-          occurredAt: now,
-          actor: actorOf(me),
-          action: kind.linked,
-          target: describe(type, item.value),
-        });
-        await announce(tx, me, item.id, current.id);
-        return { itemId: item.id, linked: true };
-      });
+      const { itemId, linked } = await db.transaction(async (tx) => linkTo(tx, me, await lockCase(tx, me, number), type, normalised, now));
       const view = (await list(me, number)).find((v) => v.id === itemId);
       if (!view) throw new NotLinked(`${kind.noun} not linked to this Case`);
       return { view, linked };
+    },
+
+    /**
+     * Links each of `values` to the Case as `link` does, all at once or, if one isn't valid (throwing
+     * `InvalidValue`), none. Returns how many were linked and how many already were.
+     */
+    async linkAll(me: Membership, number: number, values: readonly { type: Type; value: string }[]) {
+      const normalised = values.map(({ type, value }) => {
+        const found = kind.normalise(type, value);
+        if (!found) throw new InvalidValue(`${kind.invalid(type)}: ${value}`);
+        return { type, ...found };
+      });
+      const now = clock.now();
+      return db.transaction(async (tx) => {
+        const current = await lockCase(tx, me, number);
+        let linked = 0;
+        for (const { type, ...value } of normalised) {
+          if ((await linkTo(tx, me, current, type, value, now)).linked) linked++;
+        }
+        return { linked, alreadyLinked: normalised.length - linked };
+      });
     },
 
     /** Unlinks item `itemId` from the Case; throws `NotLinked` if it isn't linked. Returns what is still linked. */

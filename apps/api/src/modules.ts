@@ -9,6 +9,7 @@ import { guestStore } from "./guests/guests";
 import { alertStore } from "./alerts/alerts";
 import { integrationStore } from "./integrations/integrations";
 import { internalStore } from "./internal/internal";
+import { bulkLookupStore } from "./observables/bulk-lookup";
 import { assetStore, ignoredObservableStore, observableStore } from "./observables/observables";
 import { invitationStore } from "./invitations/invitations";
 import { memberStore } from "./members/members";
@@ -38,6 +39,7 @@ export function createModules(deps: Deps) {
   return {
     ...readers,
     ignoredObservables: ignoredObservableStore(deps),
+    bulkLookup: bulkLookupStore(deps, readers.observables),
     caseRoles: caseRoleStore(deps),
     discussion: discussionStore(deps),
     caseLinks: caseLinkStore(deps),

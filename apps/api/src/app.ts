@@ -5,6 +5,7 @@ import { guestSession, isGuestAccount } from "./guests/guest-sessions";
 import { createModules } from "./modules";
 import { createLive, type Live } from "./realtime/live";
 import { alertRoutes } from "./routes/alerts";
+import { bulkLookupRoutes } from "./routes/bulk-lookup";
 import { caseRoutes } from "./routes/cases";
 import { integrationRoutes } from "./routes/integrations";
 import { invitationRoutes } from "./routes/invitations";
@@ -54,6 +55,7 @@ export function createApi(deps: Deps, live: Live = createLive(deps)) {
     .route("/observables", observableRoutes(deps, modules))
     .route("/assets", assetRoutes(deps, modules))
     .route("/ignored-observables", ignoredObservableRoutes(deps, modules))
+    .route("/bulk-lookup", bulkLookupRoutes(deps, modules))
     .route("/integrations", integrationRoutes(deps, modules))
     .route("/notifications", notificationRoutes(deps, modules))
     .route("/teams-channel", teamsChannelRoutes(deps, modules))

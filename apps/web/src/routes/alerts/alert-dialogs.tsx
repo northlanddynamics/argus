@@ -62,7 +62,7 @@ function useOpenCases(enabled: boolean, filter: string) {
 }
 
 /** Cases to choose one from, as radio cards; `children` adds choices of its own to the same group. */
-function CasePicker({
+export function CasePicker({
   enabled,
   value,
   onChange,

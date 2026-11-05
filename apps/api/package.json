@@ -9,6 +9,7 @@
     "./realtime/messages": "./src/realtime/messages.ts",
     "./timeline/occurred-at": "./src/timeline/occurred-at.ts",
     "./observables/vocabulary": "./src/observables/vocabulary.ts",
+    "./observables/extract": "./src/observables/extract.ts",
     "./case-links/vocabulary": "./src/case-links/vocabulary.ts",
     "./tags/vocabulary": "./src/tags/vocabulary.ts",
     "./alerts/vocabulary": "./src/alerts/vocabulary.ts",

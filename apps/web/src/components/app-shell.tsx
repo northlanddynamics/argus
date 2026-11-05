@@ -53,6 +53,7 @@ function crumbsWithin(pathname: string, me: Me): Crumb[] {
   }
   if (area === "alerts") return [{ label: "Alerts" }];
   if (area === "search") return [{ label: "Search" }];
+  if (area === "lookup") return [{ label: "Bulk Lookup" }];
   if (area === "observables") return [{ label: "Observable" }];
   if (area === "assets") return [{ label: "Asset" }];
   if (area === "dashboard") return [{ label: "Dashboard" }];
