@@ -1,5 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
-import { createRootRouteWithContext, createRoute, createRouter, Outlet, redirect } from "@tanstack/react-router";
+import { createRootRouteWithContext, createRoute, createRouter, lazyRouteComponent, Outlet, redirect } from "@tanstack/react-router";
 import { meQuery } from "@/lib/api";
 import { validateDashboardSearch } from "@/lib/metrics";
 import { validateSearchPageSearch } from "@/lib/search";
@@ -140,6 +140,16 @@ const assetRoute = createRoute({
   component: AssetPage,
 });
 
+/** Bulk Lookup: Members only. Loaded on first visit, since it carries the Public Suffix List. */
+const bulkLookupRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/lookup",
+  beforeLoad: ({ context }) => {
+    if (!context.me.organization) throw redirect({ to: "/" });
+  },
+  component: lazyRouteComponent(() => import("@/routes/bulk-lookup"), "BulkLookupPage"),
+});
+
 /** Global search, for Members and Guests; the API decides what each finds. */
 const searchRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -235,6 +245,7 @@ export const router = createRouter({
       alertsRoute,
       dashboardRoute,
       searchRoute,
+      bulkLookupRoute,
       observableRoute,
       assetRoute,
       settingsRoute.addChildren([settingsIndexRoute, membersRoute, ssoRoute, integrationsRoute, ignoredRoute, orgAuditLogRoute]),

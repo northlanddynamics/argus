@@ -1,5 +1,5 @@
 import { Link, useMatchRoute, useParams } from "@tanstack/react-router";
-import { BriefcaseIcon, ChartColumnIcon, SettingsIcon, ShieldIcon, SirenIcon } from "lucide-react";
+import { BriefcaseIcon, ChartColumnIcon, ListChecksIcon, SettingsIcon, ShieldIcon, SirenIcon } from "lucide-react";
 import { type ComponentProps, useState } from "react";
 import { SeverityBadge } from "@/components/case-badges";
 import { NavUser } from "@/components/nav-user";
@@ -117,6 +117,21 @@ function NavRail({ me }: { me: Me }) {
                     <Link to="/dashboard" aria-current={matchRoute({ to: "/dashboard" }) ? "page" : undefined} onClick={closeMobile}>
                       <ChartColumnIcon />
                       <span>Dashboard</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
+              {me.organization && !me.guest && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={!!matchRoute({ to: "/lookup" })}
+                    tooltip={{ children: "Bulk Lookup", hidden: false, className: "data-closed:animate-none" }}
+                    className="px-2.5 md:px-2"
+                  >
+                    <Link to="/lookup" aria-current={matchRoute({ to: "/lookup" }) ? "page" : undefined} onClick={closeMobile}>
+                      <ListChecksIcon />
+                      <span>Bulk Lookup</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
