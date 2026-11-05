@@ -1,4 +1,4 @@
-import { and, desc, eq, exists, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, exists, inArray, isNull, notInArray, or, sql, type SQL } from "drizzle-orm";
 import { isGuest, visibleAlerts, visibleCases, visibleItems } from "../access/policy";
 import type { AlertStatus } from "../alerts/vocabulary";
 import type { Severity, Status } from "../cases/vocabulary";
@@ -6,6 +6,7 @@ import type { Db } from "../db/client";
 import { alertAssets, alertObservables, alerts, assets, caseAssets, caseObservables, cases, integrations, observables } from "../db/schema";
 import type { Participant } from "../members/membership";
 import type { AssetType, ObservableType } from "../observables/vocabulary";
+import { EXACT_ONLY_TYPES, readIndicator, refangWords, type IndicatorQuery } from "./indicators";
 import { SEARCH_DEFAULT_PAGE_SIZE, SEARCH_KINDS, type SearchKind } from "./vocabulary";
 
 /**
@@ -17,6 +18,12 @@ import { SEARCH_DEFAULT_PAGE_SIZE, SEARCH_KINDS, type SearchKind } from "./vocab
  *
  * Every kind is ranked on one scale and returned as one list, best first, a page at a time, with how
  * many of each kind match. Typing a Case's reference ("C-12", or "12") puts that Case first.
+ *
+ * Observables and Assets are also found by indicator (`indicators.ts`), as analysts paste them: the
+ * query is refanged and normalised as stored values are, and an exact match ranks above any text
+ * match. A domain also finds its subdomains, and URLs and email addresses on it or a subdomain; 8 or
+ * more hex characters find the hashes they start. IPs and hashes match only so, never by full text,
+ * so part of an IP, or a short run of hex, finds none.
  *
  * Results go through the access policy like every other read:
  * - Cases: those `visibleCases` lets the actor see, so Restricted Cases never leak.
@@ -86,6 +93,40 @@ const caseNumberIn = (query: string) => {
 
 /** A Case named by its reference ranks above any text match. */
 const REFERENCE_RANK = 1000;
+/** An Observable or Asset whose normalised value is the query's ranks above any text match. */
+const EXACT_INDICATOR_RANK = 500;
+/** One the query finds as an indicator otherwise (a subdomain, a URL on the domain, a hash by prefix). */
+const RELATED_INDICATOR_RANK = 100;
+
+/** A host is `domain` or one of its subdomains. */
+const onDomain = (host: SQL, domain: string) => sql`(${host} = ${domain} or right(${host}, ${domain.length + 1}) = ${`.${domain}`})`;
+
+/** Whether an Observable is the one `indicator` names (`exact`), or one it otherwise finds (`related`). */
+function observableIndicator(indicator: IndicatorQuery) {
+  const { type, matchKey } = observables;
+  const exact = indicator.observables.length
+    ? or(...indicator.observables.map((o) => and(eq(type, o.type), eq(matchKey, o.key))))!
+    : sql`false`;
+  const related: SQL[] = [];
+  if (indicator.domain) {
+    const d = indicator.domain;
+    related.push(
+      sql`(${type} = 'domain' and ${onDomain(sql`${matchKey}`, d)})`,
+      // The host of a URL as the browser writes it: lowercase, after any user info, before any port.
+      sql`(${type} = 'url' and ${onDomain(sql`substring(${matchKey} from '^[a-z][a-z0-9+.-]*://(?:[^@/]*@)?([^/:?#]+)')`, d)})`,
+      sql`(${type} = 'email' and ${onDomain(sql`substring(${matchKey} from '@([^@]+)$')`, d)})`,
+    );
+  }
+  if (indicator.hashPrefix) {
+    const p = indicator.hashPrefix;
+    related.push(sql`(${type} in ('md5', 'sha1', 'sha256') and left(${matchKey}, ${p.length}) = ${p})`);
+  }
+  return { exact, related: related.length ? sql`(${sql.join(related, sql` or `)})` : sql`false` };
+}
+
+/** Whether an Asset is the one `indicator` names. */
+const assetIndicator = (indicator: IndicatorQuery) =>
+  indicator.assets.length ? or(...indicator.assets.map((a) => and(eq(assets.type, a.type), eq(assets.matchKey, a.key))))! : sql`false`;
 
 export function searchStore({ db }: { db: Db }) {
   const itemKinds = {
@@ -205,9 +246,10 @@ export function searchStore({ db }: { db: Db }) {
       const wanted = options.kinds?.length ? SEARCH_KINDS.filter((k) => options.kinds!.includes(k)) : [...SEARCH_KINDS];
       const none: SearchResults = { hits: [], total: 0, counts: noCounts(), page, pageSize };
       if (!text) return none;
-      const parsed = await parse(text);
+      const parsed = await parse(refangWords(text));
       const number = caseNumberIn(text);
       if (!parsed && number === null) return none;
+      const indicator = readIndicator(text);
 
       // Cast, not `to_tsquery`, which would split the parsed words again.
       const exact = sql`${parsed?.exact ?? ""}::tsquery`;
@@ -231,11 +273,24 @@ export function searchStore({ db }: { db: Db }) {
               // Guests find only the Alerts on their Cases that they are shown; Members those not on a Case they can't see.
               isGuest(me) ? and(visibleCases(me), visibleItems(me, alerts.internal)) : visibleAlerts(me, alerts.caseId),
             )}`,
-          ...(["observables", "assets"] as const).map((key, i) => {
-            const kind = itemKinds[key];
-            return sql`select ${key}, ${2 + i}, ${kind.items.id}, ${rank(kind.items.search)}::real, ${kind.items.createdAt}
-              from ${kind.items} where ${and(eq(kind.items.organizationId, me.organizationId), matches(kind.items.search), findableItem(me, kind))}`;
-          }),
+          (() => {
+            const { exact: named, related } = observableIndicator(indicator);
+            // IPs and hashes are found only as indicators: a text match on one is a partial match.
+            const byText = and(notInArray(observables.type, [...EXACT_ONLY_TYPES]), matches(observables.search));
+            return sql`select 'observables', 2, ${observables.id},
+              (case when ${named} then ${EXACT_INDICATOR_RANK} when ${related} then ${RELATED_INDICATOR_RANK}
+                else ${rank(observables.search)} end)::real,
+              ${observables.createdAt}
+              from ${observables}
+              where ${and(eq(observables.organizationId, me.organizationId), or(byText, named, related), findableItem(me, itemKinds.observables))}`;
+          })(),
+          (() => {
+            const named = assetIndicator(indicator);
+            return sql`select 'assets', 3, ${assets.id},
+              (case when ${named} then ${EXACT_INDICATOR_RANK} else ${rank(assets.search)} end)::real, ${assets.createdAt}
+              from ${assets}
+              where ${and(eq(assets.organizationId, me.organizationId), or(matches(assets.search), named), findableItem(me, itemKinds.assets))}`;
+          })(),
         ],
         sql` union all `,
       );

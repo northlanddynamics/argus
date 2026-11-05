@@ -26,7 +26,7 @@ export const assetTypeLabel: Record<AssetType, string> = { host: "Host", account
 export type Normalised = { value: string; key: string };
 
 /** Undoes the usual defanging: `hxxp://evil[.]example`, `user[@]evil[.]example`. */
-const refang = (raw: string) =>
+export const refang = (raw: string) =>
   raw
     .trim()
     .replace(/\[\.\]|\(\.\)|\{\.\}|\[dot\]|\(dot\)/gi, ".")
