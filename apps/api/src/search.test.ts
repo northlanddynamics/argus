@@ -62,7 +62,7 @@ async function acme() {
     const res = await owner.api.cases[":number"].summary.$put({ param: param(number), json: { summary, version: 1 } });
     if (res.status !== 200) throw new Error(`Could not save the Summary: ${res.status}`);
   };
-  const observe = async (number: number, type: "ip" | "domain" | "sha256", value: string) => {
+  const observe = async (number: number, type: "ip" | "domain" | "url" | "email" | "md5" | "sha1" | "sha256", value: string) => {
     const res = await owner.api.cases[":number"].observables.$post({ param: param(number), json: { type, value } });
     if (res.status !== 201 && res.status !== 200) throw new Error(`Could not link ${value}: ${res.status}`);
   };
@@ -251,6 +251,78 @@ describe("Global search", () => {
     expect((await a.ben.api.search.$get({ query: { q: "x", kinds: "cases,tasks" } })).status as number).toBe(400);
     expect((await a.ben.api.search.$get({ query: { q: "x", pageSize: "51" } })).status as number).toBe(400);
     expect((await a.ben.api.search.$get({ query: { q: "x", page: "0" } })).status as number).toBe(400);
+  });
+
+  test("finds Observables by indicator, as analysts paste them, an exact match first", async () => {
+    const a = await acme();
+    const n = await a.open("Credential phishing from evil.example");
+    const md5 = "d41d8cd98f00b204e9800998ecf8427e";
+    const sha1 = "d41d8cd9da39a3ee5e6b4b0d3255bfef95601890";
+    const sha256 = "d41d8cd9e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b";
+    await a.observe(n, "domain", "evil.example");
+    await a.observe(n, "domain", "login.evil.example");
+    await a.observe(n, "domain", "notevil.example");
+    await a.observe(n, "url", "https://login.evil.example/x");
+    await a.observe(n, "url", "https://evil.example.attacker.test/y");
+    await a.observe(n, "email", "ceo@evil.example");
+    await a.observe(n, "md5", md5);
+    await a.observe(n, "sha1", sha1);
+    await a.observe(n, "sha256", sha256);
+    await a.observe(n, "ip", "2001:db8::1");
+    await a.observe(n, "ip", "198.51.100.7");
+    await a.observe(n, "ip", "198.51.100.70");
+    const values = async (q: string) => (await a.search(a.ben, q)).observables.map((o) => o.value);
+
+    // An exact match in any equivalent form ranks first, above the Case and every text match.
+    const upper = await a.searchPage(a.ben, md5.toUpperCase());
+    expect(upper.hits[0]).toMatchObject({ kind: "observables", item: { value: md5 } });
+    expect((await a.searchPage(a.ben, "2001:0db8:0000:0000:0000:0000:0000:0001")).hits[0]).toMatchObject({ item: { value: "2001:db8::1" } });
+    const domain = await a.searchPage(a.ben, "evil.example");
+    expect(domain.hits[0]).toMatchObject({ kind: "observables", item: { value: "evil.example" } });
+
+    // A domain finds its subdomains, and URLs and email addresses on it, ahead of text matches, and
+    // not a domain that only ends the same way.
+    const onDomain = await values("evil.example");
+    expect(onDomain.slice(0, 4).toSorted()).toEqual(["ceo@evil.example", "evil.example", "https://login.evil.example/x", "login.evil.example"].toSorted());
+    expect(onDomain).not.toContain("notevil.example");
+    expect(await values("login.evil.example")).toEqual(expect.arrayContaining(["login.evil.example", "https://login.evil.example/x"]));
+    expect(await values("login.evil.example")).not.toContain("ceo@evil.example");
+
+    // Defanged queries find what is stored.
+    expect((await values("evil[.]example"))[0]).toBe("evil.example");
+    expect((await values("hxxps://login[.]evil[.]example/x"))[0]).toBe("https://login.evil.example/x");
+    expect((await values("ceo[@]evil[.]example"))[0]).toBe("ceo@evil.example");
+
+    // 8 or more leading hex characters find every kind of hash; fewer find none.
+    expect((await values("D41D8CD9")).toSorted()).toEqual([md5, sha1, sha256].toSorted());
+    expect(await values("d41d8cd98f")).toEqual([md5]);
+    expect(await values("d41d8cd")).toEqual([]);
+
+    // IPs match exactly, never partially.
+    expect(await values("198.51.100.7")).toEqual(["198.51.100.7"]);
+    expect(await values("198.51.100")).toEqual([]);
+    expect(await values("2001")).toEqual([]);
+  });
+
+  test("indicator matches don't widen what Analysts and Guests can see", async () => {
+    const a = await acme();
+    const secret = await a.open("Restricted lure", true);
+    await a.observe(secret, "domain", "mail.evil.example");
+    await a.observe(secret, "sha256", "ab".repeat(32));
+    const theirs = await a.open("The Guest's Case");
+    await a.observe(theirs, "domain", "evil.example");
+    const other = await a.open("Another Case");
+    await a.observe(other, "email", "x@evil.example");
+    const res = await a.owner.api.cases[":number"].guests.$post({ param: param(theirs), json: { email: COUNSEL, name: "Kim Patel", expiresAt: null } });
+    expect(res.status).toBe(201);
+    const guest = await a.t.guestSignIn(COUNSEL);
+    const values = async (as: Parameters<typeof a.search>[0], q: string) => (await a.search(as, q)).observables.map((o) => o.value).toSorted();
+
+    expect(await values(a.ben, "evil.example")).toEqual(["evil.example", "x@evil.example"]);
+    expect(await values(a.ben, "abababab")).toEqual([]);
+    expect(await values(a.ana, "evil.example")).toEqual(["evil.example", "mail.evil.example", "x@evil.example"]);
+    expect(await values(a.ana, "abababab")).toEqual(["ab".repeat(32)]);
+    expect(await values(guest, "evil.example")).toEqual(["evil.example"]);
   });
 
   test("signed-out people can't search", async () => {
