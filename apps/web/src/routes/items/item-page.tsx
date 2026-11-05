@@ -25,6 +25,7 @@ import {
   observableTypeLabel,
   setIgnored,
 } from "@/lib/observables";
+import { falconIocActionLabel, responseActionKindLabel, responseActionStateLabel } from "@/lib/response-actions";
 import { exactTime, when } from "@/lib/when";
 
 /** `/observables/$id`: everything Argus knows about one Observable that the viewer may see. */
@@ -132,6 +133,7 @@ function ItemPageView({ kind, id }: { kind: ItemKind; id: string }) {
 
       <CasesCard item={item} />
       {!guest && <AlertsCard item={item} />}
+      {kind === "observable" && <ResponseActionsCard item={item} />}
       <p className="max-w-prose text-xs text-muted-foreground">
         {guest
           ? "Only the Cases you've been given access to are shown."
@@ -281,6 +283,67 @@ function AlertsCard({ item }: { item: ItemPage }) {
               <TableRow>
                 <TableCell colSpan={5} className="text-muted-foreground">
                   No Alert names it.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
+const stateVariant = { pending: "secondary", active: "default", failed: "destructive", removed: "outline" } as const;
+
+/**
+ * The Response Actions taken on the Observable from Cases the viewer can see: which Integration
+ * (never for Guests), where each stands, its Case and when. Said as what Argus did, never that
+ * something is in force now.
+ */
+function ResponseActionsCard({ item }: { item: ItemPage }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Response Actions</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <Table aria-label="Response Actions">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Action</TableHead>
+              <TableHead>State</TableHead>
+              <TableHead>Case</TableHead>
+              <TableHead className="text-right">Sent</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {item.responseActions.map((r) => (
+              <TableRow key={r.id}>
+                <TableCell className="whitespace-normal">
+                  {responseActionKindLabel[r.kind]}
+                  <span className="block text-xs text-muted-foreground">
+                    {r.falcon && falconIocActionLabel[r.falcon.action]}
+                    {r.integration && ` · ${r.integration.name}`}
+                  </span>
+                </TableCell>
+                <TableCell className="whitespace-normal">
+                  <Badge variant={stateVariant[r.state]}>{responseActionStateLabel[r.state]}</Badge>
+                  {r.origin !== "created" && <span className="mt-1 block text-xs text-muted-foreground">Already present</span>}
+                </TableCell>
+                <TableCell>
+                  <Link to="/cases/$number/observables" params={{ number: String(r.case.number) }} className="hover:underline" title={r.case.title}>
+                    <span className="font-mono text-xs text-muted-foreground">{caseRef(r.case.number)}</span> {r.case.title}
+                  </Link>
+                </TableCell>
+                <TableCell className="text-right text-muted-foreground tabular-nums" title={exactTime(r.sentAt ?? r.requestedAt)}>
+                  {r.sentAt ? when(r.sentAt) : <>Requested {when(r.requestedAt)}</>}
+                </TableCell>
+              </TableRow>
+            ))}
+            {item.responseActions.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={4} className="text-muted-foreground">
+                  No Response Actions taken on it.
                 </TableCell>
               </TableRow>
             )}

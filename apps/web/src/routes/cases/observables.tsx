@@ -6,6 +6,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -39,10 +40,14 @@ export function CaseObservablesPage() {
   const observables = useQuery(observablesQuery(number));
   const assets = useQuery(assetsQuery(number));
   const responseActions = useQuery(responseActionsQuery(number));
+  const [selected, setSelected] = useState<string[]>([]);
   if (!c) return null;
   const readOnly = isReadOnly(c);
   const n = String(number);
   const eligible = responseActions.data?.integrations ?? [];
+  const canSend = !readOnly && eligible.length > 0;
+  // Only what is still linked counts as selected.
+  const chosen = (observables.data ?? []).filter((o) => selected.includes(o.id));
   return (
     <div className="grid gap-4">
       <div className="grid gap-4 lg:grid-cols-2">
@@ -62,7 +67,28 @@ export function CaseObservablesPage() {
           unlink={(id) => api.cases[":number"].observables[":id"].$delete({ param: { number: n, id } })}
           renderAction={(item) =>
             eligible.length > 0 && falconTakes(item.type, item.value) ? (
-              <SendToFalconDialog number={number} observable={item} integrations={eligible} />
+              <SendToFalconDialog
+                number={number}
+                observables={[item]}
+                integrations={eligible}
+                trigger={
+                  <Button variant="ghost" size="sm" className="px-2" aria-label={`Send ${observableTypeLabel[item.type]} ${item.value} to Falcon`}>
+                    Send to Falcon
+                  </Button>
+                }
+              />
+            ) : null
+          }
+          selection={canSend ? { selected: chosen.map((o) => o.id), onChange: setSelected } : undefined}
+          headerAction={
+            canSend && chosen.length > 0 ? (
+              <SendToFalconDialog
+                number={number}
+                observables={chosen}
+                integrations={eligible}
+                onSent={() => setSelected([])}
+                trigger={<Button size="sm">Send {chosen.length} to Falcon</Button>}
+              />
             ) : null
           }
         />
@@ -114,8 +140,13 @@ function LinkedCard<Type extends string>(props: {
   unlink: (id: string) => Promise<Response>;
   /** Something more to do with an item, beside Unlink. */
   renderAction?: (item: Item<Type>) => ReactNode;
+  /** Set when items can be ticked to act on several at once. */
+  selection?: { selected: string[]; onChange: (ids: string[]) => void };
+  /** Shown beside the title, such as what to do with the ticked items. */
+  headerAction?: ReactNode;
 }) {
-  const { title, noun, types, typeLabel, shown, items, queryKey, readOnly } = props;
+  const { title, noun, types, typeLabel, shown, items, queryKey, readOnly, selection } = props;
+  const allSelected = !!items?.length && !!selection && items.every((i) => selection.selected.includes(i.id));
   const queryClient = useQueryClient();
   const [type, setType] = useState<Type>(types[0] as Type);
   const [value, setValue] = useState("");
@@ -140,8 +171,9 @@ function LinkedCard<Type extends string>(props: {
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
         <CardTitle>{title}</CardTitle>
+        {props.headerAction}
       </CardHeader>
       <CardContent className="grid gap-4">
         {!readOnly && (
@@ -184,6 +216,15 @@ function LinkedCard<Type extends string>(props: {
         <Table>
           <TableHeader>
             <TableRow>
+              {selection && (
+                <TableHead className="w-0">
+                  <Checkbox
+                    aria-label={`Select every ${noun}`}
+                    checked={allSelected ? true : selection.selected.length ? "indeterminate" : false}
+                    onCheckedChange={(checked) => selection.onChange(checked === true ? (items ?? []).map((i) => i.id) : [])}
+                  />
+                </TableHead>
+              )}
               <TableHead>Type</TableHead>
               <TableHead>{props.valueHeading}</TableHead>
               <TableHead>Seen in other Cases</TableHead>
@@ -193,6 +234,17 @@ function LinkedCard<Type extends string>(props: {
           <TableBody>
             {items?.map((item) => (
               <TableRow key={item.id} data-testid={`${noun.toLowerCase()}-${item.value}`}>
+                {selection && (
+                  <TableCell className="w-0">
+                    <Checkbox
+                      aria-label={`Select ${typeLabel[item.type]} ${item.value}`}
+                      checked={selection.selected.includes(item.id)}
+                      onCheckedChange={(checked) =>
+                        selection.onChange(checked === true ? [...selection.selected, item.id] : selection.selected.filter((id) => id !== item.id))
+                      }
+                    />
+                  </TableCell>
+                )}
                 <TableCell>{typeLabel[item.type] ?? item.type}</TableCell>
                 {/* Who added it sits under the value, so the row fits a half-width card without clipping Unlink. */}
                 <TableCell className="min-w-36 whitespace-normal">
@@ -251,7 +303,7 @@ function LinkedCard<Type extends string>(props: {
             ))}
             {items?.length === 0 && (
               <TableRow>
-                <TableCell colSpan={readOnly ? 3 : 4} className="text-muted-foreground">
+                <TableCell colSpan={(readOnly ? 3 : 4) + (selection ? 1 : 0)} className="text-muted-foreground">
                   No {title} yet.
                 </TableCell>
               </TableRow>

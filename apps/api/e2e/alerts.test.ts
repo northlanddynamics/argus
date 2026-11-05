@@ -310,3 +310,86 @@ test("an Analyst sends an Observable on a Case to Falcon as a custom IOC; it bec
   }
 }, 60_000);
 
+
+test("an Analyst pivots from search to an Observable's page and its Case, sends several Observables to Falcon at once, and sees them become Active", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  const falcon = fakeFalcon();
+  const sender = createResponseActionSender(t.deps, { connect: falcon.connect });
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    await owner.api.organization.invitations.$post({ json: { email: "ana@acme.example", role: "analyst" } });
+    const ana = await t.acceptInvite("ana@acme.example", PASSWORD, "Ana Analyst");
+    for (const [name, clientId] of [
+      ["CrowdStrike — Prod", "falcon-client-0001"],
+      ["CrowdStrike — EU", "falcon-client-0002"],
+    ] as const) {
+      await owner.api.integrations.$post({ json: { name, cloud: "us-1", clientId, clientSecret: "falcon-secret", responseActions: true } });
+      t.clock.advance(1000);
+    }
+    await ana.api.cases.$post({ json: { title: "Invoice phishing wave", caseType: "phishing", severity: "high" } });
+    const link = (type: "domain" | "url" | "ip", value: string) =>
+      ana.api.cases[":number"].observables.$post({ param: { number: "1" }, json: { type, value } });
+    await link("domain", "invoice-portal.biz");
+    await link("url", "https://invoice-portal.biz/login");
+    await link("ip", "185.220.101.4");
+
+    const page = await browser.newPage();
+    await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
+
+    // Search finds the domain; its page has no Response Actions yet and leads to the Case.
+    await page.keyboard.press("/");
+    const palette = page.getByRole("dialog", { name: "Search" });
+    await palette.getByRole("combobox", { name: "Search" }).fill("invoice-portal.biz");
+    await palette.getByRole("option").filter({ hasText: "invoice-portal[.]biz" }).first().click();
+    await page.waitForURL((url) => url.pathname.startsWith("/observables/"));
+    const observableUrl = page.url();
+    await page.getByRole("heading", { name: "invoice-portal[.]biz" }).waitFor();
+    const actionsOnPage = page.getByRole("table", { name: "Response Actions" });
+    await actionsOnPage.getByText("No Response Actions taken on it.").waitFor();
+    await page.getByRole("table", { name: "Linked Cases" }).getByRole("link", { name: /C-1 Invoice phishing wave/ }).click();
+    await page.waitForURL(`${baseUrl}/cases/1`);
+
+    // On the Case's Observables, she ticks the domain, the URL and the IP and sends them together.
+    await page.getByRole("tab", { name: "Observables & Assets" }).click();
+    await page.getByText("No Response Actions yet.").waitFor();
+    await page.getByRole("checkbox", { name: "Select Domain invoice-portal.biz" }).click();
+    await page.getByRole("checkbox", { name: "Select URL https://invoice-portal.biz/login" }).click();
+    await page.getByRole("checkbox", { name: "Select IP 185.220.101.4" }).click();
+    await page.getByRole("button", { name: "Send 3 to Falcon" }).click();
+    const dialog = page.getByRole("dialog", { name: "Send to Falcon as a custom IOC" });
+    // Both Integrations are ticked to start with; she leaves out the EU one.
+    const prod = dialog.getByRole("checkbox", { name: "CrowdStrike — Prod" });
+    const eu = dialog.getByRole("checkbox", { name: "CrowdStrike — EU" });
+    expect(await prod.isChecked()).toBe(true);
+    expect(await eu.isChecked()).toBe(true);
+    await eu.click();
+    await dialog.getByText("1 will be skipped: Falcon takes no custom IOC for URL.").waitFor();
+    await dialog.getByRole("button", { name: "Send to Falcon" }).click();
+    const skipped = dialog.getByRole("list", { name: "Skipped" });
+    await skipped.getByText("Falcon takes no custom IOC for an URL").waitFor();
+    await dialog.getByText("2 Response Actions taken.").waitFor();
+    await dialog.getByRole("button", { name: "Done" }).click();
+
+    const domainRow = page.getByTestId("response-action-invoice-portal.biz");
+    const ipRow = page.getByTestId("response-action-185.220.101.4");
+    await domainRow.getByText("Pending").waitFor();
+    await ipRow.getByText("Pending").waitFor();
+
+    // The worker sends them to the Prod Integration only; the Case shows them Active live.
+    await sender.tick();
+    await domainRow.getByText("Active").waitFor();
+    await ipRow.getByText("Active").waitFor();
+    expect(falcon.tenant("falcon-client-0001").iocsCreated.map((i) => i.value)).toEqual(["invoice-portal.biz", "185.220.101.4"]);
+    expect(falcon.tenant("falcon-client-0002").iocsCreated).toEqual([]);
+
+    // The domain's page now lists it, with the Integration and the Case.
+    await page.goto(observableUrl);
+    const row = actionsOnPage.getByRole("row").filter({ hasText: "Falcon custom IOC" });
+    await row.getByText("Active").waitFor();
+    await row.getByText("CrowdStrike — Prod").waitFor();
+    await row.getByRole("link", { name: /C-1 Invoice phishing wave/ }).waitFor();
+  } finally {
+    await stop();
+  }
+}, 60_000);

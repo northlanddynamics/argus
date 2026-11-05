@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { casePolicy, NotPermitted, visibleCases, visibleItems } from "../access/policy";
 import { actorOf, CaseNotFound, lockCase } from "../cases/cases";
@@ -6,15 +6,26 @@ import { type CaseActor, recordCaseAudit } from "../cases/case-audit-log";
 import { type CaseAuditAction, type Severity, severityLabel } from "../cases/vocabulary";
 import type { Clock } from "../clock";
 import type { Db, Tx } from "../db/client";
-import { caseObservables, cases, integrations, observables, responseActionOutbox, responseActions, timelineEntries, user } from "../db/schema";
+import {
+  caseObservables,
+  cases,
+  ignoredObservables,
+  integrations,
+  observables,
+  responseActionOutbox,
+  responseActions,
+  timelineEntries,
+  user,
+} from "../db/schema";
 import { secureId } from "../ids";
-import { providerCapabilities, providerLabel } from "../integrations/vocabulary";
+import { type Provider, providerCapabilities, providerLabel } from "../integrations/vocabulary";
 import type { Membership, Participant } from "../members/membership";
 import { NotLinked } from "../observables/observables";
 import { defang, type ObservableType, observableTypeLabel } from "../observables/vocabulary";
 import { publish } from "../realtime/signals";
 import {
   type FalconIocAction,
+  type FalconIocType,
   falconAllowsPrevent,
   falconIocActionLabel,
   falconIocType,
@@ -44,6 +55,10 @@ import {
  * it, and records it "already present in the tool" if it is there. Either kind of "already present"
  * record can be dismissed from its Case: it is Removed, and the tool is left alone. Restricted Cases
  * a viewer can't see are never named.
+ *
+ * Several can be taken at once: one per Observable per chosen Integration. An Observable a Provider
+ * doesn't take is skipped, with the reason, and the rest go ahead. Sending an Ignored Observable
+ * needs the request to confirm it.
  */
 
 /** The Observable isn't of a type the Integration's Provider takes. */
@@ -72,6 +87,19 @@ export class NotDismissable extends Error {
   }
 }
 
+/** Some of the Observables are on the Ignored list, and the request didn't confirm sending them. */
+export class IgnoredNotConfirmed extends Error {
+  readonly observables: { id: string; type: ObservableType; value: string }[];
+  constructor(unconfirmed: { id: string; type: ObservableType; value: string }[]) {
+    super(
+      unconfirmed.length === 1
+        ? `${described(unconfirmed[0]!)} is on the Ignored list; confirm to send it anyway`
+        : `${unconfirmed.length} of these Observables are on the Ignored list; confirm to send them anyway`,
+    );
+    this.observables = unconfirmed;
+  }
+}
+
 /** A Falcon custom IOC to take: `action` is Detect, or Prevent for hashes. */
 export type NewResponseAction = {
   observableId: string;
@@ -79,6 +107,29 @@ export type NewResponseAction = {
   action: FalconIocAction;
   /** Hidden from the Case's Guests. */
   internal?: boolean;
+  /** Sends it even if it is on the Ignored list. */
+  confirmIgnored?: boolean;
+};
+
+/**
+ * Falcon custom IOCs to take at once: one per Observable per Integration. `action` is Detect, or
+ * Prevent, which only hashes take: domains and IPs in a Prevent send are skipped.
+ */
+export type NewResponseActions = {
+  observableIds: readonly string[];
+  integrationIds: readonly string[];
+  action: FalconIocAction;
+  /** Hidden from the Case's Guests. */
+  internal?: boolean;
+  /** Sends those on the Ignored list too; without it, any among them refuses the whole request. */
+  confirmIgnored?: boolean;
+};
+
+/** An Observable left out of a send because a Provider doesn't take it, and why. */
+export type Skipped = {
+  observable: { id: string; type: ObservableType; value: string };
+  provider: Provider;
+  reason: string;
 };
 
 type Person = { id: string; name: string };
@@ -113,6 +164,25 @@ export type ResponseActionView = {
   /** Who dismissed it from this Case, and when. */
   dismissedBy: Person | null;
   dismissedAt: string | null;
+};
+
+/** A Response Action taken on an Observable, as its page lists it. */
+export type ObservableResponseActionView = {
+  id: string;
+  kind: ResponseActionKind;
+  state: ResponseActionState;
+  origin: ResponseActionOrigin;
+  /** The Case it was taken from. */
+  case: { number: number; title: string };
+  /** The Integration it went through. Never told to Guests. */
+  integration: { id: string; name: string } | null;
+  falcon: { action: FalconIocAction; severity: Severity } | null;
+  /** Hidden from Guests. */
+  internal: boolean;
+  requestedAt: string;
+  stateChangedAt: string;
+  /** When the tool accepted it; never "in force now". */
+  sentAt: string | null;
 };
 
 /** The Integrations a Response Action can be sent to, as the Case offers them. */
@@ -365,7 +435,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
     }));
   }
 
-  return {
+  const store = {
     /**
      * The Response Actions on Case `number` that `me` may see, and, for Members, the Integrations they
      * can send to. Throws `CaseNotFound` when `me` can't see the Case.
@@ -379,66 +449,155 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
     },
 
     /**
-     * Takes a Response Action: sends Observable `observableId`, linked to Case `number`, to Integration
-     * `integrationId` as a Falcon custom IOC. Stored Pending and queued for the worker; returns it.
+     * Takes Response Actions: sends each of Observables `observableIds`, linked to Case `number`, to
+     * each of Integrations `integrationIds` as a Falcon custom IOC. Each is stored Pending and queued
+     * for the worker, or recorded already present. Observables Falcon doesn't take as asked are
+     * skipped, with the reason. Throws `NotLinked` if one isn't linked to the Case,
+     * `IntegrationNotEligible` if an Integration can't take them, and `IgnoredNotConfirmed` if one to
+     * be sent is on the Ignored list and the request didn't confirm it; then nothing is taken.
      */
-    async take(me: Membership, number: number, input: NewResponseAction) {
+    async takeMany(me: Membership, number: number, input: NewResponseActions): Promise<{ responseActions: ResponseActionView[]; skipped: Skipped[] }> {
       if (!casePolicy.canWork(me)) throw new NotPermitted();
       const now = clock.now();
-      const id = secureId();
-      const caseId = await db.transaction(async (tx) => {
+      const observableIds = [...new Set(input.observableIds)];
+      const integrationIds = [...new Set(input.integrationIds)];
+      const outcome = await db.transaction(async (tx) => {
         const current = await lockCase(tx, me, number);
-        const [linked] = await tx
-          .select({ type: observables.type, value: observables.value, key: observables.matchKey })
+        const linked = await tx
+          .select({ id: observables.id, type: observables.type, value: observables.value, key: observables.matchKey })
           .from(caseObservables)
           .innerJoin(observables, eq(caseObservables.itemId, observables.id))
-          .where(and(eq(caseObservables.caseId, current.id), eq(caseObservables.itemId, input.observableId), isNull(caseObservables.unlinkedAt)));
-        if (!linked) throw new NotLinked("That Observable isn't linked to this Case");
-        const observable = { type: linked.type as ObservableType, value: linked.value };
-        const iocType = falconIocType(observable.type, linked.key);
-        if (!iocType) throw new ObservableNotAccepted(`Falcon takes no custom IOC for an ${observableTypeLabel[observable.type]}`);
-        if (input.action === "prevent" && !falconAllowsPrevent(iocType)) {
-          throw new ObservableNotAccepted("Falcon can only Detect a domain or IP; Prevent is for hashes");
+          .where(and(eq(caseObservables.caseId, current.id), inArray(caseObservables.itemId, observableIds), isNull(caseObservables.unlinkedAt)));
+        if (linked.length !== observableIds.length) {
+          throw new NotLinked(observableIds.length === 1 ? "That Observable isn't linked to this Case" : "Some of those Observables aren't linked to this Case");
         }
-        const [integration] = await tx
+        const byId = new Map(linked.map((o) => [o.id, { ...o, type: o.type as ObservableType }]));
+        const chosen = await tx
           .select({ id: integrations.id })
           .from(integrations)
-          .where(and(eq(integrations.id, input.integrationId), eq(integrations.organizationId, me.organizationId)))
+          .where(and(inArray(integrations.id, integrationIds), eq(integrations.organizationId, me.organizationId)))
           .for("share");
-        if (!integration || !(await eligible(tx, me.organizationId)).some((i) => i.id === integration.id)) throw new IntegrationNotEligible();
+        const offered = new Set((await eligible(tx, me.organizationId)).map((i) => i.id));
+        if (chosen.length !== integrationIds.length || !chosen.every((i) => offered.has(i.id))) throw new IntegrationNotEligible();
 
-        const target = { integrationId: input.integrationId, kind: "falcon_ioc" as const, targetType: iocType, targetValue: linked.key };
-        await lockTarget(tx, target);
-        // Already sent by Argus, from this Case or another: recorded, and nothing is sent again.
-        const presentFromId = await liveCreated(tx, target);
-        const [r] = await tx
-          .insert(responseActions)
-          .values({
-            id,
-            organizationId: me.organizationId,
-            caseId: current.id,
-            observableId: input.observableId,
-            ...target,
-            falconAction: input.action,
-            severity: current.severity,
-            state: presentFromId ? "active" : "pending",
-            origin: presentFromId ? "already_present" : "created",
-            presentFromId,
-            internal: input.internal ?? false,
-            createdById: me.userId,
-            createdAt: now,
-            stateChangedAt: now,
-          })
-          .returning();
-        if (presentFromId) {
-          await recordStateChange(tx, { r: r!, observable, change: "already_present", actor: actorOf(me), now });
-        } else {
-          await queueSend(tx, me.organizationId, id, now);
-          await recordStateChange(tx, { r: r!, observable, change: "requested", actor: actorOf(me), now });
+        // In the order asked: what Falcon takes goes ahead, the rest are skipped with the reason.
+        const skipped: Skipped[] = [];
+        const accepted: { id: string; type: ObservableType; value: string; key: string; iocType: FalconIocType }[] = [];
+        for (const id of observableIds) {
+          const o = byId.get(id)!;
+          const observable = { id, type: o.type, value: o.value };
+          const iocType = falconIocType(o.type, o.key);
+          if (!iocType) skipped.push({ observable, provider: "crowdstrike", reason: `Falcon takes no custom IOC for an ${observableTypeLabel[o.type]}` });
+          else if (input.action === "prevent" && !falconAllowsPrevent(iocType)) {
+            skipped.push({ observable, provider: "crowdstrike", reason: "Falcon can only Detect a domain or IP; Prevent is for hashes" });
+          } else accepted.push({ ...o, iocType });
         }
-        return current.id;
+
+        if (!input.confirmIgnored && accepted.length) {
+          const ignored = new Set(
+            (
+              await tx
+                .select({ id: ignoredObservables.observableId })
+                .from(ignoredObservables)
+                .where(and(inArray(ignoredObservables.observableId, accepted.map((o) => o.id)), isNull(ignoredObservables.endedAt)))
+            ).map((r) => r.id),
+          );
+          const unconfirmed = accepted.filter((o) => ignored.has(o.id));
+          if (unconfirmed.length) throw new IgnoredNotConfirmed(unconfirmed.map(({ id, type, value }) => ({ id, type, value })));
+        }
+
+        const pairs = accepted.flatMap((o) =>
+          integrationIds.map((integrationId) => ({
+            o,
+            target: { integrationId, kind: "falcon_ioc" as const, targetType: o.iocType, targetValue: o.key },
+          })),
+        );
+        // Every target locked first, in one order, so two sends sharing targets can't deadlock.
+        const lockKey = ({ target: t }: (typeof pairs)[number]) => [t.integrationId, t.targetType, t.targetValue].join("\n");
+        for (const pair of pairs.toSorted((a, b) => (lockKey(a) < lockKey(b) ? -1 : lockKey(a) > lockKey(b) ? 1 : 0))) await lockTarget(tx, pair.target);
+
+        const ids: string[] = [];
+        for (const { o, target } of pairs) {
+          const id = secureId();
+          const observable = { type: o.type, value: o.value };
+          // Already sent by Argus, from this Case or another: recorded, and nothing is sent again.
+          const presentFromId = await liveCreated(tx, target);
+          const [r] = await tx
+            .insert(responseActions)
+            .values({
+              id,
+              organizationId: me.organizationId,
+              caseId: current.id,
+              observableId: o.id,
+              ...target,
+              falconAction: input.action,
+              severity: current.severity,
+              state: presentFromId ? "active" : "pending",
+              origin: presentFromId ? "already_present" : "created",
+              presentFromId,
+              internal: input.internal ?? false,
+              createdById: me.userId,
+              createdAt: now,
+              stateChangedAt: now,
+            })
+            .returning();
+          if (presentFromId) {
+            await recordStateChange(tx, { r: r!, observable, change: "already_present", actor: actorOf(me), now });
+          } else {
+            await queueSend(tx, me.organizationId, id, now);
+            await recordStateChange(tx, { r: r!, observable, change: "requested", actor: actorOf(me), now });
+          }
+          ids.push(id);
+        }
+        return { caseId: current.id, ids, skipped };
       });
-      return (await select(me, caseId, [id]))[0]!;
+      return { responseActions: outcome.ids.length ? await select(me, outcome.caseId, outcome.ids) : [], skipped: outcome.skipped };
+    },
+
+    /**
+     * Takes one Response Action: sends Observable `observableId`, linked to Case `number`, to
+     * Integration `integrationId` as a Falcon custom IOC. Stored Pending and queued for the worker;
+     * returns it. Throws `ObservableNotAccepted` when Falcon doesn't take it as asked.
+     */
+    async take(me: Membership, number: number, input: NewResponseAction) {
+      const { responseActions: taken, skipped } = await store.takeMany(me, number, {
+        observableIds: [input.observableId],
+        integrationIds: [input.integrationId],
+        action: input.action,
+        internal: input.internal,
+        confirmIgnored: input.confirmIgnored,
+      });
+      if (skipped[0]) throw new ObservableNotAccepted(skipped[0].reason);
+      return taken[0]!;
+    },
+
+    /**
+     * The Response Actions taken on Observable `observableId` that `me` may see: those on Cases they
+     * can see, without Internal ones or Integration details for Guests. Newest first.
+     */
+    async onObservable(me: Participant, observableId: string): Promise<ObservableResponseActionView[]> {
+      const r = responseActions;
+      const rows = await db
+        .select({ row: r, caseNumber: cases.number, caseTitle: cases.title, integrationName: integrations.name })
+        .from(r)
+        .innerJoin(cases, eq(r.caseId, cases.id))
+        .innerJoin(integrations, eq(r.integrationId, integrations.id))
+        .where(and(eq(r.observableId, observableId), eq(r.organizationId, me.organizationId), visibleCases(me), visibleItems(me, r.internal)))
+        .orderBy(desc(r.createdAt), desc(r.seq));
+      const insider = casePolicy.canSeeInternal(me);
+      return rows.map(({ row, caseNumber, caseTitle, integrationName }) => ({
+        id: row.id,
+        kind: row.kind,
+        state: row.state,
+        origin: row.origin,
+        case: { number: caseNumber, title: caseTitle },
+        integration: insider ? { id: row.integrationId, name: integrationName } : null,
+        falcon: row.falconAction && row.severity ? { action: row.falconAction, severity: row.severity } : null,
+        internal: row.internal,
+        requestedAt: row.createdAt.toISOString(),
+        stateChangedAt: row.stateChangedAt.toISOString(),
+        sentAt: row.sentAt?.toISOString() ?? null,
+      }));
     },
 
     /**
@@ -498,6 +657,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
       return (await select(me, caseId, [id]))[0]!;
     },
   };
+  return store;
 }
 
 export type ResponseActionStore = ReturnType<typeof responseActionStore>;

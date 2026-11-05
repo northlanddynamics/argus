@@ -23,6 +23,7 @@ import {
 import { secureId } from "../ids";
 import type { Membership, Participant } from "../members/membership";
 import { publish } from "../realtime/signals";
+import type { ObservableResponseActionView } from "../response-actions/response-actions";
 import {
   type AssetType,
   assetTypeLabel,
@@ -122,6 +123,11 @@ export type ItemDetail<Type extends string> = {
   alerts: ItemAlert[];
   /** Set while it is on the Ignored list: who added it and when. Never told to Guests. */
   ignored: IgnoredMark | null;
+  /**
+   * The Response Actions taken on it from Cases the actor can see, newest first; Guests get no
+   * Internal ones and no Integration details. Always empty for Assets.
+   */
+  responseActions: ObservableResponseActionView[];
 };
 
 /** Who put an item on the Ignored list, and when. */
@@ -155,7 +161,14 @@ type Kind<Type extends string> = {
   ignoredItem: typeof ignoredObservables.observableId | typeof ignoredObservables.assetId;
 };
 
-function heldOnceStore<Type extends string>({ db, clock }: { db: Db; clock: Clock }, kind: Kind<Type>) {
+/** The Response Actions taken on an item, as `me` may see them, read from the Response Actions module. */
+type ResponseActionsOn = (me: Participant, itemId: string) => Promise<ObservableResponseActionView[]>;
+
+function heldOnceStore<Type extends string>(
+  { db, clock }: { db: Db; clock: Clock },
+  kind: Kind<Type>,
+  responseActionsOn: ResponseActionsOn = async () => [],
+) {
   const { items, links } = kind;
 
   /** Signals every Case `itemId` is linked to, so each one's "seen in" refreshes. */
@@ -305,6 +318,7 @@ function heldOnceStore<Type extends string>({ db, clock }: { db: Db; clock: Cloc
         case: caseNumber !== null && caseTitle !== null ? { number: caseNumber, title: caseTitle } : null,
       })),
       ignored,
+      responseActions: await responseActionsOn(me, itemId),
     };
   }
 
@@ -503,7 +517,8 @@ const assetKind: Kind<AssetType> = {
   ignoredItem: ignoredObservables.assetId,
 };
 
-export const observableStore = (deps: { db: Db; clock: Clock }) => heldOnceStore(deps, observableKind);
+export const observableStore = (deps: { db: Db; clock: Clock }, responseActions?: { onObservable: ResponseActionsOn }) =>
+  heldOnceStore(deps, observableKind, responseActions?.onObservable);
 export const assetStore = (deps: { db: Db; clock: Clock }) => heldOnceStore(deps, assetKind);
 
 export type ObservableStore = ReturnType<typeof observableStore>;
