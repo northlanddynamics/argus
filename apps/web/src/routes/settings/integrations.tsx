@@ -206,7 +206,7 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
             <AlertTitle>Gap in the stream, noticed {new Date(i.lastGap.at).toLocaleString()}</AlertTitle>
             <AlertDescription>
               Falcon could no longer replay events {i.lastGap.fromOffset.toLocaleString()}–{i.lastGap.toOffset.toLocaleString()}, so
-              Alerts raised then may be missing. Recorded in the Organization Audit Log; not backfilled.
+              Alerts raised then may be missing. Not backfilled.
             </AlertDescription>
           </Alert>
         )}

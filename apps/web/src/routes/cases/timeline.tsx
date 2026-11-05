@@ -158,7 +158,7 @@ function Entry({
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle>Retract this Timeline Entry?</AlertDialogTitle>
-                  <AlertDialogDescription>It stays on the Timeline struck through; the original is kept in the Audit Log.</AlertDialogDescription>
+                  <AlertDialogDescription>It stays on the Timeline struck through.</AlertDialogDescription>
                 </AlertDialogHeader>
                 <Field>
                   <FieldLabel htmlFor={`retract-${e.id}`}>Why retract it? (optional)</FieldLabel>
@@ -188,13 +188,13 @@ function Entry({
       {e.retracted ? (
         <p className="text-xs text-muted-foreground">
           Retracted by {e.retracted.by.name}
-          {e.retracted.reason && ` — ${e.retracted.reason}`}. Original kept in the Audit Log.
+          {e.retracted.reason && ` — ${e.retracted.reason}`}.
         </p>
       ) : (
         <p className="text-xs text-muted-foreground">
           Recorded {utc(e.recordedAt)} by {e.recordedBy.name}
           {e.source && ` · ${sourceText(e.source)}`}
-          {e.editedAt && " · edited (original in Audit Log)"}
+          {e.editedAt && " · edited"}
         </p>
       )}
       {retract.error && (

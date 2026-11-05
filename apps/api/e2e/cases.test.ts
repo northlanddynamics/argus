@@ -452,7 +452,7 @@ test("an Analyst discusses a Restricted Case, mentioning only people who can see
     // Then retracts it.
     await mine.getByRole("button", { name: "Retract" }).click();
     await page.getByRole("alertdialog", { name: "Retract your message?" }).getByRole("button", { name: "Retract message" }).click();
-    await mine.getByText("Retracted by Ana Analyst. The original is kept in the Audit Log.").waitFor();
+    await mine.getByText("Retracted by Ana Analyst.").waitFor();
 
     // The Audit Log keeps every version.
     await page.getByRole("tab", { name: "Audit Log" }).click();
@@ -544,7 +544,7 @@ test("an Analyst writes the Timeline: exact, range and approximate entries, cita
     await editForm.getByLabel("What happened").fill("Host network-contained from the Falcon console at 10:02.");
     await editForm.getByRole("button", { name: "Save" }).click();
     const edited = page.getByRole("listitem", { name: "Timeline Entry: Host network-contained from the Falcon console at 10:02." });
-    await edited.getByText("edited (original in Audit Log)").waitFor();
+    await edited.getByText("edited").waitFor();
 
     // The approximate entry is retracted, with a reason; it stays, struck through.
     const phishing = page.getByRole("listitem", { name: "Timeline Entry: Phishing email delivered to d.howe." });
@@ -552,7 +552,7 @@ test("an Analyst writes the Timeline: exact, range and approximate entries, cita
     const retracting = page.getByRole("alertdialog", { name: "Retract this Timeline Entry?" });
     await retracting.getByLabel("Why retract it? (optional)").fill("wrong recipient");
     await retracting.getByRole("button", { name: "Retract entry" }).click();
-    await phishing.getByText("Retracted by Ana Analyst — wrong recipient. Original kept in the Audit Log.").waitFor();
+    await phishing.getByText("Retracted by Ana Analyst — wrong recipient.").waitFor();
     expect(await phishing.getByRole("button", { name: "Edit" }).count()).toBe(0);
 
     // From the Audit Log, the Severity change is Promoted.
