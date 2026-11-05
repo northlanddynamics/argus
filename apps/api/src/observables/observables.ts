@@ -1,8 +1,10 @@
-import { and, asc, desc, eq, inArray, isNull, ne } from "drizzle-orm";
-import { casePolicy, visibleCases } from "../access/policy";
+import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
+import { casePolicy, isGuest, visibleAlerts, visibleCases } from "../access/policy";
+import type { AlertStatus } from "../alerts/vocabulary";
 import { actorOf, CaseNotFound, lockCase } from "../cases/cases";
 import { recordCaseAudit } from "../cases/case-audit-log";
-import type { CaseAuditAction } from "../cases/vocabulary";
+import type { CaseAuditAction, Severity, Status } from "../cases/vocabulary";
 import type { Clock } from "../clock";
 import type { Db, Tx } from "../db/client";
 import { alertAssets, alertObservables, alerts, assets, caseAssets, caseObservables, cases, observables, user } from "../db/schema";
@@ -39,6 +41,8 @@ import {
 /** The value isn't a valid one of its type. */
 export class InvalidValue extends Error {}
 export class NotLinked extends Error {}
+/** No such Observable or Asset, or none the actor may see. */
+export class ItemNotFound extends Error {}
 
 type Person = { id: string; name: string };
 /** Another Case the item is linked to. */
@@ -57,6 +61,48 @@ export type LinkedView<Type extends string> = {
   fromAlert: { alert: { id: string; externalId: string; title: string } | null } | null;
   /** Other Cases it is linked to that the actor can see, newest first. */
   seenIn: SeenIn[];
+};
+
+/** A Case an Observable or Asset is linked to, on its page. */
+export type ItemCase = {
+  number: number;
+  title: string;
+  status: Status;
+  severity: Severity;
+  restricted: boolean;
+  assignee: Person | null;
+  /** When it was linked to this Case. */
+  linkedAt: string;
+};
+
+/** An Alert that names an Observable or Asset, on its page. */
+export type ItemAlert = {
+  id: string;
+  externalId: string;
+  title: string;
+  severity: Severity;
+  status: AlertStatus;
+  host: string | null;
+  /** When Falcon raised the detection, else when Argus received it. */
+  seenAt: string;
+  /** The Case it is attached to, unless that is a Case the actor can't see. */
+  case: { number: number; title: string } | null;
+};
+
+/**
+ * An Observable or Asset's page: everything Argus knows about it that the actor may see. First and
+ * last seen come from those links alone, so a Case the actor can't see never shifts them.
+ */
+export type ItemDetail<Type extends string> = {
+  id: string;
+  type: Type;
+  value: string;
+  firstSeen: string;
+  lastSeen: string;
+  /** The Cases it is linked to that the actor can see, most recently linked first. */
+  cases: ItemCase[];
+  /** The Alerts naming it that the actor can see, in any Alert Status, newest first. Never for Guests. */
+  alerts: ItemAlert[];
 };
 
 type Kind<Type extends string> = {
@@ -152,8 +198,80 @@ function heldOnceStore<Type extends string>({ db, clock }: { db: Db; clock: Cloc
       }));
   }
 
+  const assignee = alias(user, "assignee");
+
+  /**
+   * Item `itemId`'s page as `me` may see it. Members see it when it is linked to a Case they can see
+   * or named by an Alert they can see; Guests only when it is on a Case they've been granted, and
+   * never the Alerts. Throws `ItemNotFound` otherwise, so its existence doesn't leak.
+   */
+  async function detail(me: Participant, itemId: string): Promise<ItemDetail<Type>> {
+    const [item] = await db
+      .select({ id: items.id, type: items.type, value: items.value })
+      .from(items)
+      .where(and(eq(items.id, itemId), eq(items.organizationId, me.organizationId)));
+    if (!item) throw new ItemNotFound(`${kind.noun} not found`);
+    const caseRows = await db
+      .select({
+        number: cases.number,
+        title: cases.title,
+        status: cases.status,
+        severity: cases.severity,
+        restricted: cases.restricted,
+        assigneeId: assignee.id,
+        assigneeName: assignee.name,
+        linkedAt: links.linkedAt,
+      })
+      .from(links)
+      .innerJoin(cases, eq(links.caseId, cases.id))
+      .leftJoin(assignee, eq(cases.assigneeId, assignee.id))
+      .where(and(eq(links.itemId, itemId), isNull(links.unlinkedAt), visibleCases(me)))
+      .orderBy(desc(links.linkedAt), desc(cases.number));
+    const seenAt = sql<Date>`coalesce(${alerts.detectedAt}, ${alerts.receivedAt})`.mapWith(alerts.receivedAt);
+    const alertRows = isGuest(me) || !casePolicy.canSeeAlerts(me)
+      ? []
+      : await db
+          .select({
+            id: alerts.id,
+            externalId: alerts.externalId,
+            title: alerts.title,
+            severity: alerts.severity,
+            status: alerts.status,
+            host: alerts.host,
+            seenAt,
+            caseNumber: cases.number,
+            caseTitle: cases.title,
+          })
+          .from(kind.alertLinks)
+          .innerJoin(alerts, eq(kind.alertLinks.alertId, alerts.id))
+          // Only an Alert on no Case or on a visible one gets here, so its Case can be shown.
+          .leftJoin(cases, eq(alerts.caseId, cases.id))
+          .where(and(eq(kind.alertLinks.itemId, itemId), visibleAlerts(me, alerts.caseId)))
+          .orderBy(desc(seenAt), desc(alerts.seq));
+    if (!caseRows.length && !alertRows.length) throw new ItemNotFound(`${kind.noun} not found`);
+    const times = [...caseRows.map((c) => c.linkedAt.getTime()), ...alertRows.map((a) => a.seenAt.getTime())];
+    return {
+      id: item.id,
+      type: item.type as Type,
+      value: item.value,
+      firstSeen: new Date(Math.min(...times)).toISOString(),
+      lastSeen: new Date(Math.max(...times)).toISOString(),
+      cases: caseRows.map(({ assigneeId, assigneeName, linkedAt, ...c }) => ({
+        ...c,
+        assignee: assigneeId && assigneeName ? { id: assigneeId, name: assigneeName } : null,
+        linkedAt: linkedAt.toISOString(),
+      })),
+      alerts: alertRows.map(({ caseNumber, caseTitle, seenAt: at, ...a }) => ({
+        ...a,
+        seenAt: at.toISOString(),
+        case: caseNumber !== null && caseTitle !== null ? { number: caseNumber, title: caseTitle } : null,
+      })),
+    };
+  }
+
   return {
     list,
+    detail,
 
     /**
      * Links the Organization's `type` item with this value to the Case, first adding it to the

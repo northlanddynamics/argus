@@ -60,11 +60,15 @@ test("an Analyst searches from anywhere: top results as they type, narrowed by k
     await options.filter({ hasText: "Wire fraud attempt on payroll" }).waitFor();
     expect(await palette.getByText("Payroll director under investigation").count()).toBe(0);
 
-    // Narrowed to Observables, only the domain is left; Enter opens the Case it is on.
+    // Narrowed to Observables, only the domain is left; Enter opens its page, which leads to the Case it is on.
     await palette.getByRole("radio", { name: "Observables" }).or(palette.getByRole("button", { name: "Observables" })).click();
     await options.filter({ hasText: "Wire fraud attempt on payroll" }).waitFor({ state: "detached" });
     await palette.getByRole("combobox", { name: "Search" }).press("Enter");
-    await page.waitForURL(`${baseUrl}/cases/1/observables`);
+    await page.waitForURL((url) => url.pathname.startsWith("/observables/"));
+    await page.getByRole("heading", { name: "payroll-update[.]example" }).waitFor();
+    const linked = page.getByRole("table", { name: "Linked Cases" });
+    await linked.getByRole("link", { name: /C-1 Wire fraud attempt on payroll/ }).click();
+    await page.waitForURL(`${baseUrl}/cases/1`);
 
     // The last row opens every result, with the same kinds.
     await page.keyboard.press("Control+k");

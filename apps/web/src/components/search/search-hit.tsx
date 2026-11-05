@@ -21,7 +21,7 @@ import { assetTypeLabel, defang, type ObservableType, observableTypeLabel } from
 import type { SearchHit } from "@/lib/search";
 import { cn } from "@/lib/utils";
 
-const observableIcon: Record<ObservableType, LucideIcon> = {
+export const observableIcon: Record<ObservableType, LucideIcon> = {
   ip: NetworkIcon,
   domain: GlobeIcon,
   url: LinkIcon,
@@ -151,7 +151,7 @@ export function SearchHitRow({ hit, query, showKind = false }: { hit: SearchHit;
 
 /**
  * Where a result opens: a Case's page; an Alert in the queue (for Guests, the Case it is on); an
- * Observable or Asset on the newest Case it is linked to, else the Alerts that name it.
+ * Observable's or Asset's own page.
  */
 function targetOf(hit: SearchHit, guest: boolean) {
   switch (hit.kind) {
@@ -162,12 +162,9 @@ function targetOf(hit: SearchHit, guest: boolean) {
         ? ({ to: "/cases/$number", params: { number: String(hit.item.case.number) } } as const)
         : ({ to: "/alerts", search: { status: "any", alert: hit.item.id } } as const);
     case "observables":
-    case "assets": {
-      const [newest] = hit.item.cases;
-      return newest
-        ? ({ to: "/cases/$number/observables", params: { number: String(newest.number) } } as const)
-        : ({ to: "/search", search: { q: hit.item.value, kinds: "alerts" } } as const);
-    }
+      return { to: "/observables/$id", params: { id: hit.item.id } } as const;
+    case "assets":
+      return { to: "/assets/$id", params: { id: hit.item.id } } as const;
   }
 }
 
@@ -177,7 +174,6 @@ export function useOpenHit(guest: boolean) {
   return (hit: SearchHit) => {
     const target = targetOf(hit, guest);
     if (target.to === "/alerts") return navigate({ to: target.to, search: target.search });
-    if (target.to === "/search") return navigate({ to: target.to, search: target.search });
     return navigate({ to: target.to, params: target.params });
   };
 }
@@ -187,13 +183,6 @@ export function SearchHitLink({ hit, guest, className, children }: { hit: Search
   const target = targetOf(hit, guest);
   const classes = cn("block rounded-md px-2 py-1.5 outline-none hover:bg-muted focus-visible:bg-muted", className);
   if (target.to === "/alerts") {
-    return (
-      <Link to={target.to} search={target.search} className={classes}>
-        {children}
-      </Link>
-    );
-  }
-  if (target.to === "/search") {
     return (
       <Link to={target.to} search={target.search} className={classes}>
         {children}
