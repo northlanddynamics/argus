@@ -4,6 +4,7 @@ import type { Db, Tx } from "../db/client";
 import { falconWriteBacks, integrations, organization } from "../db/schema";
 import type { Deps } from "../deps";
 import { secureId } from "../ids";
+import { providerCapabilities, providersThat } from "../integrations/vocabulary";
 import { publish } from "../realtime/signals";
 import type { AlertPatch, FalconClient, FalconConnector } from "./falcon";
 import { streamConnection } from "./stream-state";
@@ -14,7 +15,7 @@ import { streamConnection } from "./stream-state";
  * so a write-back is queued exactly when the change commits, and survives restarts. The worker
  * sends them (`createWriteBackSender`), retrying failures with backoff.
  *
- * Only Integrations whose write-back is on get any. Turned off before one is sent, it is cancelled:
+ * Only Integrations whose Provider writes back and whose write-back is on get any. Turned off before one is sent, it is cancelled:
  * changes made while write-back is off are never sent.
  */
 
@@ -52,6 +53,7 @@ export async function queueWriteBacks(tx: Tx, organizationId: string, alerts: re
             inArray(integrations.id, [...new Set(alerts.map((a) => a.integrationId))]),
             eq(integrations.organizationId, organizationId),
             eq(integrations.writeBack, true),
+            inArray(integrations.provider, providersThat("writesBack")),
           ),
         )
     ).map((r) => r.id),
@@ -164,7 +166,7 @@ export function createWriteBackSender(
       const now = clock.now();
       const w = falconWriteBacks;
       const due = await tx
-        .select({ row: w, writeBack: integrations.writeBack })
+        .select({ row: w, writeBack: integrations.writeBack, provider: integrations.provider })
         .from(w)
         .innerJoin(integrations, eq(w.integrationId, integrations.id))
         .innerJoin(organization, eq(w.organizationId, organization.id))
@@ -210,8 +212,8 @@ export function createWriteBackSender(
 
       const byIntegration = new Map<string, Due[]>();
       const cancelled: Due[] = [];
-      for (const { row, writeBack } of due) {
-        if (!writeBack) cancelled.push(row);
+      for (const { row, writeBack, provider } of due) {
+        if (!writeBack || !providerCapabilities[provider].writesBack) cancelled.push(row);
         else byIntegration.set(row.integrationId, [...(byIntegration.get(row.integrationId) ?? []), row]);
       }
       await finish(cancelled, "cancelled", "Write-back was turned off before this was sent");

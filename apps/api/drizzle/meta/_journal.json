@@ -204,6 +204,13 @@
       "when": 1793757074728,
       "tag": "0028_global_search",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1793888766634,
+      "tag": "0029_integration_providers",
+      "breakpoints": true
     }
   ]
 }

@@ -122,6 +122,8 @@ export function AlertQueuePage() {
   const setSearch = (next: Partial<AlertQueueSearch>) => navigate({ search: (prev) => ({ ...prev, ...next }) });
 
   const integrations = useQuery(integrationsQuery);
+  /** The Integrations that bring in Alerts; others (Response Actions only) have no place in the queue. */
+  const streams = integrations.data?.filter((i) => i.capabilities.receivesAlerts);
   const alerts = useQuery({
     // Not keyed on the Alert shown in the panel: opening one mustn't reload the queue.
     queryKey: [...alertsKey, { status, severity: search.severity, integration: search.integration }],
@@ -165,7 +167,7 @@ export function AlertQueuePage() {
   const loaded = alerts.data?.alerts;
   const rows = loaded ?? [];
   /** Integrations that aren't bringing Alerts in: paused, disconnected or in error. */
-  const unhealthy = integrations.data?.filter((i) => i.paused || i.health === "error" || i.health === "disconnected") ?? [];
+  const unhealthy = streams?.filter((i) => i.paused || i.health === "error" || i.health === "disconnected") ?? [];
   const allSelected = rows.length > 0 && rows.every((a) => selected.has(a.id));
   /** Selected Alerts the current filters don't show. */
   const hiddenSelected = [...selected.keys()].filter((id) => !rows.some((a) => a.id === id)).length;
@@ -236,12 +238,12 @@ export function AlertQueuePage() {
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h1 className="text-2xl font-semibold tracking-tight">Alerts</h1>
         <ul className="text-sm text-muted-foreground" aria-label="Integrations">
-          {integrations.data?.map((i) => (
+          {streams?.map((i) => (
             <li key={i.id}>
               {i.name}: {healthWord(i)}, {i.lastEventAt ? `last event ${ago(i.lastEventAt)}` : "no events yet"}
             </li>
           ))}
-          {integrations.data?.length === 0 && (
+          {streams?.length === 0 && (
             <li>
               No Integrations yet: an Admin adds one in{" "}
               <Link to="/settings/integrations" className="underline underline-offset-4 hover:text-foreground">
@@ -294,13 +296,13 @@ export function AlertQueuePage() {
           labels={{ "": "Any", ...severityLabel }}
           onChange={(next) => filter({ severity: next || undefined })}
         />
-        {((integrations.data?.length ?? 0) > 1 || search.integration) && (
+        {((streams?.length ?? 0) > 1 || search.integration) && (
           <Filter
             label="Integration"
             id="alert-integration"
             value={search.integration ?? ""}
-            options={["", ...(integrations.data?.map((i) => i.id) ?? [])]}
-            labels={{ "": "Any", ...Object.fromEntries(integrations.data?.map((i) => [i.id, i.name]) ?? []) }}
+            options={["", ...(streams?.map((i) => i.id) ?? [])]}
+            labels={{ "": "Any", ...Object.fromEntries(streams?.map((i) => [i.id, i.name]) ?? []) }}
             onChange={(next) => filter({ integration: next || undefined })}
           />
         )}
@@ -439,7 +441,7 @@ export function AlertQueuePage() {
                     </button>
                     <div className="truncate text-xs text-muted-foreground">
                       <span className="font-mono">{a.externalId}</span> · {alertKindLabel[a.kind]}
-                      {(integrations.data?.length ?? 0) > 1 && ` · ${a.integration.name}`}
+                      {(streams?.length ?? 0) > 1 && ` · ${a.integration.name}`}
                       <span className="@3xl:hidden">
                         {(a.host ?? a.userName) && " · "}
                         <span className="font-mono">{[a.host, a.userName].filter(Boolean).join(" / ")}</span>
@@ -495,7 +497,7 @@ export function AlertQueuePage() {
                       <div className="grid justify-items-center gap-1">
                         <p className="font-medium">No New Alerts</p>
                         <p className="text-muted-foreground">
-                          {integrations.data?.length
+                          {streams?.length
                             ? "New detections appear here as they arrive."
                             : "Alerts arrive here once an Admin adds an Integration."}
                         </p>

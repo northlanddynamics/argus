@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { sql } from "drizzle-orm";
 import { createStreamWorker } from "./crowdstrike/stream-worker";
 import { createWriteBackSender, MAX_WRITE_BACK_ATTEMPTS } from "./crowdstrike/write-back";
 import { fakeFalcon } from "./test/fake-falcon";
@@ -239,6 +240,18 @@ describe("Writing back to Falcon", () => {
     await a.ana.api.cases[":number"].close.$post({ param: param(1), json: { resolution: "benign" } });
     await a.writeBacks.tick();
     expect(a.tenant.patches.map((p) => p.patch.status)).toEqual(["closed"]);
+  });
+
+  test("an Integration whose Provider doesn't write back gets no write-backs, and what was queued is cancelled", async () => {
+    const a = await acme();
+    await a.detect("ldt:1", "ldt:2");
+    await a.openFrom("ldt:1");
+    // As if its Provider could not write back: queued and new changes are never sent.
+    await a.t.deps.db.execute(sql`UPDATE integrations SET provider = 'mimecast' WHERE id = ${a.integrationId}`);
+    await a.ana.api.alerts.dismiss.$post({ json: { alerts: await a.select("ldt:2"), reason: "benign" } });
+    await a.writeBacks.tick();
+    expect(a.tenant.patches).toEqual([]);
+    expect(await a.counts()).toMatchObject({ pending: 0, sent: 0 });
   });
 
   test("a paused Integration's write-backs wait until it is resumed", async () => {

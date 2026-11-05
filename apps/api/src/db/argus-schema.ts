@@ -20,6 +20,7 @@ import type { CaseSummary } from "../cases/case-summary";
 import { CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabulary";
 import { STORED_LINK_TYPES } from "../case-links/vocabulary";
 import { ASSET_TYPES, OBSERVABLE_TYPES } from "../observables/vocabulary";
+import { PROVIDERS } from "../integrations/vocabulary";
 import { NOTIFICATION_KINDS } from "../notifications/vocabulary";
 import { TEAMS_POST_KINDS } from "../teams/vocabulary";
 import { type Citation, PROMOTION_SOURCES } from "../timeline/vocabulary";
@@ -693,10 +694,12 @@ export const guestSessions = pgTable("guest_sessions", {
 });
 
 /**
- * An Integration: an Organization's connection to CrowdStrike Falcon (ADR 0002). `credentials` is the
- * Falcon API client id and secret, sealed (`integrations/credentials.ts`); `credentials_revision` moves
- * on with every rotation so the worker holding the stream reconnects with the new ones. `write_back`
- * says whether Argus may write changes to Alerts back to Falcon; off, the Integration only reads.
+ * An Integration: an Organization's connection to an external security tool from a Provider
+ * (ADR 0002, 0007). `credentials` are the Provider's API credentials, sealed
+ * (`integrations/credentials.ts`); `credentials_revision` moves on with every rotation so the worker
+ * holding the stream reconnects with the new ones. `write_back` says whether Argus may write changes
+ * to Alerts back to Falcon; off, the Integration only reads. `response_actions` says whether Response
+ * Actions may be taken through it.
  *
  * The rest is the worker's account of the Event Streams connection: `stream_offset` is the offset of
  * the last event it processed (it resumes after it), and `last_gap_*` the last stretch of the stream
@@ -709,7 +712,8 @@ export const integrations = pgTable(
     organizationId: text("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "restrict" }),
-    type: text("type", { enum: ["crowdstrike"] }).notNull(),
+    /** What it connects to, which fixes what it can do (`integrations/vocabulary.ts`, ADR 0007). */
+    provider: text("provider", { enum: PROVIDERS }).notNull(),
     name: text("name").notNull(),
     cloud: text("cloud", { enum: FALCON_CLOUDS }).notNull(),
     credentials: text("credentials").notNull(),
@@ -719,6 +723,8 @@ export const integrations = pgTable(
     credentialsUpdatedAt: timestamp("credentials_updated_at", { withTimezone: true }).notNull(),
     paused: boolean("paused").notNull().default(false),
     writeBack: boolean("write_back").notNull().default(false),
+    /** Whether Response Actions may be taken through it (ADR 0007); separate from write-back, off until an Admin turns it on. */
+    responseActions: boolean("response_actions").notNull().default(false),
     health: text("health", { enum: INTEGRATION_HEALTH }).notNull(),
     healthDetail: text("health_detail"),
     healthChangedAt: timestamp("health_changed_at", { withTimezone: true }).notNull(),

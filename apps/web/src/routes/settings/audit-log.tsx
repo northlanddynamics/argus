@@ -30,6 +30,8 @@ const actionLabels: Record<string, string> = {
   "integration.resumed": "Resumed Integration",
   "integration.write_back_enabled": "Allowed write-back to Falcon for",
   "integration.write_back_disabled": "Denied write-back to Falcon for",
+  "integration.response_actions_enabled": "Turned on Response Actions for",
+  "integration.response_actions_disabled": "Turned off Response Actions for",
   "integration.stream_gap": "Gap in the stream of",
   "sso.enabled": "Enabled single sign-on",
   "sso.changed": "Changed single sign-on",

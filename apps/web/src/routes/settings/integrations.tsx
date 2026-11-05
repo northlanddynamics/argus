@@ -12,6 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { ago, FALCON_CLOUDS, type FalconCloud, falconCloudLabel, healthWord, type IntegrationView, integrationsKey, integrationsQuery } from "@/lib/alerts";
 import { api, errorMessage } from "@/lib/api";
 import { useLiveStatus } from "@/lib/live";
+import { type Provider, providerLabel } from "api/integrations/vocabulary";
 
 /** Throws the API's error message unless `res` is OK. */
 async function ok(res: Response, fallback: string) {
@@ -171,6 +172,12 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
       ok(await api.integrations[":id"]["write-back"].$put({ param: { id: i.id }, json: { enabled } }), "Could not change write-back"),
     onSettled: () => queryClient.invalidateQueries({ queryKey: integrationsKey }),
   });
+  const setResponseActions = useMutation({
+    mutationFn: async (enabled: boolean) =>
+      ok(await api.integrations[":id"]["response-actions"].$put({ param: { id: i.id }, json: { enabled } }), "Could not change Response Actions"),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: integrationsKey }),
+  });
+  const { receivesAlerts, writesBack, responseActions } = i.capabilities;
   const word = healthWord(i);
   return (
     <Card data-testid={`integration-${i.name}`}>
@@ -180,7 +187,7 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
           <Badge variant={word === "Connected" ? "default" : "outline"} className={word === "Error" ? "border-destructive text-destructive" : undefined}>
             {word}
           </Badge>
-          {!i.writeBack && <Badge variant="outline">Read only</Badge>}
+          {writesBack && !i.writeBack && <Badge variant="outline">Read only</Badge>}
         </div>
         <CardAction className="flex gap-2">
           <Button variant="outline" size="sm" disabled={setPaused.isPending} onClick={() => setPaused.mutate(!i.paused)}>
@@ -190,12 +197,14 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
         </CardAction>
       </CardHeader>
       <CardContent className="grid gap-4">
-        <dl className="grid gap-3 sm:grid-cols-4">
-          <Stat label="Last event" value={i.lastEventAt ? ago(i.lastEventAt) : "None yet"} />
-          <Stat label="Stream session refresh" value={i.sessionRefreshAt ? until(i.sessionRefreshAt) : "—"} />
-          <Stat label="Stored offset" value={i.streamOffset === null ? "—" : i.streamOffset.toLocaleString()} mono />
-          <Stat label="Owned by worker" value={i.workerId ?? "—"} mono />
-        </dl>
+        {receivesAlerts && (
+          <dl className="grid gap-3 sm:grid-cols-4">
+            <Stat label="Last event" value={i.lastEventAt ? ago(i.lastEventAt) : "None yet"} />
+            <Stat label="Stream session refresh" value={i.sessionRefreshAt ? until(i.sessionRefreshAt) : "—"} />
+            <Stat label="Stored offset" value={i.streamOffset === null ? "—" : i.streamOffset.toLocaleString()} mono />
+            <Stat label="Owned by worker" value={i.workerId ?? "—"} mono />
+          </dl>
+        )}
         {i.healthDetail && !i.paused && (
           <Alert variant={i.health === "error" ? "destructive" : "default"}>
             <AlertDescription>{i.healthDetail}</AlertDescription>
@@ -215,22 +224,39 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
             <AlertDescription>{setPaused.error.message}</AlertDescription>
           </Alert>
         )}
-        <WriteBackSetting
-          id={`write-back-${i.id}`}
-          checked={setWriteBack.isPending ? setWriteBack.variables : i.writeBack}
-          // Only Admins (who see the credentials) may change it.
-          disabled={!i.credentials || setWriteBack.isPending}
-          onCheckedChange={(enabled) => setWriteBack.mutate(enabled)}
-        />
+        {writesBack && (
+          <WriteBackSetting
+            id={`write-back-${i.id}`}
+            checked={setWriteBack.isPending ? setWriteBack.variables : i.writeBack}
+            // Only Admins (who see the credentials) may change it.
+            disabled={!i.credentials || setWriteBack.isPending}
+            onCheckedChange={(enabled) => setWriteBack.mutate(enabled)}
+          />
+        )}
         {setWriteBack.error && (
           <Alert variant="destructive">
             <AlertDescription>{setWriteBack.error.message}</AlertDescription>
           </Alert>
         )}
-        <WriteBacks counts={i.writeBacks} />
+        {responseActions && (
+          <ResponseActionsSetting
+            id={`response-actions-${i.id}`}
+            provider={i.provider}
+            checked={setResponseActions.isPending ? setResponseActions.variables : i.responseActions}
+            disabled={!i.credentials || setResponseActions.isPending}
+            onCheckedChange={(enabled) => setResponseActions.mutate(enabled)}
+          />
+        )}
+        {setResponseActions.error && (
+          <Alert variant="destructive">
+            <AlertDescription>{setResponseActions.error.message}</AlertDescription>
+          </Alert>
+        )}
+        {writesBack && <WriteBacks counts={i.writeBacks} />}
         {i.credentials && (
           <p className="text-sm text-muted-foreground">
-            Falcon API credentials: {falconCloudLabel[i.cloud]} cloud · client {i.credentials.clientIdHint} · set{" "}
+            {i.provider === "crowdstrike" ? `Falcon API credentials: ${falconCloudLabel[i.cloud]} cloud` : `${providerLabel[i.provider]} API credentials`}{" "}
+            · client {i.credentials.clientIdHint} · set{" "}
             {new Date(i.credentials.updatedAt).toLocaleDateString()}
           </p>
         )}
@@ -288,6 +314,32 @@ function WriteBackSetting(props: { id: string; checked?: boolean; defaultChecked
   );
 }
 
+/** The Response Actions switch: on, Members may take Response Actions through the Integration from a Case. */
+function ResponseActionsSetting(props: {
+  id: string;
+  provider: Provider;
+  checked?: boolean;
+  defaultChecked?: boolean;
+  disabled?: boolean;
+  name?: string;
+  onCheckedChange?: (checked: boolean) => void;
+}) {
+  const { id, provider, ...rest } = props;
+  return (
+    <div className="flex items-start gap-3">
+      <Switch id={id} className="mt-0.5" {...rest} />
+      <div className="grid gap-1">
+        <Label htmlFor={id}>Response Actions</Label>
+        <p className="text-sm text-muted-foreground">
+          {provider === "crowdstrike"
+            ? "Add custom IOCs to Falcon from a Case. The API client needs IOC Management write scope."
+            : `Take Response Actions in ${providerLabel[provider]} from a Case.`}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function CredentialFields() {
   return (
     <>
@@ -309,7 +361,14 @@ function AddIntegrationDialog() {
   const [isOpen, setIsOpen] = useState(false);
   const queryClient = useQueryClient();
   const add = useMutation({
-    mutationFn: async (json: { name: string; cloud: FalconCloud; clientId: string; clientSecret: string; writeBack: boolean }) =>
+    mutationFn: async (json: {
+      name: string;
+      cloud: FalconCloud;
+      clientId: string;
+      clientSecret: string;
+      writeBack: boolean;
+      responseActions: boolean;
+    }) =>
       ok(await api.integrations.$post({ json }), "Could not add the Integration"),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: integrationsKey });
@@ -323,6 +382,7 @@ function AddIntegrationDialog() {
       name: String(form.get("name")),
       cloud: form.get("cloud") as FalconCloud,
       writeBack: form.get("writeBack") === "on",
+      responseActions: form.get("responseActions") === "on",
       ...credentialsFrom(form),
     });
   };
@@ -341,7 +401,8 @@ function AddIntegrationDialog() {
         <DialogHeader>
           <DialogTitle>Add a CrowdStrike Integration</DialogTitle>
           <DialogDescription>
-            An API client with Event Streams read access (and Alerts write access for write-back).
+            An API client with Event Streams read access (Alerts write access for write-back, IOC Management write access for
+            Response Actions).
           </DialogDescription>
         </DialogHeader>
         <form className="grid gap-4" onSubmit={onSubmit}>
@@ -363,6 +424,7 @@ function AddIntegrationDialog() {
           </div>
           <CredentialFields />
           <WriteBackSetting id="integration-write-back" name="writeBack" defaultChecked={false} />
+          <ResponseActionsSetting id="integration-response-actions" provider="crowdstrike" name="responseActions" defaultChecked={false} />
           {add.error && (
             <Alert variant="destructive">
               <AlertDescription>{add.error.message}</AlertDescription>
