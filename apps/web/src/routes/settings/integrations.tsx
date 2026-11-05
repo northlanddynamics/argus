@@ -184,9 +184,11 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
       <CardHeader className="border-b">
         <div className="flex items-center gap-3 self-center">
           <CardTitle>{i.name}</CardTitle>
-          <Badge variant={word === "Connected" ? "default" : "outline"} className={word === "Error" ? "border-destructive text-destructive" : undefined}>
-            {word}
-          </Badge>
+          {(receivesAlerts || i.paused) && (
+            <Badge variant={word === "Connected" ? "default" : "outline"} className={word === "Error" ? "border-destructive text-destructive" : undefined}>
+              {word}
+            </Badge>
+          )}
           {writesBack && !i.writeBack && <Badge variant="outline">Read only</Badge>}
         </div>
         <CardAction className="flex gap-2">
@@ -205,7 +207,7 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
             <Stat label="Owned by worker" value={i.workerId ?? "—"} mono />
           </dl>
         )}
-        {i.healthDetail && !i.paused && (
+        {receivesAlerts && i.healthDetail && !i.paused && (
           <Alert variant={i.health === "error" ? "destructive" : "default"}>
             <AlertDescription>{i.healthDetail}</AlertDescription>
           </Alert>
