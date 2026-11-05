@@ -189,7 +189,6 @@ export function CaseAuditLogPage() {
             <FieldLabel htmlFor="audit-from">From</FieldLabel>
             <DatePicker id="audit-from" value={from} onChange={setFrom} placeholder="Any time" />
           </Field>
-          <p className="text-right text-xs text-muted-foreground">Immutable · system-written · ordered by when it was done in Argus</p>
         </CardContent>
       </Card>
       <Card>

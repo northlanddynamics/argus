@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Progress } from "@/components/ui/progress";
@@ -63,9 +63,6 @@ export function CaseEvidencePage() {
     <Card>
       <CardHeader>
         <CardTitle>Evidence</CardTitle>
-        <CardDescription className="text-xs">
-          Fingerprinted on upload · never altered or deleted · every view and download is logged
-        </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4">
         {participating && canMarkInternal(c) && (
@@ -95,7 +92,6 @@ export function CaseEvidencePage() {
             <Button variant="outline" size="sm" onClick={() => input.current?.click()}>
               {internal ? "Choose Internal files" : "Choose files"}
             </Button>
-            — SHA-256 computed on upload
             <input
               ref={input}
               type="file"

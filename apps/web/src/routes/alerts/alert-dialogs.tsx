@@ -241,7 +241,6 @@ export function OpenCaseFromAlertsDialog({
             <Label>Case Summary</Label>
             <RichTextEditor label="Case Summary" value={summary} onChange={setSummary} className="rounded-md border p-3" />
           </div>
-          <Note>The Alerts become Attached to the new Case, recorded in its Audit Log.</Note>
           <Failure error={create.error} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
@@ -301,7 +300,7 @@ export function AttachAlertsDialog({
           }}
         >
           <CasePicker enabled={open} value={target === null ? null : String(target)} onChange={(v) => setTarget(Number(v))} />
-          <Note>Alerts already attached elsewhere are moved; both Cases’ Audit Logs record it.</Note>
+          <Note>Alerts already attached elsewhere are moved.</Note>
           <Failure error={attach.error} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
@@ -382,7 +381,6 @@ export function DismissAlertsDialog({
             <Label htmlFor="dismiss-comment">Comment (optional)</Label>
             <Textarea id="dismiss-comment" maxLength={2000} value={comment} onChange={(e) => setComment(e.target.value)} />
           </div>
-          <Note>Each dismissal is recorded in the Organization Audit Log. Alerts on a Case are left as they are: detach them first.</Note>
           <Failure error={dismiss.error} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
@@ -477,7 +475,6 @@ export function MoveAlertDialog({
               </FieldLabel>
             </CasePicker>
           )}
-          <Note>Both Cases’ Audit Logs record a move; a detachment is recorded in this Case’s.</Note>
           <Failure error={move.error} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

@@ -152,7 +152,7 @@ function Message({
       <div className="flex items-baseline gap-2 text-sm">
         <span className="font-semibold">{m.author.name}</span>
         {m.falcon && (
-          <Badge variant="outline" title="A comment made in Falcon on an Alert attached to this Case">
+          <Badge variant="outline">
             Synced from Falcon
           </Badge>
         )}
@@ -172,7 +172,7 @@ function Message({
         )}
       </div>
       {m.body === null ? (
-        <p className="text-sm text-muted-foreground italic">Retracted by {m.author.name}. The original is kept in the Audit Log.</p>
+        <p className="text-sm text-muted-foreground italic">Retracted by {m.author.name}.</p>
       ) : (
         <p className="text-sm whitespace-pre-wrap">
           {messageParts(m.body, m.mentions).map((part, i) =>
@@ -208,7 +208,7 @@ function Message({
               <AlertDialogContent size="sm">
                 <AlertDialogHeader>
                   <AlertDialogTitle>Retract your message?</AlertDialogTitle>
-                  <AlertDialogDescription>Others see that it was retracted; the original is kept in the Audit Log.</AlertDialogDescription>
+                  <AlertDialogDescription>Others see that it was retracted.</AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Keep it</AlertDialogCancel>

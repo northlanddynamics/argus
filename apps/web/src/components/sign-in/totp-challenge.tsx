@@ -34,7 +34,7 @@ export function TotpChallenge({ onSignedIn }: { onSignedIn: () => Promise<void> 
       description={
         useBackupCode
           ? "One of the backup codes you saved when you set up two-factor authentication. Each works once."
-          : "From your authenticator app. Password sign-in never completes without it."
+          : "From your authenticator app."
       }
     >
       <form className="grid gap-4" onSubmit={onSubmit} key={useBackupCode ? "backup" : "totp"}>

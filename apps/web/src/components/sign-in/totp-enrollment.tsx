@@ -69,10 +69,7 @@ export function TotpEnrollment({ password, onDone }: { password: string; onDone:
 
   const key = setup.data ? (new URL(setup.data.totpURI).searchParams.get("secret") ?? "") : "";
   return (
-    <AuthCard
-      title="Set up two-factor authentication"
-      description="Required before you can use Argus with a password."
-    >
+    <AuthCard title="Set up two-factor authentication">
       {setup.isError ? (
         <ErrorAlert error={setup.error.message} />
       ) : (

@@ -131,7 +131,6 @@ function TeamsChannelCard() {
               <li>a Case's Severity is raised to Critical</li>
               <li>a Case is opened from Alerts</li>
             </ul>
-            <span className="text-muted-foreground">Restricted Cases post a link only, no details.</span>
           </div>
           {error && (
             <Alert variant="destructive">
@@ -207,7 +206,7 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
             <AlertTitle>Gap in the stream, noticed {new Date(i.lastGap.at).toLocaleString()}</AlertTitle>
             <AlertDescription>
               Falcon could no longer replay events {i.lastGap.fromOffset.toLocaleString()}–{i.lastGap.toOffset.toLocaleString()}, so
-              Alerts raised then may be missing. Recorded in the Organization Audit Log; not backfilled.
+              Alerts raised then may be missing. Not backfilled.
             </AlertDescription>
           </Alert>
         )}
@@ -282,7 +281,7 @@ function WriteBackSetting(props: { id: string; checked?: boolean; defaultChecked
       <div className="grid gap-1">
         <Label htmlFor={id}>Write back to Falcon</Label>
         <p className="text-sm text-muted-foreground">
-          Send Alert Status, Assignee, comments and Case closure to CrowdStrike. Off, Argus reads from Falcon but never writes to it.
+          Send Alert Status, Assignee, comments and Case closure to CrowdStrike.
         </p>
       </div>
     </div>
@@ -342,8 +341,7 @@ function AddIntegrationDialog() {
         <DialogHeader>
           <DialogTitle>Add a CrowdStrike Integration</DialogTitle>
           <DialogDescription>
-            An API client with Event Streams read access (and Alerts write access for write-back). A worker connects with it and
-            turns Falcon detections into Alerts.
+            An API client with Event Streams read access (and Alerts write access for write-back).
           </DialogDescription>
         </DialogHeader>
         <form className="grid gap-4" onSubmit={onSubmit}>
@@ -412,7 +410,6 @@ function RotateCredentialsDialog({ integration }: { integration: IntegrationView
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Rotate credentials of {integration.name}</DialogTitle>
-          <DialogDescription>The worker reconnects with the new credentials and resumes from the stored offset.</DialogDescription>
         </DialogHeader>
         <form className="grid gap-4" onSubmit={onSubmit}>
           <CredentialFields />

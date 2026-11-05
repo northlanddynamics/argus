@@ -50,8 +50,7 @@ export function ExportReportDialog({ number, complete }: { number: number; compl
         <DialogHeader>
           <DialogTitle>Export Case Report for {caseRef(number)}</DialogTitle>
           <DialogDescription>
-            The Case Summary, Timeline, Tasks, Observables, Assets and Evidence with SHA-256 fingerprints, as they are now. The export is
-            recorded in the Audit Log.
+            The Case Summary, Timeline, Tasks, Observables, Assets and Evidence with SHA-256 fingerprints, as they are now.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4">

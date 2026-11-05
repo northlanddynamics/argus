@@ -123,7 +123,7 @@ export function SignInPage() {
         <Button type="button" variant="outline" disabled={pending} onClick={signInWithSso}>
           Sign in with SSO (SAML)
         </Button>
-        <p className="text-sm text-muted-foreground">No self-serve sign-up. Ask your Organization's Admin for an invite.</p>
+        <p className="text-sm text-muted-foreground">Ask your Organization's Admin for an invite.</p>
         <p className="text-sm text-muted-foreground">
           Invited to a Case as a Guest?{" "}
           <Link to="/guest/sign-in" className="text-primary underline">

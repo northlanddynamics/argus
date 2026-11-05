@@ -374,7 +374,6 @@ function OpenCasesTable({ openCases }: { openCases: DashboardMetrics["openCases"
           </TableFooter>
         </Table>
       </div>
-      <p className="mt-3 text-xs text-muted-foreground">Each count opens the Case list with those filters.</p>
     </Panel>
   );
 }

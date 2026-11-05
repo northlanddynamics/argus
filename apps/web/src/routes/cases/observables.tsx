@@ -70,11 +70,6 @@ export function CaseObservablesPage() {
           unlink={(id) => api.cases[":number"].assets[":id"].$delete({ param: { number: n, id } })}
         />
       </div>
-      <p className="max-w-prose text-xs text-muted-foreground">
-        Each Observable and Asset is held once for the Organization. “Seen in other Cases” lists only Cases you can see.
-        Attaching an Alert adds what it names (“Alert (auto)”); detaching it removes those again, but never what was added
-        by hand. Adding and unlinking are recorded in the Audit Log.
-      </p>
     </>
   );
 }

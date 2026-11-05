@@ -54,9 +54,6 @@ export function GuestSignInPage() {
         <Button type="submit" disabled={pending}>
           Email me a sign-in link
         </Button>
-        <p className="text-sm text-muted-foreground">
-          Access ends when your expiry passes or you are removed from your last Case.
-        </p>
       </form>
     </AuthCard>
   );

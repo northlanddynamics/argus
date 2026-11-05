@@ -175,8 +175,7 @@ function GuestsSection({ c, guests }: { c: CaseView; guests: ReturnType<typeof u
     <FieldSet>
       <FieldLegend>Guests</FieldLegend>
       <FieldDescription>
-        People outside the Organization. They sign in with a magic link and see only the Cases they're invited to, never the
-        Audit Log, linked Cases they aren't on, or other Cases. Sessions last about 12 hours.
+        People outside the Organization. They sign in with a magic link and see only the Cases they're invited to.
       </FieldDescription>
       {guests.isPending ? (
         <Skeleton className="h-10 w-full" />

@@ -75,7 +75,6 @@ export function MembersPage() {
       <Card>
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle>Members</CardTitle>
-          <CardDescription>One Owner · Admins and Analysts</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
           <form className="grid items-end gap-2 sm:grid-cols-[1fr_auto_auto]" onSubmit={onInvite}>

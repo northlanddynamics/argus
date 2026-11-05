@@ -48,11 +48,6 @@ export function OperatorConsolePage() {
     <div className="min-h-svh bg-muted">
       <AppHeader email={me.user.email} badge={<Badge variant="outline" className="text-slate-50">Operator console</Badge>} />
       <main className="grid gap-4 p-6">
-        <Alert>
-          <AlertDescription>
-            Operators run the service. They are not Members of any Organization and cannot see Cases, Alerts or Evidence.
-          </AlertDescription>
-        </Alert>
         <div className="grid items-start gap-4 lg:grid-cols-[1fr_320px]">
           <Card>
             <CardHeader>
@@ -97,7 +92,7 @@ export function OperatorConsolePage() {
             <CardHeader>
               <CardTitle>Create Organization</CardTitle>
               <CardDescription>
-                The Owner gets an email invite and sets a password. No self-serve sign-up.
+                The Owner gets an email invite and sets a password.
               </CardDescription>
             </CardHeader>
             <CardContent>
