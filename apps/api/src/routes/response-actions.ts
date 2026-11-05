@@ -7,7 +7,7 @@ import type { Deps } from "../deps";
 import { membersOnly, type ParticipantEnv, requireParticipant } from "../members/membership";
 import type { Modules } from "../modules";
 import { NotLinked } from "../observables/observables";
-import { IntegrationNotEligible, NotRetryable, ObservableNotAccepted, ResponseActionNotFound } from "../response-actions/response-actions";
+import { IntegrationNotEligible, NotDismissable, NotRetryable, ObservableNotAccepted, ResponseActionNotFound } from "../response-actions/response-actions";
 import { FALCON_IOC_ACTIONS } from "../response-actions/vocabulary";
 
 const numberParam = z.object({ number: z.coerce.number().int().positive() });
@@ -34,8 +34,8 @@ const unlessNotFound = <T>(work: Promise<T>) =>
 
 /**
  * A Case's Response Actions (ADR 0007): list them (Guests too, without Internal ones or Integration
- * details), take one, and retry a Failed one. Taking and retrying are for Members, on a Case that
- * isn't Closed.
+ * details), take one, retry a Failed one, and dismiss an "already present" one (which leaves the tool
+ * alone). Taking, retrying and dismissing are for Members, on a Case that isn't Closed.
  */
 export const responseActionRoutes = (deps: Deps, { responseActions }: Modules) =>
   new Hono<ParticipantEnv>()
@@ -68,6 +68,19 @@ export const responseActionRoutes = (deps: Deps, { responseActions }: Modules) =
         if (e instanceof NotPermitted) return c.json(guestsRefused, 403);
         if (e instanceof ResponseActionNotFound) return c.json({ error: e.message }, 404);
         if (e instanceof NotRetryable || e instanceof CaseClosed) return c.json({ error: e.message }, 409);
+        throw e;
+      }
+    })
+    .post("/:number/response-actions/:id/dismiss", membersOnly, zValidator("param", actionParam), async (c) => {
+      const { number, id } = c.req.valid("param");
+      try {
+        const dismissed = await unlessNotFound(responseActions.dismiss(c.get("membership"), number, id));
+        if (!dismissed) return c.json(notFound, 404);
+        return c.json({ responseAction: dismissed }, 200);
+      } catch (e) {
+        if (e instanceof NotPermitted) return c.json({ error: "Guests can't dismiss Response Actions" }, 403);
+        if (e instanceof ResponseActionNotFound) return c.json({ error: e.message }, 404);
+        if (e instanceof NotDismissable || e instanceof CaseClosed) return c.json({ error: e.message }, 409);
         throw e;
       }
     });

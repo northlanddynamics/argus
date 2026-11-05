@@ -13,16 +13,39 @@ export const responseActionKindLabel: Record<ResponseActionKind, string> = { fal
  * Where a Response Action stands:
  *
  * ```
- * Pending → Active   (sent)
+ * Pending → Active   (sent, or found already in the tool)
  * Pending → Failed   (send attempts exhausted)
  * Failed  → Pending  (Retry)
+ * Active  → Removed  (an "already present" record dismissed)
  * ```
  *
- * Removing and Removed arrive with removal.
+ * A Response Action recorded as already sent from another Case starts Active. Removing arrives with
+ * removal.
  */
-export const RESPONSE_ACTION_STATES = ["pending", "active", "failed"] as const;
+export const RESPONSE_ACTION_STATES = ["pending", "active", "failed", "removed"] as const;
 export type ResponseActionState = (typeof RESPONSE_ACTION_STATES)[number];
-export const responseActionStateLabel: Record<ResponseActionState, string> = { pending: "Pending", active: "Active", failed: "Failed" };
+export const responseActionStateLabel: Record<ResponseActionState, string> = {
+  pending: "Pending",
+  active: "Active",
+  failed: "Failed",
+  removed: "Removed",
+};
+
+/**
+ * Where a Response Action came from:
+ *
+ * - `created`: Argus creates it in the tool (or will, while Pending or Failed).
+ * - `already_present`: Argus had already sent the same thing to the same Integration, from this or
+ *   another Case; nothing was sent, and the record points at that Response Action.
+ * - `in_tool`: the tool already held it when Argus looked before creating; nothing was written.
+ *
+ * Argus only ever removes what it created; the other two can only be dismissed from their Case.
+ */
+export const RESPONSE_ACTION_ORIGINS = ["created", "already_present", "in_tool"] as const;
+export type ResponseActionOrigin = (typeof RESPONSE_ACTION_ORIGINS)[number];
+
+/** The states in which a created Response Action holds its Integration, kind and value: no other may be created for them. */
+export const LIVE_STATES = ["pending", "active"] as const satisfies readonly ResponseActionState[];
 
 /** What Falcon does when it sees the IOC: Prevent is for hashes only. */
 export const FALCON_IOC_ACTIONS = ["detect", "prevent"] as const;

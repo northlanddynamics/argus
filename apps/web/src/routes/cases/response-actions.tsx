@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
 import { ItemLink } from "@/components/item-link";
 import { Visibility } from "@/components/visibility";
@@ -18,6 +19,7 @@ import {
   falconAllowsPrevent,
   falconIocActionLabel,
   falconIocType,
+  dismissResponseAction,
   type ResponseAction,
   responseActionKindLabel,
   responseActionsKey,
@@ -27,6 +29,7 @@ import {
   takeResponseAction,
 } from "@/lib/response-actions";
 import { exactTime, when } from "@/lib/when";
+import { caseRef } from "@/lib/cases";
 
 type Eligible = { id: string; name: string };
 
@@ -142,15 +145,41 @@ export function SendToFalconDialog({
   );
 }
 
-const stateVariant = { pending: "secondary", active: "default", failed: "destructive" } as const;
+const stateVariant = { pending: "secondary", active: "default", failed: "destructive", removed: "outline" } as const;
 
 /** Where it stands, said as what Argus did: never that something is in force now. */
 function StateLine({ r }: { r: ResponseAction }) {
+  if (r.state === "removed" && r.dismissedBy && r.dismissedAt) {
+    return <span title={exactTime(r.dismissedAt)}>Dismissed by {r.dismissedBy.name} {when(r.dismissedAt)}</span>;
+  }
   if (r.state === "active" && r.sentAt) {
     return <span title={exactTime(r.sentAt)}>Sent {when(r.sentAt)}</span>;
   }
   if (r.state === "pending") return <span>{r.lastError ? "Retrying" : "Waiting to be sent"}</span>;
+  if (r.state === "active") return null;
   return <span title={exactTime(r.stateChangedAt)}>Failed {when(r.stateChangedAt)}</span>;
+}
+
+/** Where an "already present" record came from: the Case it was sent from (unless hidden), or the tool. */
+function OriginLine({ r }: { r: ResponseAction }) {
+  if (r.origin === "already_present" && r.presentFrom) {
+    const from = r.presentFrom.case;
+    return (
+      <span title={exactTime(r.presentFrom.at)}>
+        Already present (sent from{" "}
+        {from ? (
+          <Link to="/cases/$number" params={{ number: String(from.number) }} className="underline" title={from.title}>
+            {caseRef(from.number)}
+          </Link>
+        ) : (
+          "another Case"
+        )}{" "}
+        {when(r.presentFrom.at)})
+      </span>
+    );
+  }
+  if (r.origin === "in_tool") return <span>Already present in Falcon; Argus left it unchanged</span>;
+  return null;
 }
 
 /** Case · the Response Actions taken from it, with their state and, for Failed ones, the error and Retry. */
@@ -159,6 +188,10 @@ export function ResponseActionsCard({ number, readOnly, canMarkInternal }: { num
   const { data } = useQuery(responseActionsQuery(number));
   const retry = useMutation({
     mutationFn: (id: string) => retryResponseAction(number, id),
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: responseActionsKey(number) }),
+  });
+  const dismiss = useMutation({
+    mutationFn: (id: string) => dismissResponseAction(number, id),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: responseActionsKey(number) }),
   });
   const list = data?.responseActions ?? [];
@@ -170,9 +203,9 @@ export function ResponseActionsCard({ number, readOnly, canMarkInternal }: { num
         <CardDescription>What Argus sent to your security tools from this Case. Send an Observable from its row above.</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4">
-        {retry.error && (
+        {(retry.error ?? dismiss.error) && (
           <Alert variant="destructive">
-            <AlertDescription>{retry.error.message}</AlertDescription>
+            <AlertDescription>{(retry.error ?? dismiss.error)!.message}</AlertDescription>
           </Alert>
         )}
         <Table>
@@ -209,6 +242,11 @@ export function ResponseActionsCard({ number, readOnly, canMarkInternal }: { num
                   <span className="mt-1 block text-xs text-muted-foreground">
                     <StateLine r={r} />
                   </span>
+                  {r.origin !== "created" && (
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      <OriginLine r={r} />
+                    </span>
+                  )}
                   {r.lastError && <span className="mt-1 block text-xs break-words text-destructive">{r.lastError}</span>}
                 </TableCell>
                 <TableCell className="text-xs whitespace-normal" title={exactTime(r.requestedAt)}>
@@ -231,6 +269,17 @@ export function ResponseActionsCard({ number, readOnly, canMarkInternal }: { num
                     {r.state === "failed" && (
                       <Button variant="outline" size="sm" disabled={retry.isPending} onClick={() => retry.mutate(r.id)}>
                         Retry
+                      </Button>
+                    )}
+                    {r.state === "active" && r.origin !== "created" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={dismiss.isPending}
+                        onClick={() => dismiss.mutate(r.id)}
+                        title="This Case stops claiming it; nothing is changed in the tool"
+                      >
+                        Dismiss
                       </Button>
                     )}
                   </TableCell>
