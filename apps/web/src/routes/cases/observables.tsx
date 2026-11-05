@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { ItemLink } from "@/components/item-link";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -25,19 +25,26 @@ import {
   observablesQuery,
   shownObservable,
 } from "@/lib/observables";
+import { responseActionsQuery } from "@/lib/response-actions";
 import { useCaseNumber } from "@/routes/cases/case-layout";
+import { falconTakes, ResponseActionsCard, SendToFalconDialog } from "@/routes/cases/response-actions";
 
-/** Case · Observables & Assets, each with the other Cases it also appears in. */
+/**
+ * Case · Observables & Assets, each with the other Cases it also appears in, and the Response
+ * Actions taken from the Case.
+ */
 export function CaseObservablesPage() {
   const number = useCaseNumber();
   const { data: c } = useQuery(caseQuery(number));
   const observables = useQuery(observablesQuery(number));
   const assets = useQuery(assetsQuery(number));
+  const responseActions = useQuery(responseActionsQuery(number));
   if (!c) return null;
   const readOnly = isReadOnly(c);
   const n = String(number);
+  const eligible = responseActions.data?.integrations ?? [];
   return (
-    <>
+    <div className="grid gap-4">
       <div className="grid gap-4 lg:grid-cols-2">
         <LinkedCard<ObservableType>
           title="Observables"
@@ -53,6 +60,11 @@ export function CaseObservablesPage() {
           readOnly={readOnly}
           add={(type, value) => api.cases[":number"].observables.$post({ param: { number: n }, json: { type, value } })}
           unlink={(id) => api.cases[":number"].observables[":id"].$delete({ param: { number: n, id } })}
+          renderAction={(item) =>
+            eligible.length > 0 && falconTakes(item.type, item.value) ? (
+              <SendToFalconDialog number={number} observable={item} integrations={eligible} />
+            ) : null
+          }
         />
         <LinkedCard<AssetType>
           title="Assets"
@@ -70,7 +82,8 @@ export function CaseObservablesPage() {
           unlink={(id) => api.cases[":number"].assets[":id"].$delete({ param: { number: n, id } })}
         />
       </div>
-    </>
+      <ResponseActionsCard number={number} readOnly={readOnly} canMarkInternal={c.can.markInternal} />
+    </div>
   );
 }
 
@@ -99,6 +112,8 @@ function LinkedCard<Type extends string>(props: {
   readOnly: boolean;
   add: (type: Type, value: string) => Promise<Response>;
   unlink: (id: string) => Promise<Response>;
+  /** Something more to do with an item, beside Unlink. */
+  renderAction?: (item: Item<Type>) => ReactNode;
 }) {
   const { title, noun, types, typeLabel, shown, items, queryKey, readOnly } = props;
   const queryClient = useQueryClient();
@@ -218,7 +233,8 @@ function LinkedCard<Type extends string>(props: {
                   )}
                 </TableCell>
                 {!readOnly && (
-                  <TableCell className="w-0 text-right">
+                  <TableCell className="w-0 text-right whitespace-nowrap">
+                    {props.renderAction?.(item)}
                     <Button
                       variant="ghost"
                       size="sm"

@@ -1,4 +1,6 @@
 import type { FalconCloud } from "../alerts/vocabulary";
+import type { Severity } from "../cases/vocabulary";
+import type { FalconIocAction, FalconIocType } from "../response-actions/vocabulary";
 
 /**
  * The Falcon API as Argus uses it (ADR 0002): an adapter, so the worker runs against the real API
@@ -6,7 +8,9 @@ import type { FalconCloud } from "../alerts/vocabulary";
  *
  * Event Streams in; Alert updates and user lookup out, for the write-back outbox
  * (`write-back.ts`), which writes nothing for an Integration whose `writeBack` is off. An Alert's
- * comments are read on demand (`comment-sync.ts`), whatever the write-back setting.
+ * comments are read on demand (`comment-sync.ts`), whatever the write-back setting. Custom IOCs are
+ * looked up, created and deleted for Response Actions (`response-actions/sender.ts`, ADR 0007),
+ * which an Integration takes only when its Response Actions setting is on.
  */
 
 export type FalconCredentials = { clientId: string; clientSecret: string };
@@ -75,7 +79,31 @@ export interface FalconClient {
   findUser(email: string): Promise<string | null>;
   /** The comments on the Alert with this composite ID, oldest first; none if Falcon has no such Alert. */
   alertComments(compositeId: string): Promise<FalconComment[]>;
+  /** The custom IOC of this type and value, or null when Falcon holds none. */
+  findIoc(type: FalconIocType, value: string): Promise<FalconIoc | null>;
+  /** Creates the custom IOC; resolves to Falcon's id for it. Rejects when Falcon refuses or fails. */
+  createIoc(ioc: NewIoc): Promise<string>;
+  /** Deletes the custom IOC with this id. Rejects when Falcon refuses or fails. */
+  deleteIoc(id: string): Promise<void>;
 }
+
+/** The platforms a custom IOC applies to: all of them. */
+export const IOC_PLATFORMS = ["windows", "mac", "linux"] as const;
+
+/** A custom IOC as Argus creates it in Falcon. */
+export type NewIoc = {
+  type: FalconIocType;
+  value: string;
+  action: FalconIocAction;
+  severity: Severity;
+  platforms: readonly string[];
+  appliedGlobally: true;
+  source: string;
+  description: string;
+};
+
+/** A custom IOC Falcon holds. */
+export type FalconIoc = NewIoc & { id: string };
 
 /** Makes the client for one Integration. */
 export type FalconConnector = (connection: FalconConnection) => FalconClient;

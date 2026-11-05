@@ -10,6 +10,7 @@ import type { Participant } from "../members/membership";
 import type { CaseStore } from "../cases/cases";
 import type { EvidenceStore } from "../evidence/evidence";
 import type { AssetStore, ObservableStore } from "../observables/observables";
+import type { ResponseActionStore } from "../response-actions/response-actions";
 import type { TaskStore } from "../tasks/tasks";
 import type { TimelineStore } from "../timeline/timeline";
 import { toMarkdown } from "./markdown";
@@ -18,7 +19,8 @@ import { type ReportFormat, type ReportVariant, reportFormatLabel, reportVariant
 
 /**
  * Case Reports: a point-in-time document of a Case (its Summary, Timeline, Tasks, Observables,
- * Assets, and Evidence with SHA-256 fingerprints), in PDF or Markdown, complete or Guest-safe.
+ * Assets, Response Actions, and Evidence with SHA-256 fingerprints), in PDF or Markdown, complete or
+ * Guest-safe.
  *
  * The report holds what its reader may see, read through the item modules. The Guest-safe variant is
  * read the way the Case's Guests read it (`readsAs: "guests"` in the access policy), so it leaves
@@ -36,6 +38,7 @@ type Readers = {
   observables: ObservableStore;
   assets: AssetStore;
   evidence: EvidenceStore;
+  responseActions: ResponseActionStore;
 };
 
 export type CaseReport = {
@@ -49,6 +52,7 @@ export type CaseReport = {
   observables: Awaited<ReturnType<Readers["observables"]["list"]>>;
   assets: Awaited<ReturnType<Readers["assets"]["list"]>>;
   evidence: Awaited<ReturnType<Readers["evidence"]["list"]>>;
+  responseActions: Awaited<ReturnType<Readers["responseActions"]["list"]>>["responseActions"];
 };
 
 export type ExportedReport = { fileName: string; contentType: string; body: Uint8Array };
@@ -61,13 +65,14 @@ export function caseReportStore({ db, clock }: { db: Db; clock: Clock }, readers
   async function gather(me: Participant, number: number, variant: ReportVariant): Promise<CaseReport> {
     if (variant === "complete" && !casePolicy.canExportCompleteReport(me)) throw new NotPermitted();
     const reader: Participant = variant === "guest_safe" && !isGuest(me) ? { ...me, readsAs: "guests" } : me;
-    const [found, timeline, tasks, observables, assets, evidence] = await Promise.all([
+    const [found, timeline, tasks, observables, assets, evidence, responseActions] = await Promise.all([
       readers.cases.view(reader, number),
       readers.timeline.list(reader, number),
       readers.tasks.list(reader, number),
       readers.observables.list(reader, number),
       readers.assets.list(reader, number),
       readers.evidence.list(reader, number),
+      readers.responseActions.list(reader, number),
     ]);
     return {
       variant,
@@ -80,6 +85,7 @@ export function caseReportStore({ db, clock }: { db: Db; clock: Clock }, readers
       observables,
       assets,
       evidence,
+      responseActions: responseActions.responseActions,
     };
   }
 

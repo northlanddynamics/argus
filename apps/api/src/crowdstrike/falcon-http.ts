@@ -1,10 +1,13 @@
 import type { FalconCloud } from "../alerts/vocabulary";
 import { createHash } from "node:crypto";
-import type { AlertPatch, FalconClient, FalconComment, FalconConnection, StreamEvent, StreamSession } from "./falcon";
+import type { Severity } from "../cases/vocabulary";
+import type { FalconIocAction, FalconIocType } from "../response-actions/vocabulary";
+import type { AlertPatch, FalconClient, FalconComment, FalconConnection, FalconIoc, NewIoc, StreamEvent, StreamSession } from "./falcon";
 
 /**
  * The Falcon API over HTTP: OAuth2 client credentials, then the Event Streams discovery, refresh and
- * data feed endpoints, the Alerts update and read endpoints and the user lookup. Unverified against a live tenant (see spec #1, "Further Notes").
+ * data feed endpoints, the Alerts update and read endpoints, the user lookup and the IOC Management
+ * endpoints. Unverified against a live tenant (see spec #1, "Further Notes").
  */
 
 const BASE_URLS: Record<FalconCloud, string> = {
@@ -65,6 +68,37 @@ export function readComments(alert: Record<string, unknown> | undefined): Falcon
     comments.push({ id, author, body, createdAt });
   }
   return comments.toSorted((a, b) => (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0));
+}
+
+/** A quoted FQL string: a quote or backslash in it is escaped. */
+const fqlString = (s: string) => `'${s.replace(/[\\']/g, (c) => `\\${c}`)}'`;
+
+/** `ioc` as Falcon's IOC Management API takes it. */
+export const iocBody = (ioc: NewIoc) => ({
+  type: ioc.type,
+  value: ioc.value,
+  action: ioc.action,
+  severity: ioc.severity,
+  platforms: [...ioc.platforms],
+  applied_globally: ioc.appliedGlobally,
+  source: ioc.source,
+  description: ioc.description,
+});
+
+/** An IOC as Falcon returns it. */
+export function readIoc(r: Record<string, unknown>): FalconIoc | null {
+  if (typeof r.id !== "string" || typeof r.type !== "string" || typeof r.value !== "string") return null;
+  return {
+    id: r.id,
+    type: r.type as FalconIocType,
+    value: r.value,
+    action: (typeof r.action === "string" ? r.action : "detect") as FalconIocAction,
+    severity: (typeof r.severity === "string" ? r.severity.toLowerCase() : "medium") as Severity,
+    platforms: Array.isArray(r.platforms) ? r.platforms.filter((p): p is string => typeof p === "string") : [],
+    appliedGlobally: true,
+    source: typeof r.source === "string" ? r.source : "",
+    description: typeof r.description === "string" ? r.description : "",
+  };
 }
 
 /** A Falcon API call failed; the message says which and how. */
@@ -141,8 +175,7 @@ export function falconHttpClient({ cloud, credentials, appId }: FalconConnection
     },
 
     async findUser(email) {
-      // FQL string: a quote or backslash in the email is escaped.
-      const filter = `uid:'${email.replace(/[\\']/g, (c) => `\\${c}`)}'`;
+      const filter = `uid:${fqlString(email)}`;
       const res = await fetchImpl(`${base}/user-management/queries/users/v1?${new URLSearchParams({ filter })}`, {
         headers: { authorization: `Bearer ${await accessToken()}`, accept: "application/json" },
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -162,6 +195,44 @@ export function falconHttpClient({ cloud, credentials, appId }: FalconConnection
       if (!res.ok) throw await failure("Reading an Alert's comments from Falcon", res);
       const body = (await res.json()) as { resources?: Record<string, unknown>[] };
       return readComments(body.resources?.[0]);
+    },
+
+    async findIoc(type, value) {
+      const filter = `type:${fqlString(type)}+value:${fqlString(value)}`;
+      const res = await fetchImpl(`${base}/iocs/combined/indicator/v1?${new URLSearchParams({ filter, limit: "1" })}`, {
+        headers: { authorization: `Bearer ${await accessToken()}`, accept: "application/json" },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (!res.ok) throw await failure("Looking up a custom IOC in Falcon", res);
+      const body = (await res.json()) as { resources?: Record<string, unknown>[] };
+      const found = body.resources?.[0];
+      return found ? readIoc(found) : null;
+    },
+
+    async createIoc(ioc) {
+      const res = await fetchImpl(`${base}/iocs/entities/indicators/v1`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${await accessToken()}`, "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ indicators: [iocBody(ioc)] }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (!res.ok) throw await failure("Creating a custom IOC in Falcon", res);
+      const body = (await res.json()) as { resources?: Record<string, unknown>[]; errors?: { message?: string }[] | null };
+      const id = body.resources?.[0]?.id;
+      if (typeof id !== "string") {
+        const detail = body.errors?.map((e) => e.message).filter(Boolean).join("; ");
+        throw new FalconError(`Creating a custom IOC in Falcon failed${detail ? `: ${detail}` : ": Falcon returned no IOC"}`);
+      }
+      return id;
+    },
+
+    async deleteIoc(id) {
+      const res = await fetchImpl(`${base}/iocs/entities/indicators/v1?${new URLSearchParams({ ids: id })}`, {
+        method: "DELETE",
+        headers: { authorization: `Bearer ${await accessToken()}`, accept: "application/json" },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (!res.ok) throw await failure("Deleting a custom IOC in Falcon", res);
     },
 
     async *consume(session, offset, signal) {

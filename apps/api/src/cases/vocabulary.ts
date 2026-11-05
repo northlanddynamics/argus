@@ -106,6 +106,10 @@ export const CASE_AUDIT_ACTIONS = [
   "item.marked_internal",
   "item.shown_to_guests",
   "case.report_exported",
+  "response_action.requested",
+  "response_action.sent",
+  "response_action.failed",
+  "response_action.retried",
 ] as const;
 export type CaseAuditAction = (typeof CASE_AUDIT_ACTIONS)[number];
 

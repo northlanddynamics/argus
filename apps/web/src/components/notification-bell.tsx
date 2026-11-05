@@ -32,6 +32,7 @@ export function NotificationBell() {
       const params = { number: String(n.case.number) };
       if (n.section === "tasks") await navigate({ to: "/cases/$number/tasks", params });
       else if (n.section === "timeline") await navigate({ to: "/cases/$number/timeline", params });
+      else if (n.section === "observables") await navigate({ to: "/cases/$number/observables", params });
       else await navigate({ to: "/cases/$number", params });
     },
     [queryClient, navigate],

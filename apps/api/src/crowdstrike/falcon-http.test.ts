@@ -166,4 +166,61 @@ describe("The Falcon API client", () => {
       "Reading an Alert's comments from Falcon failed: 403 access denied",
     );
   });
+
+  test("looks up, creates and deletes custom IOCs", async () => {
+    const ioc = {
+      type: "sha256" as const,
+      value: "a".repeat(64),
+      action: "prevent" as const,
+      severity: "high" as const,
+      platforms: ["windows", "mac", "linux"],
+      appliedGlobally: true as const,
+      source: "Argus",
+      description: "C-7: Phishing at Acme\nhttp://argus.test/cases/7",
+    };
+    const { requests, fetchImpl } = stubFalcon({
+      "POST https://api.eu-1.crowdstrike.com/oauth2/token": token,
+      "GET https://api.eu-1.crowdstrike.com/iocs/combined/indicator/v1": (req) =>
+        Response.json({
+          resources: new URL(req.url).searchParams.get("filter") === `type:'sha256'+value:'${"a".repeat(64)}'`
+            ? [{ id: "ioc-1", ...ioc, applied_globally: true, severity: "HIGH" }]
+            : [],
+        }),
+      "POST https://api.eu-1.crowdstrike.com/iocs/entities/indicators/v1": () => Response.json({ resources: [{ id: "ioc-2" }], errors: null }),
+      "DELETE https://api.eu-1.crowdstrike.com/iocs/entities/indicators/v1": () => Response.json({ resources: ["ioc-2"] }),
+    });
+    const client = falconHttpClient(connection, fetchImpl);
+    expect(await client.findIoc("sha256", "a".repeat(64))).toEqual({ id: "ioc-1", ...ioc });
+    expect(await client.findIoc("domain", "o'brien.example")).toBeNull();
+    expect(new URL(requests.at(-1)!.url).searchParams.get("filter")).toBe("type:'domain'+value:'o\\'brien.example'");
+
+    expect(await client.createIoc(ioc)).toBe("ioc-2");
+    expect(await requests.at(-1)!.json()).toEqual({
+      indicators: [
+        {
+          type: "sha256",
+          value: "a".repeat(64),
+          action: "prevent",
+          severity: "high",
+          platforms: ["windows", "mac", "linux"],
+          applied_globally: true,
+          source: "Argus",
+          description: "C-7: Phishing at Acme\nhttp://argus.test/cases/7",
+        },
+      ],
+    });
+
+    await client.deleteIoc("ioc-2");
+    expect(requests.at(-1)!.method).toBe("DELETE");
+    expect(new URL(requests.at(-1)!.url).searchParams.get("ids")).toBe("ioc-2");
+
+    const refused = stubFalcon({
+      "POST https://api.eu-1.crowdstrike.com/oauth2/token": token,
+      "POST https://api.eu-1.crowdstrike.com/iocs/entities/indicators/v1": () =>
+        Response.json({ resources: [], errors: [{ message: "Prevent is not supported for domain" }] }),
+    });
+    await expect(falconHttpClient(connection, refused.fetchImpl).createIoc(ioc)).rejects.toThrow(
+      "Creating a custom IOC in Falcon failed: Prevent is not supported for domain",
+    );
+  });
 });

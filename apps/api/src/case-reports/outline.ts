@@ -1,6 +1,7 @@
 import type { CaseSummary } from "../cases/case-summary";
 import { caseRef, caseTypeLabel, resolutionLabel, severityLabel, statusLabel } from "../cases/vocabulary";
 import { assetTypeLabel, defang, observableTypeLabel } from "../observables/vocabulary";
+import { falconIocActionLabel, responseActionKindLabel, responseActionStateLabel } from "../response-actions/vocabulary";
 import { describeOccurredAt, utc } from "../timeline/occurred-at";
 import type { CaseReport } from "./case-reports";
 import { reportVariantLabel } from "./vocabulary";
@@ -169,6 +170,22 @@ export function outline(report: CaseReport): Block[] {
     }),
   );
 
+  // Says when Argus sent it, never that it is in force now.
+  const responseActions = report.responseActions.map(
+    (r): Item => ({
+      title: [label(`${responseActionKindLabel[r.kind]}: `), mono(`${observableTypeLabel[r.observable.type]} ${defang(r.observable.type, r.observable.value)}`)],
+      details: withInternal(r, [
+        [label("State: "), text(responseActionStateLabel[r.state] + (r.sentAt ? `, sent ${utc(r.sentAt)}` : ""))],
+        ...(r.falcon
+          ? [[label("Action: "), text(`${falconIocActionLabel[r.falcon.action]}, severity ${severityLabel[r.falcon.severity]}`)]]
+          : []),
+        ...(r.integration ? [[label("Integration: "), text(r.integration.name)]] : []),
+        [label("Taken by: "), text(byAt(r.requestedBy, r.requestedAt))],
+        ...(r.state === "failed" && r.lastError ? [[label("Error: "), text(r.lastError)]] : []),
+      ]),
+    }),
+  );
+
   return [
     {
       kind: "title",
@@ -186,6 +203,7 @@ export function outline(report: CaseReport): Block[] {
     ...section("Tasks", tasks, "No Tasks."),
     ...section("Observables", observables, "No Observables."),
     ...section("Assets", assets, "No Assets."),
+    ...section("Response Actions", responseActions, "No Response Actions."),
     ...section("Evidence", evidence, "No Evidence."),
   ];
 }

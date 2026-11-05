@@ -4,6 +4,7 @@ import { chromium, type Browser, type Page } from "playwright";
 import { defaultWebDist } from "../src/config";
 import { createCommentSyncer } from "../src/crowdstrike/comment-sync";
 import { createStreamWorker } from "../src/crowdstrike/stream-worker";
+import { createResponseActionSender } from "../src/response-actions/sender";
 import { createServerApp } from "../src/server-app";
 import { fakeFalcon } from "../src/test/fake-falcon";
 import { buildTestApp } from "../src/test/harness";
@@ -268,3 +269,44 @@ test("opening an Alert refreshes its Falcon comments without waiting; once attac
     await stop();
   }
 }, 60_000);
+
+test("an Analyst sends an Observable on a Case to Falcon as a custom IOC; it becomes Active on the Case once sent", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  const falcon = fakeFalcon();
+  const sender = createResponseActionSender(t.deps, { connect: falcon.connect });
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    await owner.api.organization.invitations.$post({ json: { email: "ana@acme.example", role: "analyst" } });
+    const ana = await t.acceptInvite("ana@acme.example", PASSWORD, "Ana Analyst");
+    await owner.api.integrations.$post({
+      json: { name: "CrowdStrike — Prod", cloud: "us-1", clientId: "falcon-client-0001", clientSecret: "falcon-secret", responseActions: true },
+    });
+    await ana.api.cases.$post({ json: { title: "Phishing at Acme", caseType: "phishing", severity: "high" } });
+    await ana.api.cases[":number"].observables.$post({ param: { number: "1" }, json: { type: "domain", value: "invoice-portal.biz" } });
+    await ana.api.cases[":number"].observables.$post({ param: { number: "1" }, json: { type: "url", value: "https://invoice-portal.biz/login" } });
+
+    const page = await browser.newPage();
+    await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
+    await page.goto(`${baseUrl}/cases/1/observables`);
+    await page.getByText("No Response Actions yet.").waitFor();
+    // Falcon takes no URL as a custom IOC, so only the domain offers it.
+    expect(await page.getByTestId("observable-https://invoice-portal.biz/login").getByRole("button", { name: /Send .* to Falcon/ }).count()).toBe(0);
+
+    await page.getByRole("button", { name: "Send Domain invoice-portal.biz to Falcon" }).click();
+    const dialog = page.getByRole("dialog", { name: "Send to Falcon as a custom IOC" });
+    expect(await dialog.getByLabel("Prevent").isDisabled()).toBe(true);
+    await dialog.getByRole("button", { name: "Send to Falcon" }).click();
+    const row = page.getByTestId("response-action-invoice-portal.biz");
+    await row.getByText("Pending").waitFor();
+
+    // The worker sends it; the Case shows it live.
+    await sender.tick();
+    await row.getByText("Active").waitFor();
+    await row.getByText(/^Sent /).waitFor();
+    expect(falcon.tenant("falcon-client-0001").iocsCreated).toMatchObject([{ type: "domain", value: "invoice-portal.biz", action: "detect" }]);
+  } finally {
+    await stop();
+  }
+}, 60_000);
+

@@ -24,6 +24,7 @@ import { PROVIDERS } from "../integrations/vocabulary";
 import { NOTIFICATION_KINDS } from "../notifications/vocabulary";
 import { TEAMS_POST_KINDS } from "../teams/vocabulary";
 import { type Citation, PROMOTION_SOURCES } from "../timeline/vocabulary";
+import { FALCON_IOC_ACTIONS, RESPONSE_ACTION_KINDS, RESPONSE_ACTION_STATES } from "../response-actions/vocabulary";
 import {
   ALERT_KINDS,
   ALERT_STATUSES,
@@ -398,9 +399,12 @@ export const timelineEntries = pgTable(
     retractionReason: text("retraction_reason"),
     /** Hidden from Guests on the Case (`access/policy.ts`). */
     internal: boolean("internal").notNull().default(false),
+    /** The Response Action whose state change Argus recorded with this entry; it is Internal exactly when that is. */
+    responseActionId: text("response_action_id").references((): AnyPgColumn => responseActions.id, { onDelete: "restrict" }),
   },
   (t) => [
     index("timeline_entries_case_idx").on(t.caseId, t.occurredStart),
+    index("timeline_entries_response_action_idx").on(t.responseActionId).where(sql`${t.responseActionId} IS NOT NULL`),
     /** A source is Promoted into at most one entry that hasn't been retracted. */
     uniqueIndex("timeline_entries_source_idx")
       .on(t.caseId, t.sourceKind, t.sourceId)
@@ -1029,4 +1033,85 @@ export const teamsPosts = pgTable(
     sentAt: timestamp("sent_at", { withTimezone: true }),
   },
   (t) => [index("teams_posts_due_idx").on(t.nextAttemptAt).where(sql`${t.pending}`)],
+);
+
+/**
+ * Response Actions (ADR 0007): what Argus does in an external tool against one Observable linked to a
+ * Case, through one Integration. Never deleted (ADR 0003). `target_type` and `target_value` are what
+ * the tool is sent, `external_id` the tool's id for what Argus created there. `falcon_action` and
+ * `severity` are a Falcon IOC's parameters, `severity` mapped from the Case's when it was taken.
+ * `state_changed_at` is when it reached its state; `sent_at` when the tool accepted it.
+ * `last_error` is why the latest attempt failed, while it is retrying or Failed.
+ */
+export const responseActions = pgTable(
+  "response_actions",
+  {
+    id: text("id").primaryKey(),
+    seq: bigserial("seq", { mode: "number" }).notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    caseId: text("case_id")
+      .notNull()
+      .references(() => cases.id, { onDelete: "restrict" }),
+    observableId: text("observable_id")
+      .notNull()
+      .references(() => observables.id, { onDelete: "restrict" }),
+    integrationId: text("integration_id")
+      .notNull()
+      .references(() => integrations.id, { onDelete: "restrict" }),
+    kind: text("kind", { enum: RESPONSE_ACTION_KINDS }).notNull(),
+    targetType: text("target_type").notNull(),
+    targetValue: text("target_value").notNull(),
+    falconAction: text("falcon_action", { enum: FALCON_IOC_ACTIONS }),
+    severity: text("severity", { enum: SEVERITIES }),
+    state: text("state", { enum: RESPONSE_ACTION_STATES }).notNull(),
+    externalId: text("external_id"),
+    lastError: text("last_error"),
+    /** Hidden from Guests on the Case, with the Timeline Entries recording it. */
+    internal: boolean("internal").notNull().default(false),
+    createdById: text("created_by_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    stateChangedAt: timestamp("state_changed_at", { withTimezone: true }).notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("response_actions_case_idx").on(t.caseId, t.seq),
+    index("response_actions_observable_idx").on(t.observableId),
+    check("response_actions_falcon", sql`(${t.kind} = 'falcon_ioc') = (${t.falconAction} IS NOT NULL AND ${t.severity} IS NOT NULL)`),
+  ],
+);
+
+/**
+ * The Response Action outbox: one row per attempt to carry out a Response Action in its tool, queued
+ * in the transaction that asked for it and sent by the worker (`response-actions/sender.ts`), as the
+ * Falcon write-back outbox is. A failed send stays `pending` with `next_attempt_at` pushed back;
+ * `attempts` counts the failures, and when they run out the row is `failed` and so is its Response
+ * Action. A Retry queues a new row.
+ */
+export const responseActionOutbox = pgTable(
+  "response_action_outbox",
+  {
+    id: text("id").primaryKey(),
+    seq: bigserial("seq", { mode: "number" }).notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    responseActionId: text("response_action_id")
+      .notNull()
+      .references(() => responseActions.id, { onDelete: "restrict" }),
+    operation: text("operation", { enum: ["send"] }).notNull(),
+    state: text("state", { enum: ["pending", "done", "failed"] }).notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull(),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("response_action_outbox_due_idx").on(t.nextAttemptAt).where(sql`${t.state} = 'pending'`),
+    index("response_action_outbox_action_idx").on(t.responseActionId, t.seq),
+  ],
 );

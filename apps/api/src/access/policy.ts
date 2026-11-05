@@ -13,8 +13,9 @@ import { caseGuests, caseRoleAssignments, cases } from "../db/schema";
  * - Guests see only the Cases they hold a Guest grant for, until it ends or expires; Restricted makes
  *   no difference to them. They never see a Case's Audit Log or which other Cases an Observable or
  *   Asset is on.
- * - Guests never see Internal items (Tasks, Discussion messages, Timeline Entries, Evidence and
- *   attached Alerts marked Internal), nor hear about changes to them. On what they can see they
+ * - Guests never see Internal items (Tasks, Discussion messages, Timeline Entries, Evidence,
+ *   attached Alerts and Response Actions marked Internal), nor hear about changes to them. Nor do
+ *   they see which Integration a Response Action went through, or why one failed. On what they can see they
  *   participate: they post in the Discussion, own and complete Tasks, and add Evidence.
  * - Members see the Alerts that are on no Case or on a Case they can see. An Alert on a Case they
  *   can't see, its Falcon comments included, is hidden from them like the Case itself.
@@ -134,7 +135,7 @@ export const casePolicy = {
   canSeeInternal: (actor: Actor) => !readsAsGuest(actor),
   /** Members only; Guests export only the Guest-safe Case Report. */
   canExportCompleteReport: (actor: Actor) => !isGuest(actor),
-  /** Members only: change the Case and everything on it beyond what Guests take part in. */
+  /** Members only: change the Case and everything on it beyond what Guests take part in, Response Actions included. */
   canWork: (actor: Actor) => !isGuest(actor),
   /** Everyone who can see the Case: post in the Discussion, complete Tasks, add Evidence. */
   canParticipate: (_actor: Actor) => true,

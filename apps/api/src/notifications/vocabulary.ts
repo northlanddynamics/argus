@@ -12,5 +12,7 @@ export const NOTIFICATION_KINDS = [
   "severity_critical",
   /** A Task you own is overdue. */
   "task_overdue",
+  /** A Response Action you took failed after its retries. */
+  "response_action_failed",
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];

@@ -75,6 +75,10 @@ export const actionLabel: Record<CaseAuditAction, string> = {
   "item.marked_internal": "Marked Internal",
   "item.shown_to_guests": "Showed to Guests",
   "case.report_exported": "Exported",
+  "response_action.requested": "Took Response Action",
+  "response_action.sent": "Sent Response Action",
+  "response_action.failed": "Response Action failed",
+  "response_action.retried": "Retried Response Action",
 };
 
 /** A recorded value as people read it: "In Progress" rather than "in_progress". */

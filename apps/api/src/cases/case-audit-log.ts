@@ -5,10 +5,14 @@ import { secureId } from "../ids";
 import type { CaseAuditAction } from "./vocabulary";
 
 /**
- * Who acted on a Case: a Member or Guest, or CrowdStrike, for changes made in Falcon, named after
- * the Falcon user who made them ("CrowdStrike (Falcon: jsmith)"). The system arrives with later work.
+ * Who acted on a Case: a Member or Guest; CrowdStrike, for changes made in Falcon, named after
+ * the Falcon user who made them ("CrowdStrike (Falcon: jsmith)"); or Argus itself, for what the
+ * worker does on someone's behalf, such as sending a Response Action.
  */
-export type CaseActor = { type: "member" | "guest"; id: string; name: string } | { type: "crowdstrike"; name: string };
+export type CaseActor =
+  | { type: "member" | "guest"; id: string; name: string }
+  | { type: "crowdstrike"; name: string }
+  | { type: "system"; name: string };
 
 export type CaseAuditEntry = {
   organizationId: string;
@@ -30,7 +34,7 @@ export async function recordCaseAudit(tx: Tx, entry: CaseAuditEntry) {
     caseId: entry.caseId,
     occurredAt: entry.occurredAt,
     actorType: entry.actor.type,
-    actorId: entry.actor.type === "crowdstrike" ? null : entry.actor.id,
+    actorId: entry.actor.type === "member" || entry.actor.type === "guest" ? entry.actor.id : null,
     actorName: entry.actor.name,
     action: entry.action,
     target: entry.target ?? null,
