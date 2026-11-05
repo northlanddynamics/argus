@@ -1,6 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams, useRouteContext } from "@tanstack/react-router";
-import { CheckIcon, CopyIcon, FingerprintIcon, LockIcon, MonitorIcon, UserIcon } from "lucide-react";
+import { BellOffIcon, CheckIcon, CopyIcon, FingerprintIcon, LockIcon, MonitorIcon, UserIcon } from "lucide-react";
 import { useState } from "react";
 import { SeverityBadge, StatusBadge } from "@/components/case-badges";
 import { observableIcon } from "@/components/search/search-hit";
@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useMe } from "@/lib/api";
 import { alertStatusLabel } from "@/lib/alerts";
 import { caseRef } from "@/lib/cases";
+import { canManage } from "@/lib/roles";
 import {
   type AssetType,
   assetTypeLabel,
@@ -19,8 +20,10 @@ import {
   type ItemKind,
   type ItemPage,
   itemPageQuery,
+  itemPagesKey,
   type ObservableType,
   observableTypeLabel,
+  setIgnored,
 } from "@/lib/observables";
 import { exactTime, when } from "@/lib/when";
 
@@ -91,7 +94,20 @@ function ItemPageView({ kind, id }: { kind: ItemKind; id: string }) {
             {shown(kind, item)}
           </h1>
           <CopyButton text={shown(kind, item)} />
+          {canManage(me.organization?.role) && <IgnoreButton kind={kind} item={item} />}
         </div>
+        {item.ignored && (
+          <p className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+            <Badge variant="outline">
+              <BellOffIcon aria-hidden />
+              Ignored
+            </Badge>
+            <span>
+              Added to the Ignored list by {item.ignored.by.name}{" "}
+              <span title={exactTime(item.ignored.at)}>{when(item.ignored.at)}</span>. It never suggests which Case an Alert belongs with.
+            </span>
+          </p>
+        )}
         <dl className="mt-1 flex flex-wrap gap-x-6 gap-y-1 text-sm">
           <div className="flex gap-1.5">
             <dt className="text-muted-foreground">First seen</dt>
@@ -121,6 +137,23 @@ function ItemPageView({ kind, id }: { kind: ItemKind; id: string }) {
           ? "Only the Cases you've been given access to are shown."
           : "Only Cases and Alerts you can see are shown or counted. First and last seen come from when it was linked to those Cases and when those Alerts were raised."}
       </p>
+    </div>
+  );
+}
+
+/** Admins put it on the Organization's Ignored list, or take it off. */
+function IgnoreButton({ kind, item }: { kind: ItemKind; item: ItemPage }) {
+  const queryClient = useQueryClient();
+  const toggle = useMutation({
+    mutationFn: () => setIgnored(kind, item.id, !item.ignored),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: itemPagesKey }),
+  });
+  return (
+    <div className="ml-auto grid shrink-0 justify-items-end gap-1">
+      <Button variant="outline" size="sm" disabled={toggle.isPending} onClick={() => toggle.mutate()}>
+        {item.ignored ? "Stop ignoring" : "Ignore"}
+      </Button>
+      {toggle.isError && <p className="text-xs text-destructive">{toggle.error.message}</p>}
     </div>
   );
 }

@@ -17,6 +17,9 @@ export function SettingsLayout() {
         <Link to="/settings/integrations" className={sideLink}>
           Integrations
         </Link>
+        <Link to="/settings/ignored" className={sideLink}>
+          Ignored Observables
+        </Link>
         <Link to="/settings/audit-log" className={sideLink}>
           Organization Audit Log
         </Link>

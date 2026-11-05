@@ -209,6 +209,12 @@ test("an Alert shows the Observables and Assets it names; attaching it adds them
     await page.getByRole("heading", { name: "185.220.101.4" }).waitFor();
     await page.getByRole("table", { name: "Linked Cases" }).getByRole("link", { name: new RegExp(`C-${number} `) }).waitFor();
     await page.getByRole("table", { name: "Alerts naming it" }).getByRole("link", { name: "Encoded PowerShell from Office process" }).waitFor();
+
+    // Analysts can't ignore it; once an Admin does, the page says so.
+    expect(await page.getByRole("button", { name: "Ignore" }).count()).toBe(0);
+    const id = new URL(page.url()).pathname.split("/").pop()!;
+    expect((await owner.api.observables[":id"].ignored.$put({ param: { id } })).status).toBe(200);
+    await page.getByText("Added to the Ignored list by Olive Owner").waitFor();
   } finally {
     await stop();
   }

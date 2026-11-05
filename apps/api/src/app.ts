@@ -12,7 +12,7 @@ import { liveRoutes } from "./routes/live";
 import { meRoutes } from "./routes/me";
 import { metricsRoutes } from "./routes/metrics";
 import { notificationRoutes } from "./routes/notifications";
-import { assetRoutes, observableRoutes } from "./routes/observables";
+import { assetRoutes, ignoredObservableRoutes, observableRoutes } from "./routes/observables";
 import { operatorRoutes } from "./routes/operator";
 import { organizationRoutes } from "./routes/organization";
 import { searchRoutes } from "./routes/search";
@@ -53,6 +53,7 @@ export function createApi(deps: Deps, live: Live = createLive(deps)) {
     .route("/alerts", alertRoutes(deps, modules))
     .route("/observables", observableRoutes(deps, modules))
     .route("/assets", assetRoutes(deps, modules))
+    .route("/ignored-observables", ignoredObservableRoutes(deps, modules))
     .route("/integrations", integrationRoutes(deps, modules))
     .route("/notifications", notificationRoutes(deps, modules))
     .route("/teams-channel", teamsChannelRoutes(deps, modules))

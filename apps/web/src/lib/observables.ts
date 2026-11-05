@@ -1,6 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import { defang, type ObservableType } from "api/observables/vocabulary";
-import { api } from "@/lib/api";
+import { api, errorMessage } from "@/lib/api";
 import { shortHash } from "@/lib/evidence";
 
 export {
@@ -64,3 +64,28 @@ export const itemPageQuery = (kind: ItemKind, id: string) =>
   });
 
 export type ItemPage = NonNullable<Awaited<ReturnType<ReturnType<typeof itemPageQuery>["queryFn"] & {}>>>;
+
+/** Under the item pages' key, so the same signals refresh it. */
+export const ignoredKey = [...itemPagesKey, "ignored"] as const;
+
+/** The Organization's Ignored list: Observables and Assets that never drive a Correlation. */
+export const ignoredQuery = queryOptions({
+  queryKey: ignoredKey,
+  queryFn: async () => {
+    const res = await api["ignored-observables"].$get();
+    if (!res.ok) throw new Error("Could not load the Ignored list");
+    const body = await res.json();
+    if (!("ignored" in body)) throw new Error("Unexpected response");
+    return body.ignored;
+  },
+});
+
+export type IgnoredEntry = Awaited<ReturnType<typeof ignoredQuery.queryFn & {}>>[number];
+
+/** Puts an Observable or Asset on the Ignored list, or takes it off. */
+export async function setIgnored(kind: ItemKind, id: string, ignored: boolean) {
+  const param = { param: { id } };
+  const route = kind === "observable" ? api.observables[":id"].ignored : api.assets[":id"].ignored;
+  const res = ignored ? await route.$put(param) : await route.$delete(param);
+  if (!res.ok) throw new Error(await errorMessage(res, ignored ? "Could not ignore it" : "Could not stop ignoring it"));
+}

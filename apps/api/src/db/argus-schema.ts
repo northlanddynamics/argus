@@ -566,6 +566,45 @@ export const { items: assets, links: caseAssets, alertLinks: alertAssets } = hel
 );
 
 /**
+ * The Organization's Ignored Observables: Observables or Assets an Admin has marked as too common to
+ * mean anything. Each entry names exactly one of the two. An item has at most one active entry;
+ * removing it from the list ends the entry and keeps the row (ADR 0003), and adding it again adds a
+ * new one. Ignoring changes nothing else about the item: it stays held, linked and searchable.
+ */
+export const ignoredObservables = pgTable(
+  "ignored_observables",
+  {
+    id: text("id").primaryKey(),
+    /** Insertion order, to sort entries added at the same instant. */
+    seq: bigserial("seq", { mode: "number" }).notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    observableId: text("observable_id").references(() => observables.id, { onDelete: "restrict" }),
+    assetId: text("asset_id").references(() => assets.id, { onDelete: "restrict" }),
+    ignoredById: text("ignored_by_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    ignoredAt: timestamp("ignored_at", { withTimezone: true }).notNull(),
+    endedById: text("ended_by_id").references(() => user.id, { onDelete: "restrict" }),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("ignored_observables_observable_active_idx")
+      .on(t.observableId)
+      .where(sql`${t.endedAt} IS NULL AND ${t.observableId} IS NOT NULL`),
+    uniqueIndex("ignored_observables_asset_active_idx")
+      .on(t.assetId)
+      .where(sql`${t.endedAt} IS NULL AND ${t.assetId} IS NOT NULL`),
+    index("ignored_observables_org_idx")
+      .on(t.organizationId, t.seq)
+      .where(sql`${t.endedAt} IS NULL`),
+    check("ignored_observables_one_item", sql`(${t.observableId} IS NULL) <> (${t.assetId} IS NULL)`),
+    check("ignored_observables_ended", sql`(${t.endedAt} IS NULL) = (${t.endedById} IS NULL)`),
+  ],
+);
+
+/**
  * Case Links: a typed relationship from one Case (`source`) to another (`target`) in the same
  * Organization, stored once and read from either side (`case-links/vocabulary.ts`). Two Cases have at
  * most one link at a time. Removing a link ends it and keeps the row (ADR 0003).
