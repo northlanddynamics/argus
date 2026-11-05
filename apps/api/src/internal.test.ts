@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
 import { createStreamWorker } from "./crowdstrike/stream-worker";
 import type { InternalItemKind } from "./internal/vocabulary";
+import { createResponseActionSender } from "./response-actions/sender";
 import { fakeFalcon } from "./test/fake-falcon";
 import { buildTestApp } from "./test/harness";
 
@@ -39,8 +40,14 @@ async function acme() {
   const guest = await t.guestSignIn(COUNSEL);
   const guestId = await userId(guest);
 
-  await owner.api.integrations.$post({ json: { name: "CrowdStrike — Prod", cloud: "us-1", clientId: CLIENT_ID, clientSecret: "falcon-secret" } });
+  const added = await (
+    await owner.api.integrations.$post({
+      json: { name: "CrowdStrike — Prod", cloud: "us-1", clientId: CLIENT_ID, clientSecret: "falcon-secret", responseActions: true },
+    })
+  ).json();
+  if (!("integration" in added)) throw new Error("Could not add an Integration");
   const falcon = fakeFalcon();
+  const responseActions = createResponseActionSender(t.deps, { connect: falcon.connect });
   const worker = createStreamWorker(t.deps, { connect: falcon.connect, workerId: "worker-1" });
   t.onCleanup(worker.close);
   await worker.tick();
@@ -147,18 +154,36 @@ async function acme() {
       seen: async (as) => ids(await (await as.api.cases[":number"].alerts.$get({ param: param(number) })).json(), "alerts"),
       change: async (id) => owner.api.alerts[":id"].detach.$post({ param: { id }, json: { version: (await queued(id)).version } }),
     },
+    response_action: {
+      add: async (internal) => {
+        const linked = await owner.api.cases[":number"].observables.$post({
+          param: param(number),
+          json: { type: "domain", value: `c2-${++n}.evil.example` },
+        });
+        const { observable } = (await linked.json()) as { observable: { id: string } };
+        const res = await owner.api.cases[":number"]["response-actions"].$post({
+          param: param(number),
+          json: { observableId: observable.id, integrationId: added.integration.id, action: "detect", internal },
+        });
+        return ((await res.json()) as { responseAction: { id: string } }).responseAction.id;
+      },
+      seen: async (as) => ids(await (await as.api.cases[":number"]["response-actions"].$get({ param: param(number) })).json(), "responseActions"),
+      // The worker sends it.
+      change: () => responseActions.tick(),
+    },
   };
 
   return { t, owner, ana, guest, guestId, userId, number, kinds, mark, upload, auditLog, attach, newAlert, queued };
 }
 
-const KINDS: InternalItemKind[] = ["task", "discussion_message", "timeline_entry", "evidence", "alert"];
+const KINDS: InternalItemKind[] = ["task", "discussion_message", "timeline_entry", "evidence", "alert", "response_action"];
 const LABELS: Record<InternalItemKind, RegExp> = {
   task: /^Task: Task \d+$/,
   discussion_message: /^Message from Olive Owner$/,
   timeline_entry: /^Timeline Entry: Entry \d+$/,
   evidence: /^Evidence: file-\d+\.txt$/,
   alert: /^Alert: Detection \d+ \(ldt:acme:\d+\)$/,
+  response_action: /^Response Action: Falcon custom IOC: Domain c2-\d+\[\.\]evil\[\.\]example$/,
 };
 
 describe("Guests × Internal, for every kind of item", () => {

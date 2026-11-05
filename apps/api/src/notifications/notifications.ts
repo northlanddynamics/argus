@@ -128,12 +128,20 @@ export function headline(n: Row) {
       return `${who} raised ${ref} to Critical`;
     case "task_overdue":
       return `Your Task "${n.taskTitle ?? ""}" on ${ref} is overdue`;
+    case "response_action_failed":
+      return `A Response Action you took on ${ref} failed`;
   }
 }
 
 /** The Case page section a notification opens. */
 export const sectionOf = (kind: NotificationKind) =>
-  kind === "task_assigned" || kind === "task_overdue" ? "tasks" : kind === "mentioned" ? "timeline" : null;
+  kind === "task_assigned" || kind === "task_overdue"
+    ? "tasks"
+    : kind === "mentioned"
+      ? "timeline"
+      : kind === "response_action_failed"
+        ? "observables"
+        : null;
 
 const from = (db: Db | Tx) =>
   db
@@ -168,7 +176,7 @@ export type NotificationView = {
   headline: string;
   case: { number: number; title: string };
   /** The Case page section it opens, if not the Case's overview. */
-  section: "tasks" | "timeline" | null;
+  section: "tasks" | "timeline" | "observables" | null;
   actor: { id: string; name: string } | null;
   task: { id: string; title: string } | null;
   createdAt: string;

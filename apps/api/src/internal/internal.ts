@@ -6,11 +6,13 @@ import { recordCaseAudit } from "../cases/case-audit-log";
 import { membersAmong } from "../cases/people";
 import type { Clock } from "../clock";
 import type { Db, Tx } from "../db/client";
-import { alerts, discussionMessages, evidence, tasks, timelineEntries, user } from "../db/schema";
+import { alerts, discussionMessages, evidence, observables, responseActions, tasks, timelineEntries, user } from "../db/schema";
 import { mentionedIds } from "../discussion/mentions";
 import { falconAuthorName } from "../alerts/vocabulary";
 import type { Membership } from "../members/membership";
+import type { ObservableType } from "../observables/vocabulary";
 import { publish } from "../realtime/signals";
+import { responseActionLabel } from "../response-actions/response-actions";
 import { INTERNAL_ITEM_KINDS, type InternalItem } from "./vocabulary";
 
 /**
@@ -101,6 +103,17 @@ async function lockItem(tx: Tx, caseId: string, item: InternalItem): Promise<Mar
         .where(and(eq(alerts.id, item.id), eq(alerts.caseId, caseId)));
       return row ? { internal: row.internal, label: `Alert: ${alertLabel(row)}`, involves: [] } : missing();
     }
+    case "response_action": {
+      const [row] = await tx
+        .select({ internal: responseActions.internal, type: observables.type, value: observables.value })
+        .from(responseActions)
+        .innerJoin(observables, eq(responseActions.observableId, observables.id))
+        .where(and(eq(responseActions.id, item.id), eq(responseActions.caseId, caseId)))
+        .for("update", { of: responseActions });
+      return row
+        ? { internal: row.internal, label: `Response Action: ${responseActionLabel({ type: row.type as ObservableType, value: row.value })}`, involves: [] }
+        : missing();
+    }
   }
 }
 
@@ -116,6 +129,10 @@ async function store(tx: Tx, item: InternalItem, internal: boolean) {
       return tx.update(evidence).set({ internal }).where(eq(evidence.id, item.id));
     case "alert":
       return tx.update(alerts).set({ internal }).where(eq(alerts.id, item.id));
+    case "response_action":
+      // Its Timeline Entries go with it.
+      await tx.update(timelineEntries).set({ internal }).where(eq(timelineEntries.responseActionId, item.id));
+      return tx.update(responseActions).set({ internal }).where(eq(responseActions.id, item.id));
   }
 }
 

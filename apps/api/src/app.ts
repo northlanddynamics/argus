@@ -16,6 +16,7 @@ import { notificationRoutes } from "./routes/notifications";
 import { assetRoutes, ignoredObservableRoutes, observableRoutes } from "./routes/observables";
 import { operatorRoutes } from "./routes/operator";
 import { organizationRoutes } from "./routes/organization";
+import { responseActionRoutes } from "./routes/response-actions";
 import { searchRoutes } from "./routes/search";
 import { ssoRoutes } from "./routes/sso";
 import { teamsChannelRoutes } from "./routes/teams-channel";
@@ -51,6 +52,7 @@ export function createApi(deps: Deps, live: Live = createLive(deps)) {
     .route("/invitations", invitationRoutes(modules))
     .route("/organization", organizationRoutes(deps, modules))
     .route("/cases", caseRoutes(deps, modules))
+    .route("/cases", responseActionRoutes(deps, modules))
     .route("/alerts", alertRoutes(deps, modules))
     .route("/observables", observableRoutes(deps, modules))
     .route("/assets", assetRoutes(deps, modules))

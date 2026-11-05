@@ -16,6 +16,7 @@ import { memberStore } from "./members/members";
 import { metricsStore } from "./metrics/metrics";
 import { notificationStore } from "./notifications/notifications";
 import { organizationStore } from "./organizations/organizations";
+import { responseActionStore } from "./response-actions/response-actions";
 import { searchStore } from "./search/search";
 import { ssoStore } from "./sso/sso";
 import { tagStore } from "./tags/tags";
@@ -35,6 +36,7 @@ export function createModules(deps: Deps) {
     evidence: evidenceStore(deps),
     observables: observableStore(deps),
     assets: assetStore(deps),
+    responseActions: responseActionStore(deps),
   };
   return {
     ...readers,

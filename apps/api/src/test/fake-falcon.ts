@@ -1,4 +1,14 @@
-import type { AlertPatch, FalconClient, FalconComment, FalconConnection, FalconConnector, StreamEvent, StreamSession } from "../crowdstrike/falcon";
+import type {
+  AlertPatch,
+  FalconClient,
+  FalconComment,
+  FalconConnection,
+  FalconConnector,
+  FalconIoc,
+  NewIoc,
+  StreamEvent,
+  StreamSession,
+} from "../crowdstrike/falcon";
 
 /**
  * A fake Falcon for tests: one Event Stream per tenant (keyed by API client id), with consecutive
@@ -6,6 +16,8 @@ import type { AlertPatch, FalconClient, FalconComment, FalconConnection, FalconC
  * (as its replay window does) to create gaps it can no longer replay. Each tenant also has the
  * Alerts API, recording every patch it accepts and serving each Alert's comments, and users to
  * look up by email. A comment in a patch it accepts becomes one of the Alert's comments, as in Falcon.
+ * And it has IOC Management: the custom IOCs it holds, every one it was asked to create or delete,
+ * and the means to refuse or fail those calls.
  */
 
 type Consumer = {
@@ -55,6 +67,24 @@ function fakeTenant() {
     commentReads: [] as string[],
     /** Set to make reading comments fail with this message. */
     refuseReads: null as string | null,
+
+    /** The custom IOCs it holds, by id. */
+    iocs: new Map<string, FalconIoc>(),
+    /** Every IOC it created, in order. */
+    iocsCreated: [] as NewIoc[],
+    /** The id of every IOC it deleted, in order. */
+    iocsDeleted: [] as string[],
+    /** Set to make every IOC Management call fail with this message, as when the API client lacks the scope. */
+    refuseIocs: null as string | null,
+    /** How many more IOC Management calls fail before they succeed again. */
+    failNextIocCalls: 0,
+
+    /** Adds a custom IOC, as someone would in the console; returns its id. */
+    holdIoc(ioc: Omit<FalconIoc, "id">) {
+      const id = crypto.randomUUID();
+      tenant.iocs.set(id, { ...ioc, id });
+      return id;
+    },
 
     /** Adds a comment to an Alert, as a Falcon user would in the console; returns it. */
     comment(
@@ -156,6 +186,14 @@ export function fakeFalcon() {
 
   const connect: FalconConnector = (connection): FalconClient => {
     const t = tenant(connection.credentials.clientId);
+    /** Fails as the tenant is set to. */
+    const iocCall = () => {
+      if (t.refuseIocs) throw new Error(t.refuseIocs);
+      if (t.failNextIocCalls > 0) {
+        t.failNextIocCalls--;
+        throw new Error("Calling IOC Management in Falcon failed: 503");
+      }
+    };
     return {
       async openStream() {
         if (t.refuse) throw new Error(t.refuse);
@@ -191,6 +229,25 @@ export function fakeFalcon() {
         if (t.refuseReads) throw new Error(t.refuseReads);
         t.commentReads.push(compositeId);
         return [...(t.comments.get(compositeId) ?? [])];
+      },
+      async findIoc(type, value) {
+        iocCall();
+        return [...t.iocs.values()].find((i) => i.type === type && i.value === value) ?? null;
+      },
+      async createIoc(ioc) {
+        iocCall();
+        if ([...t.iocs.values()].some((i) => i.type === ioc.type && i.value === ioc.value)) {
+          throw new Error("Creating a custom IOC in Falcon failed: 409 Duplicate type: value combination");
+        }
+        t.iocsCreated.push(ioc);
+        const id = crypto.randomUUID();
+        t.iocs.set(id, { ...ioc, id });
+        return id;
+      },
+      async deleteIoc(id) {
+        iocCall();
+        if (!t.iocs.delete(id)) throw new Error("Deleting a custom IOC in Falcon failed: 404 not found");
+        t.iocsDeleted.push(id);
       },
     };
   };
