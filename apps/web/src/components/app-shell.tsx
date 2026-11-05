@@ -53,6 +53,8 @@ function crumbsWithin(pathname: string, me: Me): Crumb[] {
   }
   if (area === "alerts") return [{ label: "Alerts" }];
   if (area === "search") return [{ label: "Search" }];
+  if (area === "observables") return [{ label: "Observable" }];
+  if (area === "assets") return [{ label: "Asset" }];
   if (area === "dashboard") return [{ label: "Dashboard" }];
   if (area === "settings") return [{ label: "Settings", to: "/settings" }, ...(id && settingsSections[id] ? [{ label: settingsSections[id] }] : [])];
   return [{ label: cases }];

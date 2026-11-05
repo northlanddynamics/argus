@@ -5,6 +5,7 @@ import { alertsKey, integrationsKey } from "@/lib/alerts";
 import { casesKey } from "@/lib/cases";
 import { metricsKey } from "@/lib/metrics";
 import { notificationsKey } from "@/lib/notifications";
+import { itemPagesKey } from "@/lib/observables";
 import { queryClient } from "@/lib/query-client";
 
 export type { Viewer };
@@ -140,11 +141,15 @@ class LiveConnection {
           predicate: ({ queryKey }) => typeof queryKey[1] !== "number" || queryKey[1] === message.number,
         });
         void this.#queries.invalidateQueries({ queryKey: metricsKey });
+        // A Case linking or unlinking something shows on that Observable's or Asset's page.
+        void this.#queries.invalidateQueries({ queryKey: itemPagesKey });
         return;
       case "alerts":
         void this.#queries.invalidateQueries({ queryKey: alertsKey });
         void this.#queries.invalidateQueries({ queryKey: integrationsKey });
         void this.#queries.invalidateQueries({ queryKey: metricsKey });
+        // A new Alert may name an Observable or Asset whose page is open.
+        void this.#queries.invalidateQueries({ queryKey: itemPagesKey });
         return;
       case "notifications":
         void this.#queries.invalidateQueries({ queryKey: notificationsKey });

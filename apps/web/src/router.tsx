@@ -19,6 +19,7 @@ import { CaseTasksPage } from "@/routes/cases/tasks";
 import { CaseTimelinePage } from "@/routes/cases/timeline";
 import { DashboardPage } from "@/routes/dashboard";
 import { HomePage } from "@/routes/guest-home";
+import { AssetPage, ObservablePage } from "@/routes/items/item-page";
 import { GuestSignInPage, validateGuestSignInSearch } from "@/routes/guest-sign-in";
 import { SearchPage } from "@/routes/search";
 import { OrgAuditLogPage } from "@/routes/settings/audit-log";
@@ -125,6 +126,19 @@ const dashboardRoute = createRoute({
   component: DashboardPage,
 });
 
+/** An Observable's and an Asset's page, for Members and Guests; the API decides what each sees. */
+const observableRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/observables/$id",
+  component: ObservablePage,
+});
+
+const assetRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/assets/$id",
+  component: AssetPage,
+});
+
 /** Global search, for Members and Guests; the API decides what each finds. */
 const searchRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -214,6 +228,8 @@ export const router = createRouter({
       alertsRoute,
       dashboardRoute,
       searchRoute,
+      observableRoute,
+      assetRoute,
       settingsRoute.addChildren([settingsIndexRoute, membersRoute, ssoRoute, integrationsRoute, orgAuditLogRoute]),
     ]),
     operatorRoute,

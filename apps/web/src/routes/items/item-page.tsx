@@ -1,0 +1,259 @@
+import { useQuery } from "@tanstack/react-query";
+import { Link, useParams, useRouteContext } from "@tanstack/react-router";
+import { CheckIcon, CopyIcon, FingerprintIcon, LockIcon, MonitorIcon, UserIcon } from "lucide-react";
+import { useState } from "react";
+import { SeverityBadge, StatusBadge } from "@/components/case-badges";
+import { observableIcon } from "@/components/search/search-hit";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useMe } from "@/lib/api";
+import { alertStatusLabel } from "@/lib/alerts";
+import { caseRef } from "@/lib/cases";
+import {
+  type AssetType,
+  assetTypeLabel,
+  defang,
+  type ItemKind,
+  type ItemPage,
+  itemPageQuery,
+  type ObservableType,
+  observableTypeLabel,
+} from "@/lib/observables";
+import { exactTime, when } from "@/lib/when";
+
+/** `/observables/$id`: everything Argus knows about one Observable that the viewer may see. */
+export function ObservablePage() {
+  const { id } = useParams({ from: "/_app/observables/$id" });
+  return <ItemPageView kind="observable" id={id} />;
+}
+
+/** `/assets/$id`: the same for a host or account. */
+export function AssetPage() {
+  const { id } = useParams({ from: "/_app/assets/$id" });
+  return <ItemPageView kind="asset" id={id} />;
+}
+
+const noun: Record<ItemKind, string> = { observable: "Observable", asset: "Asset" };
+
+/** Its value as it is safe to show and copy: Observables defanged, Assets as they are. */
+const shown = (kind: ItemKind, item: ItemPage) => (kind === "observable" ? defang(item.type as ObservableType, item.value) : item.value);
+const typeLabel = (kind: ItemKind, item: ItemPage) =>
+  kind === "observable" ? observableTypeLabel[item.type as ObservableType] : assetTypeLabel[item.type as AssetType];
+
+function TypeIcon({ kind, item }: { kind: ItemKind; item: ItemPage }) {
+  const className = "size-4 text-muted-foreground";
+  if (kind === "asset") return item.type === "host" ? <MonitorIcon className={className} aria-hidden /> : <UserIcon className={className} aria-hidden />;
+  const Icon = observableIcon[item.type as ObservableType] ?? FingerprintIcon;
+  return <Icon className={className} aria-hidden />;
+}
+
+/**
+ * The pivot for one indicator: its value (defanged), when it was first and last seen, the Cases it
+ * is linked to and the Alerts that name it, all limited by the API to what the viewer may see. Guests
+ * get no Alerts. Any Case or Alert signal refetches it (`lib/live.ts`).
+ */
+function ItemPageView({ kind, id }: { kind: ItemKind; id: string }) {
+  const me = useMe(useRouteContext({ from: "/_app" }).me);
+  const guest = !!me.guest;
+  const page = useQuery(itemPageQuery(kind, id));
+  const item = page.data;
+
+  if (page.isPending) {
+    return (
+      <div className="mx-auto grid w-full max-w-5xl grid-cols-1 gap-4">
+        <Skeleton className="h-16" />
+        <Skeleton className="h-40" />
+      </div>
+    );
+  }
+  if (page.isError) return <p className="py-8 text-center text-sm text-destructive">{page.error.message}. Try again.</p>;
+  if (!item) {
+    return (
+      <div className="mx-auto grid w-full max-w-5xl gap-2 py-8 text-center">
+        <h1 className="text-lg font-semibold">{noun[kind]} not found</h1>
+        <p className="text-sm text-muted-foreground">It doesn't exist, or it isn't on any Case you can see.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto grid w-full max-w-5xl grid-cols-1 gap-4">
+      <section aria-label={noun[kind]} className="grid gap-1">
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <TypeIcon kind={kind} item={item} />
+          {noun[kind]} · {typeLabel(kind, item)}
+        </p>
+        <div className="flex min-w-0 items-start gap-2">
+          <h1 className="min-w-0 font-mono text-xl font-semibold tracking-tight break-all" title={item.value}>
+            {shown(kind, item)}
+          </h1>
+          <CopyButton text={shown(kind, item)} />
+        </div>
+        <dl className="mt-1 flex flex-wrap gap-x-6 gap-y-1 text-sm">
+          <div className="flex gap-1.5">
+            <dt className="text-muted-foreground">First seen</dt>
+            <dd title={exactTime(item.firstSeen)}>{when(item.firstSeen)}</dd>
+          </div>
+          <div className="flex gap-1.5">
+            <dt className="text-muted-foreground">Last seen</dt>
+            <dd title={exactTime(item.lastSeen)}>{when(item.lastSeen)}</dd>
+          </div>
+          <div className="flex gap-1.5">
+            <dt className="text-muted-foreground">Cases</dt>
+            <dd className="tabular-nums">{item.cases.length}</dd>
+          </div>
+          {!guest && (
+            <div className="flex gap-1.5">
+              <dt className="text-muted-foreground">Alerts</dt>
+              <dd className="tabular-nums">{item.alerts.length}</dd>
+            </div>
+          )}
+        </dl>
+      </section>
+
+      <CasesCard item={item} />
+      {!guest && <AlertsCard item={item} />}
+      <p className="max-w-prose text-xs text-muted-foreground">
+        {guest
+          ? "Only the Cases you've been given access to are shown."
+          : "Only Cases and Alerts you can see are shown or counted. First and last seen come from when it was linked to those Cases and when those Alerts were raised."}
+      </p>
+    </div>
+  );
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      className="mt-0.5 shrink-0"
+      aria-label="Copy value"
+      title="Copy (defanged)"
+      onClick={() => {
+        void navigator.clipboard.writeText(text).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        });
+      }}
+    >
+      {copied ? <CheckIcon /> : <CopyIcon />}
+    </Button>
+  );
+}
+
+function CasesCard({ item }: { item: ItemPage }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Cases</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <Table aria-label="Linked Cases">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Case</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Severity</TableHead>
+              <TableHead className="hidden sm:table-cell">Assignee</TableHead>
+              <TableHead className="text-right">Linked</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {item.cases.map((c) => (
+              <TableRow key={c.number}>
+                <TableCell className="max-w-0 min-w-48 whitespace-normal break-words">
+                  <Link to="/cases/$number" params={{ number: String(c.number) }} className="hover:underline">
+                    <span className="font-mono text-xs text-muted-foreground">{caseRef(c.number)}</span> {c.title}
+                  </Link>
+                  {c.restricted && <LockIcon className="ml-1 inline size-3 text-muted-foreground" aria-label="Restricted" />}
+                </TableCell>
+                <TableCell>
+                  <StatusBadge status={c.status} />
+                </TableCell>
+                <TableCell>
+                  <SeverityBadge severity={c.severity} />
+                </TableCell>
+                <TableCell className="hidden sm:table-cell">{c.assignee?.name ?? <span className="text-muted-foreground">Unassigned</span>}</TableCell>
+                <TableCell className="text-right text-muted-foreground tabular-nums" title={exactTime(c.linkedAt)}>
+                  {when(c.linkedAt)}
+                </TableCell>
+              </TableRow>
+            ))}
+            {item.cases.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={5} className="text-muted-foreground">
+                  Not on any Case you can see yet.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AlertsCard({ item }: { item: ItemPage }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Alerts naming it</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <Table aria-label="Alerts naming it">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Alert</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Severity</TableHead>
+              <TableHead className="hidden sm:table-cell">Case</TableHead>
+              <TableHead className="text-right">Raised</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {item.alerts.map((a) => (
+              <TableRow key={a.id}>
+                <TableCell className="max-w-0 min-w-48 whitespace-normal break-words">
+                  <Link to="/alerts" search={{ status: "any", alert: a.id }} className="hover:underline" title={a.externalId}>
+                    {a.title}
+                  </Link>
+                  {a.host && <span className="block font-mono text-xs text-muted-foreground">{a.host}</span>}
+                </TableCell>
+                <TableCell>
+                  <Badge variant={a.status === "new" ? "secondary" : "outline"}>{alertStatusLabel[a.status]}</Badge>
+                </TableCell>
+                <TableCell>
+                  <SeverityBadge severity={a.severity} />
+                </TableCell>
+                <TableCell className="hidden sm:table-cell">
+                  {a.case ? (
+                    <Link to="/cases/$number" params={{ number: String(a.case.number) }} className="font-mono text-xs hover:underline" title={a.case.title}>
+                      {caseRef(a.case.number)}
+                    </Link>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </TableCell>
+                <TableCell className="text-right text-muted-foreground tabular-nums" title={exactTime(a.seenAt)}>
+                  {when(a.seenAt)}
+                </TableCell>
+              </TableRow>
+            ))}
+            {item.alerts.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={5} className="text-muted-foreground">
+                  No Alert names it.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}

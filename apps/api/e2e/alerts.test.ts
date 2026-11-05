@@ -203,6 +203,12 @@ test("an Alert shows the Observables and Assets it names; attaching it adds them
     await row.getByText("Alert (auto)").waitFor();
     await row.getByRole("link", { name: "Encoded PowerShell from Office process" }).click();
     await page.getByRole("region", { name: "Extracted Observables" }).waitFor();
+
+    // Each extracted value opens its own page: the Case it is on, and the Alert that names it.
+    await page.getByRole("region", { name: "Extracted Observables" }).getByRole("link", { name: "IP 185.220.101.4" }).click();
+    await page.getByRole("heading", { name: "185.220.101.4" }).waitFor();
+    await page.getByRole("table", { name: "Linked Cases" }).getByRole("link", { name: new RegExp(`C-${number} `) }).waitFor();
+    await page.getByRole("table", { name: "Alerts naming it" }).getByRole("link", { name: "Encoded PowerShell from Office process" }).waitFor();
   } finally {
     await stop();
   }

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { ItemLink } from "@/components/item-link";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ import {
   assetsKey,
   assetsQuery,
   OBSERVABLE_TYPES,
+  type ItemKind,
   type ObservableType,
   observableTypeLabel,
   observablesKey,
@@ -40,6 +42,7 @@ export function CaseObservablesPage() {
         <LinkedCard<ObservableType>
           title="Observables"
           noun="Observable"
+          kind="observable"
           valueHeading="Value"
           placeholder="185.220.101.4, invoice-portal[.]biz, a hash…"
           types={OBSERVABLE_TYPES}
@@ -54,6 +57,7 @@ export function CaseObservablesPage() {
         <LinkedCard<AssetType>
           title="Assets"
           noun="Asset"
+          kind="asset"
           valueHeading="Identifier"
           placeholder="FIN-LT-0231, d.howe…"
           types={ASSET_TYPES}
@@ -88,6 +92,8 @@ type Item<Type extends string> = {
 function LinkedCard<Type extends string>(props: {
   title: string;
   noun: string;
+  /** Whose page each value opens. */
+  kind: ItemKind;
   valueHeading: string;
   placeholder: string;
   types: readonly Type[];
@@ -180,9 +186,9 @@ function LinkedCard<Type extends string>(props: {
                 <TableCell>{typeLabel[item.type] ?? item.type}</TableCell>
                 {/* Who added it sits under the value, so the row fits a half-width card without clipping Unlink. */}
                 <TableCell className="min-w-36 whitespace-normal">
-                  <span className="block font-mono text-xs break-all" title={item.value}>
+                  <ItemLink kind={props.kind} id={item.id} className="block font-mono text-xs break-all hover:underline" title={item.value}>
                     {shown(item.type, item.value)}
-                  </span>
+                  </ItemLink>
                   <span
                     className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground"
                     title={new Date(item.linkedAt).toLocaleString()}
@@ -210,19 +216,10 @@ function LinkedCard<Type extends string>(props: {
                   {item.seenIn.length === 0 ? (
                     <span className="text-muted-foreground">—</span>
                   ) : (
-                    item.seenIn.map((s, i) => (
-                      <span key={s.number}>
-                        {i > 0 && ", "}
-                        <Link
-                          to="/cases/$number/observables"
-                          params={{ number: String(s.number) }}
-                          className="text-primary underline"
-                          title={s.title}
-                        >
-                          {caseRef(s.number)}
-                        </Link>
-                      </span>
-                    ))
+                    // Each opens the item's own page, which lists every Case and Alert it is on.
+                    <ItemLink kind={props.kind} id={item.id} className="text-primary underline" title={item.seenIn.map((s) => `${caseRef(s.number)} ${s.title}`).join("\n")}>
+                      {item.seenIn.map((s) => caseRef(s.number)).join(", ")}
+                    </ItemLink>
                   )}
                 </TableCell>
                 {!readOnly && (

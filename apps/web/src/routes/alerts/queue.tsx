@@ -4,6 +4,7 @@ import { XIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { SeverityBadge } from "@/components/case-badges";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { ItemLink } from "@/components/item-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -29,7 +30,7 @@ import {
 } from "@/lib/alerts";
 import { api } from "@/lib/api";
 import { type CaseType, caseRef, SEVERITIES, type Severity, severityLabel } from "@/lib/cases";
-import { assetTypeLabel, observableTypeLabel, shownObservable } from "@/lib/observables";
+import { assetTypeLabel, type ItemKind, observableTypeLabel, shownObservable } from "@/lib/observables";
 import { cn } from "@/lib/utils";
 import { exactTime } from "@/lib/when";
 import {
@@ -637,15 +638,17 @@ function FalconComments({ comments: c, attached }: { comments: AlertDetail["falc
 }
 
 /** Observables or Assets an Alert names, as badges. */
-function Extracted({ label, items }: { label: string; items: { id: string; text: string; title: string }[] }) {
+function Extracted({ label, kind, items }: { label: string; kind: ItemKind; items: { id: string; text: string; title: string }[] }) {
   return (
     <section aria-label={label} className="grid gap-1">
       <h3 className="text-xs font-medium text-muted-foreground">{label}</h3>
       {items.length ? (
         <div className="flex flex-wrap gap-1">
           {items.map((item) => (
-            <Badge key={item.id} variant="outline" className="max-w-full truncate font-mono" title={item.title}>
-              {item.text}
+            <Badge key={item.id} variant="outline" className="max-w-full truncate font-mono hover:bg-muted" title={item.title} asChild>
+              <ItemLink kind={kind} id={item.id}>
+                {item.text}
+              </ItemLink>
             </Badge>
           ))}
         </div>
@@ -793,10 +796,12 @@ function AlertPanel({ id, onClose, onAct }: { id: string; onClose: () => void; o
         </dl>
         <Extracted
           label="Extracted Observables"
+          kind="observable"
           items={a.indicators.observables.map((o) => ({ id: o.id, text: `${observableTypeLabel[o.type]} ${shownObservable(o.type, o.value)}`, title: o.value }))}
         />
         <Extracted
           label="Extracted Assets"
+          kind="asset"
           items={a.indicators.assets.map((x) => ({ id: x.id, text: `${assetTypeLabel[x.type]} ${x.value}`, title: x.value }))}
         />
         {a.indicators.observables.length + a.indicators.assets.length > 0 && (
