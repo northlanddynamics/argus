@@ -165,6 +165,29 @@ const attachedAlerts = (tx: Tx, caseId: string) =>
     .orderBy(alerts.seq);
 
 /**
+ * Reopens a Closed Case, locked, to In Progress and clears its Resolution, recording it in its Audit
+ * Log. Only Admins and the Owner may (`NotPermitted`); throws `CaseNotClosed` unless it is Closed.
+ * The caller publishes the Case's signal.
+ */
+export async function reopenLocked(tx: Tx, me: Membership, current: { id: string; status: Status; resolution: Resolution | null }, now: Date) {
+  if (!casePolicy.canReopen(me)) throw new NotPermitted();
+  if (current.status !== "closed") throw new CaseNotClosed();
+  await tx
+    .update(cases)
+    .set({ status: REOPENED_STATUS, resolution: null, closedById: null, closedAt: null, updatedAt: now })
+    .where(eq(cases.id, current.id));
+  await recordCaseAudit(tx, {
+    organizationId: me.organizationId,
+    caseId: current.id,
+    occurredAt: now,
+    actor: actorOf(me),
+    action: "case.reopened",
+    before: current.resolution,
+    after: REOPENED_STATUS,
+  });
+}
+
+/**
  * Closes a Case locked by `lockCase` with `resolution`, recording it in its Audit Log, and closes its
  * attached Alerts in Falcon with the Resolution as a comment (where write-back is on). The caller
  * publishes the Case's signal.
@@ -495,21 +518,7 @@ export function caseStore(deps: Pick<Deps, "db" | "clock" | "mailer" | "baseUrl"
       const now = clock.now();
       await db.transaction(async (tx) => {
         const current = await lockCase(tx, me, number, "allow");
-        if (!casePolicy.canReopen(me)) throw new NotPermitted();
-        if (current.status !== "closed") throw new CaseNotClosed();
-        await tx
-          .update(cases)
-          .set({ status: REOPENED_STATUS, resolution: null, closedById: null, closedAt: null, updatedAt: now })
-          .where(eq(cases.id, current.id));
-        await recordCaseAudit(tx, {
-          organizationId: me.organizationId,
-          caseId: current.id,
-          occurredAt: now,
-          actor: actorOf(me),
-          action: "case.reopened",
-          before: current.resolution,
-          after: REOPENED_STATUS,
-        });
+        await reopenLocked(tx, me, current, now);
         await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: current.id });
       });
       return view(me, number);

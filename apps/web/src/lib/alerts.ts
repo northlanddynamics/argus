@@ -36,6 +36,23 @@ export const alertQuery = (id: string) =>
     },
   });
 
+/**
+ * Correlation: the Cases Alert `id` may belong with, most shared Observables and Assets first. Under
+ * `alertsKey`, and refreshed by Case signals too, since a Case linking something changes them.
+ */
+export const alertCorrelationsQuery = (id: string) =>
+  queryOptions({
+    queryKey: [...alertsKey, "correlations", id],
+    queryFn: async () => {
+      const res = await api.alerts[":id"].correlations.$get({ param: { id } });
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error("Could not load the related Cases");
+      return (await res.json()).correlations;
+    },
+  });
+
+export type AlertCorrelation = NonNullable<Awaited<ReturnType<ReturnType<typeof alertCorrelationsQuery>["queryFn"] & {}>>>[number];
+
 export type AlertDetail = NonNullable<Awaited<ReturnType<ReturnType<typeof alertQuery>["queryFn"] & {}>>>;
 
 /** The Alerts attached to Case `number`. */

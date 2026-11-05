@@ -1,10 +1,10 @@
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { visibleAlerts, visibleCases, visibleItems } from "../access/policy";
+import { casePolicy, visibleAlerts, visibleCases, visibleItems } from "../access/policy";
 import { recordOrgAudit } from "../audit/org-audit-log";
 import { recordCaseAudit } from "../cases/case-audit-log";
-import { actorOf, CaseClosed, CaseNotFound, insertCase, type OpenCaseInput } from "../cases/cases";
-import { caseRef, SEVERITIES, type Severity, type Status } from "../cases/vocabulary";
+import { actorOf, CaseClosed, CaseNotFound, insertCase, type OpenCaseInput, reopenLocked } from "../cases/cases";
+import { caseRef, REOPENED_STATUS, type Resolution, SEVERITIES, type Severity, type Status } from "../cases/vocabulary";
 import type { Detection } from "../crowdstrike/detections";
 import type { FalconUpdate } from "../crowdstrike/falcon-updates";
 import { falconCommentsOf, requestCaseCommentSync, requestCommentSync } from "../crowdstrike/comment-sync";
@@ -14,7 +14,14 @@ import { alerts, cases, integrations, user } from "../db/schema";
 import type { Deps } from "../deps";
 import { secureId } from "../ids";
 import type { Membership, Participant } from "../members/membership";
-import { alertIndicators, linkAlertIndicators, recordAlertIndicators, unlinkAlertIndicators } from "../observables/observables";
+import {
+  alertIndicators,
+  casesSharingAlert,
+  linkAlertIndicators,
+  recordAlertIndicators,
+  type SharedItem,
+  unlinkAlertIndicators,
+} from "../observables/observables";
 import { publish } from "../realtime/signals";
 import { alertLabel, type AlertStatus, crowdstrikeActorName, type DismissalReason, dismissalReasonLabel } from "./vocabulary";
 import { queueTeamsPost, sendTeamsPosts } from "../teams/teams";
@@ -41,6 +48,12 @@ import { queueTeamsPost, sendTeamsPosts } from "../teams/teams";
  * dismiss them with a Dismissal Reason. An Alert is on at most one Case at a time; attaching one
  * that is on another Case moves it. Both Cases' Audit Logs record each attachment, move and
  * detachment, and the Organization Audit Log each dismissal. A Closed Case gains and loses no Alerts.
+ *
+ * Correlation suggests the Cases an Alert may belong with: the Cases the Member can see, in any
+ * Status, linked to an Observable or Asset the Alert names that isn't on the Ignored list, ranked
+ * by how many they share. It is worked out as it is read, and never attaches anything: the Member
+ * attaches from a suggestion with the ordinary attach, which for a Closed Case an Admin may ask to
+ * reopen it first.
  *
  * Every action names the Alerts with the version the actor last saw. Bulk actions refuse, one by
  * one, those that changed since (or that the action can't apply to) and apply the rest; acting on
@@ -98,6 +111,18 @@ export class AlertNotFound extends Error {
 }
 
 export type AlertFilter = { status?: AlertStatus; severity?: Severity; integrationId?: string; caseNumber?: number };
+
+/**
+ * A Case an Alert may belong with: the non-ignored Observables and Assets they share, and how the
+ * Member may attach the Alert to it, if at all. Only Admins reopen a Closed Case to attach it there;
+ * otherwise `attach` is null, as it is while the Alert is on a Closed Case itself.
+ */
+export type Correlation = {
+  case: { number: number; title: string; status: Status; severity: Severity; restricted: boolean; assignee: { id: string; name: string } | null };
+  sharedCount: number;
+  shared: SharedItem[];
+  attach: "attach" | "reopen_and_attach" | null;
+};
 
 /** The most Alerts the queue shows at once, newest first. */
 export const QUEUE_LIMIT = 500;
@@ -258,6 +283,7 @@ export const highestSeverity = (severities: readonly Severity[]) =>
   SEVERITIES.find((s) => severities.includes(s)) ?? severities[0]!;
 
 const attachedBy = alias(user, "attached_by");
+const assignee = alias(user, "assignee");
 const dismissedBy = alias(user, "dismissed_by");
 
 type LockedAlert = {
@@ -273,7 +299,7 @@ type LockedAlert = {
   dismissedByName: string | null;
 };
 
-type LockedCase = { id: string; number: number; status: Status; visible: boolean };
+type LockedCase = { id: string; number: number; status: Status; resolution: Resolution | null; visible: boolean };
 
 /** The Organization's Alerts among `ids`, locked for the rest of `tx` in a fixed order. */
 async function lockAlerts(tx: Tx, me: Membership, ids: readonly string[]) {
@@ -314,7 +340,13 @@ async function lockCases(tx: Tx, me: Membership, ids: readonly (string | null)[]
   const wanted = [...new Set(ids.filter((id): id is string => id !== null))];
   if (!wanted.length) return new Map<string, LockedCase>();
   const rows = await tx
-    .select({ id: cases.id, number: cases.number, status: cases.status, visible: sql<boolean>`(${visibleCases(me)})` })
+    .select({
+      id: cases.id,
+      number: cases.number,
+      status: cases.status,
+      resolution: cases.resolution,
+      visible: sql<boolean>`(${visibleCases(me)})`,
+    })
     .from(cases)
     .where(and(eq(cases.organizationId, me.organizationId), inArray(cases.id, wanted)))
     .orderBy(asc(cases.id))
@@ -368,6 +400,8 @@ function attachRefusal(id: string, alert: LockedAlert | undefined, version: numb
 /**
  * Attaches the selected Alerts to `target` in `tx`, moving any on another Case, and records each in
  * both Cases' Audit Logs. Each becomes Internal on `target`. Publishes the signals for whatever changed.
+ * A Closed `target` refuses (`CaseClosed`), unless `reopen` asks to reopen it first, which only
+ * Admins may (`NotPermitted`).
  */
 async function attachIn(
   tx: Tx,
@@ -376,10 +410,16 @@ async function attachIn(
   selection: AlertSelection,
   now: Date,
   baseUrl: string,
+  { reopen = false }: { reopen?: boolean } = {},
 ) {
   const locked = await lockAlerts(tx, me, selection.map((s) => s.id));
   const caseOf = await lockCases(tx, me, [target.id, ...[...locked.values()].map((a) => a.caseId)]);
-  if (caseOf.get(target.id)?.status === "closed") throw new CaseClosed();
+  const into = caseOf.get(target.id);
+  if (into?.status === "closed") {
+    if (!reopen) throw new CaseClosed();
+    await reopenLocked(tx, me, into, now);
+    caseOf.set(target.id, { ...into, status: REOPENED_STATUS, resolution: null });
+  }
   const result: BulkResult = { applied: [], refused: [] };
   const touched = new Set<string>();
   /** Cases where something their Guests can see changed: an Alert they saw left, Observables or Assets came or went. */
@@ -476,11 +516,11 @@ const single = (result: BulkResult) => {
 
 export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams" | "credentials">) {
   const { db, clock, baseUrl } = deps;
-  /** Attaches the selection to Case `number` (moving any on other Cases). */
-  const attach = (me: Membership, number: number, selection: AlertSelection) =>
+  /** Attaches the selection to Case `number` (moving any on other Cases), reopening it first if asked and it is Closed. */
+  const attach = (me: Membership, number: number, selection: AlertSelection, options: { reopen?: boolean } = {}) =>
     db.transaction(async (tx) => {
       const target = await caseNumbered(tx, me, number);
-      return attachIn(tx, me, target, selection, clock.now(), baseUrl);
+      return attachIn(tx, me, target, selection, clock.now(), baseUrl, options);
     });
 
   return {
@@ -684,6 +724,55 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
               }
             : null,
       };
+    },
+
+    /**
+     * Correlation for Alert `id`: the Cases it may belong with, most shared Observables and Assets
+     * first. Throws `AlertNotFound` for an Alert on a Case `me` can't see.
+     */
+    async correlations(me: Membership, id: string): Promise<Correlation[]> {
+      const [alert] = await db
+        .select({ id: alerts.id, caseId: alerts.caseId, caseStatus: cases.status })
+        .from(alerts)
+        .leftJoin(cases, eq(alerts.caseId, cases.id))
+        .where(and(eq(alerts.organizationId, me.organizationId), eq(alerts.id, id), visibleAlerts(me, alerts.caseId)))
+        .limit(1);
+      if (!alert) throw new AlertNotFound();
+      const shared = await casesSharingAlert(db, me, id, alert.caseId);
+      if (!shared.size) return [];
+      const rows = await db
+        .select({
+          id: cases.id,
+          number: cases.number,
+          title: cases.title,
+          status: cases.status,
+          severity: cases.severity,
+          restricted: cases.restricted,
+          updatedAt: cases.updatedAt,
+          assigneeId: assignee.id,
+          assigneeName: assignee.name,
+        })
+        .from(cases)
+        .leftJoin(assignee, eq(cases.assigneeId, assignee.id))
+        .where(inArray(cases.id, [...shared.keys()]));
+      // An Alert on a Closed Case can't leave it, so nothing can be attached from here.
+      const stuck = alert.caseStatus === "closed";
+      return rows
+        .map((r) => ({ row: r, items: shared.get(r.id)! }))
+        .toSorted((x, y) => y.items.length - x.items.length || y.row.updatedAt.getTime() - x.row.updatedAt.getTime() || y.row.number - x.row.number)
+        .map(({ row, items }) => ({
+          case: {
+            number: row.number,
+            title: row.title,
+            status: row.status,
+            severity: row.severity,
+            restricted: row.restricted,
+            assignee: row.assigneeId && row.assigneeName ? { id: row.assigneeId, name: row.assigneeName } : null,
+          },
+          sharedCount: items.length,
+          shared: items,
+          attach: stuck ? null : row.status !== "closed" ? "attach" : casePolicy.canReopen(me) ? "reopen_and_attach" : null,
+        }));
     },
 
     /**

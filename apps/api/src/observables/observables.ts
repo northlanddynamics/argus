@@ -1,6 +1,6 @@
-import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, ne, notExists, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { casePolicy, isGuest, NotPermitted, organizationPolicy, visibleAlerts, visibleCases } from "../access/policy";
+import { casePolicy, isGuest, type MemberActor, NotPermitted, organizationPolicy, visibleAlerts, visibleCases } from "../access/policy";
 import { recordOrgAudit } from "../audit/org-audit-log";
 import type { AlertStatus } from "../alerts/vocabulary";
 import { actorOf, CaseNotFound, lockCase } from "../cases/cases";
@@ -721,4 +721,50 @@ export async function unlinkAlertIndicators(tx: Tx, me: Membership, caseId: stri
     any ||= unlinked.length > 0;
   }
   return any;
+}
+
+/* Correlation. */
+
+/** An Observable or Asset an Alert shares with a Case. */
+export type SharedItem =
+  | { kind: "observable"; id: string; type: ObservableType; value: string }
+  | { kind: "asset"; id: string; type: AssetType; value: string };
+
+/**
+ * Correlation for Alert `alertId`: each Case `me` can see, in any Status and other than `exceptCaseId`
+ * (the Case it is on), linked to an Observable or Asset the Alert names that isn't on the Ignored
+ * list, with those items in the order the Alert first named them, Observables first.
+ */
+export async function casesSharingAlert(db: Db | Tx, me: MemberActor, alertId: string, exceptCaseId: string | null) {
+  const rows = (
+    await Promise.all(
+      KINDS.map(async (kind) =>
+        (
+          await db
+            .select({ caseId: kind.links.caseId, id: kind.items.id, type: kind.items.type, value: kind.items.value })
+            .from(kind.alertLinks)
+            .innerJoin(kind.items, eq(kind.alertLinks.itemId, kind.items.id))
+            .innerJoin(kind.links, and(eq(kind.links.itemId, kind.items.id), isNull(kind.links.unlinkedAt)))
+            .innerJoin(cases, eq(kind.links.caseId, cases.id))
+            .where(
+              and(
+                eq(kind.alertLinks.alertId, alertId),
+                visibleCases(me),
+                exceptCaseId ? ne(cases.id, exceptCaseId) : undefined,
+                notExists(
+                  db
+                    .select({ id: ignoredObservables.id })
+                    .from(ignoredObservables)
+                    .where(and(eq(kind.ignoredItem, kind.items.id), isNull(ignoredObservables.endedAt))),
+                ),
+              ),
+            )
+            .orderBy(asc(kind.alertLinks.seq))
+        ).map((r) => ({ ...r, kind: kind.name }) as SharedItem & { caseId: string }),
+      ),
+    )
+  ).flat();
+  const byCase = new Map<string, SharedItem[]>();
+  for (const { caseId, ...item } of rows) byCase.set(caseId, [...(byCase.get(caseId) ?? []), item]);
+  return byCase;
 }
