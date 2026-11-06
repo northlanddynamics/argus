@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { sql } from "drizzle-orm";
 import { createResponseActionSender, MAX_RESPONSE_ACTION_ATTEMPTS } from "./response-actions/sender";
 import { fakeFalcon } from "./test/fake-falcon";
 import { buildTestApp } from "./test/harness";
@@ -1221,5 +1222,41 @@ describe("Removing Response Actions", () => {
     const report = await (await a.owner.api.cases[":number"].report.$get({ param: param(a.number), query: { variant: "complete", format: "markdown" } })).text();
     expect(report).toContain("Removed");
     expect(report).toContain("Removal asked for by:");
+  });
+});
+
+async function dbError(query: PromiseLike<unknown>) {
+  try {
+    await query;
+    return null;
+  } catch (e) {
+    return String((e as { cause?: unknown }).cause ?? e);
+  }
+}
+
+describe("What a Response Action targets", () => {
+  test("exactly one Observable or one Asset, enforced in the data", async () => {
+    const a = await acme();
+    const hash = await a.link("sha256", SHA256);
+    const { body } = await a.take(a.ana, hash);
+    const id = body.responseAction!.id;
+    const res = await a.ana.api.cases[":number"].assets.$post({ param: param(a.number), json: { type: "host", value: "FIN-LT-0231" } });
+    const linked = await res.json();
+    if (!("asset" in linked)) throw new Error("Could not link the Asset");
+    const asset = linked.asset.id;
+    const db = a.t.deps.db;
+
+    expect(await dbError(db.execute(sql`UPDATE response_actions SET asset_id = ${asset} WHERE id = ${id}`))).toContain("response_actions_one_target");
+    expect(await dbError(db.execute(sql`UPDATE response_actions SET observable_id = NULL WHERE id = ${id}`))).toContain("response_actions_one_target");
+
+    const copy = (observableId: string | null, assetId: string | null, as: string) => sql`
+      INSERT INTO response_actions (id, organization_id, case_id, observable_id, asset_id, integration_id, kind, target_type,
+        target_value, state, created_by_id, created_at, state_changed_at)
+      SELECT ${as}, organization_id, case_id, ${observableId}, ${assetId}, integration_id, 'mimecast_blocked_sender', target_type,
+        target_value, 'removed', created_by_id, created_at, state_changed_at
+      FROM response_actions WHERE id = ${id}`;
+    expect(await dbError(db.execute(copy(null, null, "ra-neither")))).toContain("response_actions_one_target");
+    expect(await dbError(db.execute(copy(hash, asset, "ra-both")))).toContain("response_actions_one_target");
+    expect(await dbError(db.execute(copy(null, asset, "ra-asset")))).toBeNull();
   });
 });

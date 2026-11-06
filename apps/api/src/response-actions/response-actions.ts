@@ -521,6 +521,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
     const rows = await db
       .select({
         row: r,
+        observableId: observables.id,
         observableType: observables.type,
         observableValue: observables.value,
         integrationName: integrations.name,
@@ -548,11 +549,11 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
         ? (await db.select({ id: cases.id }).from(cases).where(and(visibleCases(me), inArray(cases.id, originalCaseIds)))).map((c) => c.id)
         : [],
     );
-    return rows.map(({ row, observableType, observableValue, integrationName, requestedByName, dismissedByName, removerName, original, originalCase }) => ({
+    return rows.map(({ row, observableId, observableType, observableValue, integrationName, requestedByName, dismissedByName, removerName, original, originalCase }) => ({
       id: row.id,
       kind: row.kind,
       state: row.state,
-      observable: { id: row.observableId, type: observableType as ObservableType, value: observableValue },
+      observable: { id: observableId, type: observableType as ObservableType, value: observableValue },
       target: { type: row.targetType, value: row.targetValue },
       falcon: row.falconAction && row.severity ? { action: row.falconAction, severity: row.severity, platforms: row.falconPlatforms } : null,
       integration: insider ? { id: row.integrationId, name: integrationName } : null,
