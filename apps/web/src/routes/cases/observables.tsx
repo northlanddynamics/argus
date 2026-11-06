@@ -1,9 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { BellOffIcon } from "lucide-react";
+import { BellOffIcon, type LucideIcon, MonitorIcon, SirenIcon, UserIcon } from "lucide-react";
 import { type ReactElement, type ReactNode, useId, useState } from "react";
 import { toast } from "sonner";
 import { ItemLink } from "@/components/item-link";
+import { observableIcon } from "@/components/search/search-hit";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,14 +31,13 @@ import {
   observableTypeLabel,
   observablesKey,
   observablesQuery,
-  shownObservable,
 } from "@/lib/observables";
 import { responseActionsQuery } from "@/lib/response-actions";
 import { useCaseNumber } from "@/routes/cases/case-layout";
 import { actionOf, type ResponseAction } from "@/lib/response-actions";
 import { falconTakes, holdingOn, ResponseActionsCard } from "@/routes/cases/response-actions";
 import { AssetActions, BulkObservableActions, ObservableActions } from "@/routes/cases/observable-actions";
-import { when } from "@/lib/when";
+import { exactTime, when } from "@/lib/when";
 
 /**
  * Case · Observables & Assets, each with the other Cases it also appears in, and the Response
@@ -71,7 +72,7 @@ export function CaseObservablesPage() {
           placeholder="185.220.101.4, invoice-portal[.]biz, a hash…"
           types={OBSERVABLE_TYPES}
           typeLabel={observableTypeLabel}
-          shown={shownObservable}
+          shown={(type, value) => defang(type, value)}
           items={observables.data}
           query={observables}
           detectType={detectObservableType}
@@ -80,7 +81,8 @@ export function CaseObservablesPage() {
           readOnly={readOnly}
           add={(type, value) => api.cases[":number"].observables.$post({ param: { number: n }, json: { type, value } })}
           unlink={(id) => api.cases[":number"].observables[":id"].$delete({ param: { number: n, id } })}
-          renderStatus={(item) => <SentLine held={holdingOn(held, item.id)} />}
+          status={{ heading: "Sent from this Case", render: (item) => <SentLine held={holdingOn(held, item.id)} /> }}
+          typeIcon={(type) => observableIcon[type]}
           renderRow={(item, row, unlink) => (
             <ObservableActions
               key={item.id}
@@ -120,6 +122,7 @@ export function CaseObservablesPage() {
           items={assets.data}
           query={assets}
           fullValue={(_, value) => value}
+          typeIcon={(type) => (type === "host" ? MonitorIcon : UserIcon)}
           queryKey={assetsKey(number)}
           readOnly={readOnly}
           add={(type, value) => api.cases[":number"].assets.$post({ param: { number: n }, json: { type, value } })}
@@ -191,8 +194,10 @@ function LinkedCard<Type extends string>(props: {
   readOnly: boolean;
   add: (type: Type, value: string) => Promise<Response>;
   unlink: (id: string) => Promise<Response>;
-  /** A line under the value saying where the item stands, such as what was sent from it. */
-  renderStatus?: (item: Item<Type>) => ReactNode;
+  /** A column saying where each item stands, such as what was sent from it. */
+  status?: { heading: string; render: (item: Item<Type>) => ReactNode };
+  /** The icon for each type, standing in for its name. */
+  typeIcon: (type: Type) => LucideIcon;
   /**
    * Gives the row a menu: `row` renders it with the menu's ⋯ button in place of Unlink, and `unlink`
    * unlinks the item, for the menu to offer.
@@ -241,7 +246,7 @@ function LinkedCard<Type extends string>(props: {
     onSettled: refresh,
   });
   const addError = add.error;
-  const colSpan = 3 + (readOnly && !props.renderRow ? 0 : 1) + (selection ? 1 : 0);
+  const colSpan = 6 + (props.status ? 1 : 0) + (readOnly && !props.renderRow ? 0 : 1) + (selection ? 1 : 0);
 
   return (
     <Card>
@@ -312,97 +317,115 @@ function LinkedCard<Type extends string>(props: {
                   />
                 </TableHead>
               )}
-              <TableHead className="hidden sm:table-cell">Type</TableHead>
+              <TableHead className="w-0">
+                <span className="sr-only">Type</span>
+              </TableHead>
               <TableHead>{props.valueHeading}</TableHead>
+              <TableHead className="hidden md:table-cell">Added by</TableHead>
               <TableHead className="hidden md:table-cell">Seen in other Cases</TableHead>
-              {(!readOnly || props.renderRow) && <TableHead className="w-0" />}
+              {props.status && <TableHead className="hidden lg:table-cell">{props.status.heading}</TableHead>}
+              <TableHead className="hidden text-right lg:table-cell">Added</TableHead>
+              {(!readOnly || props.renderRow) && (
+                <TableHead className="w-0">
+                  <span className="sr-only">Actions</span>
+                </TableHead>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
             {items?.map((item) => {
+              const Icon = props.typeIcon(item.type);
               const row = (menuButton?: ReactNode) => (
                 <TableRow key={item.id} data-testid={`${noun.toLowerCase()}-${item.value}`}>
                   {selection && (
                     <TableCell className="w-0">
                       {canTick(item) && (
-                      <Checkbox
-                        aria-label={`Select ${typeLabel[item.type]} ${item.value}`}
-                        checked={selection.selected.includes(item.id)}
-                        onCheckedChange={(checked) =>
-                          selection.onChange(checked === true ? [...selection.selected, item.id] : selection.selected.filter((id) => id !== item.id))
-                        }
-                      />
+                        <Checkbox
+                          aria-label={`Select ${typeLabel[item.type]} ${item.value}`}
+                          checked={selection.selected.includes(item.id)}
+                          onCheckedChange={(checked) =>
+                            selection.onChange(checked === true ? [...selection.selected, item.id] : selection.selected.filter((id) => id !== item.id))
+                          }
+                        />
                       )}
                     </TableCell>
                   )}
-                  <TableCell className="hidden text-xs text-muted-foreground sm:table-cell">{typeLabel[item.type] ?? item.type}</TableCell>
-                  {/* Who added it sits under the value, so the row fits a half-width card without clipping Unlink. */}
-                  <TableCell className="min-w-36 whitespace-normal">
-                    <ItemLink
-                      kind={props.kind}
-                      id={item.id}
-                      fromCase={props.caseNumber}
-                      className="block font-mono text-xs break-all hover:underline"
-                      title={item.value}
-                      aria-label={`${typeLabel[item.type]} ${props.fullValue(item.type, item.value)}`}
-                    >
-                      {shown(item.type, item.value)}
-                    </ItemLink>
-                    <span
-                      className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground"
-                      title={new Date(item.linkedAt).toLocaleString()}
-                    >
-                      {/* On a phone the Type column is gone, so the type leads this line. */}
-                      <span className="sm:hidden">{typeLabel[item.type]} ·</span>
+                  <TableCell className="w-0 pr-0">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="flex size-6 items-center justify-center text-muted-foreground">
+                          <Icon className="size-4" aria-label={typeLabel[item.type]} role="img" />
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>{typeLabel[item.type]}</TooltipContent>
+                    </Tooltip>
+                  </TableCell>
+                  {/* The value takes the room that is left, cut short with … when it doesn't fit; its page shows it whole. */}
+                  <TableCell className="w-full max-w-0">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <ItemLink
+                        kind={props.kind}
+                        id={item.id}
+                        fromCase={props.caseNumber}
+                        className="min-w-0 truncate font-mono text-xs hover:underline"
+                        title={props.fullValue(item.type, item.value)}
+                        aria-label={`${typeLabel[item.type]} ${props.fullValue(item.type, item.value)}`}
+                      >
+                        {shown(item.type, item.value)}
+                      </ItemLink>
                       {item.ignored && (
-                        <Badge variant="outline" title="On the Ignored list: it never suggests which Case an Alert belongs with">
+                        <Badge variant="outline" className="shrink-0" title="On the Ignored list: it never suggests which Case an Alert belongs with">
                           <BellOffIcon aria-hidden />
                           Ignored
                         </Badge>
                       )}
-                      {item.fromAlert ? (
-                        <>
-                          <span>Alert (auto)</span>
-                          {item.fromAlert.alert && (
-                            <Link
-                              to="/alerts"
-                              search={{ status: "any", alert: item.fromAlert.alert.id }}
-                              className="text-foreground underline underline-offset-2"
-                              title={item.fromAlert.alert.externalId}
-                            >
-                              {item.fromAlert.alert.title}
-                            </Link>
-                          )}
-                        </>
-                      ) : (
-                        <>Added by {item.linkedBy.name}</>
-                      )}
                     </span>
-                    {item.seenIn.length > 0 && (
-                      <span className="mt-1 block text-xs text-muted-foreground md:hidden">
-                        Also on <SeenIn seenIn={item.seenIn} />
-                      </span>
-                    )}
-                    {props.renderStatus?.(item)}
                   </TableCell>
-                  <TableCell className="hidden whitespace-normal md:table-cell">
+                  <TableCell className="hidden max-w-48 truncate text-muted-foreground md:table-cell">
+                    {item.fromAlert ? (
+                      <span className="inline-flex max-w-full items-center gap-1.5" title={item.fromAlert.alert?.title ?? "Added when an Alert was attached"}>
+                        <SirenIcon className="size-3.5 shrink-0" aria-hidden />
+                        <span className="sr-only">Alert (auto):</span>
+                        {item.fromAlert.alert ? (
+                          <Link
+                            to="/alerts"
+                            search={{ status: "any", alert: item.fromAlert.alert.id }}
+                            className="truncate text-foreground underline underline-offset-2"
+                          >
+                            {item.fromAlert.alert.title}
+                          </Link>
+                        ) : (
+                          <span className="truncate">An Alert</span>
+                        )}
+                      </span>
+                    ) : (
+                      item.linkedBy.name
+                    )}
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell">
                     {item.seenIn.length === 0 ? <span className="text-muted-foreground">—</span> : <SeenIn seenIn={item.seenIn} />}
                   </TableCell>
+                  {props.status && <TableCell className="hidden max-w-48 lg:table-cell">{props.status.render(item)}</TableCell>}
+                  <TableCell className="hidden text-right text-muted-foreground tabular-nums lg:table-cell" title={exactTime(item.linkedAt)}>
+                    {when(item.linkedAt)}
+                  </TableCell>
                   {menuButton ? (
-                    <TableCell className="w-0 text-right whitespace-nowrap">{menuButton}</TableCell>
-                  ) : !readOnly && (
-                    <TableCell className="w-0 text-right whitespace-nowrap">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="px-2"
-                        disabled={unlink.isPending}
-                        aria-label={`Unlink ${typeLabel[item.type]} ${item.value}`}
-                        onClick={() => unlink.mutate(item)}
-                      >
-                        Unlink
-                      </Button>
-                    </TableCell>
+                    <TableCell className="w-0 text-right">{menuButton}</TableCell>
+                  ) : (
+                    !readOnly && (
+                      <TableCell className="w-0 text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="px-2"
+                          disabled={unlink.isPending}
+                          aria-label={`Unlink ${typeLabel[item.type]} ${item.value}`}
+                          onClick={() => unlink.mutate(item)}
+                        >
+                          Unlink
+                        </Button>
+                      </TableCell>
+                    )
                   )}
                 </TableRow>
               );
@@ -462,25 +485,27 @@ function SeenIn({ seenIn }: { seenIn: { number: number; title: string }[] }) {
   );
 }
 
-/** Under an Observable: what this Case has sent of it, per Integration, said as what Argus did. */
+/** An Observable's cell: what this Case has sent of it, per Integration, said as what Argus did. */
 function SentLine({ held }: { held: ResponseAction[] }) {
-  if (!held.length) return null;
+  if (!held.length) return <span className="text-muted-foreground">—</span>;
   return (
-    <ul className="mt-1 grid gap-0.5 text-xs text-muted-foreground" aria-label="Sent from this Case">
-      {held.map((r) => (
-        <li key={r.id}>
-          {actionOf(r)}
-          {r.integration && ` · ${r.integration.name}`}
-          {", "}
-          {r.state === "pending"
+    <ul className="grid gap-0.5 text-xs text-muted-foreground" aria-label="Sent from this Case">
+      {held.map((r) => {
+        const where =
+          r.state === "pending"
             ? "waiting to be sent"
             : r.state === "removing"
               ? "being removed"
               : r.origin === "created" && r.sentAt
                 ? `sent ${when(r.sentAt)}`
-                : "already present"}
-        </li>
-      ))}
+                : "already present";
+        const text = `${actionOf(r)}${r.integration ? ` · ${r.integration.name}` : ""}, ${where}`;
+        return (
+          <li key={r.id} className="truncate" title={text}>
+            {text}
+          </li>
+        );
+      })}
     </ul>
   );
 }
