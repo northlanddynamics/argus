@@ -158,14 +158,22 @@ _Avoid_: IOC, indicator, artifact, entity
 A thing the Organization owns or operates, such as a host or account, held once per Organization and linked to every Case that affects it.
 _Avoid_: Device, system, resource, entity
 
+**Enrichment**:
+What an Integration's tool currently reports about an Asset, such as a host's OS, last-seen time and containment or an identity's risk, shown with the Asset as of when Argus last fetched it.
+_Avoid_: Context, intel, details, lookup
+
 **Ignored Observable**:
 An Observable (or Asset) an Admin has marked as too common to mean anything, such as a public resolver or the Organization's own mail domain; still held, linked and searchable, but never the basis of a Correlation.
 _Avoid_: Allowlist, whitelist, suppressed, excluded
 
 **Bulk Lookup**:
 Pasting free text into Argus to pull out every Observable it contains and see which are already known, and where.
-_Avoid_: Enrichment, IOC check, mass search
+_Avoid_: IOC check, mass search
 
 **Response Action**:
-An action Argus takes in an external tool against one Observable linked to a Case, through an Integration, such as adding a custom IOC to Falcon or blocking a sender in Mimecast; always taken from a Case, and removable only by the Case that created it.
-_Avoid_: Block, containment, push, playbook, remediation
+An action Argus takes in an external tool against one Observable or host linked to a Case, through an Integration, such as adding a custom IOC to Falcon, blocking a sender in Mimecast or containing a host; always taken from a Case, and removable only by the Case that created it.
+_Avoid_: Block, push, playbook, remediation
+
+**Containment**:
+Cutting a host off the network through an Integration, taken as a Response Action; lifting it ends it, and an Admin may lift Containment that Argus did not impose.
+_Avoid_: Isolation, quarantine, network contain
