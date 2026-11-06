@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, ne, notExists, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, ne, notExists, type SQL, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { casePolicy, isGuest, type MemberActor, NotPermitted, organizationPolicy, visibleAlerts, visibleCases } from "../access/policy";
 import { recordOrgAudit } from "../audit/org-audit-log";
@@ -745,41 +745,105 @@ export type SharedItem =
   | { kind: "observable"; id: string; type: ObservableType; value: string }
   | { kind: "asset"; id: string; type: AssetType; value: string };
 
+/** A Case and an Alert that share an Observable or Asset, and that item. */
+type SharedLink = { alertId: string; caseId: string; caseNumber: number; caseUpdatedAt: Date; item: SharedItem };
+
 /**
- * Correlation for Alert `alertId`: each Case `me` can see, in any Status and other than `exceptCaseId`
- * (the Case it is on), linked to an Observable or Asset the Alert names that isn't on the Ignored
- * list, with those items in the order the Alert first named them, Observables first.
+ * What Alerts share with Cases: each non-ignored Observable or Asset that an Alert matching
+ * `alertsWhere` names and a Case `me` can see, in any Status, links, other than the Case the Alert
+ * is on. In the order the Alerts first named them, Observables first.
  */
-export async function casesSharingAlert(db: Db | Tx, me: MemberActor, alertId: string, exceptCaseId: string | null) {
-  const rows = (
-    await Promise.all(
-      KINDS.map(async (kind) =>
-        (
-          await db
-            .select({ caseId: kind.links.caseId, id: kind.items.id, type: kind.items.type, value: kind.items.value })
-            .from(kind.alertLinks)
-            .innerJoin(kind.items, eq(kind.alertLinks.itemId, kind.items.id))
-            .innerJoin(kind.links, and(eq(kind.links.itemId, kind.items.id), isNull(kind.links.unlinkedAt)))
-            .innerJoin(cases, eq(kind.links.caseId, cases.id))
-            .where(
-              and(
-                eq(kind.alertLinks.alertId, alertId),
-                visibleCases(me),
-                exceptCaseId ? ne(cases.id, exceptCaseId) : undefined,
-                notExists(
-                  db
-                    .select({ id: ignoredObservables.id })
-                    .from(ignoredObservables)
-                    .where(and(eq(kind.ignoredItem, kind.items.id), isNull(ignoredObservables.endedAt))),
-                ),
+async function sharedLinks(db: Db | Tx, me: MemberActor, alertsWhere: SQL | undefined, casesWhere?: SQL): Promise<SharedLink[]> {
+  const rows = await Promise.all(
+    KINDS.map(async (kind) =>
+      (
+        await db
+          .select({
+            alertId: kind.alertLinks.alertId,
+            caseId: cases.id,
+            caseNumber: cases.number,
+            caseUpdatedAt: cases.updatedAt,
+            id: kind.items.id,
+            type: kind.items.type,
+            value: kind.items.value,
+          })
+          .from(kind.alertLinks)
+          .innerJoin(alerts, eq(kind.alertLinks.alertId, alerts.id))
+          .innerJoin(kind.items, eq(kind.alertLinks.itemId, kind.items.id))
+          .innerJoin(kind.links, and(eq(kind.links.itemId, kind.items.id), isNull(kind.links.unlinkedAt)))
+          .innerJoin(cases, eq(kind.links.caseId, cases.id))
+          .where(
+            and(
+              eq(alerts.organizationId, me.organizationId),
+              alertsWhere,
+              casesWhere,
+              visibleCases(me),
+              sql`${alerts.caseId} is distinct from ${cases.id}`,
+              notExists(
+                db
+                  .select({ id: ignoredObservables.id })
+                  .from(ignoredObservables)
+                  .where(and(eq(kind.ignoredItem, kind.items.id), isNull(ignoredObservables.endedAt))),
               ),
-            )
-            .orderBy(asc(kind.alertLinks.seq))
-        ).map((r) => ({ ...r, kind: kind.name }) as SharedItem & { caseId: string }),
-      ),
-    )
-  ).flat();
-  const byCase = new Map<string, SharedItem[]>();
-  for (const { caseId, ...item } of rows) byCase.set(caseId, [...(byCase.get(caseId) ?? []), item]);
-  return byCase;
+            ),
+          )
+          .orderBy(asc(kind.alertLinks.seq))
+      ).map(({ alertId, caseId, caseNumber, caseUpdatedAt, ...item }) => ({
+        alertId,
+        caseId,
+        caseNumber,
+        caseUpdatedAt,
+        item: { ...item, kind: kind.name } as SharedItem,
+      })),
+    ),
+  );
+  return rows.flat();
+}
+
+/** Groups `links` by `key`, keeping their order. */
+function groupShared(links: readonly SharedLink[], key: (l: SharedLink) => string) {
+  const by = new Map<string, SharedItem[]>();
+  for (const l of links) by.set(key(l), [...(by.get(key(l)) ?? []), l.item]);
+  return by;
+}
+
+/**
+ * Correlation for Alert `alertId`: each Case `me` can see, in any Status and other than the Case it
+ * is on, linked to an Observable or Asset the Alert names that isn't on the Ignored list, with those
+ * items in the order the Alert first named them, Observables first.
+ */
+export async function casesSharingAlert(db: Db | Tx, me: MemberActor, alertId: string) {
+  return groupShared(await sharedLinks(db, me, eq(alerts.id, alertId)), (l) => l.caseId);
+}
+
+/**
+ * Correlation for the Alert queue: for each of `alertIds` that shares a non-ignored Observable or
+ * Asset with a Case `me` can see (other than its own), the best such Case (most shared, then most
+ * recently updated, then newest) and how many others there are.
+ */
+export async function bestCasesForAlerts(db: Db | Tx, me: MemberActor, alertIds: readonly string[]) {
+  const best = new Map<string, { caseId: string; others: number }>();
+  if (!alertIds.length) return best;
+  const links = await sharedLinks(db, me, inArray(alerts.id, [...alertIds]));
+  const counts = new Map<string, Map<string, { count: number; number: number; updatedAt: number }>>();
+  for (const l of links) {
+    const perAlert = counts.get(l.alertId) ?? new Map();
+    counts.set(l.alertId, perAlert);
+    const c = perAlert.get(l.caseId) ?? { count: 0, number: l.caseNumber, updatedAt: l.caseUpdatedAt.getTime() };
+    perAlert.set(l.caseId, { ...c, count: c.count + 1 });
+  }
+  for (const [alertId, perCase] of counts) {
+    const [top] = [...perCase].toSorted(([, x], [, y]) => y.count - x.count || y.updatedAt - x.updatedAt || y.number - x.number);
+    best.set(alertId, { caseId: top![0], others: perCase.size - 1 });
+  }
+  return best;
+}
+
+/**
+ * Correlation for Case `caseId`: each New Alert naming an Observable or Asset the Case links that
+ * isn't on the Ignored list, with those items in the order the Alert first named them, Observables
+ * first. The caller has checked that `me` can see the Case.
+ */
+export async function newAlertsSharingCase(db: Db | Tx, me: MemberActor, caseId: string) {
+  return groupShared(await sharedLinks(db, me, eq(alerts.status, "new"), eq(cases.id, caseId)), (l) => l.alertId);
 }

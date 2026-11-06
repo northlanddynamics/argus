@@ -69,6 +69,24 @@ export const caseAlertsQuery = (number: number) =>
     },
   });
 
+/**
+ * Correlation for Case `number`: the New Alerts sharing its Observables or Assets, most shared first,
+ * and how the Member may attach them. Members only. Under `alertsKey`'s correlations, so Alert and
+ * Case signals both refresh it.
+ */
+export const caseCorrelationsQuery = (number: number) =>
+  queryOptions({
+    queryKey: [...alertsKey, "correlations", "case", number],
+    queryFn: async () => {
+      const res = await api.cases[":number"].correlations.$get({ param: { number: String(number) } });
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error("Could not load the related Alerts");
+      return await res.json();
+    },
+  });
+
+export type CaseCorrelation = NonNullable<Awaited<ReturnType<ReturnType<typeof caseCorrelationsQuery>["queryFn"] & {}>>>["alerts"][number];
+
 /** Selected Alerts: each id with the version shown when it was selected. */
 export type AlertSelection = { id: string; version: number }[];
 

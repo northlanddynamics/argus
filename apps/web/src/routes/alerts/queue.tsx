@@ -479,6 +479,20 @@ export function AlertQueuePage() {
                         </Link>
                       )}
                     </div>
+                    {a.correlation && (
+                      <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                        Related{" "}
+                        <Link
+                          to="/cases/$number"
+                          params={{ number: String(a.correlation.case.number) }}
+                          className="font-mono underline underline-offset-4"
+                          title={a.correlation.case.title}
+                        >
+                          {caseRef(a.correlation.case.number)}
+                        </Link>
+                        {a.correlation.others > 0 && ` +${a.correlation.others} more`}
+                      </div>
+                    )}
                     {a.dismissalReason && (
                       <div className="mt-0.5 truncate text-xs text-muted-foreground">{dismissalReasonLabel[a.dismissalReason]}</div>
                     )}
