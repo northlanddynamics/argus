@@ -98,6 +98,20 @@ test("the Owner adds a CrowdStrike Integration; its detections appear live in an
 
     // The Owner sees the Integration has had an event.
     await card.getByText("None yet").waitFor({ state: "detached" });
+
+    // The Owner allows Response Actions and sets what one-click IOCs go with.
+    await card.getByRole("switch", { name: "Response Actions" }).click();
+    await ownerPage.getByRole("alertdialog").getByRole("button", { name: "Allow Response Actions" }).click();
+    const defaults = card.getByRole("form", { name: "Response Action defaults" });
+    await defaults.getByLabel("Severity").selectOption("critical");
+    await defaults.getByLabel("macOS").click();
+    await defaults.getByRole("button", { name: "Save defaults" }).click();
+    await defaults.getByRole("button", { name: "Save defaults" }).and(ownerPage.locator(":disabled")).waitFor();
+    expect((await owner.api.integrations.$get().then((r) => r.json())).integrations[0]!.responseActionDefaults).toEqual({
+      severity: "critical",
+      platforms: ["windows", "linux"],
+      internal: false,
+    });
   } finally {
     await stop();
   }
@@ -271,7 +285,7 @@ test("opening an Alert refreshes its Falcon comments without waiting; once attac
   }
 }, 60_000);
 
-test("an Analyst sends an Observable on a Case to Falcon as a custom IOC; it becomes Active on the Case once sent", async () => {
+test("an Analyst sends an Observable on a Case to Falcon in one click from its menu, with the Integration's defaults; it becomes Active once sent", async () => {
   const { t, baseUrl, stop } = await serveTestApp();
   const falcon = fakeFalcon();
   const sender = createResponseActionSender(t.deps, { connect: falcon.connect });
@@ -281,7 +295,14 @@ test("an Analyst sends an Observable on a Case to Falcon as a custom IOC; it bec
     await owner.api.organization.invitations.$post({ json: { email: "ana@acme.example", role: "analyst" } });
     const ana = await t.acceptInvite("ana@acme.example", PASSWORD, "Ana Analyst");
     await owner.api.integrations.$post({
-      json: { name: "CrowdStrike — Prod", cloud: "us-1", clientId: "falcon-client-0001", clientSecret: "falcon-secret", responseActions: true },
+      json: {
+        name: "CrowdStrike — Prod",
+        cloud: "us-1",
+        clientId: "falcon-client-0001",
+        clientSecret: "falcon-secret",
+        responseActions: true,
+        responseActionDefaults: { severity: "low", platforms: ["windows", "linux"], internal: false },
+      },
     });
     await ana.api.cases.$post({ json: { title: "Phishing at Acme", caseType: "phishing", severity: "high" } });
     await ana.api.cases[":number"].observables.$post({ param: { number: "1" }, json: { type: "domain", value: "invoice-portal.biz" } });
@@ -291,13 +312,21 @@ test("an Analyst sends an Observable on a Case to Falcon as a custom IOC; it bec
     await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
     await page.goto(`${baseUrl}/cases/1/observables`);
     await page.getByText("No Response Actions yet.").waitFor();
-    // Falcon takes no URL as a custom IOC, so only the domain offers it.
-    expect(await page.getByTestId("observable-https://invoice-portal.biz/login").getByRole("button", { name: /Send .* to Falcon/ }).count()).toBe(0);
+    // Falcon takes no URL as a custom IOC: right-clicking it says so under Take action.
+    await page.getByTestId("observable-https://invoice-portal.biz/login").getByRole("cell").first().click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Take action" }).click();
+    expect(await page.getByRole("menuitem", { name: "Falcon takes no URL" }).isDisabled()).toBe(true);
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
 
-    await page.getByRole("button", { name: "Send Domain invoice-portal.biz to Falcon" }).click();
-    const dialog = page.getByRole("dialog", { name: "Send to Falcon as a custom IOC" });
-    expect(await dialog.getByLabel("Prevent").isDisabled()).toBe(true);
-    await dialog.getByRole("button", { name: "Send to Falcon" }).click();
+    // The domain's ⋯ menu: an alert in one click, with the Integration's defaults; a block is for hashes.
+    await page.getByRole("button", { name: "Actions for Domain invoice-portal.biz" }).click();
+    await page.getByRole("menuitem", { name: "Take action" }).click();
+    const prod = page.getByRole("group", { name: "CrowdStrike — Prod" });
+    await prod.getByText("Severity Low · Windows, Linux").waitFor();
+    expect(await prod.getByRole("menuitem", { name: /^IOC block/ }).getAttribute("aria-disabled")).toBe("true");
+    await prod.getByRole("menuitem", { name: /^IOC alert/ }).click();
+    await page.getByText("IOC alert sent through CrowdStrike — Prod").waitFor();
     const row = page.getByTestId("response-action-invoice-portal.biz");
     await row.getByText("Pending").waitFor();
 
@@ -305,10 +334,14 @@ test("an Analyst sends an Observable on a Case to Falcon as a custom IOC; it bec
     await sender.tick();
     await row.getByText("Active").waitFor();
     await row.getByText(/^Sent /).waitFor();
-    expect(falcon.tenant("falcon-client-0001").iocsCreated).toMatchObject([{ type: "domain", value: "invoice-portal.biz", action: "detect" }]);
+    expect(falcon.tenant("falcon-client-0001").iocsCreated).toMatchObject([
+      { type: "domain", value: "invoice-portal.biz", action: "detect", severity: "low", platforms: ["windows", "linux"] },
+    ]);
 
-    // Removed again from the Case: Removing until the worker deletes it in Falcon, then Removed.
-    await row.getByRole("button", { name: "Remove the Response Action on invoice-portal.biz" }).click();
+    // Removed again by right-clicking its row: Removing until the worker deletes it in Falcon, then Removed.
+    await row.getByRole("cell").first().click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Take action" }).click();
+    await page.getByRole("menuitem", { name: /^Remove IOC/ }).click();
     const confirm = page.getByRole("dialog", { name: "Remove from Falcon" });
     await confirm.getByRole("button", { name: "Remove", exact: true }).click();
     await row.getByText("Removing").waitFor();
@@ -363,28 +396,20 @@ test("an Analyst pivots from search to an Observable's page and its Case, sends 
     await page.getByRole("table", { name: "Linked Cases" }).getByRole("link", { name: /C-1 Invoice phishing wave/ }).click();
     await page.waitForURL(`${baseUrl}/cases/1`);
 
-    // On the Case's Observables, she ticks the domain and the IP and sends them together. Falcon
-    // takes no URL, so the URL can't be ticked and says so where Send would be.
+    // On the Case's Observables, she ticks the domain and the IP and alerts on them together through
+    // Prod, in one click. Falcon takes no URL, so the URL can't be ticked.
     await page.getByRole("tab", { name: "Observables & Assets" }).click();
     await page.getByText("No Response Actions yet.").waitFor();
     expect(await page.getByRole("checkbox", { name: "Select URL https://invoice-portal.biz/login" }).count()).toBe(0);
-    await page.getByTestId("observable-https://invoice-portal.biz/login").getByText("Falcon takes no URL").waitFor();
     await page.getByRole("checkbox", { name: "Select Domain invoice-portal.biz" }).click();
     await page.getByRole("checkbox", { name: "Select IP 185.220.101.4" }).click();
-    await page.getByRole("button", { name: "Send 2 to Falcon" }).click();
-    const dialog = page.getByRole("dialog", { name: "Send to Falcon as a custom IOC" });
-    // With two Integrations neither is ticked to start with, so where it goes is a choice; she picks Prod.
-    const prod = dialog.getByRole("checkbox", { name: "CrowdStrike — Prod" });
-    const eu = dialog.getByRole("checkbox", { name: "CrowdStrike — EU" });
-    expect(await prod.isChecked()).toBe(false);
-    expect(await eu.isChecked()).toBe(false);
-    expect(await dialog.getByRole("button", { name: "Send to Falcon" }).isDisabled()).toBe(true);
-    await dialog.getByText("Severity High").waitFor();
-    await prod.click();
-    await dialog.getByRole("list", { name: "Observables to send" }).getByText("Will be sent to CrowdStrike — Prod").first().waitFor();
-    await dialog.getByRole("button", { name: "Send to Falcon" }).click();
-    await dialog.waitFor({ state: "detached" });
-    await page.getByText("2 Response Actions taken through CrowdStrike — Prod").waitFor();
+    await page.getByRole("button", { name: "Take action on 2" }).click();
+    const bulk = page.getByRole("group", { name: "CrowdStrike — Prod" });
+    await bulk.getByText("Severity High (from the Case) · every platform").waitFor();
+    // Neither is a hash, so neither can be blocked.
+    expect(await bulk.getByRole("menuitem", { name: /^IOC block/ }).getAttribute("aria-disabled")).toBe("true");
+    await bulk.getByRole("menuitem", { name: /^IOC alert/ }).click();
+    await page.getByText("IOC alert sent through CrowdStrike — Prod").waitFor();
 
     const domainRow = page.getByTestId("response-action-invoice-portal.biz");
     const ipRow = page.getByTestId("response-action-185.220.101.4");
@@ -396,13 +421,21 @@ test("an Analyst pivots from search to an Observable's page and its Case, sends 
     await domainRow.getByText("Active").waitFor();
     await ipRow.getByText("Active").waitFor();
 
-    // Sending the domain again leaves it out: it is already sent from this Case to Prod.
-    await page.getByRole("button", { name: "Send Domain invoice-portal.biz to Falcon" }).click();
+    // Its menu now says what was sent through Prod, and still offers EU.
+    await page.getByTestId("observable-invoice-portal.biz").getByRole("button", { name: "Actions for Domain invoice-portal.biz" }).click();
+    await page.getByRole("menuitem", { name: "Take action" }).click();
+    await page.getByRole("group", { name: "CrowdStrike — Prod" }).getByText(/^IOC alert sent/).waitFor();
+    await page.getByRole("group", { name: "CrowdStrike — EU" }).getByRole("menuitem", { name: /^IOC alert/ }).waitFor();
+    // More options leaves it out for Prod: it is already sent from this Case there.
+    await page.getByRole("menuitem", { name: "More options…" }).click();
     const again = page.getByRole("dialog", { name: "Send to Falcon as a custom IOC" });
+    // With two Integrations neither is ticked to start with, so where it goes is a choice.
+    expect(await again.getByRole("checkbox", { name: "CrowdStrike — EU" }).isChecked()).toBe(false);
     await again.getByRole("checkbox", { name: "CrowdStrike — Prod" }).click();
     await again.getByText("Already sent from this Case as Detect to CrowdStrike — Prod; left out").waitFor();
     expect(await again.getByRole("button", { name: "Send to Falcon" }).isDisabled()).toBe(true);
     await again.getByRole("button", { name: "Cancel" }).click();
+    await again.waitFor({ state: "detached" });
     await page.getByTestId("observable-invoice-portal.biz").getByText("Detect · CrowdStrike — Prod, sent").waitFor();
     expect(falcon.tenant("falcon-client-0001").iocsCreated.map((i) => i.value)).toEqual(["invoice-portal.biz", "185.220.101.4"]);
     expect(falcon.tenant("falcon-client-0002").iocsCreated).toEqual([]);
@@ -413,6 +446,14 @@ test("an Analyst pivots from search to an Observable's page and its Case, sends 
     await row.getByText("Active").waitFor();
     await row.getByText("CrowdStrike — Prod").waitFor();
     await row.getByRole("link", { name: /C-1 Invoice phishing wave/ }).waitFor();
+
+    // There too, right-clicking a Case it is on takes action from that Case: an alert through EU.
+    await page.getByRole("table", { name: "Linked Cases" }).getByRole("row").filter({ hasText: "Invoice phishing wave" }).getByRole("cell").last().click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Take action" }).click();
+    await page.getByRole("group", { name: "CrowdStrike — EU" }).getByRole("menuitem", { name: /^IOC alert/ }).click();
+    await page.getByText("IOC alert sent through CrowdStrike — EU").waitFor();
+    await sender.tick();
+    expect(falcon.tenant("falcon-client-0002").iocsCreated.map((i) => i.value)).toEqual(["invoice-portal.biz"]);
   } finally {
     await stop();
   }

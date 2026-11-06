@@ -4,7 +4,7 @@ An Integration now has a Provider (CrowdStrike, Mimecast) that fixes what it can
 
 A Response Action is always taken from a Case, against one Observable linked to that Case. This round has two kinds:
 
-- **Falcon custom IOC**: sha256, md5, domain and IP. Falcon accepts no URL, email or SHA-1. The analyst picks Detect or Prevent, and Falcon allows Prevent only for hashes. Severity comes from the Case. The IOC applies on every platform, globally, with source `Argus` and the description `C-<n>: <title>` linking back to the Case.
+- **Falcon custom IOC**: sha256, md5, domain and IP. Falcon accepts no URL, email or SHA-1. The analyst picks Detect or Prevent, and Falcon allows Prevent only for hashes. Severity comes from the Case. The IOC applies on every platform, globally (ADR 0008 makes severity and platforms per-Integration defaults), with source `Argus` and the description `C-<n>: <title>` linking back to the Case.
 - **Mimecast blocked sender**: an Organization-wide Blocked Senders policy entry for an email address or its domain. When the domain isn't yet linked to the Case, it is linked as an Observable first.
 
 Response Actions are a per-Integration setting, separate from Alert write-back, off until an Admin turns it on. The Falcon API client needs IOC Management write scope, which is not the Alerts write scope. Any Member who can work the Case may take or remove a Response Action. Guests never can. On a Closed Case, an Admin may remove one without reopening it. An Analyst needs the Case reopened first.

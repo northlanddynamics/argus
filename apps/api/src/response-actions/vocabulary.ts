@@ -3,6 +3,7 @@
  * accepts. Plain values shared with the SPA.
  */
 
+import type { Severity } from "../cases/vocabulary";
 import type { ObservableType } from "../observables/vocabulary";
 
 export const RESPONSE_ACTION_KINDS = ["falcon_ioc"] as const;
@@ -81,3 +82,27 @@ export function falconIocType(type: ObservableType, value: string): FalconIocTyp
 
 /** Whether Falcon lets an IOC of this type Prevent, not only Detect. */
 export const falconAllowsPrevent = (type: FalconIocType) => type === "sha256" || type === "md5";
+
+/** The platforms a Falcon custom IOC can apply to. */
+export const FALCON_IOC_PLATFORMS = ["windows", "mac", "linux"] as const;
+export type FalconIocPlatform = (typeof FALCON_IOC_PLATFORMS)[number];
+export const falconIocPlatformLabel: Record<FalconIocPlatform, string> = { windows: "Windows", mac: "macOS", linux: "Linux" };
+
+/**
+ * What a Falcon custom IOC is sent with besides its action, set per Integration by an Admin so that
+ * a Member can take one in a single click (ADR 0008). `severity` is a fixed Severity, or `case` to
+ * follow the Case's; `platforms` is at least one; `internal` is whether a Response Action starts
+ * hidden from the Case's Guests.
+ */
+export type FalconIocDefaults = {
+  severity: "case" | Severity;
+  platforms: FalconIocPlatform[];
+  internal: boolean;
+};
+
+/** As ADR 0007 had it: severity from the Case, every platform, visible to Guests. */
+export const DEFAULT_FALCON_IOC_DEFAULTS: FalconIocDefaults = { severity: "case", platforms: [...FALCON_IOC_PLATFORMS], internal: false };
+
+/** The severity an IOC goes with: the Integration's own, or the Case's. */
+export const iocSeverity = (defaults: FalconIocDefaults, caseSeverity: Severity): Severity =>
+  defaults.severity === "case" ? caseSeverity : defaults.severity;

@@ -27,6 +27,9 @@ import { ago, FALCON_CLOUDS, type FalconCloud, falconCloudLabel, healthWord, typ
 import { api, errorMessage } from "@/lib/api";
 import { useLiveStatus } from "@/lib/live";
 import { type Provider, providerLabel } from "api/integrations/vocabulary";
+import { SEVERITIES, severityLabel } from "api/cases/vocabulary";
+import { Checkbox } from "@/components/ui/checkbox";
+import { FALCON_IOC_PLATFORMS, type FalconIocDefaults, type FalconIocPlatform, falconIocPlatformLabel } from "@/lib/response-actions";
 
 /** The Amber Notice treatment (DESIGN.md): the one warning style. */
 const notice = "border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80";
@@ -305,8 +308,8 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
             title={`Allow Response Actions through ${i.name}?`}
             body={
               <>
-                Any Member who can work a Case may then add custom IOCs to this Falcon tenant: globally, on every platform, as Detect or, for
-                hashes, Prevent, which blocks the file on every host. Each is recorded on its Case and in the Audit Log, and only the Case that
+                Any Member who can work a Case may then add custom IOCs to this Falcon tenant in one click: globally, with the severity and
+                platforms set below, as an alert (Detect) or, for hashes, a block (Prevent), which stops the file on every host it applies to. Each is recorded on its Case and in the Audit Log, and only the Case that
                 sent it can remove it. The API client needs IOC Management write scope; without it, sends fail on the Case with a 403.
               </>
             }
@@ -329,6 +332,10 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
           <Alert variant="destructive">
             <AlertDescription>{setResponseActions.error.message}</AlertDescription>
           </Alert>
+        )}
+        {responseActions && i.provider === "crowdstrike" && (
+          // Keyed by what is saved, so a change saved elsewhere replaces the form's.
+          <ResponseActionDefaults key={JSON.stringify(i.responseActionDefaults)} integration={i} />
         )}
         {writesBack && <WriteBacks counts={i.writeBacks} />}
         {responseActions && (i.responseActions || hasAny(i.responseActionCounts)) && <ResponseActionCounts counts={i.responseActionCounts} />}
@@ -515,6 +522,111 @@ function ResponseActionsSetting(props: {
         </p>
       </div>
     </div>
+  );
+}
+
+/**
+ * What a custom IOC taken through the Integration is sent with besides alert or block: Falcon needs a
+ * severity and platforms, so a Member can take one in a single click (ADR 0008). Admins change them;
+ * every Member sees them. Response Actions already taken keep what they were taken with.
+ */
+function ResponseActionDefaults({ integration: i }: { integration: IntegrationView }) {
+  const queryClient = useQueryClient();
+  const saved = i.responseActionDefaults;
+  const [draft, setDraft] = useState<FalconIocDefaults>(saved);
+  const locked = !i.credentials;
+  const save = useMutation({
+    mutationFn: async (next: FalconIocDefaults) =>
+      ok(await api.integrations[":id"]["response-action-defaults"].$put({ param: { id: i.id }, json: next }), "Could not save the defaults"),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: integrationsKey }),
+  });
+  const changed =
+    draft.severity !== saved.severity ||
+    draft.internal !== saved.internal ||
+    FALCON_IOC_PLATFORMS.some((p) => draft.platforms.includes(p) !== saved.platforms.includes(p));
+  const togglePlatform = (p: FalconIocPlatform, on: boolean) =>
+    setDraft((d) => ({ ...d, platforms: FALCON_IOC_PLATFORMS.filter((x) => (x === p ? on : d.platforms.includes(x))) }));
+  const id = (field: string) => `ioc-defaults-${field}-${i.id}`;
+  return (
+    <form
+      className="grid gap-3 rounded-lg border p-3"
+      aria-label="Response Action defaults"
+      data-testid="response-action-defaults"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (changed && draft.platforms.length) save.mutate(draft);
+      }}
+    >
+      <div className="grid gap-0.5">
+        <span className="text-sm font-semibold">Defaults for one-click IOCs</span>
+        <p className="text-sm text-muted-foreground">
+          What an IOC alert or block taken from a Case is sent with. Changes apply to those taken from now on.
+          {locked && " Only Admins can change these."}
+        </p>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-[10rem_1fr] sm:items-center">
+        <Label htmlFor={id("severity")}>Severity</Label>
+        <NativeSelect
+          id={id("severity")}
+          value={draft.severity}
+          disabled={locked}
+          onChange={(e) => setDraft((d) => ({ ...d, severity: e.target.value as FalconIocDefaults["severity"] }))}
+        >
+          <NativeSelectOption value="case">The Case's Severity</NativeSelectOption>
+          {SEVERITIES.map((s) => (
+            <NativeSelectOption key={s} value={s}>
+              {severityLabel[s]}
+            </NativeSelectOption>
+          ))}
+        </NativeSelect>
+        <span className="text-sm font-medium">Platforms</span>
+        <div className="flex flex-wrap gap-4" role="group" aria-label="Platforms">
+          {FALCON_IOC_PLATFORMS.map((p) => (
+            <div key={p} className="flex items-center gap-2">
+              <Checkbox
+                id={id(p)}
+                checked={draft.platforms.includes(p)}
+                disabled={locked}
+                onCheckedChange={(checked) => togglePlatform(p, checked === true)}
+              />
+              <Label htmlFor={id(p)} className="font-normal">
+                {falconIocPlatformLabel[p]}
+              </Label>
+            </div>
+          ))}
+        </div>
+        <span className="text-sm font-medium">Visibility</span>
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id={id("internal")}
+            checked={draft.internal}
+            disabled={locked}
+            onCheckedChange={(checked) => setDraft((d) => ({ ...d, internal: checked === true }))}
+          />
+          <Label htmlFor={id("internal")} className="font-normal">
+            Internal (hidden from Guests on the Case)
+          </Label>
+        </div>
+      </div>
+      {draft.platforms.length === 0 && <p className="text-xs text-destructive">Choose at least one platform.</p>}
+      {save.error && (
+        <Alert variant="destructive">
+          <AlertDescription>{save.error.message}</AlertDescription>
+        </Alert>
+      )}
+      {!locked && (
+        <div className="flex justify-end gap-2">
+          {changed && (
+            <Button type="button" variant="ghost" size="sm" onClick={() => setDraft(saved)}>
+              Reset
+            </Button>
+          )}
+          <Button type="submit" size="sm" disabled={!changed || !draft.platforms.length || save.isPending}>
+            Save defaults
+          </Button>
+        </div>
+      )}
+    </form>
   );
 }
 

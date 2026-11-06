@@ -24,7 +24,15 @@ import { PROVIDERS } from "../integrations/vocabulary";
 import { NOTIFICATION_KINDS } from "../notifications/vocabulary";
 import { TEAMS_POST_KINDS } from "../teams/vocabulary";
 import { type Citation, PROMOTION_SOURCES } from "../timeline/vocabulary";
-import { FALCON_IOC_ACTIONS, RESPONSE_ACTION_KINDS, RESPONSE_ACTION_ORIGINS, RESPONSE_ACTION_STATES } from "../response-actions/vocabulary";
+import {
+  DEFAULT_FALCON_IOC_DEFAULTS,
+  FALCON_IOC_ACTIONS,
+  type FalconIocDefaults,
+  type FalconIocPlatform,
+  RESPONSE_ACTION_KINDS,
+  RESPONSE_ACTION_ORIGINS,
+  RESPONSE_ACTION_STATES,
+} from "../response-actions/vocabulary";
 import {
   ALERT_KINDS,
   ALERT_STATUSES,
@@ -768,6 +776,8 @@ export const integrations = pgTable(
     writeBack: boolean("write_back").notNull().default(false),
     /** Whether Response Actions may be taken through it (ADR 0007); separate from write-back, off until an Admin turns it on. */
     responseActions: boolean("response_actions").notNull().default(false),
+    /** What a Falcon custom IOC taken through it is sent with besides its action (ADR 0008). */
+    responseActionDefaults: jsonb("response_action_defaults").$type<FalconIocDefaults>().notNull().default(DEFAULT_FALCON_IOC_DEFAULTS),
     health: text("health", { enum: INTEGRATION_HEALTH }).notNull(),
     healthDetail: text("health_detail"),
     healthChangedAt: timestamp("health_changed_at", { withTimezone: true }).notNull(),
@@ -1071,6 +1081,8 @@ export const responseActions = pgTable(
     targetValue: text("target_value").notNull(),
     falconAction: text("falcon_action", { enum: FALCON_IOC_ACTIONS }),
     severity: text("severity", { enum: SEVERITIES }),
+    /** The platforms the IOC applies to, as its Integration's defaults said when it was taken; null before ADR 0008, meaning all. */
+    falconPlatforms: jsonb("falcon_platforms").$type<FalconIocPlatform[]>(),
     state: text("state", { enum: RESPONSE_ACTION_STATES }).notNull(),
     externalId: text("external_id"),
     lastError: text("last_error"),

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { type ReactNode, useState } from "react";
+import { type ReactElement, type ReactNode, useState } from "react";
 import { ItemLink } from "@/components/item-link";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -29,7 +29,8 @@ import {
 import { responseActionsQuery } from "@/lib/response-actions";
 import { useCaseNumber } from "@/routes/cases/case-layout";
 import { falconIocActionLabel, type ResponseAction } from "@/lib/response-actions";
-import { falconTakes, holdingOn, ResponseActionsCard, SendToFalconDialog } from "@/routes/cases/response-actions";
+import { falconTakes, holdingOn, ResponseActionsCard } from "@/routes/cases/response-actions";
+import { BulkObservableActions, ObservableActions } from "@/routes/cases/observable-actions";
 import { when } from "@/lib/when";
 
 /**
@@ -70,37 +71,28 @@ export function CaseObservablesPage() {
           add={(type, value) => api.cases[":number"].observables.$post({ param: { number: n }, json: { type, value } })}
           unlink={(id) => api.cases[":number"].observables[":id"].$delete({ param: { number: n, id } })}
           renderStatus={(item) => <SentLine held={holdingOn(held, item.id)} />}
-          renderAction={(item) =>
-            eligible.length === 0 ? null : falconTakes(item.type, item.value) ? (
-              <SendToFalconDialog
-                number={number}
-                severity={c.severity}
-                observables={[item]}
-                integrations={eligible}
-                held={held}
-                trigger={
-                  <Button variant="ghost" size="sm" className="px-2" aria-label={`Send ${observableTypeLabel[item.type]} ${item.value} to Falcon`}>
-                    Send to Falcon
-                  </Button>
-                }
-              />
-            ) : (
-              <span className="px-2 text-xs text-muted-foreground">Falcon takes no {observableTypeLabel[item.type]}</span>
-            )
-          }
+          renderRow={(item, row, unlink) => (
+            <ObservableActions
+              key={item.id}
+              number={number}
+              observable={item}
+              onUnlink={readOnly ? undefined : unlink}
+            >
+              {row}
+            </ObservableActions>
+          )}
           selection={
             canSend ? { selected: chosen.map((o) => o.id), onChange: setSelected, selectable: (o) => falconTakes(o.type, o.value) } : undefined
           }
           headerAction={
             canSend && chosen.length > 0 ? (
-              <SendToFalconDialog
+              <BulkObservableActions
                 number={number}
                 severity={c.severity}
                 observables={chosen}
                 integrations={eligible}
                 held={held}
                 onSent={() => setSelected([])}
-                trigger={<Button size="sm">Send {chosen.length} to Falcon</Button>}
               />
             ) : null
           }
@@ -158,8 +150,11 @@ function LinkedCard<Type extends string>(props: {
   unlink: (id: string) => Promise<Response>;
   /** A line under the value saying where the item stands, such as what was sent from it. */
   renderStatus?: (item: Item<Type>) => ReactNode;
-  /** Something more to do with an item, beside Unlink. */
-  renderAction?: (item: Item<Type>) => ReactNode;
+  /**
+   * Gives the row a menu: `row` renders it with the menu's ⋯ button in place of Unlink, and `unlink`
+   * unlinks the item, for the menu to offer.
+   */
+  renderRow?: (item: Item<Type>, row: (menuButton: ReactNode) => ReactElement, unlink: () => void) => ReactElement;
   /** Set when items can be ticked to act on several at once. */
   selection?: { selected: string[]; onChange: (ids: string[]) => void; selectable?: (item: Item<Type>) => boolean };
   /** Shown beside the title, such as what to do with the ticked items. */
@@ -251,91 +246,95 @@ function LinkedCard<Type extends string>(props: {
               <TableHead>Type</TableHead>
               <TableHead>{props.valueHeading}</TableHead>
               <TableHead>Seen in other Cases</TableHead>
-              {!readOnly && <TableHead className="w-0" />}
+              {(!readOnly || props.renderRow) && <TableHead className="w-0" />}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {items?.map((item) => (
-              <TableRow key={item.id} data-testid={`${noun.toLowerCase()}-${item.value}`}>
-                {selection && (
-                  <TableCell className="w-0">
-                    {canTick(item) && (
-                    <Checkbox
-                      aria-label={`Select ${typeLabel[item.type]} ${item.value}`}
-                      checked={selection.selected.includes(item.id)}
-                      onCheckedChange={(checked) =>
-                        selection.onChange(checked === true ? [...selection.selected, item.id] : selection.selected.filter((id) => id !== item.id))
-                      }
-                    />
-                    )}
-                  </TableCell>
-                )}
-                <TableCell>{typeLabel[item.type] ?? item.type}</TableCell>
-                {/* Who added it sits under the value, so the row fits a half-width card without clipping Unlink. */}
-                <TableCell className="min-w-36 whitespace-normal">
-                  <ItemLink kind={props.kind} id={item.id} className="block font-mono text-xs break-all hover:underline" title={item.value}>
-                    {shown(item.type, item.value)}
-                  </ItemLink>
-                  <span
-                    className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground"
-                    title={new Date(item.linkedAt).toLocaleString()}
-                  >
-                    {item.fromAlert ? (
-                      <>
-                        <Badge variant="secondary">Alert (auto)</Badge>
-                        {item.fromAlert.alert && (
-                          <Link
-                            to="/alerts"
-                            search={{ status: "any", alert: item.fromAlert.alert.id }}
-                            className="text-xs text-primary underline"
-                            title={item.fromAlert.alert.externalId}
-                          >
-                            {item.fromAlert.alert.title}
-                          </Link>
-                        )}
-                      </>
-                    ) : (
-                      <>Added by {item.linkedBy.name}</>
-                    )}
-                  </span>
-                  {props.renderStatus?.(item)}
-                </TableCell>
-                <TableCell className="whitespace-normal">
-                  {item.seenIn.length === 0 ? (
-                    <span className="text-muted-foreground">—</span>
-                  ) : (
-                    // Each opens the item's own page, which lists every Case and Alert it is on.
-                    <ItemLink
-                      kind={props.kind}
-                      id={item.id}
-                      className="font-mono text-xs text-primary underline"
-                      title={item.seenIn.map((s) => `${caseRef(s.number)} ${s.title}`).join("\n")}
-                      aria-label={`Seen in ${item.seenIn.map((s) => `${caseRef(s.number)} ${s.title}`).join(", ")}`}
-                    >
-                      {item.seenIn.map((s) => caseRef(s.number)).join(", ")}
-                    </ItemLink>
+            {items?.map((item) => {
+              const row = (menuButton?: ReactNode) => (
+                <TableRow key={item.id} data-testid={`${noun.toLowerCase()}-${item.value}`}>
+                  {selection && (
+                    <TableCell className="w-0">
+                      {canTick(item) && (
+                      <Checkbox
+                        aria-label={`Select ${typeLabel[item.type]} ${item.value}`}
+                        checked={selection.selected.includes(item.id)}
+                        onCheckedChange={(checked) =>
+                          selection.onChange(checked === true ? [...selection.selected, item.id] : selection.selected.filter((id) => id !== item.id))
+                        }
+                      />
+                      )}
+                    </TableCell>
                   )}
-                </TableCell>
-                {!readOnly && (
-                  <TableCell className="w-0 text-right whitespace-nowrap">
-                    {props.renderAction?.(item)}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="px-2"
-                      disabled={unlink.isPending}
-                      aria-label={`Unlink ${typeLabel[item.type]} ${item.value}`}
-                      onClick={() => unlink.mutate(item.id)}
+                  <TableCell>{typeLabel[item.type] ?? item.type}</TableCell>
+                  {/* Who added it sits under the value, so the row fits a half-width card without clipping Unlink. */}
+                  <TableCell className="min-w-36 whitespace-normal">
+                    <ItemLink kind={props.kind} id={item.id} className="block font-mono text-xs break-all hover:underline" title={item.value}>
+                      {shown(item.type, item.value)}
+                    </ItemLink>
+                    <span
+                      className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground"
+                      title={new Date(item.linkedAt).toLocaleString()}
                     >
-                      Unlink
-                    </Button>
+                      {item.fromAlert ? (
+                        <>
+                          <Badge variant="secondary">Alert (auto)</Badge>
+                          {item.fromAlert.alert && (
+                            <Link
+                              to="/alerts"
+                              search={{ status: "any", alert: item.fromAlert.alert.id }}
+                              className="text-xs text-primary underline"
+                              title={item.fromAlert.alert.externalId}
+                            >
+                              {item.fromAlert.alert.title}
+                            </Link>
+                          )}
+                        </>
+                      ) : (
+                        <>Added by {item.linkedBy.name}</>
+                      )}
+                    </span>
+                    {props.renderStatus?.(item)}
                   </TableCell>
-                )}
-              </TableRow>
-            ))}
+                  <TableCell className="whitespace-normal">
+                    {item.seenIn.length === 0 ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      // Each opens the item's own page, which lists every Case and Alert it is on.
+                      <ItemLink
+                        kind={props.kind}
+                        id={item.id}
+                        className="font-mono text-xs text-primary underline"
+                        title={item.seenIn.map((s) => `${caseRef(s.number)} ${s.title}`).join("\n")}
+                        aria-label={`Seen in ${item.seenIn.map((s) => `${caseRef(s.number)} ${s.title}`).join(", ")}`}
+                      >
+                        {item.seenIn.map((s) => caseRef(s.number)).join(", ")}
+                      </ItemLink>
+                    )}
+                  </TableCell>
+                  {menuButton ? (
+                    <TableCell className="w-0 text-right whitespace-nowrap">{menuButton}</TableCell>
+                  ) : !readOnly && (
+                    <TableCell className="w-0 text-right whitespace-nowrap">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="px-2"
+                        disabled={unlink.isPending}
+                        aria-label={`Unlink ${typeLabel[item.type]} ${item.value}`}
+                        onClick={() => unlink.mutate(item.id)}
+                      >
+                        Unlink
+                      </Button>
+                    </TableCell>
+                  )}
+                </TableRow>
+              );
+              return props.renderRow ? props.renderRow(item, row, () => unlink.mutate(item.id)) : row();
+            })}
             {items?.length === 0 && (
               <TableRow>
-                <TableCell colSpan={(readOnly ? 3 : 4) + (selection ? 1 : 0)} className="text-muted-foreground">
+                <TableCell colSpan={(readOnly && !props.renderRow ? 3 : 4) + (selection ? 1 : 0)} className="text-muted-foreground">
                   No {title} yet.
                 </TableCell>
               </TableRow>

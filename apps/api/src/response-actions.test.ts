@@ -213,6 +213,41 @@ describe("Taking a Falcon IOC Response Action", () => {
     expect(a.tenant.iocsCreated.map((i) => i.severity)).toEqual(["critical"]);
   });
 
+  test("an Integration's defaults set the IOC's severity and platforms, and whether it starts Internal", async () => {
+    const a = await acme();
+    const set = await a.owner.api.integrations[":id"]["response-action-defaults"].$put({
+      param: { id: a.integrationId },
+      json: { severity: "low", platforms: ["linux", "windows"], internal: true },
+    });
+    expect(set.status).toBe(200);
+    expect((await a.list(a.ana)).integrations[0]!.defaults).toEqual({ severity: "low", platforms: ["windows", "linux"], internal: true });
+
+    const domain = await a.link("domain", "evil.example");
+    const hash = await a.link("sha256", SHA256);
+    expect((await a.take(a.ana, domain)).body.responseAction).toMatchObject({ falcon: { action: "detect", severity: "low" }, internal: true });
+    // Asked for explicitly, it is shown to Guests after all.
+    expect((await a.take(a.ana, hash, { action: "prevent", internal: false })).body.responseAction).toMatchObject({ internal: false });
+    await a.worker.tick();
+    expect(a.tenant.iocsCreated.map((i) => [i.value, i.severity, i.platforms])).toEqual([
+      ["evil.example", "low", ["windows", "linux"]],
+      [SHA256, "low", ["windows", "linux"]],
+    ]);
+    expect((await a.timeline(a.ana)).map((e) => e.body)).toContain(
+      "Response Action: Argus sent Domain evil[.]example to CrowdStrike Falcon as a custom IOC (Detect, severity Low, Windows, Linux).",
+    );
+  });
+
+  test("changing an Integration's defaults leaves what is already queued as it was taken", async () => {
+    const a = await acme();
+    await a.take(a.ana, await a.link("domain", "evil.example"));
+    await a.owner.api.integrations[":id"]["response-action-defaults"].$put({
+      param: { id: a.integrationId },
+      json: { severity: "critical", platforms: ["mac"], internal: false },
+    });
+    await a.worker.tick();
+    expect(a.tenant.iocsCreated.map((i) => [i.severity, i.platforms])).toEqual([["high", ["windows", "mac", "linux"]]]);
+  });
+
   test("Prevent is refused for domains and IPs, and URLs, email addresses and SHA-1 are refused", async () => {
     const a = await acme();
     for (const [type, value] of [
@@ -248,7 +283,9 @@ describe("Taking a Falcon IOC Response Action", () => {
   test("Integrations whose Response Actions are off aren't offered and are refused", async () => {
     const a = await acme({ responseActions: false });
     const on = await a.add("CrowdStrike — EU", "falcon-client-0002", true);
-    expect((await a.list(a.ana)).integrations).toEqual([{ id: on, name: "CrowdStrike — EU", provider: "crowdstrike" }]);
+    expect((await a.list(a.ana)).integrations).toEqual([
+      { id: on, name: "CrowdStrike — EU", provider: "crowdstrike", defaults: { severity: "case", platforms: ["windows", "mac", "linux"], internal: false } },
+    ]);
 
     const domain = await a.link("domain", "evil.example");
     expect(await a.take(a.ana, domain)).toEqual({

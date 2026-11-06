@@ -28,7 +28,7 @@ const takeBody = z.object({
   /** Detect, or Prevent for hashes only. */
   action: z.enum(FALCON_IOC_ACTIONS),
   /** Hidden from the Case's Guests. */
-  internal: z.boolean().default(false),
+  internal: z.boolean().optional(),
   /** Sends it even if it is on the Ignored list. */
   confirmIgnored: z.boolean().default(false),
 });
@@ -40,7 +40,7 @@ const takeManyBody = z.object({
   /** Detect, or Prevent, which only hashes take: domains and IPs in a Prevent send are skipped. */
   action: z.enum(FALCON_IOC_ACTIONS),
   /** Hidden from the Case's Guests. */
-  internal: z.boolean().default(false),
+  internal: z.boolean().optional(),
   /** Sends those on the Ignored list too; without it, any among them refuses the request. */
   confirmIgnored: z.boolean().default(false),
 });

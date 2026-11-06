@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams, useRouteContext } from "@tanstack/react-router";
 import { BellOffIcon, CheckIcon, CopyIcon, FingerprintIcon, LockIcon, MonitorIcon, UserIcon } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { SeverityBadge, StatusBadge } from "@/components/case-badges";
 import { observableIcon } from "@/components/search/search-hit";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +27,7 @@ import {
 } from "@/lib/observables";
 import { falconIocActionLabel, responseActionKindLabel, responseActionStateLabel } from "@/lib/response-actions";
 import { exactTime, when } from "@/lib/when";
+import { ObservableActions } from "@/routes/cases/observable-actions";
 
 /** `/observables/$id`: everything Argus knows about one Observable that the viewer may see. */
 export function ObservablePage() {
@@ -131,9 +132,9 @@ function ItemPageView({ kind, id }: { kind: ItemKind; id: string }) {
         </dl>
       </section>
 
-      <CasesCard item={item} />
+      <CasesCard item={item} actions={kind === "observable" && !guest} />
       {!guest && <AlertsCard item={item} />}
-      {kind === "observable" && <ResponseActionsCard item={item} />}
+      {kind === "observable" && <ResponseActionsCard item={item} actions={!guest} />}
       <p className="max-w-prose text-xs text-muted-foreground">
         {guest
           ? "Only the Cases you've been given access to are shown."
@@ -181,7 +182,12 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-function CasesCard({ item }: { item: ItemPage }) {
+/**
+ * The Cases it is on. For an Observable, Members right-click a Case's row, or use its ⋯ menu, to take
+ * action on the Observable from that Case.
+ */
+function CasesCard({ item, actions }: { item: ItemPage; actions: boolean }) {
+  const observable = { id: item.id, type: item.type as ObservableType, value: item.value };
   return (
     <Card>
       <CardHeader>
@@ -196,32 +202,47 @@ function CasesCard({ item }: { item: ItemPage }) {
               <TableHead>Severity</TableHead>
               <TableHead className="hidden sm:table-cell">Assignee</TableHead>
               <TableHead className="text-right">Linked</TableHead>
+              {actions && (
+                <TableHead className="w-0">
+                  <span className="sr-only">Actions</span>
+                </TableHead>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {item.cases.map((c) => (
-              <TableRow key={c.number}>
-                <TableCell className="max-w-0 min-w-48 whitespace-normal break-words">
-                  <Link to="/cases/$number" params={{ number: String(c.number) }} className="hover:underline">
-                    <span className="font-mono text-xs text-muted-foreground">{caseRef(c.number)}</span> {c.title}
-                  </Link>
-                  {c.restricted && <LockIcon className="ml-1 inline size-3 text-muted-foreground" aria-label="Restricted" />}
-                </TableCell>
-                <TableCell>
-                  <StatusBadge status={c.status} />
-                </TableCell>
-                <TableCell>
-                  <SeverityBadge severity={c.severity} />
-                </TableCell>
-                <TableCell className="hidden sm:table-cell">{c.assignee?.name ?? <span className="text-muted-foreground">Unassigned</span>}</TableCell>
-                <TableCell className="text-right text-muted-foreground tabular-nums" title={exactTime(c.linkedAt)}>
-                  {when(c.linkedAt)}
-                </TableCell>
-              </TableRow>
-            ))}
+            {item.cases.map((c) => {
+              const row = (menuButton?: ReactNode) => (
+                <TableRow key={c.number}>
+                  <TableCell className="max-w-0 min-w-48 whitespace-normal break-words">
+                    <Link to="/cases/$number" params={{ number: String(c.number) }} className="hover:underline">
+                      <span className="font-mono text-xs text-muted-foreground">{caseRef(c.number)}</span> {c.title}
+                    </Link>
+                    {c.restricted && <LockIcon className="ml-1 inline size-3 text-muted-foreground" aria-label="Restricted" />}
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status={c.status} />
+                  </TableCell>
+                  <TableCell>
+                    <SeverityBadge severity={c.severity} />
+                  </TableCell>
+                  <TableCell className="hidden sm:table-cell">{c.assignee?.name ?? <span className="text-muted-foreground">Unassigned</span>}</TableCell>
+                  <TableCell className="text-right text-muted-foreground tabular-nums" title={exactTime(c.linkedAt)}>
+                    {when(c.linkedAt)}
+                  </TableCell>
+                  {menuButton && <TableCell className="w-0 text-right">{menuButton}</TableCell>}
+                </TableRow>
+              );
+              return actions ? (
+                <ObservableActions key={c.number} number={c.number} observable={observable}>
+                  {row}
+                </ObservableActions>
+              ) : (
+                row()
+              );
+            })}
             {item.cases.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="text-muted-foreground">
+                <TableCell colSpan={actions ? 6 : 5} className="text-muted-foreground">
                   Not on any Case you can see yet.
                 </TableCell>
               </TableRow>
@@ -301,7 +322,8 @@ const stateVariant = { pending: "secondary", active: "outline", removing: "secon
  * (never for Guests), where each stands, its Case and when. Said as what Argus did, never that
  * something is in force now.
  */
-function ResponseActionsCard({ item }: { item: ItemPage }) {
+function ResponseActionsCard({ item, actions }: { item: ItemPage; actions: boolean }) {
+  const observable = { id: item.id, type: item.type as ObservableType, value: item.value };
   return (
     <Card>
       <CardHeader>
@@ -315,35 +337,51 @@ function ResponseActionsCard({ item }: { item: ItemPage }) {
               <TableHead>State</TableHead>
               <TableHead>Case</TableHead>
               <TableHead className="text-right">When</TableHead>
+              {actions && (
+                <TableHead className="w-0">
+                  <span className="sr-only">Actions</span>
+                </TableHead>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {item.responseActions.map((r) => (
-              <TableRow key={r.id}>
-                <TableCell className="whitespace-normal">
-                  {responseActionKindLabel[r.kind]}
-                  <span className="block text-xs text-muted-foreground">
-                    {r.falcon && falconIocActionLabel[r.falcon.action]}
-                    {r.integration && ` · ${r.integration.name}`}
-                  </span>
-                </TableCell>
-                <TableCell className="whitespace-normal">
-                  <Badge variant={stateVariant[r.state]}>{responseActionStateLabel[r.state]}</Badge>
-                  {r.origin !== "created" && <span className="mt-1 block text-xs text-muted-foreground">Already present</span>}
-                </TableCell>
-                <TableCell>
-                  <Link to="/cases/$number/observables" params={{ number: String(r.case.number) }} className="hover:underline" title={r.case.title}>
-                    <span className="font-mono text-xs text-muted-foreground">{caseRef(r.case.number)}</span> {r.case.title}
-                  </Link>
-                </TableCell>
-                <TableCell className="text-right text-muted-foreground tabular-nums" title={exactTime(r.sentAt ?? r.requestedAt)}>
-                  {r.sentAt ? <>Sent {when(r.sentAt)}</> : <>Requested {when(r.requestedAt)}</>}
-                </TableCell>
-              </TableRow>
-            ))}
+            {item.responseActions.map((r) => {
+              const row = (menuButton?: ReactNode) => (
+                <TableRow key={r.id}>
+                  <TableCell className="whitespace-normal">
+                    {responseActionKindLabel[r.kind]}
+                    <span className="block text-xs text-muted-foreground">
+                      {r.falcon && falconIocActionLabel[r.falcon.action]}
+                      {r.integration && ` · ${r.integration.name}`}
+                    </span>
+                  </TableCell>
+                  <TableCell className="whitespace-normal">
+                    <Badge variant={stateVariant[r.state]}>{responseActionStateLabel[r.state]}</Badge>
+                    {r.origin !== "created" && <span className="mt-1 block text-xs text-muted-foreground">Already present</span>}
+                  </TableCell>
+                  <TableCell>
+                    <Link to="/cases/$number/observables" params={{ number: String(r.case.number) }} className="hover:underline" title={r.case.title}>
+                      <span className="font-mono text-xs text-muted-foreground">{caseRef(r.case.number)}</span> {r.case.title}
+                    </Link>
+                  </TableCell>
+                  <TableCell className="text-right text-muted-foreground tabular-nums" title={exactTime(r.sentAt ?? r.requestedAt)}>
+                    {r.sentAt ? <>Sent {when(r.sentAt)}</> : <>Requested {when(r.requestedAt)}</>}
+                  </TableCell>
+                  {menuButton && <TableCell className="w-0 text-right">{menuButton}</TableCell>}
+                </TableRow>
+              );
+              // Taken from its Case, so acted on from there too.
+              return actions ? (
+                <ObservableActions key={r.id} number={r.case.number} observable={observable}>
+                  {row}
+                </ObservableActions>
+              ) : (
+                row()
+              );
+            })}
             {item.responseActions.length === 0 && (
               <TableRow>
-                <TableCell colSpan={4} className="text-muted-foreground">
+                <TableCell colSpan={actions ? 5 : 4} className="text-muted-foreground">
                   No Response Actions taken on it.
                 </TableCell>
               </TableRow>
