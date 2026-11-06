@@ -1050,8 +1050,8 @@ export const teamsPosts = pgTable(
 );
 
 /**
- * Response Actions (ADR 0007): what Argus does in an external tool against one Observable linked to a
- * Case, through one Integration. Never deleted (ADR 0003). `target_type` and `target_value` are what
+ * Response Actions (ADR 0007): what Argus does in an external tool against one Observable or one
+ * Asset (ADR 0009) linked to a Case, through one Integration. Never deleted (ADR 0003). `target_type` and `target_value` are what
  * the tool is sent, `external_id` the tool's id for what Argus created there. `falcon_action` and
  * `severity` are a Falcon IOC's parameters, `severity` mapped from the Case's when it was taken.
  * `state_changed_at` is when it reached its state; `sent_at` when the tool accepted it.
@@ -1074,9 +1074,9 @@ export const responseActions = pgTable(
     caseId: text("case_id")
       .notNull()
       .references(() => cases.id, { onDelete: "restrict" }),
-    observableId: text("observable_id")
-      .notNull()
-      .references(() => observables.id, { onDelete: "restrict" }),
+    /** What it was taken against: exactly one Observable or one Asset (`response_actions_one_target`). */
+    observableId: text("observable_id").references(() => observables.id, { onDelete: "restrict" }),
+    assetId: text("asset_id").references(() => assets.id, { onDelete: "restrict" }),
     integrationId: text("integration_id")
       .notNull()
       .references(() => integrations.id, { onDelete: "restrict" }),
@@ -1108,13 +1108,15 @@ export const responseActions = pgTable(
   },
   (t) => [
     index("response_actions_case_idx").on(t.caseId, t.seq),
-    index("response_actions_observable_idx").on(t.observableId),
+    index("response_actions_observable_idx").on(t.observableId).where(sql`${t.observableId} IS NOT NULL`),
+    index("response_actions_asset_idx").on(t.assetId).where(sql`${t.assetId} IS NOT NULL`),
     index("response_actions_present_from_idx").on(t.presentFromId).where(sql`${t.presentFromId} IS NOT NULL`),
     uniqueIndex("response_actions_one_created_idx")
       .on(t.integrationId, t.kind, t.targetType, t.targetValue)
       .where(
         sql`${t.origin} = 'created' AND (${t.state} IN ('pending', 'active', 'removing') OR (${t.state} = 'failed' AND ${t.removalRequestedAt} IS NOT NULL))`,
       ),
+    check("response_actions_one_target", sql`(${t.observableId} IS NULL) <> (${t.assetId} IS NULL)`),
     check("response_actions_falcon", sql`(${t.kind} = 'falcon_ioc') = (${t.falconAction} IS NOT NULL AND ${t.severity} IS NOT NULL)`),
     check("response_actions_present_from", sql`(${t.origin} = 'already_present') = (${t.presentFromId} IS NOT NULL)`),
     check("response_actions_dismissed", sql`(${t.dismissedAt} IS NULL) = (${t.dismissedById} IS NULL)`),
