@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMe } from "@/lib/api";
-import { hitKey, parseKinds, SEARCH_KINDS, type SearchKind, type SearchPageSearch, searchKindLabel, searchQuery } from "@/lib/search";
+import { hitKey, noMatchHint, parseKinds, SEARCH_KINDS, SEARCH_SYNTAX, type SearchKind, type SearchPageSearch, searchKindLabel, searchQuery } from "@/lib/search";
 
 /** Results on a page. */
 const PAGE_SIZE = 20;
@@ -44,16 +44,23 @@ export function SearchPage() {
   const pageSearch = (p: number): SearchPageSearch => ({ ...search, page: p > 1 ? p : undefined });
 
   return (
-    <div className="mx-auto grid w-full max-w-4xl grid-cols-1 gap-4">
+    <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-4">
       <h1 className="text-2xl font-semibold tracking-tight">Search</h1>
       <SearchForm key={q} initial={q} guest={guest} onSearch={(next) => void setSearch({ q: next })} />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <KindFilter kinds={kinds} onChange={(next) => void setSearch({ kinds: next })} counts={q ? counts : undefined} className="flex-wrap" />
-        <p className="text-xs text-muted-foreground">"quotes" for a phrase · -word to leave out</p>
+        <p className="text-xs text-muted-foreground">{SEARCH_SYNTAX}</p>
       </div>
 
       {!q && <p className="py-8 text-center text-sm text-muted-foreground">Type what you're looking for and press Enter.</p>}
-      {q && results.isError && <p className="py-8 text-center text-sm text-destructive">Could not search. Try again.</p>}
+      {q && results.isError && (
+        <p className="py-8 text-center text-sm">
+          <span className="text-destructive">Could not search.</span>{" "}
+          <Button variant="link" size="sm" className="h-auto p-0" onClick={() => void results.refetch()}>
+            Try again
+          </Button>
+        </p>
+      )}
       {q && results.isPending && (
         <div className="grid grid-cols-1 gap-2">
           {[0, 1, 2, 3].map((i) => (
@@ -62,9 +69,22 @@ export function SearchPage() {
         </div>
       )}
       {q && data && !data.total && (
-        <p className="py-8 text-center text-sm text-muted-foreground">
-          Nothing {kinds.length ? `in ${kinds.map((k) => searchKindLabel[k]).join(", ")} ` : ""}matches “{q}”.
-        </p>
+        <div className="grid gap-1 py-8 text-center text-sm">
+          <p>
+            Nothing {kinds.length ? `in ${kinds.map((k) => searchKindLabel[k]).join(", ")} ` : ""}matches “{q}”.
+          </p>
+          <p className="text-muted-foreground">
+            {noMatchHint(q)}
+            {kinds.length > 0 && Object.values(data.counts).some(Boolean) && (
+              <>
+                {" "}
+                <Button variant="link" size="sm" className="h-auto p-0" onClick={() => void setSearch({ kinds: [] })}>
+                  Search every kind
+                </Button>
+              </>
+            )}
+          </p>
+        </div>
       )}
       {q && data && data.total > 0 && !data.hits.length && (
         <p className="py-8 text-center text-sm text-muted-foreground">

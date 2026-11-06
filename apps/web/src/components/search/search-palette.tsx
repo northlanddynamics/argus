@@ -1,14 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ArrowRightIcon, SearchIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { KindFilter } from "@/components/search/kind-filter";
 import { SearchHitRow, useOpenHit } from "@/components/search/search-hit";
 import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
 import { useMe } from "@/lib/api";
-import { hitKey, type SearchKind, searchKindLabel, searchQuery } from "@/lib/search";
+import { hitKey, noMatchHint, SEARCH_KINDS, SEARCH_SYNTAX, type SearchKind, searchKindLabel, searchQuery } from "@/lib/search";
 
 /** How many results the search box shows before "See all results". */
 const TOP = 5;
@@ -37,7 +38,23 @@ export function SearchPalette() {
   const guest = !!me.guest;
   const navigate = useNavigate();
   const openHit = useOpenHit(guest);
-  const [open, setOpen] = useState(false);
+  const [open, setOpenState] = useState(false);
+  /** Where focus was when the box opened, to go back to on Esc; null after opening a result. */
+  const returnTo = useRef<HTMLElement | null>(null);
+  const setOpen = useCallback(
+    (next: boolean | ((was: boolean) => boolean)) =>
+      setOpenState((was) => {
+        const now = typeof next === "function" ? next(was) : next;
+        if (now && !was) returnTo.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        return now;
+      }),
+    [],
+  );
+  /** Closes the box for a page it opens: focus goes to that page's content rather than back. */
+  const leave = () => {
+    returnTo.current = null;
+    setOpen(false);
+  };
   const [q, setQ] = useState("");
   const [kinds, setKinds] = useState<SearchKind[]>([]);
   const settled = useDebounced(q, 150);
@@ -59,15 +76,17 @@ export function SearchPalette() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [setOpen]);
 
   const seeAll = () => {
-    setOpen(false);
+    leave();
     void navigate({ to: "/search", search: { q: q.trim(), kinds: kinds.length ? kinds.join(",") : undefined } });
   };
   const scope = kinds.length ? kinds.map((k) => searchKindLabel[k]).join(", ") : "Cases, Alerts, Observables and Assets";
   const typed = q.trim().length > 0;
   const waiting = typed && (settled !== q || results.isFetching) && !hits.length;
+  const counts =
+    typed && results.data && settled.trim() ? Object.fromEntries(SEARCH_KINDS.map((k) => [k, String(results.data.counts[k])])) : undefined;
 
   return (
     <>
@@ -82,7 +101,17 @@ export function SearchPalette() {
         <Kbd className="hidden md:inline-flex">/</Kbd>
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent showCloseButton={false} className="top-[12%] translate-y-0 gap-0 overflow-hidden rounded-xl p-0 sm:max-w-xl">
+        <DialogContent
+          showCloseButton={false}
+          className="top-[12%] translate-y-0 gap-0 overflow-hidden rounded-xl p-0 sm:max-w-xl"
+          onCloseAutoFocus={(e) => {
+            // Opened from the keyboard, the box has no trigger to return to: go back where focus was,
+            // or to the new page's content after opening a result.
+            e.preventDefault();
+            const target = returnTo.current?.isConnected ? returnTo.current : document.getElementById("content");
+            target?.focus({ preventScroll: true });
+          }}
+        >
           <DialogTitle className="sr-only">Search</DialogTitle>
           <DialogDescription className="sr-only">Search {scope}</DialogDescription>
           <Command
@@ -101,26 +130,36 @@ export function SearchPalette() {
                 maxLength={200}
                 className="h-9 text-base sm:text-sm"
               />
-              <KindFilter kinds={kinds} onChange={setKinds} className="mt-2 flex-wrap" />
+              <KindFilter kinds={kinds} onChange={setKinds} counts={counts} className="mt-2 flex-wrap" />
             </div>
             <CommandList className="max-h-[min(24rem,60vh)] p-1">
               {!typed && <p className="px-3 py-6 text-center text-sm text-muted-foreground">Search {scope}. Try a title, host, IP, hash or “C-12”.</p>}
               {waiting && <p className="px-3 py-6 text-center text-sm text-muted-foreground">Searching…</p>}
-              {typed && !waiting && results.isError && <p className="px-3 py-6 text-center text-sm text-destructive">Could not search. Try again.</p>}
+              {typed && !waiting && results.isError && (
+                <p className="px-3 py-6 text-center text-sm">
+                  <span className="text-destructive">Could not search.</span>{" "}
+                  <Button variant="link" size="sm" className="h-auto p-0" onClick={() => void results.refetch()}>
+                    Try again
+                  </Button>
+                </p>
+              )}
               {typed && !waiting && results.data && !hits.length && (
-                <p className="px-3 py-6 text-center text-sm text-muted-foreground">Nothing matches “{q.trim()}”.</p>
+                <div className="grid gap-1 px-3 py-6 text-center text-sm">
+                  <p>Nothing {kinds.length ? `in ${scope} ` : ""}matches “{q.trim()}”.</p>
+                  <p className="text-muted-foreground">{noMatchHint(q)}</p>
+                </div>
               )}
               {hits.length > 0 && (
-                <CommandGroup heading="Top results">
+                <CommandGroup heading={hits.length > 1 ? "Top results" : undefined}>
                   {hits.map((hit) => (
                     <CommandItem
                       key={hitKey(hit)}
                       value={hitKey(hit)}
                       onSelect={() => {
-                        setOpen(false);
+                        leave();
                         void openHit(hit);
                       }}
-                      className="py-1.5 [&>svg:last-child]:hidden"
+                      className="group/hit py-1.5 [&>svg:last-child]:hidden"
                     >
                       <SearchHitRow hit={hit} query={settled} showKind />
                     </CommandItem>
@@ -136,7 +175,7 @@ export function SearchPalette() {
                 </CommandItem>
               )}
             </CommandList>
-            <div className="hidden items-center gap-3 border-t px-3 py-2 text-xs text-muted-foreground sm:flex">
+            <div className="hidden items-center gap-3 border-t px-3 py-2 text-xs whitespace-nowrap text-muted-foreground sm:flex">
               <span className="flex items-center gap-1">
                 <Kbd>↑</Kbd>
                 <Kbd>↓</Kbd> to move
@@ -147,7 +186,9 @@ export function SearchPalette() {
               <span className="flex items-center gap-1">
                 <Kbd>esc</Kbd> to close
               </span>
-              <span className="ml-auto">"quotes" for a phrase · -word to leave out</span>
+              <span className="ml-auto min-w-0 truncate" title={SEARCH_SYNTAX}>
+                {SEARCH_SYNTAX}
+              </span>
             </div>
           </Command>
         </DialogContent>

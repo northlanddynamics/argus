@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { type ReactElement, type ReactNode, useState } from "react";
+import { BellOffIcon } from "lucide-react";
+import { type ReactElement, type ReactNode, useId, useState } from "react";
+import { toast } from "sonner";
 import { ItemLink } from "@/components/item-link";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api, errorMessage } from "@/lib/api";
@@ -18,6 +21,8 @@ import {
   assetTypeLabel,
   assetsKey,
   assetsQuery,
+  defang,
+  normaliseObservable,
   OBSERVABLE_TYPES,
   type ItemKind,
   type ObservableType,
@@ -30,7 +35,7 @@ import { responseActionsQuery } from "@/lib/response-actions";
 import { useCaseNumber } from "@/routes/cases/case-layout";
 import { actionOf, type ResponseAction } from "@/lib/response-actions";
 import { falconTakes, holdingOn, ResponseActionsCard } from "@/routes/cases/response-actions";
-import { BulkObservableActions, ObservableActions } from "@/routes/cases/observable-actions";
+import { AssetActions, BulkObservableActions, ObservableActions } from "@/routes/cases/observable-actions";
 import { when } from "@/lib/when";
 
 /**
@@ -61,12 +66,16 @@ export function CaseObservablesPage() {
           title="Observables"
           noun="Observable"
           kind="observable"
+          caseNumber={number}
           valueHeading="Value"
           placeholder="185.220.101.4, invoice-portal[.]biz, a hash…"
           types={OBSERVABLE_TYPES}
           typeLabel={observableTypeLabel}
           shown={shownObservable}
           items={observables.data}
+          query={observables}
+          detectType={detectObservableType}
+          fullValue={(type, value) => defang(type, value)}
           queryKey={observablesKey(number)}
           readOnly={readOnly}
           add={(type, value) => api.cases[":number"].observables.$post({ param: { number: n }, json: { type, value } })}
@@ -102,16 +111,30 @@ export function CaseObservablesPage() {
           title="Assets"
           noun="Asset"
           kind="asset"
+          caseNumber={number}
           valueHeading="Identifier"
           placeholder="FIN-LT-0231, d.howe…"
           types={ASSET_TYPES}
           typeLabel={assetTypeLabel}
           shown={(_, value) => value}
           items={assets.data}
+          query={assets}
+          fullValue={(_, value) => value}
           queryKey={assetsKey(number)}
           readOnly={readOnly}
           add={(type, value) => api.cases[":number"].assets.$post({ param: { number: n }, json: { type, value } })}
           unlink={(id) => api.cases[":number"].assets[":id"].$delete({ param: { number: n, id } })}
+          renderRow={(item, row, unlink) => (
+            <AssetActions
+              key={item.id}
+              number={number}
+              asset={item}
+              label={`${assetTypeLabel[item.type]} ${item.value}`}
+              onUnlink={readOnly ? undefined : unlink}
+            >
+              {row}
+            </AssetActions>
+          )}
         />
       </div>
       <ResponseActionsCard
@@ -132,19 +155,38 @@ type Item<Type extends string> = {
   linkedAt: string;
   seenIn: { number: number; title: string }[];
   fromAlert: { alert: { id: string; externalId: string; title: string } | null } | null;
+  ignored: boolean;
 };
+
+/**
+ * The Observable type a pasted value is, when it isn't valid for the type chosen: a hash pasted while
+ * IP is chosen switches to its hash type. Null when the chosen type fits, or no type does.
+ */
+function detectObservableType(current: ObservableType, raw: string): ObservableType | null {
+  const value = raw.trim();
+  if (!value || normaliseObservable(current, value)) return null;
+  return OBSERVABLE_TYPES.find((t) => normaliseObservable(t, value)) ?? null;
+}
 
 function LinkedCard<Type extends string>(props: {
   title: string;
   noun: string;
   /** Whose page each value opens. */
   kind: ItemKind;
+  /** The Case these are on, which each value's page leads back to. */
+  caseNumber: number;
   valueHeading: string;
   placeholder: string;
   types: readonly Type[];
   typeLabel: Record<Type, string>;
   shown: (type: Type, value: string) => string;
   items: Item<Type>[] | null | undefined;
+  /** Where the items stand while they load, or if they can't. */
+  query: { isPending: boolean; isError: boolean; refetch: () => unknown };
+  /** The type a typed or pasted value is, when the chosen type doesn't fit it. */
+  detectType?: (current: Type, value: string) => Type | null;
+  /** Its whole value as it is safe to say, for screen readers where the list shortens it. */
+  fullValue: (type: Type, value: string) => string;
   queryKey: readonly unknown[];
   readOnly: boolean;
   add: (type: Type, value: string) => Promise<Response>;
@@ -168,6 +210,7 @@ function LinkedCard<Type extends string>(props: {
   const queryClient = useQueryClient();
   const [type, setType] = useState<Type>(types[0] as Type);
   const [value, setValue] = useState("");
+  const errorId = useId();
 
   const refresh = () => void queryClient.invalidateQueries({ queryKey });
   const add = useMutation({
@@ -179,13 +222,26 @@ function LinkedCard<Type extends string>(props: {
     onSettled: refresh,
   });
   const unlink = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await props.unlink(id);
+    mutationFn: async (item: Item<Type>) => {
+      const res = await props.unlink(item.id);
       if (!res.ok) throw new Error(await errorMessage(res, `Could not unlink the ${noun}`));
     },
+    // Unlinking is one click, so it can be undone: linking it again, as whoever undoes it.
+    onSuccess: (_, item) =>
+      toast(`Unlinked ${typeLabel[item.type]} ${props.fullValue(item.type, item.value)}`, {
+        action: {
+          label: "Link again",
+          onClick: () =>
+            void props.add(item.type, item.value).then(async (res) => {
+              if (!res.ok) toast.error(await errorMessage(res, `Could not link the ${noun} again`));
+              refresh();
+            }),
+        },
+      }),
     onSettled: refresh,
   });
-  const error = add.error ?? unlink.error;
+  const addError = add.error;
+  const colSpan = 3 + (readOnly && !props.renderRow ? 0 : 1) + (selection ? 1 : 0);
 
   return (
     <Card>
@@ -216,19 +272,31 @@ function LinkedCard<Type extends string>(props: {
             </Select>
             <Input
               aria-label={`${noun} ${props.valueHeading.toLowerCase()}`}
+              aria-invalid={addError ? true : undefined}
+              aria-describedby={addError ? errorId : undefined}
               className="min-w-40 flex-1 font-mono"
               placeholder={props.placeholder}
               value={value}
-              onChange={(e) => setValue(e.target.value)}
+              onChange={(e) => {
+                setValue(e.target.value);
+                if (add.error) add.reset();
+                const detected = props.detectType?.(type, e.target.value);
+                if (detected) setType(detected);
+              }}
             />
             <Button type="submit" variant="outline" disabled={add.isPending || !value.trim()}>
               + Add {noun}
             </Button>
           </form>
         )}
-        {error && (
+        {addError && (
+          <Alert variant="destructive" id={errorId}>
+            <AlertDescription>{addError.message}</AlertDescription>
+          </Alert>
+        )}
+        {unlink.error && (
           <Alert variant="destructive">
-            <AlertDescription>{error.message}</AlertDescription>
+            <AlertDescription>{unlink.error.message}</AlertDescription>
           </Alert>
         )}
         <Table>
@@ -244,9 +312,9 @@ function LinkedCard<Type extends string>(props: {
                   />
                 </TableHead>
               )}
-              <TableHead>Type</TableHead>
+              <TableHead className="hidden sm:table-cell">Type</TableHead>
               <TableHead>{props.valueHeading}</TableHead>
-              <TableHead>Seen in other Cases</TableHead>
+              <TableHead className="hidden md:table-cell">Seen in other Cases</TableHead>
               {(!readOnly || props.renderRow) && <TableHead className="w-0" />}
             </TableRow>
           </TableHeader>
@@ -267,24 +335,39 @@ function LinkedCard<Type extends string>(props: {
                       )}
                     </TableCell>
                   )}
-                  <TableCell>{typeLabel[item.type] ?? item.type}</TableCell>
+                  <TableCell className="hidden text-xs text-muted-foreground sm:table-cell">{typeLabel[item.type] ?? item.type}</TableCell>
                   {/* Who added it sits under the value, so the row fits a half-width card without clipping Unlink. */}
                   <TableCell className="min-w-36 whitespace-normal">
-                    <ItemLink kind={props.kind} id={item.id} className="block font-mono text-xs break-all hover:underline" title={item.value}>
+                    <ItemLink
+                      kind={props.kind}
+                      id={item.id}
+                      fromCase={props.caseNumber}
+                      className="block font-mono text-xs break-all hover:underline"
+                      title={item.value}
+                      aria-label={`${typeLabel[item.type]} ${props.fullValue(item.type, item.value)}`}
+                    >
                       {shown(item.type, item.value)}
                     </ItemLink>
                     <span
-                      className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground"
+                      className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground"
                       title={new Date(item.linkedAt).toLocaleString()}
                     >
+                      {/* On a phone the Type column is gone, so the type leads this line. */}
+                      <span className="sm:hidden">{typeLabel[item.type]} ·</span>
+                      {item.ignored && (
+                        <Badge variant="outline" title="On the Ignored list: it never suggests which Case an Alert belongs with">
+                          <BellOffIcon aria-hidden />
+                          Ignored
+                        </Badge>
+                      )}
                       {item.fromAlert ? (
                         <>
-                          <Badge variant="secondary">Alert (auto)</Badge>
+                          <span>Alert (auto)</span>
                           {item.fromAlert.alert && (
                             <Link
                               to="/alerts"
                               search={{ status: "any", alert: item.fromAlert.alert.id }}
-                              className="text-xs text-primary underline"
+                              className="text-foreground underline underline-offset-2"
                               title={item.fromAlert.alert.externalId}
                             >
                               {item.fromAlert.alert.title}
@@ -295,23 +378,15 @@ function LinkedCard<Type extends string>(props: {
                         <>Added by {item.linkedBy.name}</>
                       )}
                     </span>
+                    {item.seenIn.length > 0 && (
+                      <span className="mt-1 block text-xs text-muted-foreground md:hidden">
+                        Also on <SeenIn seenIn={item.seenIn} />
+                      </span>
+                    )}
                     {props.renderStatus?.(item)}
                   </TableCell>
-                  <TableCell className="whitespace-normal">
-                    {item.seenIn.length === 0 ? (
-                      <span className="text-muted-foreground">—</span>
-                    ) : (
-                      // Each opens the item's own page, which lists every Case and Alert it is on.
-                      <ItemLink
-                        kind={props.kind}
-                        id={item.id}
-                        className="font-mono text-xs text-primary underline"
-                        title={item.seenIn.map((s) => `${caseRef(s.number)} ${s.title}`).join("\n")}
-                        aria-label={`Seen in ${item.seenIn.map((s) => `${caseRef(s.number)} ${s.title}`).join(", ")}`}
-                      >
-                        {item.seenIn.map((s) => caseRef(s.number)).join(", ")}
-                      </ItemLink>
-                    )}
+                  <TableCell className="hidden whitespace-normal md:table-cell">
+                    {item.seenIn.length === 0 ? <span className="text-muted-foreground">—</span> : <SeenIn seenIn={item.seenIn} />}
                   </TableCell>
                   {menuButton ? (
                     <TableCell className="w-0 text-right whitespace-nowrap">{menuButton}</TableCell>
@@ -323,7 +398,7 @@ function LinkedCard<Type extends string>(props: {
                         className="px-2"
                         disabled={unlink.isPending}
                         aria-label={`Unlink ${typeLabel[item.type]} ${item.value}`}
-                        onClick={() => unlink.mutate(item.id)}
+                        onClick={() => unlink.mutate(item)}
                       >
                         Unlink
                       </Button>
@@ -331,11 +406,29 @@ function LinkedCard<Type extends string>(props: {
                   )}
                 </TableRow>
               );
-              return props.renderRow ? props.renderRow(item, row, () => unlink.mutate(item.id)) : row();
+              return props.renderRow ? props.renderRow(item, row, () => unlink.mutate(item)) : row();
             })}
+            {items === undefined && props.query.isPending &&
+              [0, 1].map((i) => (
+                <TableRow key={i}>
+                  <TableCell colSpan={colSpan}>
+                    <Skeleton className="h-8" />
+                  </TableCell>
+                </TableRow>
+              ))}
+            {items === undefined && props.query.isError && (
+              <TableRow>
+                <TableCell colSpan={colSpan} className="whitespace-normal">
+                  <span className="text-destructive">Could not load the {title}.</span>{" "}
+                  <Button variant="link" size="sm" className="h-auto p-0" onClick={() => void props.query.refetch()}>
+                    Try again
+                  </Button>
+                </TableCell>
+              </TableRow>
+            )}
             {items?.length === 0 && (
               <TableRow>
-                <TableCell colSpan={(readOnly && !props.renderRow ? 3 : 4) + (selection ? 1 : 0)} className="text-muted-foreground">
+                <TableCell colSpan={colSpan} className="text-muted-foreground">
                   No {title} yet.
                 </TableCell>
               </TableRow>
@@ -344,6 +437,28 @@ function LinkedCard<Type extends string>(props: {
         </Table>
       </CardContent>
     </Card>
+  );
+}
+
+/** The other Cases an item is on, each a link to that Case. */
+function SeenIn({ seenIn }: { seenIn: { number: number; title: string }[] }) {
+  return (
+    <span className="font-mono text-xs">
+      {seenIn.map((s, i) => (
+        <span key={s.number}>
+          {i > 0 && ", "}
+          <Link
+            to="/cases/$number"
+            params={{ number: String(s.number) }}
+            className="text-foreground underline underline-offset-2"
+            title={s.title}
+            aria-label={`${caseRef(s.number)} ${s.title}`}
+          >
+            {caseRef(s.number)}
+          </Link>
+        </span>
+      ))}
+    </span>
   );
 }
 

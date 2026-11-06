@@ -6,6 +6,7 @@ import {
   UnlinkIcon,
   ExternalLinkIcon,
   GlobeLockIcon,
+  SearchIcon,
   MailXIcon,
   ShieldAlertIcon,
   ShieldBanIcon,
@@ -426,9 +427,13 @@ export function ObservableActions({
           <kit.Separator />
         </>
       )}
-      <kit.Item onSelect={() => void navigate({ to: "/observables/$id", params: { id: observable.id } })}>
+      <kit.Item onSelect={() => void navigate({ to: "/observables/$id", params: { id: observable.id }, search: { from: number } })}>
         <ExternalLinkIcon />
         Open Observable page
+      </kit.Item>
+      <kit.Item onSelect={() => void navigate({ to: "/search", search: { q: observable.value } })}>
+        <SearchIcon />
+        Search for this
       </kit.Item>
       <kit.Item onSelect={copy}>
         <CopyIcon />
@@ -449,7 +454,7 @@ export function ObservableActions({
   const menuButton = (
     <DropdownMenu onOpenChange={(open) => open && setWanted(true)}>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon-sm" aria-label={`Actions for ${observableTypeLabel[observable.type]} ${observable.value}`}>
+        <Button variant="ghost" size="icon-sm" aria-label={`Actions for ${observableTypeLabel[observable.type]} ${defang(observable.type, observable.value)}`}>
           <EllipsisIcon />
         </Button>
       </DropdownMenuTrigger>
@@ -482,6 +487,71 @@ export function ObservableActions({
         <DismissDialog onClose={() => setDialog(null)} r={dialog.r} disabled={dismiss.isPending} onDismiss={() => dismiss.mutate(dialog.r.id)} />
       )}
     </>
+  );
+}
+
+/**
+ * An Asset's menu on a Case, from a ⋯ button and from right-clicking its row, like an Observable's
+ * without "Take action": open its page, search for it, copy it and, with `onUnlink`, unlink it.
+ */
+export function AssetActions({
+  number,
+  asset,
+  label,
+  onUnlink,
+  children,
+}: {
+  number: number;
+  asset: { id: string; value: string };
+  /** Its type and identifier, naming the ⋯ button. */
+  label: string;
+  onUnlink?: () => void;
+  children: (menuButton: ReactNode) => ReactElement;
+}) {
+  const navigate = useNavigate();
+  const copy = () => void navigator.clipboard.writeText(asset.value).then(() => toast("Copied"));
+  const items = (kit: MenuKit) => (
+    <>
+      <kit.Item onSelect={() => void navigate({ to: "/assets/$id", params: { id: asset.id }, search: { from: number } })}>
+        <ExternalLinkIcon />
+        Open Asset page
+      </kit.Item>
+      <kit.Item onSelect={() => void navigate({ to: "/search", search: { q: asset.value } })}>
+        <SearchIcon />
+        Search for this
+      </kit.Item>
+      <kit.Item onSelect={copy}>
+        <CopyIcon />
+        Copy value
+      </kit.Item>
+      {onUnlink && (
+        <>
+          <kit.Separator />
+          <kit.Item variant="destructive" onSelect={onUnlink}>
+            <UnlinkIcon />
+            Unlink from this Case
+          </kit.Item>
+        </>
+      )}
+    </>
+  );
+  const menuButton = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon-sm" aria-label={`Actions for ${label}`}>
+          <EllipsisIcon />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        {items(dropdownKit)}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{children(menuButton)}</ContextMenuTrigger>
+      <ContextMenuContent className="w-56">{items(contextKit)}</ContextMenuContent>
+    </ContextMenu>
   );
 }
 

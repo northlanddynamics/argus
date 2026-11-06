@@ -1,4 +1,5 @@
 import { keepPreviousData, queryOptions } from "@tanstack/react-query";
+import { defaultParseSearch, defaultStringifySearch } from "@tanstack/react-router";
 import { SEARCH_KINDS, type SearchKind } from "api/search/vocabulary";
 import { api } from "@/lib/api";
 
@@ -50,3 +51,37 @@ export const validateSearchPageSearch = (search: Record<string, unknown>): Searc
     page: Number.isInteger(page) && page > 1 ? Math.min(page, 10_000) : undefined,
   };
 };
+
+/**
+ * The router's URL search reading and writing, with `q` kept as typed. The router otherwise reads
+ * every value as JSON, so a pasted `/search?q=185.220` would read as the number 185.22 and
+ * `?q="invoice portal"` would lose its quotes.
+ */
+export function parseSearch(searchStr: string) {
+  const parsed: Record<string, unknown> = defaultParseSearch(searchStr);
+  const q = new URLSearchParams(searchStr.replace(/^\?/, "")).get("q");
+  if (q !== null) parsed.q = q;
+  return parsed;
+}
+
+export function stringifySearch(search: Record<string, unknown>) {
+  const { q, ...rest } = search;
+  const others = defaultStringifySearch(rest).replace(/^\?/, "");
+  if (q === undefined || q === null || q === "") return others ? `?${others}` : "";
+  const query = `q=${encodeURIComponent(String(q))}`;
+  return `?${others ? `${query}&${others}` : query}`;
+}
+
+/** The search syntax, said once wherever a search is typed. */
+export const SEARCH_SYNTAX = "\"quotes\" for a phrase · -word to leave out · IPs and hashes match from the start";
+
+/**
+ * What to try when `q` finds nothing, read from what it looks like: part of an IP, a short run of hex,
+ * or words.
+ */
+export function noMatchHint(q: string) {
+  const text = q.trim();
+  if (/^\d{1,3}(\.\d{0,3}){0,2}$/.test(text)) return "IPs match by whole parts from the start: try 185.220 or the full address.";
+  if (/^[0-9a-f]{1,7}$/i.test(text)) return "Hashes match from their first 4 characters when they mix digits and letters, or from 8.";
+  return "Check the spelling or try fewer words. Domains, URLs and email addresses can be pasted defanged.";
+}

@@ -37,15 +37,26 @@ const settingsSections: Record<string, string> = {
 type Crumb = { label: string; to?: string; params?: Record<string, string> };
 
 /** Where the page sits, read from the URL: "Cases / C-12 / Tasks". */
-function crumbsFor(pathname: string, me: Me): Crumb[] {
+function crumbsFor(pathname: string, search: Record<string, unknown>, me: Me): Crumb[] {
   const workspace = me.guest ? me.guest.organization?.name : me.organization?.name;
-  const trail = crumbsWithin(pathname, me);
+  const trail = crumbsWithin(pathname, search, me);
   return workspace ? [{ label: workspace }, ...trail] : trail;
 }
 
-function crumbsWithin(pathname: string, me: Me): Crumb[] {
+function crumbsWithin(pathname: string, search: Record<string, unknown>, me: Me): Crumb[] {
   const [area, id, section] = pathname.split("/").filter(Boolean);
   const cases = me.guest ? "Your Cases" : "Cases";
+  // An Observable's or Asset's page opened from a Case leads back to it.
+  const from = Number(search.from);
+  if ((area === "observables" || area === "assets") && Number.isInteger(from) && from > 0) {
+    const number = String(from);
+    return [
+      { label: cases, to: "/" },
+      { label: caseRef(from), to: "/cases/$number", params: { number } },
+      { label: caseSections.observables!, to: "/cases/$number/observables", params: { number } },
+      { label: area === "observables" ? "Observable" : "Asset" },
+    ];
+  }
   if (area === "cases" && id) {
     const crumbs: Crumb[] = [{ label: cases, to: "/" }, { label: caseRef(Number(id)), to: "/cases/$number", params: { number: id } }];
     if (section && caseSections[section]) crumbs.push({ label: caseSections[section] });
@@ -90,7 +101,8 @@ function useSidebarOpen(pathname: string) {
 export function AppShell() {
   const me = useMe(useRouteContext({ from: "/_app" }).me);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const crumbs = crumbsFor(pathname, me);
+  const search = useRouterState({ select: (s) => s.location.search as Record<string, unknown> });
+  const crumbs = crumbsFor(pathname, search, me);
   const sidebar = useSidebarOpen(pathname);
   return (
     <TooltipProvider>

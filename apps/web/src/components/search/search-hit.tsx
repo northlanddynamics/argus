@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   AtSignIcon,
+  BellOffIcon,
   FingerprintIcon,
   FolderIcon,
   GlobeIcon,
@@ -75,6 +76,23 @@ function HitIcon({ hit }: { hit: SearchHit }) {
   }
 }
 
+/**
+ * Muted text in a result, a step darker on the highlighted row of the search box, where the row's
+ * own grey fill would leave it short of 4.5:1.
+ */
+const mutedText = "text-muted-foreground group-data-[selected=true]/hit:text-foreground/75";
+
+/** A result's detail line, led by "Ignored" when it is on the Organization's Ignored list. */
+function IgnoredDetail({ ignored, text }: { ignored: boolean; text: string }) {
+  if (!ignored) return text;
+  return (
+    <>
+      <BellOffIcon className="mr-1 inline size-3 align-[-2px]" aria-hidden />
+      Ignored · {text}
+    </>
+  );
+}
+
 const casesLine = (cases: { number: number }[]) => (cases.length ? cases.map((c) => caseRef(c.number)).join(", ") : "Named by an Alert");
 
 /**
@@ -83,14 +101,14 @@ const casesLine = (cases: { number: number }[]) => (cases.length ? cases.map((c)
  */
 export function SearchHitRow({ hit, query, showKind = false }: { hit: SearchHit; query: string; showKind?: boolean }) {
   let title: ReactNode;
-  let detail: string;
+  let detail: ReactNode;
   let aside: ReactNode = null;
   switch (hit.kind) {
     case "cases": {
       const c = hit.item;
       title = (
         <>
-          <span className="font-mono text-xs text-muted-foreground">{caseRef(c.number)}</span>{" "}
+          <span className={cn("font-mono text-xs", mutedText)}>{caseRef(c.number)}</span>{" "}
           <Highlighted text={c.title} query={query} />
           {c.restricted && <LockIcon className="ml-1 inline size-3 text-muted-foreground" aria-label="Restricted" />}
         </>
@@ -105,7 +123,7 @@ export function SearchHitRow({ hit, query, showKind = false }: { hit: SearchHit;
       detail = [a.host, a.userName, a.integration.name].filter(Boolean).join(" · ");
       aside = (
         <>
-          <span className="hidden text-xs text-muted-foreground sm:inline">{a.case ? caseRef(a.case.number) : alertStatusLabel[a.status]}</span>
+          <span className={cn("hidden text-xs sm:inline", mutedText)}>{a.case ? caseRef(a.case.number) : alertStatusLabel[a.status]}</span>
           <SeverityBadge severity={a.severity} />
         </>
       );
@@ -114,21 +132,21 @@ export function SearchHitRow({ hit, query, showKind = false }: { hit: SearchHit;
     case "observables": {
       const o = hit.item;
       title = (
-        <span className="font-mono text-[0.8125rem]">
+        <span className="font-mono">
           <Highlighted text={defang(o.type, o.value)} query={query} />
         </span>
       );
-      detail = `${observableTypeLabel[o.type]} · ${casesLine(o.cases)}`;
+      detail = <IgnoredDetail ignored={o.ignored} text={`${observableTypeLabel[o.type]} · ${casesLine(o.cases)}`} />;
       break;
     }
     case "assets": {
       const x = hit.item;
       title = (
-        <span className="font-mono text-[0.8125rem]">
+        <span className="font-mono">
           <Highlighted text={x.value} query={query} />
         </span>
       );
-      detail = `${assetTypeLabel[x.type]} · ${casesLine(x.cases)}`;
+      detail = <IgnoredDetail ignored={x.ignored} text={`${assetTypeLabel[x.type]} · ${casesLine(x.cases)}`} />;
       break;
     }
   }
@@ -137,12 +155,13 @@ export function SearchHitRow({ hit, query, showKind = false }: { hit: SearchHit;
       <HitIcon hit={hit} />
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm">{title}</div>
-        <div className="truncate text-xs text-muted-foreground">{detail}</div>
+        <div className={cn("truncate text-xs", mutedText)}>{detail}</div>
       </div>
       {(aside || showKind) && (
         <div className="flex shrink-0 items-center gap-2">
           {aside}
-          {showKind && <span className="hidden w-16 text-right text-xs text-muted-foreground sm:inline-block">{hitKindNoun[hit.kind]}</span>}
+          {/* On a phone the icon shows the kind, and screen readers still hear it. */}
+          {showKind && <span className={cn("sr-only w-16 text-right text-xs sm:not-sr-only sm:inline-block", mutedText)}>{hitKindNoun[hit.kind]}</span>}
         </div>
       )}
     </div>

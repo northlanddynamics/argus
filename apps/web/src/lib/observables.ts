@@ -8,6 +8,7 @@ export {
   type AssetType,
   assetTypeLabel,
   defang,
+  normaliseObservable,
   OBSERVABLE_TYPES,
   type ObservableType,
   observableTypeLabel,
@@ -45,6 +46,14 @@ export const shownObservable = (type: ObservableType, value: string) =>
 
 /** Every Observable and Asset page's query starts with this key; any Case or Alert signal refreshes them. */
 export const itemPagesKey = ["items"] as const;
+
+/** An item page's URL search: the Case it was opened from, which its breadcrumb leads back to. */
+export type ItemPageSearch = { from?: number };
+
+export const validateItemPageSearch = (search: Record<string, unknown>): ItemPageSearch => {
+  const from = Number(search.from);
+  return Number.isInteger(from) && from > 0 ? { from } : {};
+};
 
 /** Which of the two an item page is about. */
 export type ItemKind = "observable" | "asset";
