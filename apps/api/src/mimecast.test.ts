@@ -32,6 +32,8 @@ async function acme() {
   };
   const added = await addMimecast();
   const mimecastId = added.body.integration!.id;
+  // Integrations added at the same instant have no set order; CrowdStrike comes after Mimecast.
+  t.clock.advance(1);
   const falconAdded = await (
     await owner.api.integrations.$post({ json: { name: "CrowdStrike", cloud: "us-1", clientId: FALCON_ID, clientSecret: "x", responseActions: true } })
   ).json();
