@@ -34,9 +34,9 @@ async function acme() {
   const stream = falcon.tenant(CLIENT_ID);
 
   let detections = 0;
-  /** Delivers the endpoint detection as a new Alert and returns its id. */
-  const detect = async () => {
-    const payload = { ...epp, CompositeId: `${epp.CompositeId}-${++detections}` };
+  /** Delivers the endpoint detection, with `overrides`, as a new Alert and returns its id. */
+  const detect = async (overrides: Partial<typeof epp> = {}) => {
+    const payload = { ...epp, ...overrides, CompositeId: `${epp.CompositeId}-${++detections}` };
     stream.emit("EppDetectionSummaryEvent", payload);
     await stream.drained();
     const body = await (await owner.api.alerts.$get({ query: {} })).json();
@@ -83,7 +83,27 @@ async function acme() {
     return body.case.status;
   };
 
-  return { t, owner, admin, ana, detect, alert, open, observe, hold, correlations, suggested, attach, close, caseStatus };
+  /** The Alert queue's Correlation marker for each of `ids`, as "C-<n> +<others>", or null. */
+  const marked = async (ids: string[], as: Session = ana) => {
+    const body = await (await as.api.alerts.$get({ query: { status: undefined } })).json();
+    if (!("alerts" in body)) throw new Error("No Alert queue");
+    return ids.map((id) => {
+      const row = body.alerts.find((a) => a.id === id);
+      if (!row) throw new Error(`Alert ${id} not in the queue`);
+      return row.correlation ? `C-${row.correlation.case.number} +${row.correlation.others}` : null;
+    });
+  };
+  const onCase = async (number: number, as: Session = ana) => {
+    const res = await as.api.cases[":number"].correlations.$get({ param: param(number) });
+    const body = await res.json();
+    if (!("alerts" in body)) throw new Error(`Could not read the Case's Correlations: ${res.status}`);
+    return body;
+  };
+  /** A Case's Correlations as "<alert id> <count>: values", strongest first. */
+  const related = async (number: number, as: Session = ana) =>
+    (await onCase(number, as)).alerts.map((c) => `${c.alert.id} ${c.sharedCount}: ${c.shared.map((s) => s.value).join(", ")}`);
+
+  return { t, owner, admin, ana, detect, alert, open, observe, hold, correlations, suggested, attach, close, caseStatus, marked, onCase, related };
 }
 
 describe("Correlation on the Alert page", () => {
@@ -269,5 +289,146 @@ describe("Correlation on the Alert page", () => {
     await a.owner.api.cases[":number"].$patch({ param: param(number), json: { restricted: true } });
     expect((await a.ana.api.alerts[":id"].correlations.$get({ param: { id } })).status).toBe(404);
     expect((await a.ana.api.alerts[":id"].correlations.$get({ param: { id: "no-such-alert" } })).status).toBe(404);
+  });
+});
+
+describe("Correlation in the Alert queue", () => {
+  test("marks each matching Alert with its best visible Case and how many others it matches", async () => {
+    const a = await acme();
+    const one = await a.open("Tor exit traffic");
+    await a.observe(one, "ip", "185.220.101.4");
+    const two = await a.open("Invoice phishing");
+    await a.observe(two, "ip", "185.220.101.4");
+    await a.hold(two, "FIN-LT-0231");
+    const both = await a.detect();
+    const ipOnly = await a.detect({ Hostname: "HR-LT-0007" });
+    const neither = await a.detect({ Hostname: "HR-LT-0008", NetworkAccesses: [] });
+
+    const [best, tied, none] = await a.marked([both, ipOnly, neither]);
+    expect(best).toBe(`C-${two} +1`);
+    // Sharing one item with each, either may be named; the other is counted.
+    expect([`C-${one} +1`, `C-${two} +1`]).toContain(tied!);
+    expect(none).toBeNull();
+  });
+
+  test("the Alert's own Case doesn't count", async () => {
+    const a = await acme();
+    const on = await a.open("Invoice phishing");
+    const id = await a.detect();
+    await a.attach(a.ana, on, id, (await a.alert(id)).version);
+    expect(await a.marked([id])).toEqual([null]);
+    const other = await a.open("Tor exit traffic");
+    await a.observe(other, "ip", "185.220.101.4");
+    expect(await a.marked([id])).toEqual([`C-${other} +0`]);
+  });
+
+  test("Ignored items and Cases the viewer can't see never mark an Alert", async () => {
+    const a = await acme();
+    const secret = await a.open("Insider investigation", a.owner);
+    await a.hold(secret, "FIN-LT-0231");
+    await a.owner.api.cases[":number"].$patch({ param: param(secret), json: { restricted: true } });
+    const open = await a.open("Tor exit traffic");
+    const ip = await a.observe(open, "ip", "185.220.101.4");
+    const id = await a.detect();
+
+    expect(await a.marked([id], a.ana)).toEqual([`C-${open} +0`]);
+    expect((await a.marked([id], a.admin))[0]).toEndWith(" +1");
+    await a.admin.api.observables[":id"].ignored.$put({ param: { id: ip } });
+    expect(await a.marked([id], a.ana)).toEqual([null]);
+    expect(await a.marked([id], a.admin)).toEqual([`C-${secret} +0`]);
+  });
+});
+
+describe("Correlation on the Case", () => {
+  test("lists the New Alerts sharing its Observables or Assets, most shared first, with the shared values", async () => {
+    const a = await acme();
+    const number = await a.open("Invoice phishing");
+    await a.observe(number, "ip", "185.220.101.4");
+    await a.hold(number, "FIN-LT-0231");
+    const ipOnly = await a.detect({ Hostname: "HR-LT-0007" });
+    const both = await a.detect();
+    const neither = await a.detect({ Hostname: "HR-LT-0008", NetworkAccesses: [] });
+
+    expect(await a.related(number)).toEqual([`${both} 2: 185.220.101.4, FIN-LT-0231`, `${ipOnly} 1: 185.220.101.4`]);
+    const found = await a.onCase(number);
+    expect(found.attach).toBe("attach");
+    expect(found.alerts[0]!.alert).toMatchObject({ id: both, severity: "high", host: "FIN-LT-0231", integration: { name: "CrowdStrike — Prod" } });
+    expect(found.alerts[0]!.shared.map((s) => [s.kind, s.type])).toEqual([
+      ["observable", "ip"],
+      ["asset", "host"],
+    ]);
+    expect(found.alerts.map((c) => c.alert.id)).not.toContain(neither);
+  });
+
+  test("only New Alerts are listed, and attaching from the list attaches the Alert", async () => {
+    const a = await acme();
+    const number = await a.open("Tor exit traffic");
+    await a.observe(number, "ip", "185.220.101.4");
+    const elsewhere = await a.open("Invoice phishing");
+    const attached = await a.detect();
+    await a.attach(a.ana, elsewhere, attached, (await a.alert(attached)).version);
+    const dismissed = await a.detect();
+    await a.ana.api.alerts.dismiss.$post({ json: { reason: "benign", alerts: [{ id: dismissed, version: (await a.alert(dismissed)).version }] } });
+    const fresh = await a.detect();
+
+    expect(await a.related(number)).toEqual([`${fresh} 1: 185.220.101.4`]);
+    const [suggestion] = (await a.onCase(number)).alerts;
+    const res = await a.attach(a.ana, number, suggestion!.alert.id, suggestion!.alert.version);
+    expect(await res.json()).toEqual({ applied: [fresh], refused: [] });
+    expect((await a.alert(fresh)).attached?.case.number).toBe(number);
+    expect(await a.related(number)).toEqual([]);
+  });
+
+  test("Ignored items don't count, and a Case the viewer can't see is not found", async () => {
+    const a = await acme();
+    const number = await a.open("Invoice phishing", a.owner);
+    const ip = await a.observe(number, "ip", "185.220.101.4");
+    const host = await a.hold(number, "FIN-LT-0231");
+    const id = await a.detect();
+    expect(await a.related(number)).toEqual([`${id} 2: 185.220.101.4, FIN-LT-0231`]);
+
+    await a.admin.api.observables[":id"].ignored.$put({ param: { id: ip } });
+    expect(await a.related(number)).toEqual([`${id} 1: FIN-LT-0231`]);
+    await a.admin.api.assets[":id"].ignored.$put({ param: { id: host } });
+    expect(await a.related(number)).toEqual([]);
+
+    await a.owner.api.cases[":number"].$patch({ param: param(number), json: { restricted: true } });
+    expect((await a.ana.api.cases[":number"].correlations.$get({ param: param(number) })).status).toBe(404);
+    expect((await a.ana.api.cases[":number"].correlations.$get({ param: param(99999) })).status).toBe(404);
+  });
+
+  test("on a Closed Case, Admins Reopen and attach; Analysts can't attach", async () => {
+    const a = await acme();
+    const number = await a.open("Closed last year");
+    await a.observe(number, "ip", "185.220.101.4");
+    await a.close(number);
+    const id = await a.detect();
+
+    expect(await a.onCase(number, a.ana)).toMatchObject({ attach: null, alerts: [{ alert: { id } }] });
+    expect((await a.onCase(number, a.admin)).attach).toBe("reopen_and_attach");
+    const res = await a.attach(a.admin, number, id, (await a.alert(id)).version, true);
+    expect(await res.json()).toEqual({ applied: [id], refused: [] });
+    expect(await a.caseStatus(number)).toBe("in_progress");
+  });
+
+  test("Alerts are never attached without a Member's action", async () => {
+    const a = await acme();
+    const number = await a.open("Tor exit traffic");
+    await a.observe(number, "ip", "185.220.101.4");
+    const id = await a.detect();
+    await a.related(number);
+    await a.marked([id]);
+    expect((await a.alert(id)).status).toBe("new");
+  });
+
+  test("Guests see neither the Case's Correlations nor the queue", async () => {
+    const a = await acme();
+    const number = await a.open("Tor exit traffic", a.owner);
+    await a.observe(number, "ip", "185.220.101.4");
+    await a.detect();
+    await a.owner.api.cases[":number"].guests.$post({ param: param(number), json: { email: COUNSEL, name: "Kim Patel", expiresAt: null } });
+    const guest = await a.t.guestSignIn(COUNSEL);
+    expect((await guest.api.cases[":number"].correlations.$get({ param: param(number) })).status as number).toBe(403);
+    expect((await guest.api.alerts.$get({ query: {} })).status as number).toBe(403);
   });
 });

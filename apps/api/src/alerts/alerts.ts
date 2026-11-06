@@ -16,8 +16,10 @@ import { secureId } from "../ids";
 import type { Membership, Participant } from "../members/membership";
 import {
   alertIndicators,
+  bestCasesForAlerts,
   casesSharingAlert,
   linkAlertIndicators,
+  newAlertsSharingCase,
   recordAlertIndicators,
   type SharedItem,
   unlinkAlertIndicators,
@@ -53,7 +55,8 @@ import { queueTeamsPost, sendTeamsPosts } from "../teams/teams";
  * Status, linked to an Observable or Asset the Alert names that isn't on the Ignored list, ranked
  * by how many they share. It is worked out as it is read, and never attaches anything: the Member
  * attaches from a suggestion with the ordinary attach, which for a Closed Case an Admin may ask to
- * reopen it first.
+ * reopen it first. The same rules mark each Alert in the queue with its strongest Case, and list on a
+ * Case the New Alerts sharing its Observables or Assets.
  *
  * Every action names the Alerts with the version the actor last saw. Bulk actions refuse, one by
  * one, those that changed since (or that the action can't apply to) and apply the rest; acting on
@@ -122,6 +125,24 @@ export type Correlation = {
   sharedCount: number;
   shared: SharedItem[];
   attach: "attach" | "reopen_and_attach" | null;
+};
+
+/** A Case's Correlation: a New Alert sharing its non-ignored Observables or Assets. */
+export type CaseCorrelation = {
+  alert: {
+    id: string;
+    externalId: string;
+    title: string;
+    severity: Severity;
+    host: string | null;
+    userName: string | null;
+    detectedAt: string | null;
+    receivedAt: string;
+    version: number;
+    integration: { id: string; name: string };
+  };
+  sharedCount: number;
+  shared: SharedItem[];
 };
 
 /** The most Alerts the queue shows at once, newest first. */
@@ -563,14 +584,32 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
         )
         .orderBy(desc(alerts.receivedAt), desc(alerts.seq))
         .limit(QUEUE_LIMIT);
-      return rows.map(({ integrationId, integrationName, detectedAt, receivedAt, caseNumber, caseTitle, ...row }) => ({
-        ...row,
-        integration: { id: integrationId, name: integrationName },
-        /** The Case it is attached to. */
-        case: caseNumber !== null && caseTitle !== null ? { number: caseNumber, title: caseTitle } : null,
-        detectedAt: detectedAt?.toISOString() ?? null,
-        receivedAt: receivedAt.toISOString(),
-      }));
+      const best = await bestCasesForAlerts(
+        db,
+        me,
+        rows.map((r) => r.id),
+      );
+      const bestCaseIds = [...new Set([...best.values()].map((b) => b.caseId))];
+      const bestCases = new Map(
+        (bestCaseIds.length
+          ? await db.select({ id: cases.id, number: cases.number, title: cases.title }).from(cases).where(inArray(cases.id, bestCaseIds))
+          : []
+        ).map((c) => [c.id, { number: c.number, title: c.title }]),
+      );
+      return rows.map(({ integrationId, integrationName, detectedAt, receivedAt, caseNumber, caseTitle, ...row }) => {
+        const top = best.get(row.id);
+        const related = top && bestCases.get(top.caseId);
+        return {
+          ...row,
+          integration: { id: integrationId, name: integrationName },
+          /** The Case it is attached to. */
+          case: caseNumber !== null && caseTitle !== null ? { number: caseNumber, title: caseTitle } : null,
+          /** Correlation: its strongest visible Case other than its own, and how many other Cases it correlates with. */
+          correlation: related ? { case: related, others: top.others } : null,
+          detectedAt: detectedAt?.toISOString() ?? null,
+          receivedAt: receivedAt.toISOString(),
+        };
+      });
     },
 
     /**
@@ -609,6 +648,52 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
         detectedAt: detectedAt?.toISOString() ?? null,
         attachedAt: attachedAt?.toISOString() ?? null,
       }));
+    },
+
+    /**
+     * Correlation for Case `number`: the New Alerts sharing its non-ignored Observables or Assets,
+     * most shared first, and how `me` may attach them to it: `attach`, `reopen_and_attach` (an
+     * Admin, on a Closed Case) or null. Throws `CaseNotFound` when `me` can't see it.
+     */
+    async caseCorrelations(me: Membership, number: number): Promise<{ attach: Correlation["attach"]; alerts: CaseCorrelation[] }> {
+      const found = await caseNumbered(db, me, number);
+      const mode = found.status !== "closed" ? "attach" : casePolicy.canReopen(me) ? "reopen_and_attach" : null;
+      const shared = await newAlertsSharingCase(db, me, found.id);
+      if (!shared.size) return { attach: mode, alerts: [] };
+      const rows = await db
+        .select({
+          id: alerts.id,
+          externalId: alerts.externalId,
+          title: alerts.title,
+          severity: alerts.severity,
+          host: alerts.host,
+          userName: alerts.userName,
+          detectedAt: alerts.detectedAt,
+          receivedAt: alerts.receivedAt,
+          seq: alerts.seq,
+          version: alerts.version,
+          integrationId: integrations.id,
+          integrationName: integrations.name,
+        })
+        .from(alerts)
+        .innerJoin(integrations, eq(alerts.integrationId, integrations.id))
+        .where(inArray(alerts.id, [...shared.keys()]));
+      return {
+        attach: mode,
+        alerts: rows
+          .map((r) => ({ row: r, items: shared.get(r.id)! }))
+          .toSorted((x, y) => y.items.length - x.items.length || y.row.receivedAt.getTime() - x.row.receivedAt.getTime() || y.row.seq - x.row.seq)
+          .map(({ row: { integrationId, integrationName, detectedAt, receivedAt, seq: _seq, ...row }, items }) => ({
+            alert: {
+              ...row,
+              integration: { id: integrationId, name: integrationName },
+              detectedAt: detectedAt?.toISOString() ?? null,
+              receivedAt: receivedAt.toISOString(),
+            },
+            sharedCount: items.length,
+            shared: items,
+          })),
+      };
     },
 
     /**
@@ -738,7 +823,7 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
         .where(and(eq(alerts.organizationId, me.organizationId), eq(alerts.id, id), visibleAlerts(me, alerts.caseId)))
         .limit(1);
       if (!alert) throw new AlertNotFound();
-      const shared = await casesSharingAlert(db, me, id, alert.caseId);
+      const shared = await casesSharingAlert(db, me, id);
       if (!shared.size) return [];
       const rows = await db
         .select({

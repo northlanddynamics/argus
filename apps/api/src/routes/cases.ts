@@ -655,6 +655,12 @@ export const caseRoutes = (
       if (!found) return c.json(notFound, 404);
       return c.json({ alerts: found }, 200);
     })
+    /** Correlation: the New Alerts sharing the Case's Observables or Assets. Members only. */
+    .get("/:number/correlations", membersOnly, zValidator("param", numberParam), async (c) => {
+      const found = await unlessNotFound(alerts.caseCorrelations(c.get("membership"), c.req.valid("param").number));
+      if (!found) return c.json(notFound, 404);
+      return c.json(found, 200);
+    })
     .put("/:number/internal", membersOnly, zValidator("param", numberParam), zValidator("json", internalBody), async (c) => {
       const { item, internal: hidden } = c.req.valid("json");
       try {
