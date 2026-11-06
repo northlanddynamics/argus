@@ -56,7 +56,8 @@ export function CaseDiscussion() {
       const res = await api.cases[":number"].discussion.$post({ param: { number: String(number) }, json: { body, internal } });
       if (!res.ok) throw new Error(await errorMessage(res, "Could not send the message"));
     },
-    onSuccess: refresh,
+    // Not awaited: the composer clears as soon as the message is accepted, not after the refetch, which the live signal may beat.
+    onSuccess: () => void refresh(),
   });
 
   if (!c) return null;
