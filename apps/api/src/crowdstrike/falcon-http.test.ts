@@ -210,9 +210,16 @@ describe("The Falcon API client", () => {
       ],
     });
 
-    await client.deleteIoc("ioc-2");
+    expect(await client.deleteIoc("ioc-2")).toBe(true);
     expect(requests.at(-1)!.method).toBe("DELETE");
     expect(new URL(requests.at(-1)!.url).searchParams.get("ids")).toBe("ioc-2");
+
+    // Already gone from Falcon: nothing to delete, and that is not a failure.
+    const gone = stubFalcon({
+      "POST https://api.eu-1.crowdstrike.com/oauth2/token": token,
+      "DELETE https://api.eu-1.crowdstrike.com/iocs/entities/indicators/v1": () => Response.json({ errors: [{ message: "not found" }] }, { status: 404 }),
+    });
+    expect(await falconHttpClient(connection, gone.fetchImpl).deleteIoc("ioc-9")).toBe(false);
 
     const refused = stubFalcon({
       "POST https://api.eu-1.crowdstrike.com/oauth2/token": token,

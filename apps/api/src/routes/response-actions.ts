@@ -7,7 +7,16 @@ import type { Deps } from "../deps";
 import { membersOnly, type ParticipantEnv, requireParticipant } from "../members/membership";
 import type { Modules } from "../modules";
 import { NotLinked } from "../observables/observables";
-import { IgnoredNotConfirmed, IntegrationNotEligible, NotDismissable, NotRetryable, ObservableNotAccepted, ResponseActionNotFound } from "../response-actions/response-actions";
+import {
+  IgnoredNotConfirmed,
+  IntegrationNotEligible,
+  NotDismissable,
+  NotRemovable,
+  NotRetryable,
+  ObservableNotAccepted,
+  RelyingCasesNotConfirmed,
+  ResponseActionNotFound,
+} from "../response-actions/response-actions";
 import { FALCON_IOC_ACTIONS } from "../response-actions/vocabulary";
 
 const numberParam = z.object({ number: z.coerce.number().int().positive() });
@@ -36,6 +45,11 @@ const takeManyBody = z.object({
   confirmIgnored: z.boolean().default(false),
 });
 
+const removeBody = z.object({
+  /** Removes it even though other Cases' "already present" records rely on it. */
+  confirmRelying: z.boolean().default(false),
+});
+
 /** The refusal of a send that includes Ignored Observables it didn't confirm, naming them. */
 const ignoredRefusal = (e: IgnoredNotConfirmed) => ({ error: e.message, ignored: e.observables });
 
@@ -52,8 +66,10 @@ const unlessNotFound = <T>(work: Promise<T>) =>
 /**
  * A Case's Response Actions (ADR 0007): list them (Guests too, without Internal ones or Integration
  * details), take one, take several at once (`/bulk`: one per Observable per Integration, with those
- * a Provider doesn't take skipped and reported), retry a Failed one, and dismiss an "already present" one (which leaves the tool
- * alone). Taking, retrying and dismissing are for Members, on a Case that isn't Closed.
+ * a Provider doesn't take skipped and reported), retry a Failed one, remove one the Case created
+ * (which deletes it in the tool; refused, naming the Cases that rely on it, unless confirmed), and
+ * dismiss an "already present" one (which leaves the tool alone). All but listing are for Members, on
+ * a Case that isn't Closed; on a Closed Case Admins may still remove, and retry a failed removal.
  */
 export const responseActionRoutes = (deps: Deps, { responseActions }: Modules) =>
   new Hono<ParticipantEnv>()
@@ -101,6 +117,20 @@ export const responseActionRoutes = (deps: Deps, { responseActions }: Modules) =
         if (e instanceof NotPermitted) return c.json(guestsRefused, 403);
         if (e instanceof ResponseActionNotFound) return c.json({ error: e.message }, 404);
         if (e instanceof NotRetryable || e instanceof CaseClosed) return c.json({ error: e.message }, 409);
+        throw e;
+      }
+    })
+    .post("/:number/response-actions/:id/remove", membersOnly, zValidator("param", actionParam), zValidator("json", removeBody), async (c) => {
+      const { number, id } = c.req.valid("param");
+      try {
+        const removing = await unlessNotFound(responseActions.remove(c.get("membership"), number, id, c.req.valid("json")));
+        if (!removing) return c.json(notFound, 404);
+        return c.json({ responseAction: removing }, 200);
+      } catch (e) {
+        if (e instanceof NotPermitted) return c.json({ error: "Guests can't remove Response Actions" }, 403);
+        if (e instanceof ResponseActionNotFound) return c.json({ error: e.message }, 404);
+        if (e instanceof RelyingCasesNotConfirmed) return c.json({ error: e.message, relyingCases: e.cases, otherCases: e.otherCases }, 409);
+        if (e instanceof NotRemovable || e instanceof CaseClosed) return c.json({ error: e.message }, 409);
         throw e;
       }
     })

@@ -293,7 +293,7 @@ function AlertsCard({ item }: { item: ItemPage }) {
   );
 }
 
-const stateVariant = { pending: "secondary", active: "default", failed: "destructive", removed: "outline" } as const;
+const stateVariant = { pending: "secondary", active: "default", removing: "secondary", failed: "destructive", removed: "outline" } as const;
 
 /**
  * The Response Actions taken on the Observable from Cases the viewer can see: which Integration

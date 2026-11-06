@@ -83,8 +83,11 @@ export interface FalconClient {
   findIoc(type: FalconIocType, value: string): Promise<FalconIoc | null>;
   /** Creates the custom IOC; resolves to Falcon's id for it. Rejects when Falcon refuses or fails. */
   createIoc(ioc: NewIoc): Promise<string>;
-  /** Deletes the custom IOC with this id. Rejects when Falcon refuses or fails. */
-  deleteIoc(id: string): Promise<void>;
+  /**
+   * Deletes the custom IOC with this id. Resolves to true when Falcon deleted it, false when Falcon
+   * holds no such IOC (it is already gone). Rejects when Falcon refuses or fails.
+   */
+  deleteIoc(id: string): Promise<boolean>;
 }
 
 /** The platforms a custom IOC applies to: all of them. */

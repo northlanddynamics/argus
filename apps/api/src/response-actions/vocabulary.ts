@@ -13,20 +13,24 @@ export const responseActionKindLabel: Record<ResponseActionKind, string> = { fal
  * Where a Response Action stands:
  *
  * ```
- * Pending → Active   (sent, or found already in the tool)
- * Pending → Failed   (send attempts exhausted)
- * Failed  → Pending  (Retry)
- * Active  → Removed  (an "already present" record dismissed)
+ * Pending  → Active    (sent, or found already in the tool)
+ * Pending  → Failed    (send attempts exhausted)
+ * Failed   → Pending   (Retry, when sending failed)
+ * Active   → Removing  (Remove, only one Argus created)
+ * Removing → Removed   (the tool deleted it, or says it is already gone)
+ * Removing → Failed    (remove attempts exhausted)
+ * Failed   → Removing  (Retry, when removing failed)
+ * Active   → Removed   (an "already present" record dismissed, or the one it relies on removed)
  * ```
  *
- * A Response Action recorded as already sent from another Case starts Active. Removing arrives with
- * removal.
+ * A Response Action recorded as already sent from another Case starts Active.
  */
-export const RESPONSE_ACTION_STATES = ["pending", "active", "failed", "removed"] as const;
+export const RESPONSE_ACTION_STATES = ["pending", "active", "removing", "failed", "removed"] as const;
 export type ResponseActionState = (typeof RESPONSE_ACTION_STATES)[number];
 export const responseActionStateLabel: Record<ResponseActionState, string> = {
   pending: "Pending",
   active: "Active",
+  removing: "Removing",
   failed: "Failed",
   removed: "Removed",
 };
@@ -44,8 +48,11 @@ export const responseActionStateLabel: Record<ResponseActionState, string> = {
 export const RESPONSE_ACTION_ORIGINS = ["created", "already_present", "in_tool"] as const;
 export type ResponseActionOrigin = (typeof RESPONSE_ACTION_ORIGINS)[number];
 
-/** The states in which a created Response Action holds its Integration, kind and value: no other may be created for them. */
-export const LIVE_STATES = ["pending", "active"] as const satisfies readonly ResponseActionState[];
+/**
+ * The states in which a created Response Action holds its Integration, kind and value: no other may
+ * be created for them. So does a Failed one whose removal failed, since the tool still holds it.
+ */
+export const LIVE_STATES = ["pending", "active", "removing"] as const satisfies readonly ResponseActionState[];
 
 /** What Falcon does when it sees the IOC: Prevent is for hashes only. */
 export const FALCON_IOC_ACTIONS = ["detect", "prevent"] as const;

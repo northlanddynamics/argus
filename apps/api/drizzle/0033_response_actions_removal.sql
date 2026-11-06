@@ -1,0 +1,6 @@
+DROP INDEX "response_actions_one_created_idx";--> statement-breakpoint
+ALTER TABLE "response_actions" ADD COLUMN "removal_requested_by_id" text;--> statement-breakpoint
+ALTER TABLE "response_actions" ADD COLUMN "removal_requested_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "response_actions" ADD CONSTRAINT "response_actions_removal_requested_by_id_user_id_fk" FOREIGN KEY ("removal_requested_by_id") REFERENCES "public"."user"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "response_actions_one_created_idx" ON "response_actions" USING btree ("integration_id","kind","target_type","target_value") WHERE "response_actions"."origin" = 'created' AND ("response_actions"."state" IN ('pending', 'active', 'removing') OR ("response_actions"."state" = 'failed' AND "response_actions"."removal_requested_at" IS NOT NULL));--> statement-breakpoint
+ALTER TABLE "response_actions" ADD CONSTRAINT "response_actions_removal_requested" CHECK (("response_actions"."removal_requested_at" IS NULL) = ("response_actions"."removal_requested_by_id" IS NULL));

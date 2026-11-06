@@ -130,6 +130,8 @@ export function headline(n: Row) {
       return `Your Task "${n.taskTitle ?? ""}" on ${ref} is overdue`;
     case "response_action_failed":
       return `A Response Action you took on ${ref} failed`;
+    case "response_action_removal_failed":
+      return `A Response Action you asked to remove from ${ref} could not be removed`;
   }
 }
 
@@ -139,7 +141,7 @@ export const sectionOf = (kind: NotificationKind) =>
     ? "tasks"
     : kind === "mentioned"
       ? "timeline"
-      : kind === "response_action_failed"
+      : kind === "response_action_failed" || kind === "response_action_removal_failed"
         ? "observables"
         : null;
 

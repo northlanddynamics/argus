@@ -108,7 +108,12 @@ export function CaseObservablesPage() {
           unlink={(id) => api.cases[":number"].assets[":id"].$delete({ param: { number: n, id } })}
         />
       </div>
-      <ResponseActionsCard number={number} readOnly={readOnly} canMarkInternal={c.can.markInternal} />
+      <ResponseActionsCard
+        number={number}
+        readOnly={readOnly}
+        canRemove={c.can.work && (c.status !== "closed" || c.can.reopen)}
+        canMarkInternal={c.can.markInternal}
+      />
     </div>
   );
 }

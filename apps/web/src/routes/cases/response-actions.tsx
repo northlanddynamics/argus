@@ -20,6 +20,8 @@ import {
   falconIocType,
   dismissResponseAction,
   type IgnoredInSend,
+  type RelyingCases,
+  removeResponseAction,
   type ResponseAction,
   responseActionKindLabel,
   responseActionsKey,
@@ -264,7 +266,7 @@ export function SendToFalconDialog({
   );
 }
 
-const stateVariant = { pending: "secondary", active: "default", failed: "destructive", removed: "outline" } as const;
+const stateVariant = { pending: "secondary", active: "default", removing: "secondary", failed: "destructive", removed: "outline" } as const;
 
 /** Where it stands, said as what Argus did: never that something is in force now. */
 function StateLine({ r }: { r: ResponseAction }) {
@@ -275,8 +277,24 @@ function StateLine({ r }: { r: ResponseAction }) {
     return <span title={exactTime(r.sentAt)}>Sent {when(r.sentAt)}</span>;
   }
   if (r.state === "pending") return <span>{r.lastError ? "Retrying" : "Waiting to be sent"}</span>;
+  if (r.state === "removing") {
+    return (
+      <span title={r.removalRequestedAt ? exactTime(r.removalRequestedAt) : undefined}>
+        {r.lastError ? "Retrying removal" : "Waiting to be removed"}
+        {r.removalRequestedBy && `, asked for by ${r.removalRequestedBy.name}`}
+      </span>
+    );
+  }
+  if (r.state === "removed") {
+    return (
+      <span title={exactTime(r.stateChangedAt)}>
+        Removed {when(r.stateChangedAt)}
+        {r.origin === "created" && r.removalRequestedBy && `, asked for by ${r.removalRequestedBy.name}`}
+      </span>
+    );
+  }
   if (r.state === "active") return null;
-  return <span title={exactTime(r.stateChangedAt)}>Failed {when(r.stateChangedAt)}</span>;
+  return <span title={exactTime(r.stateChangedAt)}>{r.removalRequestedAt ? "Removal failed" : "Failed"} {when(r.stateChangedAt)}</span>;
 }
 
 /** Where an "already present" record came from: the Case it was sent from (unless hidden), or the tool. */
@@ -301,8 +319,104 @@ function OriginLine({ r }: { r: ResponseAction }) {
   return null;
 }
 
+/**
+ * "Remove": asks before Argus deletes what it created in the tool. When other Cases rely on it, says
+ * which (those the viewer can see, and how many others) and needs a second confirmation.
+ */
+function RemoveDialog({ number, r }: { number: number; r: ResponseAction }) {
+  const queryClient = useQueryClient();
+  const [isOpen, setIsOpen] = useState(false);
+  const [relying, setRelying] = useState<RelyingCases | null>(null);
+  const remove = useMutation({
+    mutationFn: () => removeResponseAction(number, r.id, relying !== null),
+    onSuccess: (outcome) => {
+      if ("relying" in outcome) setRelying(outcome.relying);
+      else setIsOpen(false);
+    },
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: responseActionsKey(number) }),
+  });
+  const what = `${observableTypeLabel[r.observable.type]} ${shownObservable(r.observable.type, r.observable.value)}`;
+  const count = relying ? relying.cases.length + relying.otherCases : 0;
+  return (
+    <Dialog
+      open={isOpen}
+      onOpenChange={(next) => {
+        setIsOpen(next);
+        if (next) {
+          setRelying(null);
+          remove.reset();
+        }
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" aria-label={`Remove the Response Action on ${r.observable.value}`}>
+          Remove
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Remove from Falcon</DialogTitle>
+          <DialogDescription>
+            Argus deletes the custom IOC for <span className="font-mono break-all">{what}</span>
+            {r.integration && ` from ${r.integration.name}`}. Falcon stops detecting it.
+          </DialogDescription>
+        </DialogHeader>
+        {relying && (
+          <Alert>
+            <AlertDescription className="grid gap-2">
+              <span>
+                {count === 1 ? "Another Case relies" : `${count} other Cases rely`} on this custom IOC. Removing it marks their Response Actions
+                Removed too:
+              </span>
+              <ul className="grid gap-0.5">
+                {relying.cases.map((c) => (
+                  <li key={c.number}>
+                    <Link to="/cases/$number" params={{ number: String(c.number) }} className="underline">
+                      {caseRef(c.number)}
+                    </Link>{" "}
+                    {c.title}
+                  </li>
+                ))}
+                {relying.otherCases > 0 && (
+                  <li className="text-muted-foreground">
+                    {relying.otherCases} {relying.otherCases === 1 ? "Case" : "Cases"} you can't see
+                  </li>
+                )}
+              </ul>
+            </AlertDescription>
+          </Alert>
+        )}
+        {remove.error && (
+          <Alert variant="destructive">
+            <AlertDescription>{remove.error.message}</AlertDescription>
+          </Alert>
+        )}
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => setIsOpen(false)}>
+            Cancel
+          </Button>
+          <Button type="button" variant="destructive" disabled={remove.isPending} onClick={() => remove.mutate()}>
+            {relying ? "Remove anyway" : "Remove"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /** Case · the Response Actions taken from it, with their state and, for Failed ones, the error and Retry. */
-export function ResponseActionsCard({ number, readOnly, canMarkInternal }: { number: number; readOnly: boolean; canMarkInternal: boolean }) {
+export function ResponseActionsCard({
+  number,
+  readOnly,
+  canRemove,
+  canMarkInternal,
+}: {
+  number: number;
+  readOnly: boolean;
+  /** Remove what the Case created, and retry a failed removal: on a Closed Case, Admins still can. */
+  canRemove: boolean;
+  canMarkInternal: boolean;
+}) {
   const queryClient = useQueryClient();
   const { data } = useQuery(responseActionsQuery(number));
   const retry = useMutation({
@@ -314,6 +428,7 @@ export function ResponseActionsCard({ number, readOnly, canMarkInternal }: { num
     onSettled: () => void queryClient.invalidateQueries({ queryKey: responseActionsKey(number) }),
   });
   const list = data?.responseActions ?? [];
+  const hasActions = !readOnly || canRemove;
 
   return (
     <Card>
@@ -337,7 +452,7 @@ export function ResponseActionsCard({ number, readOnly, canMarkInternal }: { num
               <TableHead>State</TableHead>
               <TableHead>Taken by</TableHead>
               {canMarkInternal && <TableHead>Visibility</TableHead>}
-              {!readOnly && <TableHead className="w-0" />}
+              {hasActions && <TableHead className="w-0" />}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -385,14 +500,15 @@ export function ResponseActionsCard({ number, readOnly, canMarkInternal }: { num
                     />
                   </TableCell>
                 )}
-                {!readOnly && (
+                {hasActions && (
                   <TableCell className="w-0 text-right">
-                    {r.state === "failed" && (
+                    {r.state === "active" && r.origin === "created" && canRemove && <RemoveDialog number={number} r={r} />}
+                    {r.state === "failed" && (r.removalRequestedAt ? canRemove : !readOnly) && (
                       <Button variant="outline" size="sm" disabled={retry.isPending} onClick={() => retry.mutate(r.id)}>
                         Retry
                       </Button>
                     )}
-                    {r.state === "active" && r.origin !== "created" && (
+                    {r.state === "active" && r.origin !== "created" && !readOnly && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -409,7 +525,7 @@ export function ResponseActionsCard({ number, readOnly, canMarkInternal }: { num
             ))}
             {list.length === 0 && (
               <TableRow>
-                <TableCell colSpan={4 + (canMarkInternal ? 1 : 0) + (readOnly ? 0 : 1)} className="text-muted-foreground">
+                <TableCell colSpan={4 + (canMarkInternal ? 1 : 0) + (hasActions ? 1 : 0)} className="text-muted-foreground">
                   No Response Actions yet.
                 </TableCell>
               </TableRow>

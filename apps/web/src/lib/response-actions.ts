@@ -70,3 +70,21 @@ export async function retryResponseAction(number: number, id: string) {
   const res = await api.cases[":number"]["response-actions"][":id"].retry.$post({ param: { number: String(number), id } });
   if (!res.ok) throw new Error(await errorMessage(res, "Could not retry the Response Action"));
 }
+
+/** Other Cases relying on a Response Action to be removed: those the viewer can see, and how many others. */
+export type RelyingCases = { cases: { number: number; title: string }[]; otherCases: number };
+
+/**
+ * Removes a Response Action Case `number` created, deleting it in the tool. Without
+ * `confirmRelying`, a removal other Cases rely on is refused, and they come back in `relying`.
+ */
+export async function removeResponseAction(number: number, id: string, confirmRelying: boolean): Promise<{ relying: RelyingCases } | { removing: true }> {
+  const res = await api.cases[":number"]["response-actions"][":id"].remove.$post({ param: { number: String(number), id }, json: { confirmRelying } });
+  if (res.status === 409) {
+    const body = (await res.json()) as { error?: string; relyingCases?: RelyingCases["cases"]; otherCases?: number };
+    if (body.relyingCases) return { relying: { cases: body.relyingCases, otherCases: body.otherCases ?? 0 } };
+    throw new Error(body.error ?? "Could not remove the Response Action");
+  }
+  if (!res.ok) throw new Error(await errorMessage(res, "Could not remove the Response Action"));
+  return { removing: true };
+}

@@ -1086,6 +1086,9 @@ export const responseActions = pgTable(
     presentFromId: text("present_from_id").references((): AnyPgColumn => responseActions.id, { onDelete: "restrict" }),
     dismissedById: text("dismissed_by_id").references(() => user.id, { onDelete: "restrict" }),
     dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
+    /** Who last asked Argus to remove it from the tool, and when; set from Remove on. */
+    removalRequestedById: text("removal_requested_by_id").references(() => user.id, { onDelete: "restrict" }),
+    removalRequestedAt: timestamp("removal_requested_at", { withTimezone: true }),
   },
   (t) => [
     index("response_actions_case_idx").on(t.caseId, t.seq),
@@ -1093,17 +1096,20 @@ export const responseActions = pgTable(
     index("response_actions_present_from_idx").on(t.presentFromId).where(sql`${t.presentFromId} IS NOT NULL`),
     uniqueIndex("response_actions_one_created_idx")
       .on(t.integrationId, t.kind, t.targetType, t.targetValue)
-      .where(sql`${t.origin} = 'created' AND ${t.state} IN ('pending', 'active')`),
+      .where(
+        sql`${t.origin} = 'created' AND (${t.state} IN ('pending', 'active', 'removing') OR (${t.state} = 'failed' AND ${t.removalRequestedAt} IS NOT NULL))`,
+      ),
     check("response_actions_falcon", sql`(${t.kind} = 'falcon_ioc') = (${t.falconAction} IS NOT NULL AND ${t.severity} IS NOT NULL)`),
     check("response_actions_present_from", sql`(${t.origin} = 'already_present') = (${t.presentFromId} IS NOT NULL)`),
     check("response_actions_dismissed", sql`(${t.dismissedAt} IS NULL) = (${t.dismissedById} IS NULL)`),
+    check("response_actions_removal_requested", sql`(${t.removalRequestedAt} IS NULL) = (${t.removalRequestedById} IS NULL)`),
   ],
 );
 
 /**
  * The Response Action outbox: one row per attempt to carry out a Response Action in its tool, queued
  * in the transaction that asked for it and sent by the worker (`response-actions/sender.ts`), as the
- * Falcon write-back outbox is. A failed send stays `pending` with `next_attempt_at` pushed back;
+ * Falcon write-back outbox is. Each row sends or removes (`operation`). A failed attempt stays `pending` with `next_attempt_at` pushed back;
  * `attempts` counts the failures, and when they run out the row is `failed` and so is its Response
  * Action. A Retry queues a new row.
  */
@@ -1118,7 +1124,7 @@ export const responseActionOutbox = pgTable(
     responseActionId: text("response_action_id")
       .notNull()
       .references(() => responseActions.id, { onDelete: "restrict" }),
-    operation: text("operation", { enum: ["send"] }).notNull(),
+    operation: text("operation", { enum: ["send", "remove"] }).notNull(),
     state: text("state", { enum: ["pending", "done", "failed"] }).notNull(),
     attempts: integer("attempts").notNull().default(0),
     nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull(),
