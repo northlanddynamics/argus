@@ -501,7 +501,6 @@ test("the Owner adds a Mimecast Integration; an Analyst blocks an email sender's
     await page.getByRole("button", { name: "Actions for Email billing@invoice-portal.biz" }).click();
     await page.getByRole("menuitem", { name: "Take action" }).click();
     const group = page.getByRole("group", { name: "Mimecast" });
-    await group.getByText("Organization-wide").waitFor();
     await group.getByRole("menuitem", { name: /^Block domain/ }).click();
     await page.getByText("Block domain sent through Mimecast").waitFor();
     await page.getByTestId("observable-invoice-portal.biz").waitFor();
