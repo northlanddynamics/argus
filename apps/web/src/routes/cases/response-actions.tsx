@@ -74,7 +74,7 @@ export const holdingOn = (held: readonly ResponseAction[], id: string) => held.f
 function sentWith(integrations: readonly Eligible[], severity: Severity) {
   const [only] = integrations;
   if (integrations.length === 1 && only) return `${describeDefaults(only.defaults, severity)}`;
-  return "with each Integration's severity and platforms (set under Settings · Integrations)";
+  return "with each Integration's severity and platforms";
 }
 
 /** Whether a send starts Internal: so when every Integration it goes to says so by default. */
@@ -340,14 +340,13 @@ export function SendToFalconDialog({
             </ul>
             <Field orientation="horizontal" className="w-auto">
               <Checkbox id="response-action-internal" checked={internal} onCheckedChange={(checked) => setInternal(checked === true)} />
-              <FieldLabel htmlFor="response-action-internal">Internal (hidden from Guests)</FieldLabel>
+              <FieldLabel htmlFor="response-action-internal">Internal</FieldLabel>
             </Field>
             {ignored.length > 0 && (
               <Alert className={notice}>
                 <AlertDescription className="grid gap-2">
                   <span>
-                    {ignored.length === 1 ? "This Observable is" : "These Observables are"} on the Organization's Ignored list, as too common to
-                    mean anything:
+                    {ignored.length === 1 ? "This Observable is" : "These Observables are"} on the Ignored list:
                   </span>
                   <ul className="grid gap-0.5">
                     {ignored.map((o) => (
@@ -388,7 +387,7 @@ export function SendToFalconDialog({
 /** Says a send went through, and offers the way to the rows it added. */
 export function announce(taken: number, names: string[]) {
   toast(`${taken} Response Action${taken === 1 ? "" : "s"} taken through ${list(names)}`, {
-    description: "Pending until Falcon confirms; shown under Response Actions.",
+    description: "Shown under Response Actions.",
     action: { label: "Show", onClick: () => document.getElementById(CARD_ID)?.scrollIntoView({ behavior: "smooth", block: "start" }) },
   });
 }
@@ -504,7 +503,7 @@ export function RemoveDialog({ number, r, onClose }: { number: number; r: Respon
           <DialogDescription>
             Argus deletes the custom IOC for {observableTypeLabel[r.observable.type]}{" "}
             <span className="font-mono break-all">{fullValue(r.observable)}</span>
-            {r.integration && ` from ${r.integration.name}`}. {stops} This Case keeps the record, marked Removed.
+            {r.integration && ` from ${r.integration.name}`}. {stops}
           </DialogDescription>
         </DialogHeader>
         {relying && (
@@ -560,7 +559,7 @@ export function DismissDialog({ r, disabled, onDismiss, onClose }: { r: Response
           <AlertDialogDescription>
             This Case stops recording {observableTypeLabel[r.observable.type]}{" "}
             <span className="font-mono break-all">{fullValue(r.observable)}</span> as already present
-            {r.integration ? ` in ${r.integration.name}` : ""}. Nothing changes in Falcon, and the record stays here, marked Dismissed.
+            {r.integration ? ` in ${r.integration.name}` : ""}.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -619,17 +618,13 @@ export function ResponseActionsCard({
   /** The error of a Retry on row `id`, shown on that row. */
   const errorOn = (id: string) => (retry.variables === id && retry.error) || null;
 
-  const description = readOnly
-    ? "What Argus sent to your security tools from this Case."
-    : eligible.length > 0
-      ? "What Argus sent to your security tools from this Case. Right-click an Observable, or use its ⋯ menu, to take action; tick several to act on them together."
-      : "What Argus sent to your security tools from this Case. No Integration takes Response Actions right now: an Admin turns them on under Settings · Integrations.";
+  const description = !readOnly && eligible.length === 0 ? "Response Actions are off. An Admin turns them on under Settings · Integrations." : null;
 
   return (
     <Card id={CARD_ID} className="scroll-mt-16">
       <CardHeader>
         <CardTitle>Response Actions</CardTitle>
-        <CardDescription>{description}</CardDescription>
+        {description && <CardDescription>{description}</CardDescription>}
       </CardHeader>
       <CardContent className="grid gap-4">
         {query.isError ? (

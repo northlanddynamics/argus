@@ -307,11 +307,7 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
           <ConfirmOn
             title={`Allow Response Actions through ${i.name}?`}
             body={
-              <>
-                Any Member who can work a Case may then add custom IOCs to this Falcon tenant in one click: globally, with the severity and
-                platforms set below, as an alert (Detect) or, for hashes, a block (Prevent), which stops the file on every host it applies to. Each is recorded on its Case and in the Audit Log, and only the Case that
-                sent it can remove it. The API client needs IOC Management write scope; without it, sends fail on the Case with a 403.
-              </>
+              <>The API client needs IOC Management write scope; without it, sends fail on the Case with a 403.</>
             }
             confirm="Allow Response Actions"
             onConfirm={() => setResponseActions.mutate(true)}
@@ -558,11 +554,8 @@ function ResponseActionDefaults({ integration: i }: { integration: IntegrationVi
       }}
     >
       <div className="grid gap-0.5">
-        <span className="text-sm font-semibold">Defaults for one-click IOCs</span>
-        <p className="text-sm text-muted-foreground">
-          What an IOC alert or block taken from a Case is sent with. Changes apply to those taken from now on.
-          {locked && " Only Admins can change these."}
-        </p>
+        <span className="text-sm font-semibold">IOC defaults</span>
+        {locked && <p className="text-sm text-muted-foreground">Only Admins can change these.</p>}
       </div>
       <div className="grid gap-2 sm:grid-cols-[10rem_1fr] sm:items-center">
         <Label htmlFor={id("severity")}>Severity</Label>
@@ -604,7 +597,7 @@ function ResponseActionDefaults({ integration: i }: { integration: IntegrationVi
             onCheckedChange={(checked) => setDraft((d) => ({ ...d, internal: checked === true }))}
           />
           <Label htmlFor={id("internal")} className="font-normal">
-            Internal (hidden from Guests on the Case)
+            Internal
           </Label>
         </div>
       </div>

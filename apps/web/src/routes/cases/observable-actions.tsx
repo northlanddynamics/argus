@@ -95,10 +95,6 @@ const contextKit: MenuKit = {
 
 /** The one-click actions, as the menu names them: Falcon's Detect is an alert, its Prevent a block. */
 const quickLabel: Record<FalconIocAction, string> = { detect: "IOC alert", prevent: "IOC block" };
-const quickHint: Record<FalconIocAction, string> = {
-  detect: "Falcon raises a detection; nothing is blocked",
-  prevent: "Falcon blocks it on every host it applies to",
-};
 const QuickIcon: Record<FalconIocAction, ComponentType<{ className?: string }>> = { detect: ShieldAlertIcon, prevent: ShieldBanIcon };
 
 const labelOf = (o: Sendable) => `${observableTypeLabel[o.type]} ${shownObservable(o.type, o.value)}`;
@@ -139,7 +135,7 @@ function useQuickSend(number: number) {
       const what = args.observables.length === 1 ? labelOf(args.observables[0]!) : plural(outcome.taken, "Observable");
       if (outcome.taken > 0) {
         toast(`${quickLabel[args.action]} sent through ${args.to.name}`, {
-          description: `${what}. Pending until Falcon confirms.`,
+          description: what,
         });
         args.onSent?.();
       }
@@ -160,8 +156,7 @@ function useQuickSend(number: number) {
           <AlertDialogDescription asChild>
             <div className="grid gap-2">
               <span>
-                {asking?.ignored.length === 1 ? "This Observable is" : "These Observables are"} on the Organization's Ignored list, as too common to mean
-                anything:
+                {asking?.ignored.length === 1 ? "This Observable is" : "These Observables are"} on the Ignored list:
               </span>
               <ul className="grid gap-0.5">
                 {asking?.ignored.map((o) => (
@@ -188,8 +183,9 @@ function heldLine(r: ResponseAction) {
   const action = r.falcon ? quickLabel[r.falcon.action] : "IOC";
   if (r.state === "pending") return `${action}: waiting to be sent`;
   if (r.state === "removing") return `${action}: being removed`;
-  if (r.origin !== "created") return `${action}: already present`;
-  return r.sentAt ? `${action} sent ${when(r.sentAt)}` : `${action} sent`;
+  if (r.origin === "in_tool") return `${action} in Falcon`;
+  const at = r.origin === "already_present" ? r.presentFrom?.at : r.sentAt;
+  return at ? `${action} sent ${when(at)}` : `${action} sent`;
 }
 
 type Dialog = { kind: "more" } | { kind: "remove"; r: ResponseAction } | { kind: "dismiss"; r: ResponseAction } | null;
@@ -253,7 +249,7 @@ export function ObservableActions({
     if (destinations.length === 0) {
       return (
         <kit.Item disabled>
-          <Twoline title="No Integration takes Response Actions" hint="An Admin turns them on under Settings · Integrations" />
+          <Twoline title="Response Actions are off" hint="An Admin turns them on under Settings · Integrations" />
         </kit.Item>
       );
     }
@@ -284,7 +280,7 @@ export function ObservableActions({
                   {live.state === "active" && live.origin !== "created" && !readOnly && (
                     <kit.Item onSelect={() => setDialog({ kind: "dismiss", r: live })}>
                       <Undo2Icon />
-                      <Twoline title="Dismiss record…" hint="Falcon is left unchanged" />
+                      Dismiss record…
                     </kit.Item>
                   )}
                 </>
@@ -313,10 +309,7 @@ export function ObservableActions({
                           onSelect={() => quick.send({ observables: [observable], to: { id: d.id, name: d.name, defaults: d.defaults! }, action })}
                         >
                           <Icon />
-                          <Twoline
-                            title={`${quickLabel[action]} (${falconIocActionLabel[action]})`}
-                            hint={allowed ? quickHint[action] : "Hashes only: Falcon can only alert on a domain or IP"}
-                          />
+                          {quickLabel[action]} ({falconIocActionLabel[action]})
                         </kit.Item>
                       );
                     })}
@@ -475,9 +468,7 @@ export function BulkObservableActions({
                             ? action === "prevent" && left.length > 0
                               ? "Hashes only, and none are ticked"
                               : "Already sent from this Case"
-                            : going.length === observables.length
-                              ? quickHint[action]
-                              : `${going.length} of ${observables.length}: ${action === "prevent" ? "hashes only, " : ""}leaving out what is already sent`
+                            : undefined
                         }
                       />
                     </DropdownMenuItem>
