@@ -31,7 +31,7 @@ const itemRoutes = <Store extends Modules["observables"] | Modules["assets"]>(de
     .use(requireParticipant(deps))
     .get("/:id", zValidator("param", idParam), async (c) => {
       try {
-        const item = (await store.detail(c.get("participant"), c.req.valid("param").id)) as Awaited<ReturnType<Store["detail"]>>;
+        const item = (await store.open(c.get("participant"), c.req.valid("param").id)) as Awaited<ReturnType<Store["detail"]>>;
         return c.json({ item }, 200);
       } catch (e) {
         if (e instanceof ItemNotFound) return c.json({ error: e.message }, 404);
@@ -43,7 +43,16 @@ const itemRoutes = <Store extends Modules["observables"] | Modules["assets"]>(de
 };
 
 export const observableRoutes = (deps: Deps, { observables }: Modules) => itemRoutes(deps, observables);
-export const assetRoutes = (deps: Deps, { assets }: Modules) => itemRoutes(deps, assets);
+/** A host's Enrichment is fetched from Falcon again when a Member asks (`POST /:id/enrichment`, ADR 0009). */
+export const assetRoutes = (deps: Deps, { assets }: Modules) =>
+  itemRoutes(deps, assets).post("/:id/enrichment", zValidator("param", idParam), membersOnly, async (c) => {
+    try {
+      return c.json({ item: await assets.open(c.get("participant"), c.req.valid("param").id, { refresh: true }) }, 200);
+    } catch (e) {
+      if (e instanceof ItemNotFound) return c.json({ error: e.message }, 404);
+      throw e;
+    }
+  });
 
 /** The Organization's Ignored list, for Members. */
 export const ignoredObservableRoutes = (deps: Deps, { ignoredObservables }: Modules) =>
