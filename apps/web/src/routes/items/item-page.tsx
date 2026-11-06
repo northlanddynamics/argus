@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams, useRouteContext } from "@tanstack/react-router";
-import { BellOffIcon, CheckIcon, CopyIcon, FingerprintIcon, LockIcon, MonitorIcon, UserIcon } from "lucide-react";
+import { BellOffIcon, CheckIcon, CopyIcon, ExternalLinkIcon, FingerprintIcon, LockIcon, MonitorIcon, UserIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { SeverityBadge, StatusBadge } from "@/components/case-badges";
 import { observableIcon } from "@/components/search/search-hit";
@@ -132,6 +132,7 @@ function ItemPageView({ kind, id }: { kind: ItemKind; id: string }) {
         </dl>
       </section>
 
+      {kind === "asset" && item.type === "host" && !guest && <FalconDevicesCard item={item} />}
       <CasesCard item={item} actions={kind === "observable" && !guest} />
       {!guest && <AlertsCard item={item} />}
       {kind === "observable" && <ResponseActionsCard item={item} actions={!guest} />}
@@ -179,6 +180,64 @@ function CopyButton({ text }: { text: string }) {
     >
       {copied ? <CheckIcon /> : <CopyIcon />}
     </Button>
+  );
+}
+
+/**
+ * The Falcon devices recorded on a host, from the detections that name it, each linking to the
+ * device in its Integration's Falcon console. Several for one Integration mark the host ambiguous
+ * there: the same name has been seen on more than one sensor.
+ */
+function FalconDevicesCard({ item }: { item: ItemPage }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Falcon devices</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <Table aria-label="Falcon devices">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Device ID</TableHead>
+              <TableHead>Integration</TableHead>
+              <TableHead className="text-right">Recorded</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {item.falconDevices.flatMap((group) =>
+              group.devices.map((d) => (
+                <TableRow key={`${group.integration.id} ${d.deviceId}`}>
+                  <TableCell>
+                    <a href={d.consoleUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-mono text-xs break-all hover:underline">
+                      {d.deviceId}
+                      <ExternalLinkIcon className="size-3 shrink-0 text-muted-foreground" aria-label="Opens in the Falcon console" />
+                    </a>
+                  </TableCell>
+                  <TableCell className="whitespace-normal">
+                    {group.integration.name}
+                    {group.ambiguous && (
+                      <Badge variant="outline" className="ml-1.5" title="Several Falcon devices go by this name for this Integration">
+                        Ambiguous
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right text-muted-foreground tabular-nums" title={exactTime(d.recordedAt)}>
+                    {when(d.recordedAt)}
+                  </TableCell>
+                </TableRow>
+              )),
+            )}
+            {item.falconDevices.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={3} className="text-muted-foreground">
+                  No detection has named its Falcon device yet.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   );
 }
 

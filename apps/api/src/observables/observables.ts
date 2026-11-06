@@ -2,7 +2,7 @@ import { and, asc, desc, eq, inArray, isNull, ne, notExists, type SQL, sql } fro
 import { alias } from "drizzle-orm/pg-core";
 import { casePolicy, isGuest, type MemberActor, NotPermitted, organizationPolicy, visibleAlerts, visibleCases } from "../access/policy";
 import { recordOrgAudit } from "../audit/org-audit-log";
-import type { AlertStatus } from "../alerts/vocabulary";
+import { type AlertStatus, falconDeviceUrl } from "../alerts/vocabulary";
 import { actorOf, CaseNotFound, lockCase } from "../cases/cases";
 import { recordCaseAudit } from "../cases/case-audit-log";
 import type { CaseAuditAction, Severity, Status } from "../cases/vocabulary";
@@ -12,11 +12,13 @@ import {
   alertAssets,
   alertObservables,
   alerts,
+  assetFalconDevices,
   assets,
   caseAssets,
   caseObservables,
   cases,
   ignoredObservables,
+  integrations,
   observables,
   user,
 } from "../db/schema";
@@ -128,6 +130,18 @@ export type ItemDetail<Type extends string> = {
    * Internal ones and no Integration details. Always empty for Assets.
    */
   responseActions: ObservableResponseActionView[];
+  /**
+   * The Falcon devices recorded on a host, by CrowdStrike Integration (ADR 0009). Always empty for
+   * Observables, accounts and Guests.
+   */
+  falconDevices: FalconDevices[];
+};
+
+/** The Falcon devices recorded on a host for one Integration; `ambiguous` when there are several. */
+export type FalconDevices = {
+  integration: { id: string; name: string };
+  ambiguous: boolean;
+  devices: { deviceId: string; consoleUrl: string; recordedAt: string }[];
 };
 
 /** Who put an item on the Ignored list, and when. */
@@ -371,6 +385,7 @@ function heldOnceStore<Type extends string>(
       })),
       ignored,
       responseActions: await responseActionsOn(me, itemId),
+      falconDevices: kind.name === "asset" && item.type === "host" && !isGuest(me) ? await falconDevicesOf(db, itemId) : [],
     };
   }
 
@@ -599,8 +614,12 @@ const KINDS = [observableKind, assetKind] as unknown as readonly [Kind<string>, 
  */
 export async function recordAlertIndicators(
   tx: Tx,
-  alert: { id: string; organizationId: string },
-  indicators: { observables: readonly (Normalised & { type: ObservableType })[]; assets: readonly (Normalised & { type: AssetType })[] },
+  alert: { id: string; organizationId: string; integrationId: string },
+  indicators: {
+    observables: readonly (Normalised & { type: ObservableType })[];
+    assets: readonly (Normalised & { type: AssetType })[];
+    devices: readonly { hostKey: string; deviceId: string }[];
+  },
   now: Date,
 ) {
   const lists = [indicators.observables, indicators.assets] as const;
@@ -623,6 +642,61 @@ export async function recordAlertIndicators(
       .values(ids.map((itemId) => ({ organizationId: alert.organizationId, alertId: alert.id, itemId })))
       .onConflictDoNothing();
   }
+  await recordFalconDevices(tx, alert, indicators.devices, now);
+}
+
+/**
+ * Records the Falcon devices a detection names against their host Assets for the Integration it
+ * came from (ADR 0009), once each. Call it after the hosts are added.
+ */
+async function recordFalconDevices(
+  tx: Tx,
+  alert: { organizationId: string; integrationId: string },
+  devices: readonly { hostKey: string; deviceId: string }[],
+  now: Date,
+) {
+  if (!devices.length) return;
+  const hosts = await tx
+    .select({ id: assets.id, matchKey: assets.matchKey })
+    .from(assets)
+    .where(and(eq(assets.organizationId, alert.organizationId), eq(assets.type, "host"), inArray(assets.matchKey, devices.map((d) => d.hostKey))));
+  const hostId = new Map(hosts.map((h) => [h.matchKey, h.id]));
+  const rows = devices.flatMap((d) => {
+    const assetId = hostId.get(d.hostKey);
+    return assetId
+      ? [{ id: secureId(), organizationId: alert.organizationId, assetId, integrationId: alert.integrationId, deviceId: d.deviceId, recordedAt: now }]
+      : [];
+  });
+  if (rows.length) await tx.insert(assetFalconDevices).values(rows).onConflictDoNothing();
+}
+
+/**
+ * The Falcon devices recorded on host `assetId`, by Integration in the order each was first
+ * recorded, with a link to each in its Integration's console. More than one for an Integration
+ * makes the host ambiguous there.
+ */
+async function falconDevicesOf(db: Db, assetId: string): Promise<FalconDevices[]> {
+  const rows = await db
+    .select({
+      integrationId: integrations.id,
+      integrationName: integrations.name,
+      cloud: integrations.cloud,
+      deviceId: assetFalconDevices.deviceId,
+      recordedAt: assetFalconDevices.recordedAt,
+    })
+    .from(assetFalconDevices)
+    .innerJoin(integrations, eq(assetFalconDevices.integrationId, integrations.id))
+    .where(eq(assetFalconDevices.assetId, assetId))
+    .orderBy(asc(assetFalconDevices.recordedAt), asc(assetFalconDevices.seq));
+  const byIntegration = new Map<string, FalconDevices>();
+  for (const r of rows) {
+    if (!r.cloud) continue;
+    const entry = byIntegration.get(r.integrationId) ?? { integration: { id: r.integrationId, name: r.integrationName }, ambiguous: false, devices: [] };
+    entry.devices.push({ deviceId: r.deviceId, consoleUrl: falconDeviceUrl(r.cloud, r.deviceId), recordedAt: r.recordedAt.toISOString() });
+    entry.ambiguous = entry.devices.length > 1;
+    byIntegration.set(r.integrationId, entry);
+  }
+  return [...byIntegration.values()];
 }
 
 /** What Alert `alertId` names, in the order its detection first named them. */

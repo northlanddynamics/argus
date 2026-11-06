@@ -13,7 +13,9 @@ import {
  */
 
 export type Extracted<Type extends string> = Normalised & { type: Type };
-export type Indicators = { observables: Extracted<ObservableType>[]; assets: Extracted<AssetType>[] };
+/** A Falcon device ID (`aid`) the detection names, and the match key of the host it names it for. */
+export type NamedDevice = { hostKey: string; deviceId: string };
+export type Indicators = { observables: Extracted<ObservableType>[]; assets: Extracted<AssetType>[]; devices: NamedDevice[] };
 
 /** The most of each that one detection contributes, so a runaway payload can't flood a Case. */
 const MAX_PER_DETECTION = 100;
@@ -45,6 +47,19 @@ const IOC_TYPES: Record<string, ObservableType> = {
 
 /** Hosts, in the order they are preferred. */
 const HOST_FIELDS = ["Hostname", "HostName", "ComputerName", "DeviceName", "SourceEndpointHostName", "TargetEndpointHostName"];
+
+/**
+ * Falcon device IDs, each with the host fields it belongs to, the first set naming its host: an
+ * endpoint or mobile detection's sensor (`AgentId`) and an identity detection's two endpoints.
+ */
+const DEVICE_FIELDS = [
+  ["AgentId", ["Hostname", "HostName", "ComputerName", "DeviceName"]],
+  ["SourceEndpointSensorId", ["SourceEndpointHostName"]],
+  ["TargetEndpointSensorId", ["TargetEndpointHostName"]],
+] as const;
+
+/** An `aid` as Falcon writes it: 32 hex digits. */
+const DEVICE_ID = /^[0-9a-f]{32}$/;
 
 /** Accounts: each entry is one account, named by the first of its fields that is set. */
 const ACCOUNT_FIELDS = [
@@ -112,5 +127,13 @@ export function extractIndicators(event: Record<string, unknown>): Indicators {
     if (value) assets.add("account", normaliseAsset("account", value));
   }
 
-  return { observables: observables.list, assets: assets.list };
+  const devices = new Map<string, NamedDevice>();
+  for (const [idField, hostFields] of DEVICE_FIELDS) {
+    const deviceId = text(event[idField])?.toLowerCase();
+    const host = hostFields.map((f) => text(event[f])).find((v) => v !== null);
+    const hostKey = host ? normaliseAsset("host", host)?.key : undefined;
+    if (deviceId && DEVICE_ID.test(deviceId) && hostKey) devices.set(`${hostKey}\u0000${deviceId}`, { hostKey, deviceId });
+  }
+
+  return { observables: observables.list, assets: assets.list, devices: [...devices.values()] };
 }

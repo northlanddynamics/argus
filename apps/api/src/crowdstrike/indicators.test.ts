@@ -57,4 +57,23 @@ describe("Observables and Assets from CrowdStrike detections", () => {
   test("an IOC is read by its IOCType", () => {
     expect(shown({ IOCType: "domain", IOCValue: "evil[.]example" }).observables).toEqual(["domain evil.example"]);
   });
+
+  test("an endpoint or mobile detection names its sensor's device ID for its host", () => {
+    expect(extractIndicators(epp).devices).toEqual([{ hostKey: "fin-lt-0231", deviceId: "8f1c2b3a4d5e6f708192a3b4c5d6e7f8" }]);
+    expect(extractIndicators(mobile).devices).toEqual([{ hostKey: "pixel-8-mc", deviceId: "3c7e9a1b2d4f6a8c0e2b4d6f8a1c3e5b" }]);
+  });
+
+  test("an identity detection names the device ID of each endpoint it has one for", () => {
+    expect(extractIndicators(idp).devices).toEqual([{ hostKey: "fin-lt-0231", deviceId: "8f1c2b3a4d5e6f708192a3b4c5d6e7f8" }]);
+    expect(
+      extractIndicators({ ...idp, TargetEndpointSensorId: "AAAABBBBCCCCDDDDEEEEFFFF00001111" }).devices.map((d) => `${d.hostKey} ${d.deviceId}`),
+    ).toEqual(["fin-lt-0231 8f1c2b3a4d5e6f708192a3b4c5d6e7f8", "dc01.acme.corp aaaabbbbccccddddeeeeffff00001111"]);
+  });
+
+  test("no device is named without an aid, without a host, or with an aid that isn't one", () => {
+    const { AgentId: _, ...withoutAid } = epp;
+    expect(extractIndicators(withoutAid).devices).toEqual([]);
+    expect(extractIndicators({ AgentId: epp.AgentId }).devices).toEqual([]);
+    expect(extractIndicators({ ...epp, AgentId: "not-an-aid" }).devices).toEqual([]);
+  });
 });
