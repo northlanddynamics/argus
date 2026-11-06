@@ -1,13 +1,15 @@
 import { and, asc, eq, isNull, lte } from "drizzle-orm";
 import { caseRoleHolderIds } from "../case-roles/holders";
 import { caseRef } from "../cases/vocabulary";
-import { IOC_PLATFORMS, type FalconClient, type FalconConnector } from "../crowdstrike/falcon";
+import { IOC_PLATFORMS, type FalconConnector } from "../crowdstrike/falcon";
 import { streamConnection } from "../crowdstrike/stream-state";
 import type { Tx } from "../db/client";
 import { cases, integrations, observables, organization, responseActionOutbox, responseActions } from "../db/schema";
 import type { Deps } from "../deps";
 import { guestGrantsOf } from "../guests/grants";
+import { openCredentials } from "../integrations/credentials";
 import { providerCapabilities } from "../integrations/vocabulary";
+import type { BlockedSenderType, MimecastConnector } from "../mimecast/mimecast";
 import { notify } from "../notifications/notifications";
 import type { ObservableType } from "../observables/vocabulary";
 import { publish } from "../realtime/signals";
@@ -15,7 +17,8 @@ import type { FalconIocType } from "./vocabulary";
 import { recordStateChange } from "./response-actions";
 
 /**
- * The worker's half of Response Actions (ADR 0007): sends what the outbox holds, as the Falcon
+ * The worker's half of Response Actions (ADR 0007): sends what the outbox holds, to Falcon as custom
+ * IOCs or to Mimecast as Organization-wide Blocked Senders entries, as the Falcon
  * write-back sender does (`crowdstrike/write-back.ts`). Each attempt is claimed with
  * `FOR UPDATE SKIP LOCKED`, so however many workers run, each is made by one. A failure is retried
  * with backoff; when the attempts run out the Response Action is Failed, and the Member who took it
@@ -39,24 +42,75 @@ export const responseActionRetryDelayMs = (attempts: number) => Math.min(30_000 
 /** Who the Case Audit Log says made a change the worker made. */
 const ARGUS = { type: "system" as const, name: "Argus" };
 
-/** `C-12: Phishing at Acme`, and a link to the Case: the IOC's description in Falcon. */
+/** `C-12: Phishing at Acme`, and a link to the Case: the IOC's description in Falcon, and the blocked sender's in Mimecast. */
 export const iocDescription = (c: { number: number; title: string }, baseUrl: string) =>
   `${caseRef(c.number)}: ${c.title}\n${new URL(`/cases/${c.number}`, baseUrl)}`;
 
+/**
+ * A tool as the sender uses it, whatever its Provider: look a Response Action's target up, create it,
+ * and delete what was created by the id the tool gave it.
+ */
+type Tool = {
+  holds(r: typeof responseActions.$inferSelect): Promise<boolean>;
+  create(r: typeof responseActions.$inferSelect, c: { number: number; title: string }): Promise<string>;
+  /** True when the tool deleted it, false when it is already gone. */
+  remove(externalId: string): Promise<boolean>;
+};
+
+/**
+ * `connect` makes Falcon clients and `mimecast` Mimecast ones; a Response Action through a Provider
+ * the sender has no connector for fails its attempt.
+ */
 export function createResponseActionSender(
   { db, clock, credentials, baseUrl }: Pick<Deps, "db" | "clock" | "credentials" | "baseUrl">,
-  { connect }: { connect: FalconConnector },
+  { connect, mimecast }: { connect?: FalconConnector; mimecast?: MimecastConnector },
 ) {
-  /** One client per Integration, until its credentials are rotated. */
-  const clients = new Map<string, { revision: number; client: FalconClient }>();
-  const clientFor = async (integrationId: string) => {
+  const falconTool = async (integrationId: string) => {
     const found = await streamConnection(db, credentials, integrationId);
     if (!found) return null;
-    const cached = clients.get(integrationId);
-    if (cached?.revision === found.credentialsRevision) return cached.client;
+    if (!connect) throw new Error("This worker can't reach Falcon");
     const client = connect(found.connection);
-    clients.set(integrationId, { revision: found.credentialsRevision, client });
-    return client;
+    const tool: Tool = {
+      holds: async (r) => !!(await client.findIoc(r.targetType as FalconIocType, r.targetValue)),
+      create: (r, c) =>
+        client.createIoc({
+          type: r.targetType as FalconIocType,
+          value: r.targetValue,
+          action: r.falconAction!,
+          severity: r.severity!,
+          platforms: r.falconPlatforms ?? IOC_PLATFORMS,
+          appliedGlobally: true,
+          source: "Argus",
+          description: iocDescription(c, baseUrl),
+        }),
+      remove: (id) => client.deleteIoc(id),
+    };
+    return { revision: found.credentialsRevision, tool };
+  };
+
+  const mimecastTool = async (row: typeof integrations.$inferSelect) => {
+    if (!mimecast) throw new Error("This worker can't reach Mimecast");
+    const client = mimecast(await openCredentials(credentials, "mimecast", row.credentials));
+    const tool: Tool = {
+      holds: async (r) => !!(await client.findBlockedSender(r.targetType as BlockedSenderType, r.targetValue)),
+      create: (r, c) =>
+        client.blockSender({ type: r.targetType as BlockedSenderType, value: r.targetValue, appliesTo: "everyone", description: iocDescription(c, baseUrl) }),
+      remove: (id) => client.deleteBlockedSender(id),
+    };
+    return { revision: row.credentialsRevision, tool };
+  };
+
+  /** One client per Integration, until its credentials are rotated. */
+  const clients = new Map<string, { revision: number; tool: Tool }>();
+  const clientFor = async (integrationId: string) => {
+    const [row] = await db.select().from(integrations).where(eq(integrations.id, integrationId)).limit(1);
+    if (!row) return null;
+    const cached = clients.get(integrationId);
+    if (cached?.revision === row.credentialsRevision) return cached.tool;
+    const made = row.provider === "mimecast" ? await mimecastTool(row) : await falconTool(integrationId);
+    if (!made) return null;
+    clients.set(integrationId, made);
+    return made.tool;
   };
 
   /** Response Action `r` failed for good: it is Failed, and whoever took it (or asked to remove it) hears so. */
@@ -171,13 +225,12 @@ export function createResponseActionSender(
             continue;
           }
           if (removing) {
-            // Only ever what Argus created, by the id Falcon gave it.
-            await removed(tx, due, due.r.externalId ? await client.deleteIoc(due.r.externalId) : false, now);
+            // Only ever what Argus created, by the id the tool gave it.
+            await removed(tx, due, due.r.externalId ? await client.remove(due.r.externalId) : false, now);
             continue;
           }
-          // Never overwrite what is already there: if Falcon holds it, nothing is written.
-          const held = await client.findIoc(due.r.targetType as FalconIocType, due.r.targetValue);
-          if (held) {
+          // Never overwrite what is already there: if the tool holds it, nothing is written.
+          if (await client.holds(due.r)) {
             await tx
               .update(o)
               .set({ state: "done", attempts: due.attempt.attempts + 1, lastError: null, finishedAt: now })
@@ -190,16 +243,7 @@ export function createResponseActionSender(
             await recordStateChange(tx, { r: present!, observable: due.observable, change: "in_tool", actor: ARGUS, now });
             continue;
           }
-          const externalId = await client.createIoc({
-            type: due.r.targetType as FalconIocType,
-            value: due.r.targetValue,
-            action: due.r.falconAction!,
-            severity: due.r.severity!,
-            platforms: due.r.falconPlatforms ?? IOC_PLATFORMS,
-            appliedGlobally: true,
-            source: "Argus",
-            description: iocDescription(due.case, baseUrl),
-          });
+          const externalId = await client.create(due.r, due.case);
           await tx
             .update(o)
             .set({ state: "done", attempts: due.attempt.attempts + 1, lastError: null, finishedAt: now })

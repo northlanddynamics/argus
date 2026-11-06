@@ -4,11 +4,18 @@
  */
 
 import type { Severity } from "../cases/vocabulary";
+import type { Provider } from "../integrations/vocabulary";
 import type { ObservableType } from "../observables/vocabulary";
 
-export const RESPONSE_ACTION_KINDS = ["falcon_ioc"] as const;
+export const RESPONSE_ACTION_KINDS = ["falcon_ioc", "mimecast_blocked_sender"] as const;
 export type ResponseActionKind = (typeof RESPONSE_ACTION_KINDS)[number];
-export const responseActionKindLabel: Record<ResponseActionKind, string> = { falcon_ioc: "Falcon custom IOC" };
+export const responseActionKindLabel: Record<ResponseActionKind, string> = {
+  falcon_ioc: "Falcon custom IOC",
+  mimecast_blocked_sender: "Mimecast blocked sender",
+};
+
+/** The kind of Response Action each Provider takes. */
+export const providerKind: Record<Provider, ResponseActionKind> = { crowdstrike: "falcon_ioc", mimecast: "mimecast_blocked_sender" };
 
 /**
  * Where a Response Action stands:
@@ -59,6 +66,34 @@ export const LIVE_STATES = ["pending", "active", "removing"] as const satisfies 
 export const FALCON_IOC_ACTIONS = ["detect", "prevent"] as const;
 export type FalconIocAction = (typeof FALCON_IOC_ACTIONS)[number];
 export const falconIocActionLabel: Record<FalconIocAction, string> = { detect: "Detect", prevent: "Prevent" };
+
+/**
+ * What Mimecast does: block the email address itself, or every sender at its domain, through an
+ * Organization-wide Blocked Senders policy entry.
+ */
+export const MIMECAST_ACTIONS = ["block_sender", "block_domain"] as const;
+export type MimecastAction = (typeof MIMECAST_ACTIONS)[number];
+export const mimecastActionLabel: Record<MimecastAction, string> = { block_sender: "Block sender", block_domain: "Block domain" };
+
+/** Every action a Response Action can be taken with, whatever its Provider. */
+export const RESPONSE_ACTION_ACTIONS = [...FALCON_IOC_ACTIONS, ...MIMECAST_ACTIONS] as const;
+export type ResponseActionAction = (typeof RESPONSE_ACTION_ACTIONS)[number];
+export const responseActionActionLabel: Record<ResponseActionAction, string> = { ...falconIocActionLabel, ...mimecastActionLabel };
+
+/** The actions each Provider takes. */
+export const providerActions: Record<Provider, readonly ResponseActionAction[]> = { crowdstrike: FALCON_IOC_ACTIONS, mimecast: MIMECAST_ACTIONS };
+
+/** What a Mimecast Blocked Senders entry blocks. */
+export type MimecastTargetType = "email" | "domain";
+
+/**
+ * What Mimecast is sent for an Observable: its address, or its address's domain, in lowercase as
+ * they are held. Null for anything but an email address.
+ */
+export function mimecastTarget(type: ObservableType, key: string, action: MimecastAction): { type: MimecastTargetType; value: string } | null {
+  if (type !== "email") return null;
+  return action === "block_sender" ? { type: "email", value: key } : { type: "domain", value: key.slice(key.lastIndexOf("@") + 1) };
+}
 
 /** Falcon's IOC types, as Argus sends them. */
 export type FalconIocType = "sha256" | "md5" | "domain" | "ipv4" | "ipv6";

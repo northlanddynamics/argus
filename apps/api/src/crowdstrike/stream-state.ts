@@ -33,7 +33,7 @@ const appIdFor = (integrationId: string) => `argus${integrationId.slice(0, 16)}`
 /** What it takes to connect to Falcon for an Integration, credentials opened; null if it no longer exists or isn't CrowdStrike. */
 export async function streamConnection(db: Db, sealer: CredentialSealer, integrationId: string) {
   const [row] = await db.select().from(integrations).where(eq(integrations.id, integrationId)).limit(1);
-  if (row?.provider !== "crowdstrike") return null;
+  if (row?.provider !== "crowdstrike" || !row.cloud) return null;
   const credentials = await openCredentials(sealer, row.provider, row.credentials);
   return {
     connection: { cloud: row.cloud, credentials, appId: appIdFor(row.id) } satisfies FalconConnection,

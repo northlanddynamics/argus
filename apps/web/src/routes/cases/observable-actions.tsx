@@ -1,6 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { CopyIcon, EllipsisIcon, UnlinkIcon, ExternalLinkIcon, ShieldAlertIcon, ShieldBanIcon, ShieldIcon, SlidersHorizontalIcon, Undo2Icon, ZapIcon } from "lucide-react";
+import {
+  CopyIcon,
+  EllipsisIcon,
+  UnlinkIcon,
+  ExternalLinkIcon,
+  GlobeLockIcon,
+  MailXIcon,
+  ShieldAlertIcon,
+  ShieldBanIcon,
+  ShieldIcon,
+  SlidersHorizontalIcon,
+  Undo2Icon,
+  ZapIcon,
+} from "lucide-react";
 import { type ComponentType, type ReactElement, type ReactNode, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -47,6 +60,9 @@ import {
   falconIocActionLabel,
   falconIocType,
   type IgnoredInSend,
+  MIMECAST_ACTIONS,
+  mimecastTarget,
+  type ResponseActionAction,
   type ResponseAction,
   responseActionsKey,
   responseActionsQuery,
@@ -59,12 +75,13 @@ import { DismissDialog, holdingOn, RemoveDialog, SendToFalconDialog } from "@/ro
 /**
  * "Take action" on an Observable on a Case, from a ⋯ button and from right-clicking wherever the
  * Observable is shown with its Case: one click sends it to an Integration as a Falcon custom IOC
- * alert (Detect) or block (Prevent), with that Integration's defaults (ADR 0008); Remove, Retry and
- * Dismiss act on what the Case already sent. "More options…" opens the full send dialog.
+ * alert (Detect) or block (Prevent), with that Integration's defaults (ADR 0008), or blocks an email
+ * address or its domain in Mimecast; Remove, Retry and Dismiss act on what the Case already sent.
+ * "More options…" opens the full Falcon send dialog.
  */
 
 type Sendable = { id: string; type: ObservableType; value: string };
-type Destination = Pick<EligibleIntegration, "id" | "name" | "defaults">;
+type Destination = Pick<EligibleIntegration, "id" | "name" | "provider" | "defaults">;
 
 /** What a menu is built from, so the ⋯ menu and the right-click menu hold the same items. */
 type ItemProps = { onSelect?: (event: Event) => void; disabled?: boolean; variant?: "default" | "destructive"; className?: string; children: ReactNode };
@@ -94,8 +111,17 @@ const contextKit: MenuKit = {
 };
 
 /** The one-click actions, as the menu names them: Falcon's Detect is an alert, its Prevent a block. */
-const quickLabel: Record<FalconIocAction, string> = { detect: "IOC alert", prevent: "IOC block" };
-const QuickIcon: Record<FalconIocAction, ComponentType<{ className?: string }>> = { detect: ShieldAlertIcon, prevent: ShieldBanIcon };
+const quickLabel: Record<ResponseActionAction, string> = { detect: "IOC alert", prevent: "IOC block", block_sender: "Block sender", block_domain: "Block domain" };
+const QuickIcon: Record<ResponseActionAction, ComponentType<{ className?: string }>> = {
+  detect: ShieldAlertIcon,
+  prevent: ShieldBanIcon,
+  block_sender: MailXIcon,
+  block_domain: GlobeLockIcon,
+};
+const FALCON_QUICK = ["detect", "prevent"] as const satisfies readonly FalconIocAction[];
+
+/** The domain of an email address. */
+const domainOf = (email: string) => email.slice(email.lastIndexOf("@") + 1).toLowerCase();
 
 const labelOf = (o: Sendable) => `${observableTypeLabel[o.type]} ${shownObservable(o.type, o.value)}`;
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -116,7 +142,7 @@ function Twoline({ title, hint }: { title: ReactNode; hint?: ReactNode }) {
  */
 function useQuickSend(number: number) {
   const queryClient = useQueryClient();
-  type Args = { observables: Sendable[]; to: Destination; action: FalconIocAction; confirmIgnored?: boolean; onSent?: () => void };
+  type Args = { observables: Sendable[]; to: Pick<Destination, "id" | "name">; action: ResponseActionAction; confirmIgnored?: boolean; onSent?: () => void };
   const [asking, setAsking] = useState<{ args: Args; ignored: IgnoredInSend[] } | null>(null);
   const send = useMutation({
     mutationFn: (args: Args) =>
@@ -178,12 +204,16 @@ function useQuickSend(number: number) {
   return { send: (args: Args) => send.mutate(args), sending: send.isPending, confirm };
 }
 
+/** What a Response Action did, as the menu names it: "IOC alert", "Block domain"… */
+const quickOf = (r: ResponseAction) =>
+  r.falcon ? quickLabel[r.falcon.action] : r.kind === "mimecast_blocked_sender" ? quickLabel[r.target.type === "domain" ? "block_domain" : "block_sender"] : "IOC";
+
 /** What this Case sent of the Observable through one Integration, said as what Argus did. */
 function heldLine(r: ResponseAction) {
-  const action = r.falcon ? quickLabel[r.falcon.action] : "IOC";
+  const action = quickOf(r);
   if (r.state === "pending") return `${action}: waiting to be sent`;
   if (r.state === "removing") return `${action}: being removed`;
-  if (r.origin === "in_tool") return `${action} in Falcon`;
+  if (r.origin === "in_tool") return `${action} in ${r.kind === "mimecast_blocked_sender" ? "Mimecast" : "Falcon"}`;
   const at = r.origin === "already_present" ? r.presentFrom?.at : r.sentAt;
   return at ? `${action} sent ${when(at)}` : `${action} sent`;
 }
@@ -226,16 +256,19 @@ export function ObservableActions({
   const mine = all.filter((r) => r.observable.id === observable.id);
   const held = holdingOn(all, observable.id);
   const iocType = falconIocType(observable.type, observable.value);
+  // The full send dialog is Falcon's.
+  const falconEligible = eligible.filter((i) => i.provider === "crowdstrike");
 
   // Every Integration it can go to, then any it was sent through that no longer takes Response Actions.
   // On a Closed Case nothing new is sent, so only those it already sent through are listed.
-  const destinations: { id: string; name: string; defaults: Destination["defaults"] | null }[] = readOnly
+  const destinations: { id: string; name: string; provider?: Destination["provider"]; defaults: Destination["defaults"] | null }[] = readOnly
     ? []
     : [...eligible];
   const actionable = readOnly ? mine.filter((r) => r.state !== "removed") : mine;
   for (const r of actionable) {
     if (r.integration && !destinations.some((d) => d.id === r.integration!.id)) {
-      destinations.push({ ...r.integration, defaults: eligible.find((e) => e.id === r.integration!.id)?.defaults ?? null });
+      const known = eligible.find((e) => e.id === r.integration!.id);
+      destinations.push({ ...r.integration, provider: known?.provider, defaults: known?.defaults ?? null });
     }
   }
   // Until the menu has loaded, offer it to anyone who might work the Case; once loaded, only if there is something to do.
@@ -263,7 +296,7 @@ export function ObservableActions({
               {i > 0 && <kit.Separator />}
               <kit.Label className="grid">
                 <span>{d.name}</span>
-                {d.defaults && <span className="text-xs font-normal text-muted-foreground">{describeDefaults(d.defaults, c?.severity)}</span>}
+                {d.defaults && <span className="text-xs font-normal text-muted-foreground">{describeDefaults(d.defaults, c?.severity, d.provider)}</span>}
               </kit.Label>
               {live ? (
                 <>
@@ -274,7 +307,16 @@ export function ObservableActions({
                   {live.state === "active" && live.origin === "created" && canRemove && (
                     <kit.Item variant="destructive" onSelect={() => setDialog({ kind: "remove", r: live })}>
                       <Undo2Icon />
-                      <Twoline title="Remove IOC…" hint={live.falcon?.action === "prevent" ? "Falcon stops blocking and detecting it" : "Falcon stops detecting it"} />
+                      <Twoline
+                        title={live.kind === "mimecast_blocked_sender" ? "Remove block…" : "Remove IOC…"}
+                        hint={
+                          live.kind === "mimecast_blocked_sender"
+                            ? "Mimecast stops blocking it"
+                            : live.falcon?.action === "prevent"
+                              ? "Falcon stops blocking and detecting it"
+                              : "Falcon stops detecting it"
+                        }
+                      />
                     </kit.Item>
                   )}
                   {live.state === "active" && live.origin !== "created" && !readOnly && (
@@ -289,24 +331,60 @@ export function ObservableActions({
                   {failed && (failed.removalRequestedAt ? canRemove : !readOnly) && (
                     <kit.Item disabled={retry.isPending} onSelect={() => retry.mutate(failed.id)}>
                       <ZapIcon />
-                      <Twoline title={failed.removalRequestedAt ? "Retry removal" : `Retry ${failed.falcon ? quickLabel[failed.falcon.action] : "IOC"}`} hint={failed.lastError ?? "It failed"} />
+                      <Twoline title={failed.removalRequestedAt ? "Retry removal" : `Retry ${quickOf(failed)}`} hint={failed.lastError ?? "It failed"} />
                     </kit.Item>
                   )}
-                  {!failed && d.defaults && !readOnly && iocType === null && (
+                  {!failed && d.defaults && !readOnly && d.provider === "mimecast" && observable.type !== "email" && (
+                    <kit.Item disabled>Mimecast blocks email senders only</kit.Item>
+                  )}
+                  {!failed &&
+                    d.defaults &&
+                    !readOnly &&
+                    d.provider === "mimecast" &&
+                    observable.type === "email" &&
+                    MIMECAST_ACTIONS.map((action) => {
+                      const Icon = QuickIcon[action];
+                      const target = mimecastTarget("email", observable.value.toLowerCase(), action)!;
+                      // The domain is blocked through its own Observable: say so here if this Case already did.
+                      const domainHeld =
+                        action === "block_domain" &&
+                        all.some(
+                          (r) =>
+                            r.integration?.id === d.id &&
+                            r.target.type === "domain" &&
+                            r.target.value === domainOf(observable.value) &&
+                            ["pending", "active", "removing"].includes(r.state),
+                        );
+                      return (
+                        <kit.Item
+                          key={action}
+                          disabled={domainHeld || quick.sending}
+                          onSelect={() => quick.send({ observables: [observable], to: d, action })}
+                        >
+                          <Icon />
+                          <Twoline
+                            title={quickLabel[action]}
+                            hint={domainHeld ? `${target.value} is already blocked from this Case` : action === "block_domain" ? `Everyone at ${target.value}` : undefined}
+                          />
+                        </kit.Item>
+                      );
+                    })}
+                  {!failed && d.defaults && !readOnly && d.provider !== "mimecast" && iocType === null && (
                     <kit.Item disabled>Falcon takes no {observableTypeLabel[observable.type]}</kit.Item>
                   )}
                   {!failed &&
                     d.defaults &&
                     !readOnly &&
+                    d.provider !== "mimecast" &&
                     iocType !== null &&
-                    (["detect", "prevent"] as const).map((action) => {
+                    FALCON_QUICK.map((action) => {
                       const Icon = QuickIcon[action];
                       const allowed = action === "detect" || falconAllowsPrevent(iocType);
                       return (
                         <kit.Item
                           key={action}
                           disabled={!allowed || quick.sending}
-                          onSelect={() => quick.send({ observables: [observable], to: { id: d.id, name: d.name, defaults: d.defaults! }, action })}
+                          onSelect={() => quick.send({ observables: [observable], to: d, action })}
                         >
                           <Icon />
                           {quickLabel[action]} ({falconIocActionLabel[action]})
@@ -319,7 +397,7 @@ export function ObservableActions({
             </div>
           );
         })}
-        {!readOnly && eligible.length > 0 && iocType !== null && (
+        {!readOnly && falconEligible.length > 0 && iocType !== null && (
           <>
             <kit.Separator />
             <kit.Item onSelect={() => setDialog({ kind: "more" })}>
@@ -393,7 +471,7 @@ export function ObservableActions({
           number={number}
           severity={c.severity}
           observables={[observable]}
-          integrations={eligible}
+          integrations={falconEligible}
           held={all}
         />
       )}
@@ -407,8 +485,8 @@ export function ObservableActions({
 
 /**
  * "Take action on N": the ticked Observables, sent in one click to one Integration as IOC alerts or
- * blocks with its defaults. Those this Case already holds there are left out; "More options…" opens
- * the full send dialog.
+ * blocks with its defaults, or, for Mimecast, their email addresses or domains blocked. Those this
+ * Case already holds there are left out; "More options…" opens the full Falcon send dialog.
  */
 export function BulkObservableActions({
   number,
@@ -432,6 +510,8 @@ export function BulkObservableActions({
     const t = falconIocType(o.type, o.value);
     return t !== null && falconAllowsPrevent(t);
   });
+  const emails = observables.filter((o) => o.type === "email");
+  const falconIntegrations = integrations.filter((i) => i.provider === "crowdstrike");
   return (
     <>
       <DropdownMenu>
@@ -449,11 +529,12 @@ export function BulkObservableActions({
                 {i > 0 && <DropdownMenuSeparator />}
                 <DropdownMenuLabel className="grid">
                   <span>{d.name}</span>
-                  <span className="text-xs font-normal text-muted-foreground">{describeDefaults(d.defaults, severity)}</span>
+                  <span className="text-xs font-normal text-muted-foreground">{describeDefaults(d.defaults, severity, d.provider)}</span>
                 </DropdownMenuLabel>
-                {(["detect", "prevent"] as const).map((action) => {
+                {(d.provider === "mimecast" ? MIMECAST_ACTIONS : FALCON_QUICK).map((action: ResponseActionAction) => {
                   const Icon = QuickIcon[action];
-                  const going = action === "prevent" ? left.filter((o) => hashes.includes(o)) : left;
+                  const going =
+                    d.provider === "mimecast" ? left.filter((o) => emails.includes(o)) : action === "prevent" ? left.filter((o) => hashes.includes(o)) : left;
                   return (
                     <DropdownMenuItem
                       key={action}
@@ -462,12 +543,14 @@ export function BulkObservableActions({
                     >
                       <Icon />
                       <Twoline
-                        title={`${quickLabel[action]} (${falconIocActionLabel[action]})`}
+                        title={d.provider === "mimecast" ? quickLabel[action] : `${quickLabel[action]} (${falconIocActionLabel[action as FalconIocAction]})`}
                         hint={
                           going.length === 0
-                            ? action === "prevent" && left.length > 0
-                              ? "Hashes only, and none are ticked"
-                              : "Already sent from this Case"
+                            ? d.provider === "mimecast" && left.length > 0
+                              ? "Email addresses only, and none are ticked"
+                              : action === "prevent" && left.length > 0
+                                ? "Hashes only, and none are ticked"
+                                : "Already sent from this Case"
                             : undefined
                         }
                       />
@@ -477,11 +560,15 @@ export function BulkObservableActions({
               </div>
             );
           })}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => setMore(true)}>
-            <SlidersHorizontalIcon />
-            More options…
-          </DropdownMenuItem>
+          {falconIntegrations.length > 0 && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => setMore(true)}>
+                <SlidersHorizontalIcon />
+                More options…
+              </DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
       {quick.confirm}
@@ -492,7 +579,7 @@ export function BulkObservableActions({
           number={number}
           severity={severity}
           observables={observables}
-          integrations={integrations}
+          integrations={falconIntegrations}
           held={held}
           onSent={onSent}
         />

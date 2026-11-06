@@ -20,7 +20,8 @@ import { DEFAULT_FALCON_IOC_DEFAULTS, type FalconIocDefaults, FALCON_IOC_PLATFOR
  * Audit Log. What an Integration can do comes from its Provider (`vocabulary.ts`, ADR 0007). Every
  * Member sees the Organization's Integrations and how their streams are doing; only Admins see which
  * credentials are in use.
- * The stream itself is the worker's (`crowdstrike/stream-worker.ts`).
+ * The stream itself is the worker's (`crowdstrike/stream-worker.ts`); so is checking the credentials
+ * of a Provider with no stream, such as Mimecast (`mimecast/health.ts`).
  */
 
 /** The Response Actions taken through each Integration, by where they stand, with the latest failure. */
@@ -91,22 +92,35 @@ async function find(tx: Tx, me: Membership, id: string) {
  * only reads: Alerts still arrive and follow changes made in Falcon, but nothing is sent to Falcon.
  * `responseActions`: whether Response Actions may be taken through it (ADR 0007).
  */
-export type NewIntegration = {
-  provider: "crowdstrike";
-  name: string;
-  cloud: FalconCloud;
-  credentials: ProviderCredentials["crowdstrike"];
-  writeBack: boolean;
-  responseActions: boolean;
-  /** What its Response Actions are sent with; ADR 0007's if left out. */
-  responseActionDefaults?: FalconIocDefaults;
-};
+export type NewIntegration =
+  | {
+      provider: "crowdstrike";
+      name: string;
+      cloud: FalconCloud;
+      credentials: ProviderCredentials["crowdstrike"];
+      writeBack: boolean;
+      responseActions: boolean;
+      /** What its Response Actions are sent with; ADR 0007's if left out. */
+      responseActionDefaults?: FalconIocDefaults;
+    }
+  | {
+      /** No Alert stream and no write-back: it only takes Response Actions. */
+      provider: "mimecast";
+      name: string;
+      credentials: ProviderCredentials["mimecast"];
+      responseActions: boolean;
+      /** Only whether its Response Actions start Internal applies. */
+      responseActionDefaults?: FalconIocDefaults;
+    };
 
 const writeBackLabel = (on: boolean) => (on ? "write-back on" : "read only");
 const responseActionsLabel = (on: boolean) => (on ? "Response Actions on" : "Response Actions off");
-/** "Severity from the Case · Windows, macOS, Linux · visible to Guests", as the Org Audit Log says it. */
-export const defaultsLabel = (d: FalconIocDefaults) =>
-  [
+/**
+ * "Severity from the Case · Windows, macOS, Linux · visible to Guests", as the Org Audit Log says it.
+ * Only the last applies to a Provider that takes no Falcon IOCs.
+ */
+export const defaultsLabel = (d: FalconIocDefaults, provider: Provider = "crowdstrike") =>
+  provider !== "crowdstrike" ? (d.internal ? "Internal" : "visible to Guests") : [
     d.severity === "case" ? "Severity from the Case" : `Severity ${severityLabel[d.severity]}`,
     d.platforms.length === FALCON_IOC_PLATFORMS.length ? "every platform" : d.platforms.map((p) => falconIocPlatformLabel[p]).join(", "),
     d.internal ? "Internal" : "visible to Guests",
@@ -156,6 +170,8 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
         health: row.health,
         healthDetail: row.healthDetail,
         healthChangedAt: row.healthChangedAt.toISOString(),
+        /** When its credentials were last checked, for a Provider with no stream. */
+        healthCheckedAt: row.healthCheckedAt?.toISOString() ?? null,
         lastEventAt: row.lastEventAt?.toISOString() ?? null,
         streamOffset: row.streamOffset,
         sessionRefreshAt: row.sessionRefreshAt?.toISOString() ?? null,
@@ -186,12 +202,12 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
             organizationId: me.organizationId,
             provider: input.provider,
             name: input.name,
-            cloud: input.cloud,
+            cloud: input.provider === "crowdstrike" ? input.cloud : null,
             credentials: sealed,
             clientIdHint: hintOf(input.credentials.clientId),
             credentialsRevision: 1,
             credentialsUpdatedAt: now,
-            writeBack: input.writeBack,
+            writeBack: input.provider === "crowdstrike" && input.writeBack,
             responseActions: input.responseActions,
             responseActionDefaults: normalized(input.responseActionDefaults ?? DEFAULT_FALCON_IOC_DEFAULTS),
             health: "connecting",
@@ -207,9 +223,9 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
             action: "integration.created",
             target: input.name,
             after: [
-              `${providerLabel[input.provider]} ${falconCloudLabel[input.cloud]}`,
+              input.provider === "crowdstrike" ? `${providerLabel[input.provider]} ${falconCloudLabel[input.cloud]}` : providerLabel[input.provider],
               `client ${hintOf(input.credentials.clientId)}`,
-              writeBackLabel(input.writeBack),
+              ...(input.provider === "crowdstrike" ? [writeBackLabel(input.writeBack)] : []),
               ...(input.responseActions ? [responseActionsLabel(true)] : []),
             ].join(" · "),
           });
@@ -236,6 +252,8 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
             clientIdHint: hintOf(credentials.clientId),
             credentialsRevision: row.credentialsRevision + 1,
             credentialsUpdatedAt: now,
+            // With no stream to reconnect, the new credentials are checked afresh (`mimecast/health.ts`).
+            ...(!providerCapabilities[row.provider].receivesAlerts && { health: "connecting" as const, healthDetail: null, healthChangedAt: now }),
           })
           .where(eq(integrations.id, id));
         await recordOrgAudit(tx, {
@@ -345,7 +363,7 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
         const row = await find(tx, me, id);
         if (!providerCapabilities[row.provider].responseActions) throw new NotSupportedByProvider(row.provider, "Response Actions");
         const before = normalized(row.responseActionDefaults);
-        if (defaultsLabel(before) === defaultsLabel(next)) return;
+        if (JSON.stringify(before) === JSON.stringify(next)) return;
         const now = clock.now();
         await tx.update(integrations).set({ responseActionDefaults: next }).where(eq(integrations.id, id));
         await recordOrgAudit(tx, {
@@ -355,8 +373,8 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
           category: "integrations",
           action: "integration.response_action_defaults_changed",
           target: row.name,
-          before: defaultsLabel(before),
-          after: defaultsLabel(next),
+          before: defaultsLabel(before, row.provider),
+          after: defaultsLabel(next, row.provider),
         });
         await publish(tx, { kind: "alerts", organizationId: me.organizationId });
       });

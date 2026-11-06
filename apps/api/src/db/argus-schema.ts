@@ -766,7 +766,8 @@ export const integrations = pgTable(
     /** What it connects to, which fixes what it can do (`integrations/vocabulary.ts`, ADR 0007). */
     provider: text("provider", { enum: PROVIDERS }).notNull(),
     name: text("name").notNull(),
-    cloud: text("cloud", { enum: FALCON_CLOUDS }).notNull(),
+    /** The Falcon cloud, for CrowdStrike; null for Providers with one global API, such as Mimecast. */
+    cloud: text("cloud", { enum: FALCON_CLOUDS }),
     credentials: text("credentials").notNull(),
     /** The last four characters of the client id, so Admins can tell which credentials are in use. */
     clientIdHint: text("client_id_hint").notNull(),
@@ -781,6 +782,8 @@ export const integrations = pgTable(
     health: text("health", { enum: INTEGRATION_HEALTH }).notNull(),
     healthDetail: text("health_detail"),
     healthChangedAt: timestamp("health_changed_at", { withTimezone: true }).notNull(),
+    /** When a worker last checked the credentials of an Integration with no Alert stream (`mimecast/health.ts`). */
+    healthCheckedAt: timestamp("health_checked_at", { withTimezone: true }),
     /** The worker that holds the stream, while one does. */
     workerId: text("worker_id"),
     streamOffset: bigint("stream_offset", { mode: "number" }),
@@ -795,6 +798,7 @@ export const integrations = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   },
   (t) => [
+    check("integrations_cloud", sql`(${t.provider} = 'crowdstrike') = (${t.cloud} IS NOT NULL)`),
     uniqueIndex("integrations_org_name_idx").on(t.organizationId, sql`lower(${t.name})`),
     check(
       "integrations_gap",
