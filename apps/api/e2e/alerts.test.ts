@@ -69,6 +69,7 @@ test("the Owner adds a CrowdStrike Integration; its detections appear live in an
     // A worker connects; the page shows it live.
     await worker.tick();
     await card.getByText("Connected").waitFor();
+    await card.getByRole("button", { name: "Stream details" }).click();
     await card.getByText("worker-1").waitFor();
 
     // Ana watches the Alert queue as detections arrive.
@@ -312,6 +313,9 @@ test("an Analyst sends an Observable on a Case to Falcon as a custom IOC; it bec
     await confirm.getByRole("button", { name: "Remove", exact: true }).click();
     await row.getByText("Removing").waitFor();
     await sender.tick();
+    // Removed ones fold away under the table, and are shown on asking.
+    await row.waitFor({ state: "detached" });
+    await page.getByRole("button", { name: "Show 1 removed or dismissed" }).click();
     await row.getByText("Removed", { exact: true }).waitFor();
     expect(falcon.tenant("falcon-client-0001").iocs.size).toBe(0);
   } finally {
@@ -359,26 +363,28 @@ test("an Analyst pivots from search to an Observable's page and its Case, sends 
     await page.getByRole("table", { name: "Linked Cases" }).getByRole("link", { name: /C-1 Invoice phishing wave/ }).click();
     await page.waitForURL(`${baseUrl}/cases/1`);
 
-    // On the Case's Observables, she ticks the domain, the URL and the IP and sends them together.
+    // On the Case's Observables, she ticks the domain and the IP and sends them together. Falcon
+    // takes no URL, so the URL can't be ticked and says so where Send would be.
     await page.getByRole("tab", { name: "Observables & Assets" }).click();
     await page.getByText("No Response Actions yet.").waitFor();
+    expect(await page.getByRole("checkbox", { name: "Select URL https://invoice-portal.biz/login" }).count()).toBe(0);
+    await page.getByTestId("observable-https://invoice-portal.biz/login").getByText("Falcon takes no URL").waitFor();
     await page.getByRole("checkbox", { name: "Select Domain invoice-portal.biz" }).click();
-    await page.getByRole("checkbox", { name: "Select URL https://invoice-portal.biz/login" }).click();
     await page.getByRole("checkbox", { name: "Select IP 185.220.101.4" }).click();
-    await page.getByRole("button", { name: "Send 3 to Falcon" }).click();
+    await page.getByRole("button", { name: "Send 2 to Falcon" }).click();
     const dialog = page.getByRole("dialog", { name: "Send to Falcon as a custom IOC" });
-    // Both Integrations are ticked to start with; she leaves out the EU one.
+    // With two Integrations neither is ticked to start with, so where it goes is a choice; she picks Prod.
     const prod = dialog.getByRole("checkbox", { name: "CrowdStrike — Prod" });
     const eu = dialog.getByRole("checkbox", { name: "CrowdStrike — EU" });
-    expect(await prod.isChecked()).toBe(true);
-    expect(await eu.isChecked()).toBe(true);
-    await eu.click();
-    await dialog.getByText("1 will be skipped: Falcon takes no custom IOC for URL.").waitFor();
+    expect(await prod.isChecked()).toBe(false);
+    expect(await eu.isChecked()).toBe(false);
+    expect(await dialog.getByRole("button", { name: "Send to Falcon" }).isDisabled()).toBe(true);
+    await dialog.getByText("Severity High").waitFor();
+    await prod.click();
+    await dialog.getByRole("list", { name: "Observables to send" }).getByText("Will be sent to CrowdStrike — Prod").first().waitFor();
     await dialog.getByRole("button", { name: "Send to Falcon" }).click();
-    const skipped = dialog.getByRole("list", { name: "Skipped" });
-    await skipped.getByText("Falcon takes no custom IOC for an URL").waitFor();
-    await dialog.getByText("2 Response Actions taken.").waitFor();
-    await dialog.getByRole("button", { name: "Done" }).click();
+    await dialog.waitFor({ state: "detached" });
+    await page.getByText("2 Response Actions taken through CrowdStrike — Prod").waitFor();
 
     const domainRow = page.getByTestId("response-action-invoice-portal.biz");
     const ipRow = page.getByTestId("response-action-185.220.101.4");
@@ -389,6 +395,15 @@ test("an Analyst pivots from search to an Observable's page and its Case, sends 
     await sender.tick();
     await domainRow.getByText("Active").waitFor();
     await ipRow.getByText("Active").waitFor();
+
+    // Sending the domain again leaves it out: it is already sent from this Case to Prod.
+    await page.getByRole("button", { name: "Send Domain invoice-portal.biz to Falcon" }).click();
+    const again = page.getByRole("dialog", { name: "Send to Falcon as a custom IOC" });
+    await again.getByRole("checkbox", { name: "CrowdStrike — Prod" }).click();
+    await again.getByText("Already sent from this Case as Detect to CrowdStrike — Prod; left out").waitFor();
+    expect(await again.getByRole("button", { name: "Send to Falcon" }).isDisabled()).toBe(true);
+    await again.getByRole("button", { name: "Cancel" }).click();
+    await page.getByTestId("observable-invoice-portal.biz").getByText("Detect · CrowdStrike — Prod, sent").waitFor();
     expect(falcon.tenant("falcon-client-0001").iocsCreated.map((i) => i.value)).toEqual(["invoice-portal.biz", "185.220.101.4"]);
     expect(falcon.tenant("falcon-client-0002").iocsCreated).toEqual([]);
 

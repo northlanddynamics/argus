@@ -396,7 +396,7 @@ async function liveCreated(
 ) {
   const t = responseActions;
   const [found] = await tx
-    .select({ id: t.id })
+    .select({ id: t.id, falconAction: t.falconAction, severity: t.severity })
     .from(t)
     .where(
       and(
@@ -411,7 +411,7 @@ async function liveCreated(
     )
     .limit(1)
     .for("key share");
-  return found?.id ?? null;
+  return found ?? null;
 }
 
 /** The Integrations in `me`'s Organization that take Falcon custom IOCs now. */
@@ -606,7 +606,8 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
           const id = secureId();
           const observable = { type: o.type, value: o.value };
           // Already sent by Argus, from this Case or another: recorded, and nothing is sent again.
-          const presentFromId = await liveCreated(tx, target);
+          const present = await liveCreated(tx, target);
+          const presentFromId = present?.id ?? null;
           const [r] = await tx
             .insert(responseActions)
             .values({
@@ -615,8 +616,9 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
               caseId: current.id,
               observableId: o.id,
               ...target,
-              falconAction: input.action,
-              severity: current.severity,
+              // An already present record says what the tool holds: the action and severity it was sent with.
+              falconAction: present?.falconAction ?? input.action,
+              severity: present?.severity ?? current.severity,
               state: presentFromId ? "active" : "pending",
               origin: presentFromId ? "already_present" : "created",
               presentFromId,
@@ -711,11 +713,19 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
         }
         if (current.status === "closed") throw new CaseClosed();
         await lockTarget(tx, r);
-        const presentFromId = await liveCreated(tx, r, r.id);
-        if (presentFromId) {
+        const original = await liveCreated(tx, r, r.id);
+        if (original) {
           const [present] = await tx
             .update(responseActions)
-            .set({ state: "active", origin: "already_present", presentFromId, stateChangedAt: now, lastError: null })
+            .set({
+              state: "active",
+              origin: "already_present",
+              presentFromId: original.id,
+              falconAction: original.falconAction,
+              severity: original.severity,
+              stateChangedAt: now,
+              lastError: null,
+            })
             .where(eq(responseActions.id, id))
             .returning();
           await recordStateChange(tx, { r: present!, observable, change: "already_present", actor: actorOf(me), now, by: { id: me.userId, name: me.name } });

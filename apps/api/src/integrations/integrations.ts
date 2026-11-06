@@ -1,10 +1,10 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { NotPermitted, organizationPolicy } from "../access/policy";
 import { type FalconCloud, falconCloudLabel } from "../alerts/vocabulary";
 import { recordOrgAudit } from "../audit/org-audit-log";
 import { writeBackCounts } from "../crowdstrike/write-back";
 import type { Tx } from "../db/client";
-import { integrations } from "../db/schema";
+import { integrations, responseActions as responseActionsTable } from "../db/schema";
 import type { Deps } from "../deps";
 import { secureId } from "../ids";
 import { type ProviderCredentials, sealCredentials } from "./credentials";
@@ -20,6 +20,28 @@ import { publish } from "../realtime/signals";
  * credentials are in use.
  * The stream itself is the worker's (`crowdstrike/stream-worker.ts`).
  */
+
+/** The Response Actions taken through each Integration, by where they stand, with the latest failure. */
+async function responseActionCounts(db: Deps["db"], integrationIds: readonly string[]) {
+  const none = { pending: 0, active: 0, failed: 0, lastError: null as string | null };
+  const counts = new Map(integrationIds.map((id) => [id, { ...none }]));
+  if (!integrationIds.length) return counts;
+  const r = responseActionsTable;
+  const rows = await db
+    .select({
+      integrationId: r.integrationId,
+      pending: sql<number>`count(*) FILTER (WHERE ${r.state} IN ('pending', 'removing'))::int`,
+      // What Argus put in the tool and still holds there.
+      active: sql<number>`count(*) FILTER (WHERE ${r.state} = 'active' AND ${r.origin} = 'created')::int`,
+      failed: sql<number>`count(*) FILTER (WHERE ${r.state} = 'failed')::int`,
+      lastError: sql<string | null>`(array_agg(${r.lastError} ORDER BY ${r.stateChangedAt} DESC) FILTER (WHERE ${r.state} = 'failed'))[1]`,
+    })
+    .from(r)
+    .where(inArray(r.integrationId, [...integrationIds]))
+    .groupBy(r.integrationId);
+  for (const { integrationId, ...row } of rows) counts.set(integrationId, row);
+  return counts;
+}
 
 export class IntegrationNotFound extends Error {
   constructor() {
@@ -93,6 +115,10 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
         rows.map((r) => r.id),
         clock.now(),
       );
+      const taken = await responseActionCounts(
+        db,
+        rows.map((r) => r.id),
+      );
       return rows.map((row) => ({
         id: row.id,
         provider: row.provider,
@@ -118,6 +144,8 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
             : null,
         /** Its write-backs to Falcon, by where they stand. */
         writeBacks: writeBacks.get(row.id)!,
+        /** The Response Actions taken through it, by where they stand. */
+        responseActionCounts: taken.get(row.id)!,
         /** For Admins only: which credentials are in use, never the credentials themselves. */
         credentials: admin ? { clientIdHint: row.clientIdHint, updatedAt: row.credentialsUpdatedAt.toISOString() } : null,
       }));
