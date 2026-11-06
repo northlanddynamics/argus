@@ -202,7 +202,9 @@ export async function recordDetection(
         IS DISTINCT FROM (excluded.kind, excluded.severity, excluded.title, excluded.description, excluded.host, excluded.user_name, excluded.detected_at, excluded.payload)`,
     })
     .returning({ id: alerts.id });
-  if (changed) await recordAlertIndicators(tx, { id: changed.id, organizationId: integration.organizationId }, detection.indicators, now);
+  if (changed) {
+    await recordAlertIndicators(tx, { id: changed.id, organizationId: integration.organizationId, integrationId: integration.id }, detection.indicators, now);
+  }
   return changed !== undefined;
 }
 

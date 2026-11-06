@@ -808,6 +808,37 @@ export const integrations = pgTable(
 );
 
 /**
+ * The Falcon devices (`aid`) recorded on a host Asset, per CrowdStrike Integration, taken from the
+ * detections that name them (ADR 0009). The hostname stays the host's match key; one host may hold
+ * several devices, and a device is recorded on a host once per Integration. A host with more than
+ * one device for the same Integration is ambiguous. Never deleted (ADR 0003).
+ */
+export const assetFalconDevices = pgTable(
+  "asset_falcon_devices",
+  {
+    id: text("id").primaryKey(),
+    /** Insertion order, to sort devices recorded at the same instant. */
+    seq: bigserial("seq", { mode: "number" }).notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "restrict" }),
+    integrationId: text("integration_id")
+      .notNull()
+      .references(() => integrations.id, { onDelete: "restrict" }),
+    /** Falcon's device ID, lower case. */
+    deviceId: text("device_id").notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    uniqueIndex("asset_falcon_devices_unique_idx").on(t.assetId, t.integrationId, t.deviceId),
+    index("asset_falcon_devices_device_idx").on(t.integrationId, t.deviceId),
+  ],
+);
+
+/**
  * An Alert: a detection received from an Integration. `external_id` is Falcon's `CompositeId`, unique
  * per Integration, so a detection delivered again updates its Alert instead of adding another.
  * `payload` is the detection event as Falcon sent it last. `version` moves on whenever the Alert
