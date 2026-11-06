@@ -128,6 +128,7 @@ describe("Adding Observables", () => {
         linkedBy: { id: await userId(ana), name: "Ana Analyst" },
         linkedAt: t.clock.now().toISOString(),
         seenIn: [],
+        ignored: false,
         fromAlert: null,
       },
     });

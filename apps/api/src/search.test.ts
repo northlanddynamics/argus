@@ -208,6 +208,8 @@ describe("Global search", () => {
     expect(await a.caseNumbers(a.ben, "invoice")).toEqual([portal, invoices]);
     expect((await a.search(a.ben, "invoice")).observables.map((o) => o.value)).toEqual(["invoice-portal.biz"]);
     expect(await a.caseNumbers(a.ben, "lookalike dom")).toEqual([invoices]);
+    // The words inside a value count too, so a domain is found as it would be said.
+    expect((await a.search(a.ben, "invoice portal")).observables.map((o) => o.value)).toEqual(["invoice-portal.biz"]);
   });
 
   test("one list of every kind, best first, a page at a time, with how many of each kind match", async () => {
@@ -293,14 +295,23 @@ describe("Global search", () => {
     expect((await values("hxxps://login[.]evil[.]example/x"))[0]).toBe("https://login.evil.example/x");
     expect((await values("ceo[@]evil[.]example"))[0]).toBe("ceo@evil.example");
 
-    // 8 or more leading hex characters find every kind of hash; fewer find none.
+    // A URL finds the URLs that start with it, defanged or not.
+    expect(await values("hxxps://login[.]evil[.]example")).toContain("https://login.evil.example/x");
+
+    // 8 or more leading hex characters find every kind of hash. 4 to 7 do too, as the shortened hashes
+    // on the Observables tab show them, when they mix digits and letters; a hex word or number doesn't.
     expect((await values("D41D8CD9")).toSorted()).toEqual([md5, sha1, sha256].toSorted());
     expect(await values("d41d8cd98f")).toEqual([md5]);
-    expect(await values("d41d8cd")).toEqual([]);
+    expect((await values("d41d")).toSorted()).toEqual([md5, sha1, sha256].toSorted());
+    expect(await values("dead")).toEqual([]);
+    expect(await values("4198")).toEqual([]);
 
-    // IPs match exactly, never partially.
+    // IPs match exactly, or by their first two or three whole parts; never by a run of digits.
     expect(await values("198.51.100.7")).toEqual(["198.51.100.7"]);
-    expect(await values("198.51.100")).toEqual([]);
+    expect((await values("198.51.100")).toSorted()).toEqual(["198.51.100.7", "198.51.100.70"]);
+    expect((await values("198.51.")).toSorted()).toEqual(["198.51.100.7", "198.51.100.70"]);
+    expect(await values("198.51.10")).toEqual([]);
+    expect(await values("198")).toEqual([]);
     expect(await values("2001")).toEqual([]);
   });
 

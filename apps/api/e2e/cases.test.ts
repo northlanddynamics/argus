@@ -655,8 +655,10 @@ test("an Analyst adds Observables and Assets, sees the other Cases they appear i
     const host = page.getByTestId("asset-FIN-LT-0231");
     await host.getByText("Ana Analyst").waitFor();
 
-    await host.getByRole("button", { name: "Unlink Host FIN-LT-0231" }).click();
+    await host.getByRole("button", { name: "Actions for Host FIN-LT-0231" }).click();
+    await page.getByRole("menuitem", { name: "Unlink from this Case" }).click();
     await page.getByText("No Assets yet.").waitFor();
+    await page.getByText("Unlinked Host FIN-LT-0231").waitFor();
 
     await page.getByRole("tab", { name: "Audit Log" }).click();
     for (const action of ["Added Observable", "Added Asset", "Unlinked Asset"]) {

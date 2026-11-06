@@ -322,7 +322,7 @@ test("an Analyst sends an Observable on a Case to Falcon in one click from its m
     await page.keyboard.press("Escape");
 
     // The domain's ⋯ menu: an alert in one click, with the Integration's defaults; a block is for hashes.
-    await page.getByRole("button", { name: "Actions for Domain invoice-portal.biz" }).click();
+    await page.getByRole("button", { name: "Actions for Domain invoice-portal[.]biz" }).click();
     await page.getByRole("menuitem", { name: "Take action" }).click();
     const prod = page.getByRole("group", { name: "CrowdStrike — Prod" });
     await prod.getByText("Severity Low · Windows, Linux").waitFor();
@@ -424,7 +424,7 @@ test("an Analyst pivots from search to an Observable's page and its Case, sends 
     await ipRow.getByText("Active").waitFor();
 
     // Its menu now says what was sent through Prod, and still offers EU.
-    await page.getByTestId("observable-invoice-portal.biz").getByRole("button", { name: "Actions for Domain invoice-portal.biz" }).click();
+    await page.getByTestId("observable-invoice-portal.biz").getByRole("button", { name: "Actions for Domain invoice-portal[.]biz" }).click();
     await page.getByRole("menuitem", { name: "Take action" }).click();
     await page.getByRole("group", { name: "CrowdStrike — Prod" }).getByText(/^IOC alert sent/).waitFor();
     await page.getByRole("group", { name: "CrowdStrike — EU" }).getByRole("menuitem", { name: /^IOC alert/ }).waitFor();
@@ -498,7 +498,7 @@ test("the Owner adds a Mimecast Integration; an Analyst blocks an email sender's
     const page = await browser.newPage();
     await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
     await page.goto(`${baseUrl}/cases/1/observables`);
-    await page.getByRole("button", { name: "Actions for Email billing@invoice-portal.biz" }).click();
+    await page.getByRole("button", { name: "Actions for Email billing@invoice-portal[.]biz" }).click();
     await page.getByRole("menuitem", { name: "Take action" }).click();
     const group = page.getByRole("group", { name: "Mimecast" });
     await group.getByRole("menuitem", { name: /^Block domain/ }).click();

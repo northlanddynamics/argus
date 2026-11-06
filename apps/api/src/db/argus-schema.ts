@@ -500,10 +500,13 @@ function heldOncePerOrganization(
       value: text("value").notNull(),
       matchKey: text("match_key").notNull(),
       createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
-      /** Its value as shown and as normalised. */
+      /**
+       * Its value as shown and as normalised, and the words in it, so "invoice portal" finds
+       * invoice-portal.biz as well as "invoice-portal.biz" does.
+       */
       search: tsvector("search")
         .notNull()
-        .generatedAlwaysAs(sql`to_tsvector('simple', value || ' ' || match_key)`),
+        .generatedAlwaysAs(sql`to_tsvector('simple', value || ' ' || match_key || ' ' || regexp_replace(match_key, '[^[:alnum:]]+', ' ', 'g'))`),
     },
     (t) => [
       uniqueIndex(`${names.items}_org_key_idx`).on(t.organizationId, t.type, t.matchKey),
