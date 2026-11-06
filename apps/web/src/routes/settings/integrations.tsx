@@ -1,18 +1,35 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, type ReactNode, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Switch } from "@/components/ui/switch";
+import { ChevronRight } from "lucide-react";
 import { ago, FALCON_CLOUDS, type FalconCloud, falconCloudLabel, healthWord, type IntegrationView, integrationsKey, integrationsQuery } from "@/lib/alerts";
 import { api, errorMessage } from "@/lib/api";
 import { useLiveStatus } from "@/lib/live";
 import { type Provider, providerLabel } from "api/integrations/vocabulary";
+
+/** The Amber Notice treatment (DESIGN.md): the one warning style. */
+const notice = "border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80";
 
 /** Throws the API's error message unless `res` is OK. */
 async function ok(res: Response, fallback: string) {
@@ -36,6 +53,17 @@ export function IntegrationsPage() {
         <h1 className="text-2xl font-semibold">Integrations</h1>
         <AddIntegrationDialog />
       </div>
+      {integrations.isPending && <Skeleton className="h-48 w-full rounded-xl" />}
+      {integrations.isError && (
+        <Alert variant="destructive">
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+            <span>Couldn't load the Integrations. Nothing about them has changed.</span>
+            <Button variant="outline" size="sm" onClick={() => void integrations.refetch()}>
+              Try again
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
       {integrations.data?.map((i) => <IntegrationCard key={i.id} integration={i} />)}
       {integrations.data?.length === 0 && (
         <Card>
@@ -97,13 +125,37 @@ function TeamsChannelCard() {
         </div>
         {configured && (
           <CardAction>
-            <Button variant="outline" size="sm" disabled={remove.isPending} onClick={() => remove.mutate()}>
-              Remove
-            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" size="sm" disabled={remove.isPending}>
+                  Remove
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Stop posting to the Teams channel?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Argus forgets the incoming webhook, so new Critical Cases and Cases opened from Alerts are no longer posted. What was already
+                    posted stays in Teams. You can add a webhook again at any time.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction variant="destructive" onClick={() => remove.mutate()}>
+                    Remove webhook
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </CardAction>
         )}
       </CardHeader>
       <CardContent>
+        {channel.isError && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertDescription>{channel.error.message}</AlertDescription>
+          </Alert>
+        )}
         <form className="grid gap-4" onSubmit={onSubmit}>
           <div className="grid gap-2">
             <Label htmlFor="teams-webhook">{configured ? "Replace the incoming webhook URL" : "Incoming webhook URL"}</Label>
@@ -189,7 +241,7 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
               {word}
             </Badge>
           )}
-          {writesBack && !i.writeBack && <Badge variant="outline">Read only</Badge>}
+          {writesBack && !i.writeBack && <Badge variant="outline">Alert write-back off</Badge>}
         </div>
         <CardAction className="flex gap-2">
           <Button variant="outline" size="sm" disabled={setPaused.isPending} onClick={() => setPaused.mutate(!i.paused)}>
@@ -199,14 +251,7 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
         </CardAction>
       </CardHeader>
       <CardContent className="grid gap-4">
-        {receivesAlerts && (
-          <dl className="grid gap-3 sm:grid-cols-4">
-            <Stat label="Last event" value={i.lastEventAt ? ago(i.lastEventAt) : "None yet"} />
-            <Stat label="Stream session refresh" value={i.sessionRefreshAt ? until(i.sessionRefreshAt) : "—"} />
-            <Stat label="Stored offset" value={i.streamOffset === null ? "—" : i.streamOffset.toLocaleString()} mono />
-            <Stat label="Owned by worker" value={i.workerId ?? "—"} mono />
-          </dl>
-        )}
+        {receivesAlerts && <StreamSummary integration={i} />}
         {receivesAlerts && i.healthDetail && !i.paused && (
           <Alert variant={i.health === "error" ? "destructive" : "default"}>
             <AlertDescription>{i.healthDetail}</AlertDescription>
@@ -227,13 +272,28 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
           </Alert>
         )}
         {writesBack && (
-          <WriteBackSetting
-            id={`write-back-${i.id}`}
-            checked={setWriteBack.isPending ? setWriteBack.variables : i.writeBack}
-            // Only Admins (who see the credentials) may change it.
-            disabled={!i.credentials || setWriteBack.isPending}
-            onCheckedChange={(enabled) => setWriteBack.mutate(enabled)}
-          />
+          <ConfirmOn
+            title={`Write Alert changes back to ${i.name}?`}
+            body={
+              <>
+                From now on, changing an Alert's Status or Assignee, commenting on it or closing its Case is sent to CrowdStrike, where your
+                Falcon console shows it. The API client needs Alerts write scope; without it, write-backs fail and show here.
+              </>
+            }
+            confirm="Turn on write-back"
+            onConfirm={() => setWriteBack.mutate(true)}
+          >
+            {(ask) => (
+              <WriteBackSetting
+                id={`write-back-${i.id}`}
+                checked={setWriteBack.isPending ? setWriteBack.variables : i.writeBack}
+                // Only Admins (who see the credentials) may change it.
+                disabled={!i.credentials || setWriteBack.isPending}
+                lockedReason={!i.credentials ? "Only Admins can change this." : undefined}
+                onCheckedChange={(enabled) => (enabled ? ask() : setWriteBack.mutate(false))}
+              />
+            )}
+          </ConfirmOn>
         )}
         {setWriteBack.error && (
           <Alert variant="destructive">
@@ -241,13 +301,29 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
           </Alert>
         )}
         {responseActions && (
-          <ResponseActionsSetting
-            id={`response-actions-${i.id}`}
-            provider={i.provider}
-            checked={setResponseActions.isPending ? setResponseActions.variables : i.responseActions}
-            disabled={!i.credentials || setResponseActions.isPending}
-            onCheckedChange={(enabled) => setResponseActions.mutate(enabled)}
-          />
+          <ConfirmOn
+            title={`Allow Response Actions through ${i.name}?`}
+            body={
+              <>
+                Any Member who can work a Case may then add custom IOCs to this Falcon tenant: globally, on every platform, as Detect or, for
+                hashes, Prevent, which blocks the file on every host. Each is recorded on its Case and in the Audit Log, and only the Case that
+                sent it can remove it. The API client needs IOC Management write scope; without it, sends fail on the Case with a 403.
+              </>
+            }
+            confirm="Allow Response Actions"
+            onConfirm={() => setResponseActions.mutate(true)}
+          >
+            {(ask) => (
+              <ResponseActionsSetting
+                id={`response-actions-${i.id}`}
+                provider={i.provider}
+                checked={setResponseActions.isPending ? setResponseActions.variables : i.responseActions}
+                disabled={!i.credentials || setResponseActions.isPending}
+                lockedReason={!i.credentials ? "Only Admins can change this." : undefined}
+                onCheckedChange={(enabled) => (enabled ? ask() : setResponseActions.mutate(false))}
+              />
+            )}
+          </ConfirmOn>
         )}
         {setResponseActions.error && (
           <Alert variant="destructive">
@@ -255,10 +331,11 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
           </Alert>
         )}
         {writesBack && <WriteBacks counts={i.writeBacks} />}
+        {responseActions && (i.responseActions || hasAny(i.responseActionCounts)) && <ResponseActionCounts counts={i.responseActionCounts} />}
         {i.credentials && (
           <p className="text-sm text-muted-foreground">
             {i.provider === "crowdstrike" ? `Falcon API credentials: ${falconCloudLabel[i.cloud]} cloud` : `${providerLabel[i.provider]} API credentials`}{" "}
-            · client {i.credentials.clientIdHint} · set{" "}
+            · client <span className="font-mono">{i.credentials.clientIdHint}</span> · set{" "}
             {new Date(i.credentials.updatedAt).toLocaleDateString()}
           </p>
         )}
@@ -291,18 +368,113 @@ function WriteBacks({ counts: w }: { counts: IntegrationView["writeBacks"] }) {
   );
 }
 
-function Stat({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+const hasAny = (c: IntegrationView["responseActionCounts"]) => c.pending + c.active + c.failed > 0;
+
+/** What Argus holds in the tool through this Integration, and what is waiting or failed. */
+function ResponseActionCounts({ counts: c }: { counts: IntegrationView["responseActionCounts"] }) {
   return (
-    <div className="rounded-md border p-3">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className={mono ? "font-mono font-semibold" : "font-semibold"}>{value}</dd>
+    <div className="grid gap-2" data-testid="response-action-counts">
+      <span className="text-sm font-semibold">Response Actions through this Integration</span>
+      <div className="flex flex-wrap gap-2">
+        <Badge variant="outline">Created by Argus, in Falcon {c.active}</Badge>
+        <Badge variant="outline">Pending {c.pending}</Badge>
+        {c.failed > 0 && (
+          <Badge variant="outline" className="border-destructive text-destructive">
+            Failed {c.failed}
+          </Badge>
+        )}
+      </div>
+      {c.lastError && <p className="text-sm text-muted-foreground">Last failure: {c.lastError}</p>}
     </div>
   );
 }
 
+/** The stream at a glance (its last event), with the worker's bookkeeping folded away. */
+function StreamSummary({ integration: i }: { integration: IntegrationView }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="grid gap-2 text-sm">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span>
+          <span className="text-muted-foreground">Last event </span>
+          <span className="font-medium">{i.lastEventAt ? ago(i.lastEventAt) : "None yet"}</span>
+        </span>
+        <CollapsibleTrigger asChild>
+          <Button variant="ghost" size="xs" className="text-muted-foreground">
+            <ChevronRight className={open ? "rotate-90 transition-transform" : "transition-transform"} aria-hidden />
+            Stream details
+          </Button>
+        </CollapsibleTrigger>
+      </div>
+      <CollapsibleContent>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+          <dt className="text-muted-foreground">Session refresh</dt>
+          <dd>{i.sessionRefreshAt ? until(i.sessionRefreshAt) : "—"}</dd>
+          <dt className="text-muted-foreground">Stream offset</dt>
+          <dd className="font-mono tabular-nums">{i.streamOffset === null ? "—" : i.streamOffset.toLocaleString()}</dd>
+          <dt className="text-muted-foreground">Worker</dt>
+          <dd className="font-mono">{i.workerId ?? "—"}</dd>
+        </dl>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+/**
+ * Asks before a switch turns something on that reaches outside Argus; turning it off needs no
+ * asking. `children` gets `ask`, which opens the confirmation.
+ */
+function ConfirmOn({
+  title,
+  body,
+  confirm,
+  onConfirm,
+  children,
+}: {
+  title: string;
+  body: ReactNode;
+  confirm: string;
+  onConfirm: () => void;
+  children: (ask: () => void) => ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      {children(() => setOpen(true))}
+      <AlertDialog open={open} onOpenChange={setOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{title}</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div>
+                <Alert className={notice}>
+                  <AlertDescription>{body}</AlertDescription>
+                </Alert>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={onConfirm}>{confirm}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
 /** The write-back switch: on, Argus writes Alert changes back to Falcon; off, it only reads. */
-function WriteBackSetting(props: { id: string; checked?: boolean; defaultChecked?: boolean; disabled?: boolean; name?: string; onCheckedChange?: (checked: boolean) => void }) {
-  const { id, ...rest } = props;
+function WriteBackSetting(props: {
+  id: string;
+  checked?: boolean;
+  defaultChecked?: boolean;
+  disabled?: boolean;
+  name?: string;
+  /** Why it can't be changed, said under it. */
+  lockedReason?: string;
+  onCheckedChange?: (checked: boolean) => void;
+}) {
+  const { id, lockedReason, ...rest } = props;
   return (
     <div className="flex items-start gap-3">
       <Switch id={id} className="mt-0.5" {...rest} />
@@ -310,6 +482,7 @@ function WriteBackSetting(props: { id: string; checked?: boolean; defaultChecked
         <Label htmlFor={id}>Write back to Falcon</Label>
         <p className="text-sm text-muted-foreground">
           Send Alert Status, Assignee, comments and Case closure to CrowdStrike.
+          {lockedReason && ` ${lockedReason}`}
         </p>
       </div>
     </div>
@@ -324,9 +497,11 @@ function ResponseActionsSetting(props: {
   defaultChecked?: boolean;
   disabled?: boolean;
   name?: string;
+  /** Why it can't be changed, said under it. */
+  lockedReason?: string;
   onCheckedChange?: (checked: boolean) => void;
 }) {
-  const { id, provider, ...rest } = props;
+  const { id, provider, lockedReason, ...rest } = props;
   return (
     <div className="flex items-start gap-3">
       <Switch id={id} className="mt-0.5" {...rest} />
@@ -336,6 +511,7 @@ function ResponseActionsSetting(props: {
           {provider === "crowdstrike"
             ? "Add custom IOCs to Falcon from a Case. The API client needs IOC Management write scope."
             : `Take Response Actions in ${providerLabel[provider]} from a Case.`}
+          {lockedReason && ` ${lockedReason}`}
         </p>
       </div>
     </div>
@@ -402,10 +578,21 @@ function AddIntegrationDialog() {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Add a CrowdStrike Integration</DialogTitle>
-          <DialogDescription>
-            An API client with Event Streams read access (Alerts write access for write-back, IOC Management write access for
-            Response Actions).
-          </DialogDescription>
+          <DialogDescription>Create an API client in the Falcon console with these scopes:</DialogDescription>
+          <ul className="grid gap-1 text-sm">
+            <li>
+              <span className="font-medium">Event Streams: Read</span>
+              <span className="text-muted-foreground"> — always, to receive detections as Alerts</span>
+            </li>
+            <li>
+              <span className="font-medium">Alerts: Write</span>
+              <span className="text-muted-foreground"> — for write-back</span>
+            </li>
+            <li>
+              <span className="font-medium">IOC Management: Write</span>
+              <span className="text-muted-foreground"> — for Response Actions</span>
+            </li>
+          </ul>
         </DialogHeader>
         <form className="grid gap-4" onSubmit={onSubmit}>
           <div className="grid gap-4 sm:grid-cols-[1fr_auto]">

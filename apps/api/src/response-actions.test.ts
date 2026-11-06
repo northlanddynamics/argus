@@ -521,6 +521,14 @@ describe("Already present: never sending twice, never overwriting", () => {
     expect(a.tenant.iocsCreated).toHaveLength(1);
   });
 
+  test("an already present record says what the tool holds: the action it was first sent with", async () => {
+    const a = await acme();
+    const hash = await a.link("sha256", "a".repeat(64));
+    await a.take(a.ana, hash, { action: "prevent" });
+    const again = await a.take(a.owner, hash, { action: "detect" });
+    expect(again.body.responseAction).toMatchObject({ origin: "already_present", falcon: { action: "prevent" } });
+  });
+
   test("at most one Pending or Active created Response Action per Integration, kind and value, even when Cases send at once", async () => {
     const a = await acme();
     const cases = [a.number, await a.open("Two"), await a.open("Three"), await a.open("Four")];

@@ -28,7 +28,9 @@ import {
 } from "@/lib/observables";
 import { responseActionsQuery } from "@/lib/response-actions";
 import { useCaseNumber } from "@/routes/cases/case-layout";
-import { falconTakes, ResponseActionsCard, SendToFalconDialog } from "@/routes/cases/response-actions";
+import { falconIocActionLabel, type ResponseAction } from "@/lib/response-actions";
+import { falconTakes, holdingOn, ResponseActionsCard, SendToFalconDialog } from "@/routes/cases/response-actions";
+import { when } from "@/lib/when";
 
 /**
  * Case · Observables & Assets, each with the other Cases it also appears in, and the Response
@@ -46,11 +48,13 @@ export function CaseObservablesPage() {
   const n = String(number);
   const eligible = responseActions.data?.integrations ?? [];
   const canSend = !readOnly && eligible.length > 0;
-  // Only what is still linked counts as selected.
-  const chosen = (observables.data ?? []).filter((o) => selected.includes(o.id));
+  const held = responseActions.data?.responseActions ?? [];
+  // Only what is still linked, and Falcon takes, counts as selected.
+  const chosen = (observables.data ?? []).filter((o) => selected.includes(o.id) && falconTakes(o.type, o.value));
   return (
     <div className="grid gap-4">
-      <div className="grid gap-4 lg:grid-cols-2">
+      {/* Observables get the full width: their rows carry what was sent, and Send beside Unlink. */}
+      <div className="grid gap-4">
         <LinkedCard<ObservableType>
           title="Observables"
           noun="Observable"
@@ -65,27 +69,36 @@ export function CaseObservablesPage() {
           readOnly={readOnly}
           add={(type, value) => api.cases[":number"].observables.$post({ param: { number: n }, json: { type, value } })}
           unlink={(id) => api.cases[":number"].observables[":id"].$delete({ param: { number: n, id } })}
+          renderStatus={(item) => <SentLine held={holdingOn(held, item.id)} />}
           renderAction={(item) =>
-            eligible.length > 0 && falconTakes(item.type, item.value) ? (
+            eligible.length === 0 ? null : falconTakes(item.type, item.value) ? (
               <SendToFalconDialog
                 number={number}
+                severity={c.severity}
                 observables={[item]}
                 integrations={eligible}
+                held={held}
                 trigger={
                   <Button variant="ghost" size="sm" className="px-2" aria-label={`Send ${observableTypeLabel[item.type]} ${item.value} to Falcon`}>
                     Send to Falcon
                   </Button>
                 }
               />
-            ) : null
+            ) : (
+              <span className="px-2 text-xs text-muted-foreground">Falcon takes no {observableTypeLabel[item.type]}</span>
+            )
           }
-          selection={canSend ? { selected: chosen.map((o) => o.id), onChange: setSelected } : undefined}
+          selection={
+            canSend ? { selected: chosen.map((o) => o.id), onChange: setSelected, selectable: (o) => falconTakes(o.type, o.value) } : undefined
+          }
           headerAction={
             canSend && chosen.length > 0 ? (
               <SendToFalconDialog
                 number={number}
+                severity={c.severity}
                 observables={chosen}
                 integrations={eligible}
+                held={held}
                 onSent={() => setSelected([])}
                 trigger={<Button size="sm">Send {chosen.length} to Falcon</Button>}
               />
@@ -143,15 +156,19 @@ function LinkedCard<Type extends string>(props: {
   readOnly: boolean;
   add: (type: Type, value: string) => Promise<Response>;
   unlink: (id: string) => Promise<Response>;
+  /** A line under the value saying where the item stands, such as what was sent from it. */
+  renderStatus?: (item: Item<Type>) => ReactNode;
   /** Something more to do with an item, beside Unlink. */
   renderAction?: (item: Item<Type>) => ReactNode;
   /** Set when items can be ticked to act on several at once. */
-  selection?: { selected: string[]; onChange: (ids: string[]) => void };
+  selection?: { selected: string[]; onChange: (ids: string[]) => void; selectable?: (item: Item<Type>) => boolean };
   /** Shown beside the title, such as what to do with the ticked items. */
   headerAction?: ReactNode;
 }) {
   const { title, noun, types, typeLabel, shown, items, queryKey, readOnly, selection } = props;
-  const allSelected = !!items?.length && !!selection && items.every((i) => selection.selected.includes(i.id));
+  const canTick = (i: Item<Type>) => !selection?.selectable || selection.selectable(i);
+  const tickable = (items ?? []).filter(canTick);
+  const allSelected = !!tickable.length && !!selection && tickable.every((i) => selection.selected.includes(i.id));
   const queryClient = useQueryClient();
   const [type, setType] = useState<Type>(types[0] as Type);
   const [value, setValue] = useState("");
@@ -226,7 +243,8 @@ function LinkedCard<Type extends string>(props: {
                   <Checkbox
                     aria-label={`Select every ${noun}`}
                     checked={allSelected ? true : selection.selected.length ? "indeterminate" : false}
-                    onCheckedChange={(checked) => selection.onChange(checked === true ? (items ?? []).map((i) => i.id) : [])}
+                    disabled={!tickable.length}
+                    onCheckedChange={(checked) => selection.onChange(checked === true ? tickable.map((i) => i.id) : [])}
                   />
                 </TableHead>
               )}
@@ -241,6 +259,7 @@ function LinkedCard<Type extends string>(props: {
               <TableRow key={item.id} data-testid={`${noun.toLowerCase()}-${item.value}`}>
                 {selection && (
                   <TableCell className="w-0">
+                    {canTick(item) && (
                     <Checkbox
                       aria-label={`Select ${typeLabel[item.type]} ${item.value}`}
                       checked={selection.selected.includes(item.id)}
@@ -248,6 +267,7 @@ function LinkedCard<Type extends string>(props: {
                         selection.onChange(checked === true ? [...selection.selected, item.id] : selection.selected.filter((id) => id !== item.id))
                       }
                     />
+                    )}
                   </TableCell>
                 )}
                 <TableCell>{typeLabel[item.type] ?? item.type}</TableCell>
@@ -278,13 +298,20 @@ function LinkedCard<Type extends string>(props: {
                       <>Added by {item.linkedBy.name}</>
                     )}
                   </span>
+                  {props.renderStatus?.(item)}
                 </TableCell>
                 <TableCell className="whitespace-normal">
                   {item.seenIn.length === 0 ? (
                     <span className="text-muted-foreground">—</span>
                   ) : (
                     // Each opens the item's own page, which lists every Case and Alert it is on.
-                    <ItemLink kind={props.kind} id={item.id} className="text-primary underline" title={item.seenIn.map((s) => `${caseRef(s.number)} ${s.title}`).join("\n")}>
+                    <ItemLink
+                      kind={props.kind}
+                      id={item.id}
+                      className="font-mono text-xs text-primary underline"
+                      title={item.seenIn.map((s) => `${caseRef(s.number)} ${s.title}`).join("\n")}
+                      aria-label={`Seen in ${item.seenIn.map((s) => `${caseRef(s.number)} ${s.title}`).join(", ")}`}
+                    >
                       {item.seenIn.map((s) => caseRef(s.number)).join(", ")}
                     </ItemLink>
                   )}
@@ -317,5 +344,28 @@ function LinkedCard<Type extends string>(props: {
         </Table>
       </CardContent>
     </Card>
+  );
+}
+
+/** Under an Observable: what this Case has sent of it, per Integration, said as what Argus did. */
+function SentLine({ held }: { held: ResponseAction[] }) {
+  if (!held.length) return null;
+  return (
+    <ul className="mt-1 grid gap-0.5 text-xs text-muted-foreground" aria-label="Sent from this Case">
+      {held.map((r) => (
+        <li key={r.id}>
+          {r.falcon ? falconIocActionLabel[r.falcon.action] : "Sent"}
+          {r.integration && ` · ${r.integration.name}`}
+          {", "}
+          {r.state === "pending"
+            ? "waiting to be sent"
+            : r.state === "removing"
+              ? "being removed"
+              : r.origin === "created" && r.sentAt
+                ? `sent ${when(r.sentAt)}`
+                : "already present"}
+        </li>
+      ))}
+    </ul>
   );
 }

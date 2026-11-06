@@ -293,7 +293,8 @@ function AlertsCard({ item }: { item: ItemPage }) {
   );
 }
 
-const stateVariant = { pending: "secondary", active: "default", removing: "secondary", failed: "destructive", removed: "outline" } as const;
+/** As on the Case: Failed asks for attention, Active stays quiet (never "in force"). */
+const stateVariant = { pending: "secondary", active: "outline", removing: "secondary", failed: "destructive", removed: "outline" } as const;
 
 /**
  * The Response Actions taken on the Observable from Cases the viewer can see: which Integration
@@ -313,7 +314,7 @@ function ResponseActionsCard({ item }: { item: ItemPage }) {
               <TableHead>Action</TableHead>
               <TableHead>State</TableHead>
               <TableHead>Case</TableHead>
-              <TableHead className="text-right">Sent</TableHead>
+              <TableHead className="text-right">When</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -336,7 +337,7 @@ function ResponseActionsCard({ item }: { item: ItemPage }) {
                   </Link>
                 </TableCell>
                 <TableCell className="text-right text-muted-foreground tabular-nums" title={exactTime(r.sentAt ?? r.requestedAt)}>
-                  {r.sentAt ? when(r.sentAt) : <>Requested {when(r.requestedAt)}</>}
+                  {r.sentAt ? <>Sent {when(r.sentAt)}</> : <>Requested {when(r.requestedAt)}</>}
                 </TableCell>
               </TableRow>
             ))}
