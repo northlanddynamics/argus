@@ -75,7 +75,7 @@ export function IntegrationsPage() {
         <Card>
           <CardContent className="text-sm text-muted-foreground">
             No Integrations yet. Add a CrowdStrike Integration to receive Falcon detections as Alerts, or a Mimecast Integration to block
-            email senders from a Case.
+            email senders.
           </CardContent>
         </Card>
       )}
@@ -317,10 +317,7 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
               i.provider === "crowdstrike" ? (
                 <>The API client needs IOC Management write scope; without it, sends fail on the Case with a 403.</>
               ) : (
-                <>
-                  Members will be able to block email senders and domains for the whole Organization from a Case. The API application's role needs
-                  Gateway · Policies · Edit; without it, blocks fail on the Case.
-                </>
+                <>The API application's role needs Gateway · Policies · Edit; without it, blocks fail on the Case.</>
               )
             }
             confirm="Allow Response Actions"
@@ -349,7 +346,7 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
         )}
         {writesBack && <WriteBacks counts={i.writeBacks} />}
         {responseActions && (i.responseActions || hasAny(i.responseActionCounts)) && (
-          <ResponseActionCounts counts={i.responseActionCounts} tool={i.provider === "crowdstrike" ? "Falcon" : providerLabel[i.provider]} />
+          <ResponseActionCounts counts={i.responseActionCounts} />
         )}
         {i.credentials && (
           <p className="text-sm text-muted-foreground">
@@ -390,12 +387,12 @@ function WriteBacks({ counts: w }: { counts: IntegrationView["writeBacks"] }) {
 const hasAny = (c: IntegrationView["responseActionCounts"]) => c.pending + c.active + c.failed > 0;
 
 /** What Argus holds in the tool through this Integration, and what is waiting or failed. */
-function ResponseActionCounts({ counts: c, tool }: { counts: IntegrationView["responseActionCounts"]; tool: string }) {
+function ResponseActionCounts({ counts: c }: { counts: IntegrationView["responseActionCounts"] }) {
   return (
     <div className="grid gap-2" data-testid="response-action-counts">
       <span className="text-sm font-semibold">Response Actions through this Integration</span>
       <div className="flex flex-wrap gap-2">
-        <Badge variant="outline">Created by Argus, in {tool} {c.active}</Badge>
+        <Badge variant="outline">Active {c.active}</Badge>
         <Badge variant="outline">Pending {c.pending}</Badge>
         {c.failed > 0 && (
           <Badge variant="outline" className="border-destructive text-destructive">
@@ -528,8 +525,8 @@ function ResponseActionsSetting(props: {
         <Label htmlFor={id}>Response Actions</Label>
         <p className="text-sm text-muted-foreground">
           {provider === "crowdstrike"
-            ? "Add custom IOCs to Falcon from a Case. The API client needs IOC Management write scope."
-            : `Block email senders and domains for the whole Organization in ${providerLabel[provider]} from a Case.`}
+            ? "Add custom IOCs to Falcon. The API client needs IOC Management write scope."
+            : `Block email senders and domains in ${providerLabel[provider]}.`}
           {lockedReason && ` ${lockedReason}`}
         </p>
       </div>
@@ -705,8 +702,7 @@ function AddIntegrationDialog({ provider }: { provider: Provider }) {
           <DialogTitle>Add a {providerLabel[provider]} Integration</DialogTitle>
           {!falcon && (
             <DialogDescription>
-              Create an API 2.0 application in the Mimecast Administration Console whose role has Gateway · Policies · Edit, for blocking
-              senders. Argus checks its credentials once it is added. It sends no Alerts and writes nothing back.
+              Create an API 2.0 application in the Mimecast Administration Console whose role has Gateway · Policies · Edit.
             </DialogDescription>
           )}
           {falcon && (

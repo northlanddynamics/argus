@@ -65,10 +65,10 @@ export const actionOf = (r: Pick<ResponseAction, "kind" | "falcon" | "target">) 
 
 /**
  * "Severity High (from the Case) · every platform", as a menu or dialog says what an IOC goes with;
- * for Mimecast, "Organization-wide" and whether it starts Internal.
+ * for Mimecast, only whether it starts Internal ("Internal", or nothing).
  */
 export function describeDefaults(d: FalconIocDefaults, caseSeverity?: Severity, provider: Provider = "crowdstrike") {
-  if (provider === "mimecast") return `Organization-wide${d.internal ? " · Internal" : ""}`;
+  if (provider === "mimecast") return d.internal ? "Internal" : "";
   const severity =
     d.severity === "case" ? (caseSeverity ? `Severity ${severityLabel[caseSeverity]} (from the Case)` : "Severity from the Case") : `Severity ${severityLabel[d.severity]}`;
   const platforms = d.platforms.length === FALCON_IOC_PLATFORMS.length ? "every platform" : d.platforms.map((p) => falconIocPlatformLabel[p]).join(", ");

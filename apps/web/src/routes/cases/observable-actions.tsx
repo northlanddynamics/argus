@@ -296,7 +296,9 @@ export function ObservableActions({
               {i > 0 && <kit.Separator />}
               <kit.Label className="grid">
                 <span>{d.name}</span>
-                {d.defaults && <span className="text-xs font-normal text-muted-foreground">{describeDefaults(d.defaults, c?.severity, d.provider)}</span>}
+                {d.defaults && describeDefaults(d.defaults, c?.severity, d.provider) && (
+                  <span className="text-xs font-normal text-muted-foreground">{describeDefaults(d.defaults, c?.severity, d.provider)}</span>
+                )}
               </kit.Label>
               {live ? (
                 <>
@@ -529,7 +531,9 @@ export function BulkObservableActions({
                 {i > 0 && <DropdownMenuSeparator />}
                 <DropdownMenuLabel className="grid">
                   <span>{d.name}</span>
-                  <span className="text-xs font-normal text-muted-foreground">{describeDefaults(d.defaults, severity, d.provider)}</span>
+                  {describeDefaults(d.defaults, severity, d.provider) && (
+                    <span className="text-xs font-normal text-muted-foreground">{describeDefaults(d.defaults, severity, d.provider)}</span>
+                  )}
                 </DropdownMenuLabel>
                 {(d.provider === "mimecast" ? MIMECAST_ACTIONS : FALCON_QUICK).map((action: ResponseActionAction) => {
                   const Icon = QuickIcon[action];

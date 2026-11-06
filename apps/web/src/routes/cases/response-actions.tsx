@@ -405,7 +405,7 @@ function StateLine({ r }: { r: ResponseAction }) {
   if (r.state === "removed" && r.dismissedBy && r.dismissedAt) {
     return (
       <span>
-        Dismissed by {r.dismissedBy.name} <At iso={r.dismissedAt} />; left unchanged in {toolOf(r.kind)}
+        Dismissed by {r.dismissedBy.name} <At iso={r.dismissedAt} />
       </span>
     );
   }
@@ -462,7 +462,7 @@ function OriginLine({ r, number }: { r: ResponseAction; number: number }) {
       </span>
     );
   }
-  if (r.origin === "in_tool") return <span>Already present in {toolOf(r.kind)}; Argus left it unchanged</span>;
+  if (r.origin === "in_tool") return <span>Already present in {toolOf(r.kind)}</span>;
   return null;
 }
 
@@ -489,7 +489,7 @@ export function RemoveDialog({ number, r, onClose }: { number: number; r: Respon
   const count = relying ? relying.cases.length + relying.otherCases : 0;
   const mimecast = r.kind === "mimecast_blocked_sender";
   const stops = mimecast
-    ? "Mimecast stops blocking it for the Organization."
+    ? "Mimecast stops blocking it."
     : r.falcon?.action === "prevent"
       ? "Falcon stops blocking and detecting it."
       : "Falcon stops detecting it.";
