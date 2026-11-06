@@ -267,6 +267,13 @@
       "when": 1793995350939,
       "tag": "0037_falcon_devices",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1793996620259,
+      "tag": "0038_host_enrichment",
+      "breakpoints": true
     }
   ]
 }

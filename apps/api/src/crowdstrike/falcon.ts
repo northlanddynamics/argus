@@ -10,7 +10,8 @@ import type { FalconIocAction, FalconIocType } from "../response-actions/vocabul
  * (`write-back.ts`), which writes nothing for an Integration whose `writeBack` is off. An Alert's
  * comments are read on demand (`comment-sync.ts`), whatever the write-back setting. Custom IOCs are
  * looked up, created and deleted for Response Actions (`response-actions/sender.ts`, ADR 0007),
- * which an Integration takes only when its Response Actions setting is on.
+ * which an Integration takes only when its Response Actions setting is on. Hosts are read for
+ * Enrichment (`host-enrichment.ts`, ADR 0009), which needs only the Hosts: Read scope.
  */
 
 export type FalconCredentials = { clientId: string; clientSecret: string };
@@ -88,7 +89,49 @@ export interface FalconClient {
    * holds no such IOC (it is already gone). Rejects when Falcon refuses or fails.
    */
   deleteIoc(id: string): Promise<boolean>;
+  /**
+   * What Falcon reports now about each of these devices (`aid`s). A device Falcon doesn't know is
+   * left out. Rejects with `FalconScopeMissing` when the API client lacks Hosts: Read.
+   */
+  hosts(deviceIds: readonly string[]): Promise<FalconHost[]>;
 }
+
+/** Falcon refused a call because the API client lacks the scope it needs. */
+export class FalconScopeMissing extends Error {}
+
+/** Falcon's containment states for a host. */
+export const FALCON_CONTAINMENT = ["normal", "containment_pending", "contained", "lift_containment_pending"] as const;
+export type FalconContainment = (typeof FALCON_CONTAINMENT)[number];
+
+/**
+ * One device as the Hosts API reports it: what host Enrichment shows. Anything Falcon didn't say is
+ * null (or empty).
+ */
+export type FalconHost = {
+  deviceId: string;
+  hostname: string | null;
+  platform: string | null;
+  osVersion: string | null;
+  sensorVersion: string | null;
+  /** The sensor's state: "Normal", "Reduced functionality mode", or Falcon's provisioning status. */
+  sensorStatus: string | null;
+  firstSeen: string | null;
+  lastSeen: string | null;
+  localIp: string | null;
+  externalIp: string | null;
+  macAddress: string | null;
+  domain: string | null;
+  ou: string[];
+  site: string | null;
+  serialNumber: string | null;
+  manufacturer: string | null;
+  model: string | null;
+  lastLoggedOnUser: string | null;
+  /** Host group names, or ids where Falcon wouldn't say the name. */
+  hostGroups: string[];
+  tags: string[];
+  containment: FalconContainment | null;
+};
 
 /** The platforms a custom IOC applies to: all of them. */
 export const IOC_PLATFORMS = ["windows", "mac", "linux"] as const;

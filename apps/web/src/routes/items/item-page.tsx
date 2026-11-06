@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams, useRouteContext } from "@tanstack/react-router";
-import { BellOffIcon, CheckIcon, CopyIcon, ExternalLinkIcon, FingerprintIcon, LockIcon, MonitorIcon, UserIcon } from "lucide-react";
+import { BellOffIcon, CheckIcon, CopyIcon, ExternalLinkIcon, FingerprintIcon, LockIcon, MonitorIcon, RefreshCwIcon, UserIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { SeverityBadge, StatusBadge } from "@/components/case-badges";
 import { observableIcon } from "@/components/search/search-hit";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useMe } from "@/lib/api";
@@ -23,6 +24,7 @@ import {
   itemPagesKey,
   type ObservableType,
   observableTypeLabel,
+  refreshEnrichment,
   setIgnored,
 } from "@/lib/observables";
 import { falconIocActionLabel, responseActionKindLabel, responseActionStateLabel } from "@/lib/response-actions";
@@ -183,61 +185,168 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+type FalconDevice = ItemPage["falconDevices"][number]["devices"][number];
+type HostFacts = NonNullable<FalconDevice["enrichment"]["host"]>;
+
+const containmentLabel: Record<NonNullable<HostFacts["containment"]>, string> = {
+  normal: "Not contained",
+  containment_pending: "Containment pending",
+  contained: "Contained",
+  lift_containment_pending: "Lifting containment",
+};
+
 /**
  * The Falcon devices recorded on a host, from the detections that name it, each linking to the
- * device in its Integration's Falcon console. Several for one Integration mark the host ambiguous
- * there: the same name has been seen on more than one sensor.
+ * device in its Integration's Falcon console with what Falcon last reported about it (Enrichment,
+ * ADR 0009). Several for one Integration mark the host ambiguous there: the same name has been seen
+ * on more than one sensor, and their Enrichment is shown side by side. Opening the page asks again
+ * for anything older than 15 minutes; Refresh asks again now. A signal brings the result.
  */
 function FalconDevicesCard({ item }: { item: ItemPage }) {
+  const queryClient = useQueryClient();
+  const refresh = useMutation({
+    mutationFn: () => refreshEnrichment(item.id),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: itemPagesKey }),
+  });
+  const devices = item.falconDevices.flatMap((group) => group.devices.map((device) => ({ group, device })));
+  const refreshing = devices.some((d) => d.device.enrichment.refreshing);
   return (
     <Card>
       <CardHeader>
         <CardTitle>Falcon devices</CardTitle>
+        {devices.length > 0 && (
+          <CardAction>
+            <Button variant="outline" size="sm" disabled={refresh.isPending || refreshing} onClick={() => refresh.mutate()}>
+              <RefreshCwIcon className={refreshing ? "animate-spin" : undefined} aria-hidden />
+              {refreshing ? "Refreshing…" : "Refresh"}
+            </Button>
+          </CardAction>
+        )}
       </CardHeader>
-      <CardContent>
-        <Table aria-label="Falcon devices">
-          <TableHeader>
-            <TableRow>
-              <TableHead>Device ID</TableHead>
-              <TableHead>Integration</TableHead>
-              <TableHead className="text-right">Recorded</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {item.falconDevices.flatMap((group) =>
-              group.devices.map((d) => (
-                <TableRow key={`${group.integration.id} ${d.deviceId}`}>
-                  <TableCell>
-                    <a href={d.consoleUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-mono text-xs break-all hover:underline">
-                      {d.deviceId}
-                      <ExternalLinkIcon className="size-3 shrink-0 text-muted-foreground" aria-label="Opens in the Falcon console" />
-                    </a>
-                  </TableCell>
-                  <TableCell className="whitespace-normal">
-                    {group.integration.name}
+      <CardContent className="grid gap-3">
+        {refresh.error && (
+          <Alert variant="destructive">
+            <AlertDescription>{refresh.error.message}</AlertDescription>
+          </Alert>
+        )}
+        {item.falconDevices
+          .filter((g) => g.integration.enrichmentUnavailable)
+          .map((g) => (
+            <Alert key={g.integration.id}>
+              <AlertDescription>
+                {g.integration.name}: {g.integration.enrichmentUnavailable}.
+              </AlertDescription>
+            </Alert>
+          ))}
+        {devices.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No detection has named its Falcon device yet.</p>
+        ) : (
+          <div className={devices.length > 1 ? "grid gap-3 md:grid-cols-2" : "grid gap-3"}>
+            {devices.map(({ group, device }) => (
+              <section
+                key={`${group.integration.id} ${device.deviceId}`}
+                aria-label={`Falcon device ${device.deviceId}`}
+                className="grid min-w-0 content-start gap-3 rounded-lg border p-3"
+              >
+                <div className="grid gap-1">
+                  <a
+                    href={device.consoleUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 font-mono text-xs break-all hover:underline"
+                  >
+                    {device.deviceId}
+                    <ExternalLinkIcon className="size-3 shrink-0 text-muted-foreground" aria-label="Opens in the Falcon console" />
+                  </a>
+                  <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                    <span>{group.integration.name}</span>
                     {group.ambiguous && (
-                      <Badge variant="outline" className="ml-1.5" title="Several Falcon devices go by this name for this Integration">
+                      <Badge variant="outline" title="Several Falcon devices go by this name for this Integration">
                         Ambiguous
                       </Badge>
                     )}
-                  </TableCell>
-                  <TableCell className="text-right text-muted-foreground tabular-nums" title={exactTime(d.recordedAt)}>
-                    {when(d.recordedAt)}
-                  </TableCell>
-                </TableRow>
-              )),
-            )}
-            {item.falconDevices.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={3} className="text-muted-foreground">
-                  No detection has named its Falcon device yet.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+                    <span>
+                      · recorded <span title={exactTime(device.recordedAt)}>{when(device.recordedAt)}</span>
+                    </span>
+                  </p>
+                </div>
+                <HostEnrichment enrichment={device.enrichment} />
+              </section>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
+  );
+}
+
+/** The values Falcon gave, joined by `by`; null when it gave none. */
+const joined = (values: readonly (string | null)[], by: string) => values.filter(Boolean).join(by) || null;
+
+const Time = ({ at }: { at: string }) => <span title={exactTime(at)}>{when(at)}</span>;
+
+/** A host's containment: plain when it isn't contained, marked otherwise. */
+const Containment = ({ state }: { state: NonNullable<HostFacts["containment"]> }) =>
+  state === "normal" ? containmentLabel.normal : <Badge variant="outline">{containmentLabel[state]}</Badge>;
+
+/** What Falcon last reported about one device, as of when it was fetched. */
+function HostEnrichment({ enrichment }: { enrichment: FalconDevice["enrichment"] }) {
+  const { host, fetchedAt, notFound, error, refreshing } = enrichment;
+  const asOf = fetchedAt && (
+    <p className="text-xs text-muted-foreground">
+      As of <span title={exactTime(fetchedAt)}>{when(fetchedAt)}</span>
+      {refreshing && " · refreshing…"}
+    </p>
+  );
+  const problem = error && <p className="text-xs text-destructive">Last fetch failed: {error}</p>;
+  if (notFound) {
+    return (
+      <div className="grid gap-1">
+        <p className="text-sm">Not found in Falcon.</p>
+        {asOf}
+        {problem}
+      </div>
+    );
+  }
+  if (!host) {
+    return (
+      <div className="grid gap-1">
+        {refreshing ? <Skeleton className="h-24" /> : !error && <p className="text-sm text-muted-foreground">Not fetched from Falcon yet.</p>}
+        {problem}
+      </div>
+    );
+  }
+  const facts: { label: string; value: ReactNode }[] = [
+    { label: "Containment", value: host.containment && <Containment state={host.containment} /> },
+    { label: "Platform", value: joined([host.platform, host.osVersion], " · ") },
+    { label: "Sensor", value: joined([host.sensorVersion, host.sensorStatus], " · ") },
+    { label: "First seen", value: host.firstSeen && <Time at={host.firstSeen} /> },
+    { label: "Last seen", value: host.lastSeen && <Time at={host.lastSeen} /> },
+    { label: "Local IP", value: host.localIp },
+    { label: "External IP", value: host.externalIp },
+    { label: "MAC", value: host.macAddress },
+    { label: "Domain", value: host.domain },
+    { label: "OU", value: joined(host.ou, ", ") },
+    { label: "Site", value: host.site },
+    { label: "Hardware", value: joined([host.manufacturer, host.model], " ") },
+    { label: "Serial", value: host.serialNumber },
+    { label: "Last logged on", value: host.lastLoggedOnUser },
+    { label: "Host groups", value: joined(host.hostGroups, ", ") },
+    { label: "Falcon tags", value: joined(host.tags, ", ") },
+  ];
+  return (
+    <div className="grid gap-2">
+      <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-1 text-sm">
+        {facts.map(({ label, value }) => (
+          <div key={label} className="contents">
+            <dt className="text-muted-foreground">{label}</dt>
+            <dd className="break-words">{value ?? <span className="text-muted-foreground">—</span>}</dd>
+          </div>
+        ))}
+      </dl>
+      {asOf}
+      {problem}
+    </div>
   );
 }
 

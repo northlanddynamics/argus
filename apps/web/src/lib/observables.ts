@@ -83,6 +83,12 @@ export const ignoredQuery = queryOptions({
 export type IgnoredEntry = Awaited<ReturnType<typeof ignoredQuery.queryFn & {}>>[number];
 
 /** Puts an Observable or Asset on the Ignored list, or takes it off. */
+/** Asks Falcon again for a host's Enrichment (ADR 0009); the page shows it as refreshing until it arrives. */
+export async function refreshEnrichment(id: string) {
+  const res = await api.assets[":id"].enrichment.$post({ param: { id } });
+  if (!res.ok) throw new Error(await errorMessage(res, "Could not refresh the Enrichment"));
+}
+
 export async function setIgnored(kind: ItemKind, id: string, ignored: boolean) {
   const param = { param: { id } };
   const route = kind === "observable" ? api.observables[":id"].ignored : api.assets[":id"].ignored;

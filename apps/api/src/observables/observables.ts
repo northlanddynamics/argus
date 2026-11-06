@@ -5,6 +5,7 @@ import { recordOrgAudit } from "../audit/org-audit-log";
 import { type AlertStatus, falconDeviceUrl } from "../alerts/vocabulary";
 import { actorOf, CaseNotFound, lockCase } from "../cases/cases";
 import { recordCaseAudit } from "../cases/case-audit-log";
+import { enrichmentKey, hostEnrichmentOf, type HostEnrichmentView, requestHostEnrichment } from "../crowdstrike/host-enrichment";
 import type { CaseAuditAction, Severity, Status } from "../cases/vocabulary";
 import type { Clock } from "../clock";
 import type { Db, Tx } from "../db/client";
@@ -137,11 +138,15 @@ export type ItemDetail<Type extends string> = {
   falconDevices: FalconDevices[];
 };
 
-/** The Falcon devices recorded on a host for one Integration; `ambiguous` when there are several. */
+/**
+ * The Falcon devices recorded on a host for one Integration; `ambiguous` when there are several.
+ * Each has its latest Enrichment (ADR 0009). `enrichmentUnavailable` says why the Integration can't
+ * enrich hosts, as when its API client lacks Hosts: Read.
+ */
 export type FalconDevices = {
-  integration: { id: string; name: string };
+  integration: { id: string; name: string; enrichmentUnavailable: string | null };
   ambiguous: boolean;
-  devices: { deviceId: string; consoleUrl: string; recordedAt: string }[];
+  devices: { deviceId: string; consoleUrl: string; recordedAt: string; enrichment: HostEnrichmentView }[];
 };
 
 /** Who put an item on the Ignored list, and when. */
@@ -389,6 +394,18 @@ function heldOnceStore<Type extends string>(
     };
   }
 
+  /**
+   * Item `itemId`'s page as `detail` gives it, first asking Falcon again for the Enrichment of a host
+   * a Member opens (ADR 0009): every snapshot older than 15 minutes, or with `refresh` all of them.
+   * The worker fetches them; the page shows them as refreshing meanwhile.
+   */
+  async function open(me: Participant, itemId: string, { refresh = false } = {}): Promise<ItemDetail<Type>> {
+    const seen = await detail(me, itemId);
+    if (kind.name !== "asset" || seen.type !== "host" || isGuest(me) || !seen.falconDevices.length) return seen;
+    await requestHostEnrichment(db, itemId, clock.now(), { ifStale: !refresh });
+    return detail(me, itemId);
+  }
+
   /** The Organization's item `itemId`, locked; throws `ItemNotFound` if there's none. */
   async function lockItem(tx: Tx, me: Membership, itemId: string) {
     const [item] = await tx
@@ -445,6 +462,7 @@ function heldOnceStore<Type extends string>(
   return {
     list,
     detail,
+    open,
     setIgnored,
 
     /**
@@ -681,6 +699,7 @@ async function falconDevicesOf(db: Db, assetId: string): Promise<FalconDevices[]
       integrationId: integrations.id,
       integrationName: integrations.name,
       cloud: integrations.cloud,
+      enrichmentUnavailable: integrations.hostEnrichmentError,
       deviceId: assetFalconDevices.deviceId,
       recordedAt: assetFalconDevices.recordedAt,
     })
@@ -688,11 +707,21 @@ async function falconDevicesOf(db: Db, assetId: string): Promise<FalconDevices[]
     .innerJoin(integrations, eq(assetFalconDevices.integrationId, integrations.id))
     .where(eq(assetFalconDevices.assetId, assetId))
     .orderBy(asc(assetFalconDevices.recordedAt), asc(assetFalconDevices.seq));
+  const enrichment = await hostEnrichmentOf(db, rows);
   const byIntegration = new Map<string, FalconDevices>();
   for (const r of rows) {
     if (!r.cloud) continue;
-    const entry = byIntegration.get(r.integrationId) ?? { integration: { id: r.integrationId, name: r.integrationName }, ambiguous: false, devices: [] };
-    entry.devices.push({ deviceId: r.deviceId, consoleUrl: falconDeviceUrl(r.cloud, r.deviceId), recordedAt: r.recordedAt.toISOString() });
+    const entry = byIntegration.get(r.integrationId) ?? {
+      integration: { id: r.integrationId, name: r.integrationName, enrichmentUnavailable: r.enrichmentUnavailable },
+      ambiguous: false,
+      devices: [],
+    };
+    entry.devices.push({
+      deviceId: r.deviceId,
+      consoleUrl: falconDeviceUrl(r.cloud, r.deviceId),
+      recordedAt: r.recordedAt.toISOString(),
+      enrichment: enrichment.get(enrichmentKey(r))!,
+    });
     entry.ambiguous = entry.devices.length > 1;
     byIntegration.set(r.integrationId, entry);
   }
