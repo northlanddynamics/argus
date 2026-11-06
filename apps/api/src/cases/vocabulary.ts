@@ -113,6 +113,10 @@ export const CASE_AUDIT_ACTIONS = [
   "response_action.already_present",
   "response_action.already_in_tool",
   "response_action.dismissed",
+  "response_action.removal_requested",
+  "response_action.removal_retried",
+  "response_action.removal_failed",
+  "response_action.removed",
 ] as const;
 export type CaseAuditAction = (typeof CASE_AUDIT_ACTIONS)[number];
 

@@ -232,7 +232,9 @@ export function falconHttpClient({ cloud, credentials, appId }: FalconConnection
         headers: { authorization: `Bearer ${await accessToken()}`, accept: "application/json" },
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
+      if (res.status === 404) return false;
       if (!res.ok) throw await failure("Deleting a custom IOC in Falcon", res);
+      return true;
     },
 
     async *consume(session, offset, signal) {

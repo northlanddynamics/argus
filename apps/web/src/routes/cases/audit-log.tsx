@@ -82,6 +82,10 @@ export const actionLabel: Record<CaseAuditAction, string> = {
   "response_action.already_present": "Response Action already sent",
   "response_action.already_in_tool": "Response Action already in tool",
   "response_action.dismissed": "Dismissed Response Action",
+  "response_action.removal_requested": "Asked to remove Response Action",
+  "response_action.removal_retried": "Retried removing Response Action",
+  "response_action.removal_failed": "Removing Response Action failed",
+  "response_action.removed": "Removed Response Action",
 };
 
 /** A recorded value as people read it: "In Progress" rather than "in_progress". */

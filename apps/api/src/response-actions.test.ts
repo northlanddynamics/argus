@@ -83,6 +83,11 @@ async function acme({ responseActions = true }: { responseActions?: boolean } = 
     const res = await as.api.cases[":number"]["response-actions"][":id"].dismiss.$post({ param: { ...param(on), id } });
     return { status: res.status, body: (await res.json()) as Record<string, unknown> };
   };
+  /** Removes Response Action `id` as `as`; returns the status and body. */
+  const remove = async (as: Session, id: string, { on = number, confirmRelying }: { on?: number; confirmRelying?: boolean } = {}) => {
+    const res = await as.api.cases[":number"]["response-actions"][":id"].remove.$post({ param: { ...param(on), id }, json: { confirmRelying } });
+    return { status: res.status, body: (await res.json()) as Record<string, unknown> & { responseAction?: { id: string; state: string } } };
+  };
   /** Opens another Case as Ana; returns its number. */
   const open = async (title: string) => {
     const body = await (await ana.api.cases.$post({ json: { title, caseType: "phishing", severity: "medium" } })).json();
@@ -149,6 +154,7 @@ async function acme({ responseActions = true }: { responseActions?: boolean } = 
     auditLog,
     retry,
     dismiss,
+    remove,
     open,
     listOn,
   };
@@ -902,5 +908,273 @@ describe("The Observable page lists its Response Actions", () => {
     if (!("asset" in body)) throw new Error("Could not link the Asset");
     const item = await (await a.ana.api.assets[":id"].$get({ param: { id: body.asset.id } })).json();
     expect(item).toMatchObject({ item: { responseActions: [] } });
+  });
+});
+
+/** Exhausts every remove attempt while Falcon refuses them. */
+const failAllRemovals = async (a: Awaited<ReturnType<typeof acme>>) => {
+  a.tenant.refuseIocs = "Deleting a custom IOC in Falcon failed: 403 access denied";
+  for (let i = 0; i < MAX_RESPONSE_ACTION_ATTEMPTS; i++) {
+    await a.worker.tick();
+    a.t.clock.advance(60 * 60_000);
+  }
+  a.tenant.refuseIocs = null;
+};
+
+describe("Removing Response Actions", () => {
+  test("removing a created IOC deletes it in Falcon once the worker removes it, and it is Removed", async () => {
+    const a = await acme();
+    const { body } = await a.take(a.ana, await a.link("domain", "evil.example"));
+    const id = body.responseAction!.id;
+    await a.worker.tick();
+    const ioc = [...a.tenant.iocs.keys()][0]!;
+    a.t.clock.advance(60_000);
+
+    const removing = await a.remove(a.ana, id);
+    expect(removing).toMatchObject({
+      status: 200,
+      body: { responseAction: { id, state: "removing", removalRequestedBy: { name: "Ana Analyst" }, removalRequestedAt: a.t.clock.now().toISOString() } },
+    });
+    // Queued with the request; Falcon is untouched until the worker removes it.
+    expect(a.tenant.iocsDeleted).toEqual([]);
+    expect((await a.remove(a.ana, id)).body).toEqual({ error: "Only an Active Response Action can be removed" });
+
+    await a.worker.tick();
+    expect(a.tenant.iocsDeleted).toEqual([ioc]);
+    expect(a.tenant.iocs.size).toBe(0);
+    expect((await a.list(a.ana)).responseActions).toMatchObject([{ id, state: "removed", lastError: null }]);
+    expect((await a.remove(a.ana, id)).status).toBe(409);
+
+    // Removed, it no longer holds the value: sending it again creates it again.
+    expect((await a.take(a.ana, (await a.list(a.ana)).responseActions[0]!.observable.id)).body.responseAction).toMatchObject({ state: "pending", origin: "created" });
+    await a.worker.tick();
+    expect(a.tenant.iocsCreated).toHaveLength(2);
+  });
+
+  test("removing one already gone from Falcon succeeds", async () => {
+    const a = await acme();
+    const { body } = await a.take(a.ana, await a.link("sha256", SHA256), { action: "prevent" });
+    await a.worker.tick();
+    a.tenant.iocs.clear();
+
+    await a.remove(a.ana, body.responseAction!.id);
+    await a.worker.tick();
+    expect((await a.list(a.ana)).responseActions).toMatchObject([{ state: "removed", lastError: null }]);
+    expect((await a.timeline(a.ana)).at(-1)!.body).toBe("Response Action removed: the custom IOC for SHA-256 " + SHA256 + " was already gone from CrowdStrike Falcon.");
+    expect((await a.auditLog())[0]).toMatchObject({ action: "response_action.removed", after: "Already gone from CrowdStrike Falcon; nothing to remove" });
+  });
+
+  test("a failed removal is retried with backoff, then Failed with the error, notifies whoever asked, and can be retried", async () => {
+    const a = await acme();
+    const { body } = await a.take(a.ana, await a.link("domain", "evil.example"));
+    const id = body.responseAction!.id;
+    await a.worker.tick();
+    await a.remove(a.owner, id);
+
+    a.tenant.failNextIocCalls = 1;
+    await a.worker.tick();
+    expect((await a.list(a.ana)).responseActions).toMatchObject([{ state: "removing", lastError: "Calling IOC Management in Falcon failed: 503" }]);
+    // Not due for 30 seconds.
+    a.t.clock.advance(29_000);
+    await a.worker.tick();
+    expect(a.tenant.iocsDeleted).toEqual([]);
+
+    await failAllRemovals(a);
+    expect((await a.list(a.ana)).responseActions).toMatchObject([
+      { id, state: "failed", lastError: "Deleting a custom IOC in Falcon failed: 403 access denied", removalRequestedBy: { name: "Olive Owner" } },
+    ]);
+    expect(a.tenant.iocs.size).toBe(1);
+    // The Member who asked for the removal hears of it, not the one who took it.
+    expect(await (await a.owner.api.notifications.$get()).json()).toMatchObject({
+      unread: 1,
+      notifications: [
+        { kind: "response_action_removal_failed", headline: `A Response Action you asked to remove from C-${a.number} could not be removed`, section: "observables" },
+      ],
+    });
+    expect((await (await a.ana.api.notifications.$get()).json()).unread).toBe(0);
+
+    // A Failed removal still holds the value: Falcon still has it.
+    const other = await a.open("Second wave");
+    expect((await a.take(a.ana, await a.link("domain", "evil.example", other), { on: other })).body.responseAction).toMatchObject({ origin: "already_present" });
+
+    // Retried, it is Removing again, and removed once Falcon allows it.
+    const retried = await a.retry(a.ana, id);
+    expect(await retried.json()).toMatchObject({ responseAction: { state: "removing", lastError: null, removalRequestedBy: { name: "Ana Analyst" } } });
+    await a.worker.tick();
+    expect(a.tenant.iocs.size).toBe(0);
+    expect((await a.list(a.ana)).responseActions).toMatchObject([{ id, state: "removed" }]);
+    expect((await a.listOn(a.ana, other))[0]).toMatchObject({ state: "removed" });
+  });
+
+  test("Remove isn't available on already present records, nor on one not yet sent", async () => {
+    const a = await acme();
+    a.tenant.holdIoc({
+      type: "domain",
+      value: "held.example",
+      action: "detect",
+      severity: "low",
+      platforms: ["windows"],
+      appliedGlobally: true,
+      source: "Console",
+      description: "",
+    });
+    const inTool = await a.take(a.ana, await a.link("domain", "held.example"));
+    const domain = await a.link("domain", "evil.example");
+    const pending = await a.take(a.ana, domain);
+    const present = await a.take(a.ana, domain);
+    expect((await a.remove(a.ana, pending.body.responseAction!.id)).body).toEqual({ error: "Only an Active Response Action can be removed" });
+    await a.worker.tick();
+
+    for (const r of [inTool, present]) {
+      expect(await a.remove(a.ana, r.body.responseAction!.id)).toEqual({
+        status: 409,
+        body: { error: "Argus didn't create this Response Action, so it can't remove it; dismiss it instead" },
+      });
+    }
+    expect((await a.remove(a.ana, "no-such-action")).status).toBe(404);
+    await a.worker.tick();
+    expect(a.tenant.iocsDeleted).toEqual([]);
+  });
+
+  test("removal relied on by other Cases needs confirmation, naming those the person can see; then their records are Removed too", async () => {
+    const a = await acme();
+    const domain = await a.link("domain", "evil.example");
+    const created = await a.take(a.ana, domain);
+    // One on the same Case relies on it too, but needs no confirmation.
+    const sameCase = await a.take(a.owner, domain);
+    await a.worker.tick();
+
+    const second = await a.open("Second wave");
+    const secret = await a.open("Executive mailbox compromise");
+    for (const n of [second, secret]) await a.take(a.ana, await a.link("domain", "evil.example", n), { on: n });
+    const me = await (await a.owner.api.me.$get()).json();
+    if (!("user" in me)) throw new Error("Not signed in");
+    await a.owner.api.cases[":number"].$patch({ param: param(secret), json: { assigneeId: me.user.id, restricted: true } });
+
+    const id = created.body.responseAction!.id;
+    expect(await a.remove(a.ana, id)).toEqual({
+      status: 409,
+      body: { error: "2 other Cases rely on this Response Action; confirm to remove it anyway", relyingCases: [{ number: second, title: "Second wave" }], otherCases: 1 },
+    });
+    expect((await a.remove(a.owner, id)).body).toMatchObject({
+      relyingCases: [
+        { number: second, title: "Second wave" },
+        { number: secret, title: "Executive mailbox compromise" },
+      ],
+      otherCases: 0,
+    });
+    expect((await a.list(a.ana)).responseActions[0]).toMatchObject({ state: "active" });
+
+    expect((await a.remove(a.ana, id, { confirmRelying: true })).body.responseAction).toMatchObject({ state: "removing" });
+    await a.worker.tick();
+    expect(a.tenant.iocsDeleted).toHaveLength(1);
+    expect((await a.list(a.ana)).responseActions.map((r) => [r.id, r.state])).toEqual([
+      [id, "removed"],
+      [sameCase.body.responseAction!.id, "removed"],
+    ]);
+    expect((await a.listOn(a.ana, second))[0]).toMatchObject({ state: "removed", origin: "already_present", dismissedBy: null });
+    expect((await a.listOn(a.owner, secret))[0]).toMatchObject({ state: "removed" });
+
+    // Each relying Case's Timeline says so, without naming the Case that removed it.
+    const secondTimeline = await (await a.ana.api.cases[":number"].timeline.$get({ param: param(second) })).json();
+    if (!("entries" in secondTimeline)) throw new Error("Could not read the Timeline");
+    expect(secondTimeline.entries.at(-1)!.body).toBe(
+      "Response Action removed: Argus removed the custom IOC for Domain evil[.]example from CrowdStrike Falcon at the request of the Case that sent it, so this Case no longer records it as present.",
+    );
+    expect(JSON.stringify(secondTimeline)).not.toContain(`C-${a.number}`);
+  });
+
+  test("a value sent from another Case while being removed is recorded already present, and Removed with it", async () => {
+    const a = await acme();
+    const { body } = await a.take(a.ana, await a.link("domain", "evil.example"));
+    await a.worker.tick();
+    await a.remove(a.ana, body.responseAction!.id);
+    const other = await a.open("Second wave");
+    const during = await a.take(a.ana, await a.link("domain", "evil.example", other), { on: other });
+    expect(during.body.responseAction).toMatchObject({ state: "active", origin: "already_present" });
+    await a.worker.tick();
+    expect((await a.listOn(a.ana, other))[0]).toMatchObject({ state: "removed" });
+    expect(a.tenant.iocsCreated).toHaveLength(1);
+  });
+
+  test("on a Closed Case Admins can remove without reopening; Analysts can't, and Guests never can", async () => {
+    const a = await acme();
+    const domain = await a.take(a.ana, await a.link("domain", "evil.example"));
+    const hash = await a.take(a.ana, await a.link("sha256", SHA256), { action: "prevent" });
+    await a.worker.tick();
+    expect(await a.remove(a.guest, domain.body.responseAction!.id)).toMatchObject({ status: 403 });
+
+    await a.ana.api.cases[":number"].close.$post({ param: param(a.number), json: { resolution: "true_positive" } });
+    expect(await a.remove(a.ana, domain.body.responseAction!.id)).toEqual({
+      status: 409,
+      body: { error: "This Case is Closed and read-only; an Admin can reopen it" },
+    });
+    expect(await a.remove(a.guest, domain.body.responseAction!.id)).toMatchObject({ status: 403 });
+    expect((await a.remove(a.owner, domain.body.responseAction!.id)).status).toBe(200);
+    await a.worker.tick();
+    expect((await a.list(a.owner)).responseActions.map((r) => r.state)).toEqual(["removed", "active"]);
+    expect((await (await a.owner.api.cases[":number"].$get({ param: param(a.number) })).json())).toMatchObject({ case: { status: "closed" } });
+
+    // A failed removal on a Closed Case: Admins can retry it, Analysts can't.
+    await a.remove(a.owner, hash.body.responseAction!.id);
+    await failAllRemovals(a);
+    expect((await a.retry(a.ana, hash.body.responseAction!.id)).status).toBe(409);
+    expect((await a.retry(a.guest, hash.body.responseAction!.id)).status).toBe(403);
+    expect((await a.retry(a.owner, hash.body.responseAction!.id)).status).toBe(200);
+    await a.worker.tick();
+    expect((await a.list(a.owner)).responseActions.map((r) => r.state)).toEqual(["removed", "removed"]);
+  });
+
+  test("a removal after Response Actions were turned off fails", async () => {
+    const a = await acme();
+    const { body } = await a.take(a.ana, await a.link("domain", "evil.example"));
+    await a.worker.tick();
+    await a.remove(a.ana, body.responseAction!.id);
+    await a.owner.api.integrations[":id"]["response-actions"].$put({ param: { id: a.integrationId }, json: { enabled: false } });
+    await a.worker.tick();
+    expect((await a.list(a.ana)).responseActions).toMatchObject([
+      { state: "failed", lastError: "Response Actions were turned off for the Integration before this was removed" },
+    ]);
+    expect(a.tenant.iocsDeleted).toEqual([]);
+  });
+
+  test("each removal step is on the Timeline, in the Audit Log, and signalled to live sockets", async () => {
+    const a = await acme();
+    const { body } = await a.take(a.ana, await a.link("domain", "evil.example"));
+    const id = body.responseAction!.id;
+    await a.worker.tick();
+    const member = await a.t.connect(a.owner);
+    const guest = await a.t.connect(a.guest);
+
+    await a.remove(a.owner, id);
+    expect(await member.next((m) => m.type === "case")).toEqual({ type: "case", number: a.number });
+    expect(await guest.next((m) => m.type === "case")).toEqual({ type: "case", number: a.number });
+    a.tenant.refuseIocs = "Deleting a custom IOC in Falcon failed: 403 access denied";
+    await failAllRemovals(a);
+    await a.retry(a.ana, id);
+    await a.worker.tick();
+    expect(await member.next((m) => m.type === "case")).toEqual({ type: "case", number: a.number });
+
+    const what = "Domain evil[.]example";
+    expect((await a.timeline(a.ana)).slice(2).map((e) => ({ body: e.body, by: e.recordedBy.name }))).toEqual([
+      { body: `Response Action removal asked for by Olive Owner: remove the custom IOC for ${what} from CrowdStrike Falcon.`, by: "Olive Owner" },
+      { body: `Response Action removal failed: Argus could not remove the custom IOC for ${what} from CrowdStrike Falcon.`, by: "Olive Owner" },
+      { body: `Response Action removal retried by Ana Analyst: remove the custom IOC for ${what} from CrowdStrike Falcon.`, by: "Ana Analyst" },
+      { body: `Response Action removed: Argus removed the custom IOC for ${what} from CrowdStrike Falcon.`, by: "Ana Analyst" },
+    ]);
+    // The Guest sees the same Timeline: no Integration, no error.
+    expect((await a.timeline(a.guest)).map((e) => e.body)).toEqual((await a.timeline(a.ana)).map((e) => e.body));
+
+    const target = `Falcon custom IOC: ${what}`;
+    expect((await a.auditLog()).filter((e) => e.action.startsWith("response_action.")).toReversed().slice(2)).toMatchObject([
+      { action: "response_action.removal_requested", actor: { type: "member", name: "Olive Owner" }, target, after: "Remove from CrowdStrike Falcon" },
+      { action: "response_action.removal_failed", actor: { type: "system", name: "Argus" }, target, after: "Deleting a custom IOC in Falcon failed: 403 access denied" },
+      { action: "response_action.removal_retried", actor: { type: "member", name: "Ana Analyst" }, target },
+      { action: "response_action.removed", actor: { type: "system", name: "Argus" }, target, after: "Removed from CrowdStrike Falcon" },
+    ]);
+
+    const report = await (await a.owner.api.cases[":number"].report.$get({ param: param(a.number), query: { variant: "complete", format: "markdown" } })).text();
+    expect(report).toContain("Removed");
+    expect(report).toContain("Removal asked for by:");
   });
 });

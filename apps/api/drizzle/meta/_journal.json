@@ -232,6 +232,13 @@
       "when": 1793918090009,
       "tag": "0032_response_actions_already_present",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1793931467275,
+      "tag": "0033_response_actions_removal",
+      "breakpoints": true
     }
   ]
 }

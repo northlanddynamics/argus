@@ -305,6 +305,15 @@ test("an Analyst sends an Observable on a Case to Falcon as a custom IOC; it bec
     await row.getByText("Active").waitFor();
     await row.getByText(/^Sent /).waitFor();
     expect(falcon.tenant("falcon-client-0001").iocsCreated).toMatchObject([{ type: "domain", value: "invoice-portal.biz", action: "detect" }]);
+
+    // Removed again from the Case: Removing until the worker deletes it in Falcon, then Removed.
+    await row.getByRole("button", { name: "Remove the Response Action on invoice-portal.biz" }).click();
+    const confirm = page.getByRole("dialog", { name: "Remove from Falcon" });
+    await confirm.getByRole("button", { name: "Remove", exact: true }).click();
+    await row.getByText("Removing").waitFor();
+    await sender.tick();
+    await row.getByText("Removed", { exact: true }).waitFor();
+    expect(falcon.tenant("falcon-client-0001").iocs.size).toBe(0);
   } finally {
     await stop();
   }

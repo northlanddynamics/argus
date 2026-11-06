@@ -14,5 +14,7 @@ export const NOTIFICATION_KINDS = [
   "task_overdue",
   /** A Response Action you took failed after its retries. */
   "response_action_failed",
+  /** A Response Action you asked to remove could not be removed after its retries. */
+  "response_action_removal_failed",
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];

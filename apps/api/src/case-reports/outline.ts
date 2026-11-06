@@ -181,6 +181,7 @@ export function outline(report: CaseReport): Block[] {
           : []),
         ...(r.origin === "in_tool" ? [[label("Origin: "), text("Already present in Falcon")]] : []),
         ...(r.dismissedBy && r.dismissedAt ? [[label("Dismissed by: "), text(byAt(r.dismissedBy, r.dismissedAt))]] : []),
+        ...(r.removalRequestedBy && r.removalRequestedAt ? [[label("Removal asked for by: "), text(byAt(r.removalRequestedBy, r.removalRequestedAt))]] : []),
         ...(r.falcon
           ? [[label("Action: "), text(`${falconIocActionLabel[r.falcon.action]}, severity ${severityLabel[r.falcon.severity]}`)]]
           : []),

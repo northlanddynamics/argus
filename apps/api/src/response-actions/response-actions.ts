@@ -1,7 +1,7 @@
-import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { casePolicy, NotPermitted, visibleCases, visibleItems } from "../access/policy";
-import { actorOf, CaseNotFound, lockCase } from "../cases/cases";
+import { actorOf, CaseClosed, CaseNotFound, lockCase } from "../cases/cases";
 import { type CaseActor, recordCaseAudit } from "../cases/case-audit-log";
 import { type CaseAuditAction, type Severity, severityLabel } from "../cases/vocabulary";
 import type { Clock } from "../clock";
@@ -59,6 +59,11 @@ import {
  * Several can be taken at once: one per Observable per chosen Integration. An Observable a Provider
  * doesn't take is skipped, with the reason, and the rest go ahead. Sending an Ignored Observable
  * needs the request to confirm it.
+ *
+ * Only the Response Action that created something in a tool can remove it: it is Removing, with its
+ * removal queued for the worker, and Removed once the tool has deleted it or says it is already
+ * gone. Other Cases' "already present" records relying on it are then Removed too, and removing it
+ * while they rely on it needs the request to confirm it. On a Closed Case only Admins remove.
  */
 
 /** The Observable isn't of a type the Integration's Provider takes. */
@@ -78,6 +83,22 @@ export class ResponseActionNotFound extends Error {
 export class NotRetryable extends Error {
   constructor() {
     super("Only a Failed Response Action can be retried");
+  }
+}
+/** Only an Active Response Action that Argus created can be removed: an "already present" one is dismissed instead. */
+export class NotRemovable extends Error {}
+/**
+ * Other Cases have "already present" records relying on the Response Action to be removed, and the
+ * request didn't confirm removing it anyway. Names the Cases the person can see and counts the rest.
+ */
+export class RelyingCasesNotConfirmed extends Error {
+  readonly cases: { number: number; title: string }[];
+  readonly otherCases: number;
+  constructor(named: { number: number; title: string }[], otherCases: number) {
+    const total = named.length + otherCases;
+    super(`${total === 1 ? "Another Case relies" : `${total} other Cases rely`} on this Response Action; confirm to remove it anyway`);
+    this.cases = named;
+    this.otherCases = otherCases;
   }
 }
 /** Only an Active "already present" record can be dismissed: Argus removes what it created instead. */
@@ -164,6 +185,9 @@ export type ResponseActionView = {
   /** Who dismissed it from this Case, and when. */
   dismissedBy: Person | null;
   dismissedAt: string | null;
+  /** Who last asked Argus to remove it from the tool, and when. A Failed one with these set failed to be removed. */
+  removalRequestedBy: Person | null;
+  removalRequestedAt: string | null;
 };
 
 /** A Response Action taken on an Observable, as its page lists it. */
@@ -200,7 +224,23 @@ const paramsOf = (r: Pick<Row, "falconAction" | "severity">) =>
   `${falconIocActionLabel[r.falconAction!]}, severity ${severityLabel[r.severity!]}`;
 
 /** What happened to a Response Action, as its Timeline Entry and Case Audit Log entry say it. */
-export type StateChange = "requested" | "sent" | "failed" | "retried" | "already_present" | "in_tool" | "dismissed";
+export type StateChange =
+  | "requested"
+  | "sent"
+  | "failed"
+  | "retried"
+  | "already_present"
+  | "in_tool"
+  | "dismissed"
+  | "removal_requested"
+  | "removal_retried"
+  | "removal_failed"
+  | "removed"
+  | "already_gone"
+  | "relied_on_removed";
+
+/** The changes that follow a request to remove it: their Timeline Entries are recorded by whoever asked. */
+const REMOVAL_CHANGES = new Set<StateChange>(["removal_requested", "removal_retried", "removal_failed", "removed", "already_gone"]);
 
 const auditAction: Record<StateChange, CaseAuditAction> = {
   requested: "response_action.requested",
@@ -210,6 +250,12 @@ const auditAction: Record<StateChange, CaseAuditAction> = {
   already_present: "response_action.already_present",
   in_tool: "response_action.already_in_tool",
   dismissed: "response_action.dismissed",
+  removal_requested: "response_action.removal_requested",
+  removal_retried: "response_action.removal_retried",
+  removal_failed: "response_action.removal_failed",
+  removed: "response_action.removed",
+  already_gone: "response_action.removed",
+  relied_on_removed: "response_action.removed",
 };
 
 /** The Timeline Entry's text: the Provider, never the Integration's name, and never an error. */
@@ -231,6 +277,18 @@ function timelineBody(change: StateChange, r: Row, o: { type: ObservableType; va
       return `Response Action: ${what} was already in ${tool} as a custom IOC, so Argus left it unchanged.`;
     case "dismissed":
       return `Response Action dismissed by ${by}: this Case no longer records ${what} as already in ${tool}; ${tool} was left unchanged.`;
+    case "removal_requested":
+      return `Response Action removal asked for by ${by}: remove the custom IOC for ${what} from ${tool}.`;
+    case "removal_retried":
+      return `Response Action removal retried by ${by}: remove the custom IOC for ${what} from ${tool}.`;
+    case "removal_failed":
+      return `Response Action removal failed: Argus could not remove the custom IOC for ${what} from ${tool}.`;
+    case "removed":
+      return `Response Action removed: Argus removed the custom IOC for ${what} from ${tool}.`;
+    case "already_gone":
+      return `Response Action removed: the custom IOC for ${what} was already gone from ${tool}.`;
+    case "relied_on_removed":
+      return `Response Action removed: Argus removed the custom IOC for ${what} from ${tool} at the request of the Case that sent it, so this Case no longer records it as present.`;
   }
 }
 
@@ -244,6 +302,15 @@ function auditDetail(change: StateChange, r: Row) {
       return `Already present in ${tool}; nothing was written`;
     case "dismissed":
       return `Dismissed; ${tool} left unchanged`;
+    case "removed":
+      return `Removed from ${tool}`;
+    case "already_gone":
+      return `Already gone from ${tool}; nothing to remove`;
+    case "relied_on_removed":
+      return `Removed from ${tool} by the Case that sent it`;
+    case "removal_requested":
+    case "removal_retried":
+      return `Remove from ${tool}`;
     default:
       return paramsOf(r);
   }
@@ -266,7 +333,8 @@ export async function recordStateChange(
     by?: { id: string; name: string };
   },
 ) {
-  const [taker] = by ? [by] : await tx.select({ name: user.name }).from(user).where(eq(user.id, r.createdById));
+  const recorderId = by?.id ?? (REMOVAL_CHANGES.has(change) && r.removalRequestedById ? r.removalRequestedById : r.createdById);
+  const [taker] = by ? [by] : await tx.select({ name: user.name }).from(user).where(eq(user.id, recorderId));
   await tx.insert(timelineEntries).values({
     id: secureId(),
     organizationId: r.organizationId,
@@ -280,7 +348,7 @@ export async function recordStateChange(
     internal: r.internal,
     responseActionId: r.id,
     version: 1,
-    recordedById: by?.id ?? r.createdById,
+    recordedById: recorderId,
     recordedAt: now,
   });
   await recordCaseAudit(tx, {
@@ -295,13 +363,13 @@ export async function recordStateChange(
   await publish(tx, { kind: "case", organizationId: r.organizationId, caseId: r.caseId, membersOnly: r.internal });
 }
 
-/** Queues an attempt to carry out Response Action `id`, due now. */
-const queueSend = (tx: Tx, organizationId: string, id: string, now: Date) =>
+/** Queues an attempt to send Response Action `id`, or to remove it, due now. */
+const queue = (tx: Tx, organizationId: string, id: string, now: Date, operation: "send" | "remove" = "send") =>
   tx.insert(responseActionOutbox).values({
     id: secureId(),
     organizationId,
     responseActionId: id,
-    operation: "send",
+    operation,
     state: "pending",
     nextAttemptAt: now,
     createdAt: now,
@@ -317,8 +385,9 @@ const lockTarget = (tx: Tx, r: { integrationId: string; kind: ResponseActionKind
 const TARGET_LOCK_NAMESPACE = 0x41524741;
 
 /**
- * The Pending or Active Response Action that Argus created for this Integration, kind and target, if
- * any (other than `except`). Call with the target locked.
+ * The Response Action that Argus created for this Integration, kind and target and that still holds
+ * it (Pending, Active, Removing, or Failed to be removed), if any (other than `except`). Call with the
+ * target locked. Locks it against changes, so that once a removal is done it isn't relied on.
  */
 async function liveCreated(
   tx: Tx,
@@ -336,11 +405,12 @@ async function liveCreated(
         eq(t.targetType, r.targetType),
         eq(t.targetValue, r.targetValue),
         eq(t.origin, "created"),
-        inArray(t.state, [...LIVE_STATES]),
+        or(inArray(t.state, [...LIVE_STATES]), and(eq(t.state, "failed"), isNotNull(t.removalRequestedAt))),
         except ? ne(t.id, except) : undefined,
       ),
     )
-    .limit(1);
+    .limit(1)
+    .for("key share");
   return found?.id ?? null;
 }
 
@@ -352,6 +422,16 @@ async function eligible(db: Db | Tx, organizationId: string) {
     .where(and(eq(integrations.organizationId, organizationId), eq(integrations.responseActions, true), eq(integrations.provider, "crowdstrike")))
     .orderBy(asc(integrations.createdAt), asc(integrations.id));
   return rows.filter((r) => providerCapabilities[r.provider].responseActions);
+}
+
+/** The other Cases (than `caseId`) whose Active "already present" records rely on Response Action `id`. */
+async function relyingCaseIds(tx: Tx, id: string, caseId: string) {
+  const t = responseActions;
+  const rows = await tx
+    .selectDistinct({ caseId: t.caseId })
+    .from(t)
+    .where(and(eq(t.presentFromId, id), eq(t.state, "active"), eq(t.origin, "already_present"), ne(t.caseId, caseId)));
+  return rows.map((x) => x.caseId);
 }
 
 /** Response Action `id` on the locked Case `caseId`, locked, with its Observable; else `ResponseActionNotFound`. */
@@ -383,6 +463,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
     const originalAction = alias(responseActions, "original");
     const originalCaseRow = alias(cases, "original_case");
     const dismisser = alias(user, "dismisser");
+    const remover = alias(user, "remover");
     const rows = await db
       .select({
         row: r,
@@ -391,6 +472,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
         integrationName: integrations.name,
         requestedByName: user.name,
         dismissedByName: dismisser.name,
+        removerName: remover.name,
         original: { at: sql<Date>`coalesce(${originalAction.sentAt}, ${originalAction.createdAt})`.mapWith(originalAction.createdAt), caseId: originalAction.caseId },
         originalCase: { number: originalCaseRow.number, title: originalCaseRow.title },
       })
@@ -399,6 +481,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
       .innerJoin(integrations, eq(r.integrationId, integrations.id))
       .innerJoin(user, eq(r.createdById, user.id))
       .leftJoin(dismisser, eq(r.dismissedById, dismisser.id))
+      .leftJoin(remover, eq(r.removalRequestedById, remover.id))
       .leftJoin(originalAction, eq(r.presentFromId, originalAction.id))
       .leftJoin(originalCaseRow, eq(originalAction.caseId, originalCaseRow.id))
       .where(and(eq(r.caseId, caseId), visibleItems(me, r.internal), ids ? inArray(r.id, [...ids]) : undefined))
@@ -411,7 +494,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
         ? (await db.select({ id: cases.id }).from(cases).where(and(visibleCases(me), inArray(cases.id, originalCaseIds)))).map((c) => c.id)
         : [],
     );
-    return rows.map(({ row, observableType, observableValue, integrationName, requestedByName, dismissedByName, original, originalCase }) => ({
+    return rows.map(({ row, observableType, observableValue, integrationName, requestedByName, dismissedByName, removerName, original, originalCase }) => ({
       id: row.id,
       kind: row.kind,
       state: row.state,
@@ -432,6 +515,8 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
           : null,
       dismissedBy: row.dismissedById && dismissedByName ? { id: row.dismissedById, name: dismissedByName } : null,
       dismissedAt: row.dismissedAt?.toISOString() ?? null,
+      removalRequestedBy: row.removalRequestedById && removerName ? { id: row.removalRequestedById, name: removerName } : null,
+      removalRequestedAt: row.removalRequestedAt?.toISOString() ?? null,
     }));
   }
 
@@ -544,7 +629,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
           if (presentFromId) {
             await recordStateChange(tx, { r: r!, observable, change: "already_present", actor: actorOf(me), now });
           } else {
-            await queueSend(tx, me.organizationId, id, now);
+            await queue(tx, me.organizationId, id, now);
             await recordStateChange(tx, { r: r!, observable, change: "requested", actor: actorOf(me), now });
           }
           ids.push(id);
@@ -601,17 +686,30 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
     },
 
     /**
-     * Tries a Failed Response Action again: it is Pending, and queued for the worker. If Argus has sent
-     * the same thing from another Case since, it is recorded as already present instead. Not on a
-     * Closed Case.
+     * Tries a Failed Response Action again. If sending it failed, it is Pending and queued for the
+     * worker; if Argus has sent the same thing from another Case since, it is recorded as already
+     * present instead. Not on a Closed Case. If removing it failed, it is Removing and its removal is
+     * queued again, by whoever retried; on a Closed Case only an Admin may.
      */
     async retry(me: Membership, number: number, id: string) {
       if (!casePolicy.canWork(me)) throw new NotPermitted();
       const now = clock.now();
       const caseId = await db.transaction(async (tx) => {
-        const current = await lockCase(tx, me, number);
+        const current = await lockCase(tx, me, number, "allow");
         const { r, observable } = await lock(tx, current.id, id);
         if (r.state !== "failed") throw new NotRetryable();
+        if (r.removalRequestedAt) {
+          if (current.status === "closed" && !casePolicy.canReopen(me)) throw new CaseClosed();
+          const [removing] = await tx
+            .update(responseActions)
+            .set({ state: "removing", stateChangedAt: now, lastError: null, removalRequestedById: me.userId, removalRequestedAt: now })
+            .where(eq(responseActions.id, id))
+            .returning();
+          await queue(tx, r.organizationId, id, now, "remove");
+          await recordStateChange(tx, { r: removing!, observable, change: "removal_retried", actor: actorOf(me), now, by: { id: me.userId, name: me.name } });
+          return current.id;
+        }
+        if (current.status === "closed") throw new CaseClosed();
         await lockTarget(tx, r);
         const presentFromId = await liveCreated(tx, r, r.id);
         if (presentFromId) {
@@ -628,8 +726,46 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
           .set({ state: "pending", stateChangedAt: now, lastError: null })
           .where(eq(responseActions.id, id))
           .returning();
-        await queueSend(tx, r.organizationId, id, now);
+        await queue(tx, r.organizationId, id, now);
         await recordStateChange(tx, { r: pending!, observable, change: "retried", actor: actorOf(me), now });
+        return current.id;
+      });
+      return (await select(me, caseId, [id]))[0]!;
+    },
+
+    /**
+     * Removes an Active Response Action that Case `number` created: it is Removing, and its removal is
+     * queued for the worker, which deletes it in the tool. When other Cases have "already present"
+     * records relying on it, throws `RelyingCasesNotConfirmed` unless `confirmRelying`. On a Closed
+     * Case only an Admin may, without reopening it; others get `CaseClosed`.
+     */
+    async remove(me: Membership, number: number, id: string, { confirmRelying = false }: { confirmRelying?: boolean } = {}) {
+      if (!casePolicy.canWork(me)) throw new NotPermitted();
+      const now = clock.now();
+      const caseId = await db.transaction(async (tx) => {
+        const current = await lockCase(tx, me, number, "allow");
+        if (current.status === "closed" && !casePolicy.canReopen(me)) throw new CaseClosed();
+        const { r, observable } = await lock(tx, current.id, id);
+        if (r.origin !== "created") throw new NotRemovable("Argus didn't create this Response Action, so it can't remove it; dismiss it instead");
+        if (r.state !== "active") throw new NotRemovable("Only an Active Response Action can be removed");
+        if (!confirmRelying) {
+          const relying = await relyingCaseIds(tx, r.id, current.id);
+          if (relying.length) {
+            const named = await tx
+              .select({ number: cases.number, title: cases.title })
+              .from(cases)
+              .where(and(visibleCases(me), inArray(cases.id, relying)))
+              .orderBy(asc(cases.number));
+            throw new RelyingCasesNotConfirmed(named, relying.length - named.length);
+          }
+        }
+        const [removing] = await tx
+          .update(responseActions)
+          .set({ state: "removing", stateChangedAt: now, lastError: null, removalRequestedById: me.userId, removalRequestedAt: now })
+          .where(eq(responseActions.id, id))
+          .returning();
+        await queue(tx, r.organizationId, id, now, "remove");
+        await recordStateChange(tx, { r: removing!, observable, change: "removal_requested", actor: actorOf(me), now, by: { id: me.userId, name: me.name } });
         return current.id;
       });
       return (await select(me, caseId, [id]))[0]!;

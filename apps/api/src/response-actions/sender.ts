@@ -23,6 +23,10 @@ import { recordStateChange } from "./response-actions";
  *
  * Before creating anything it looks the value up in the tool: if it is already there, the Response
  * Action is Active and "already present in the tool", and nothing is written.
+ *
+ * Removing deletes what Argus created, by the id the tool gave it. If the tool says it is already
+ * gone, the removal has still succeeded. Once removed, every "already present" record relying on it,
+ * on any Case, is Removed too. When removal fails for good, the Member who asked for it is notified.
  */
 
 /** The most attempts made in one transaction. */
@@ -55,8 +59,9 @@ export function createResponseActionSender(
     return client;
   };
 
-  /** Response Action `r` failed for good: it is Failed, and whoever took it hears so. */
+  /** Response Action `r` failed for good: it is Failed, and whoever took it (or asked to remove it) hears so. */
   const giveUp = async (tx: Tx, due: Due, message: string, now: Date) => {
+    const removing = due.attempt.operation === "remove";
     await tx
       .update(responseActionOutbox)
       .set({ state: "failed", attempts: due.attempt.attempts + 1, lastError: message, finishedAt: now })
@@ -66,7 +71,7 @@ export function createResponseActionSender(
       .set({ state: "failed", stateChangedAt: now, lastError: message })
       .where(eq(responseActions.id, due.r.id))
       .returning();
-    await recordStateChange(tx, { r: failed!, observable: due.observable, change: "failed", actor: ARGUS, now, detail: message });
+    await recordStateChange(tx, { r: failed!, observable: due.observable, change: removing ? "removal_failed" : "failed", actor: ARGUS, now, detail: message });
     const theCase = {
       id: due.r.caseId,
       organizationId: due.r.organizationId,
@@ -75,7 +80,35 @@ export function createResponseActionSender(
       caseRoleHolderIds: await caseRoleHolderIds(tx, due.r.caseId),
       guests: await guestGrantsOf(tx, due.r.caseId),
     };
-    await notify(tx, theCase, [{ recipientId: due.r.createdById, kind: "response_action_failed", actorId: null }], now, failed!);
+    const notice = removing
+      ? { recipientId: due.r.removalRequestedById ?? due.r.createdById, kind: "response_action_removal_failed" as const, actorId: null }
+      : { recipientId: due.r.createdById, kind: "response_action_failed" as const, actorId: null };
+    await notify(tx, theCase, [notice], now, failed!);
+  };
+
+  /**
+   * Response Action `due.r` is gone from the tool: it is Removed, and so is every Active "already
+   * present" record relying on it, each on its own Case.
+   */
+  const removed = async (tx: Tx, due: Due, deleted: boolean, now: Date) => {
+    await tx
+      .update(responseActionOutbox)
+      .set({ state: "done", attempts: due.attempt.attempts + 1, lastError: null, finishedAt: now })
+      .where(eq(responseActionOutbox.id, due.attempt.id));
+    const [gone] = await tx
+      .update(responseActions)
+      .set({ state: "removed", stateChangedAt: now, lastError: null })
+      .where(eq(responseActions.id, due.r.id))
+      .returning();
+    await recordStateChange(tx, { r: gone!, observable: due.observable, change: deleted ? "removed" : "already_gone", actor: ARGUS, now });
+    const relying = await tx
+      .update(responseActions)
+      .set({ state: "removed", stateChangedAt: now })
+      .where(and(eq(responseActions.presentFromId, due.r.id), eq(responseActions.state, "active"), eq(responseActions.origin, "already_present")))
+      .returning();
+    for (const r of relying) {
+      await recordStateChange(tx, { r, observable: due.observable, change: "relied_on_removed", actor: ARGUS, now });
+    }
   };
 
   type Due = {
@@ -126,14 +159,20 @@ export function createResponseActionSender(
           responseActionsOn: row.responseActionsOn,
           provider: row.provider,
         };
+        const removing = due.attempt.operation === "remove";
         if (!due.responseActionsOn || !providerCapabilities[due.provider].responseActions) {
-          await giveUp(tx, due, "Response Actions were turned off for the Integration before this was sent", now);
+          await giveUp(tx, due, `Response Actions were turned off for the Integration before this was ${removing ? "removed" : "sent"}`, now);
           continue;
         }
         try {
           const client = await clientFor(due.r.integrationId);
           if (!client) {
             await giveUp(tx, due, "The Integration no longer exists", now);
+            continue;
+          }
+          if (removing) {
+            // Only ever what Argus created, by the id Falcon gave it.
+            await removed(tx, due, due.r.externalId ? await client.deleteIoc(due.r.externalId) : false, now);
             continue;
           }
           // Never overwrite what is already there: if Falcon holds it, nothing is written.

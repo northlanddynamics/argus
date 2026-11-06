@@ -246,8 +246,10 @@ export function fakeFalcon() {
       },
       async deleteIoc(id) {
         iocCall();
-        if (!t.iocs.delete(id)) throw new Error("Deleting a custom IOC in Falcon failed: 404 not found");
+        // Already gone: Falcon says so, and nothing is deleted.
+        if (!t.iocs.delete(id)) return false;
         t.iocsDeleted.push(id);
+        return true;
       },
     };
   };
