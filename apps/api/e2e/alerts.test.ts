@@ -4,9 +4,11 @@ import { chromium, type Browser, type Page } from "playwright";
 import { defaultWebDist } from "../src/config";
 import { createCommentSyncer } from "../src/crowdstrike/comment-sync";
 import { createStreamWorker } from "../src/crowdstrike/stream-worker";
+import { createMimecastHealthChecker } from "../src/mimecast/health";
 import { createResponseActionSender } from "../src/response-actions/sender";
 import { createServerApp } from "../src/server-app";
 import { fakeFalcon } from "../src/test/fake-falcon";
+import { fakeMimecast } from "../src/test/fake-mimecast";
 import { buildTestApp } from "../src/test/harness";
 
 let browser: Browser;
@@ -454,6 +456,71 @@ test("an Analyst pivots from search to an Observable's page and its Case, sends 
     await page.getByText("IOC alert sent through CrowdStrike — EU").waitFor();
     await sender.tick();
     expect(falcon.tenant("falcon-client-0002").iocsCreated.map((i) => i.value)).toEqual(["invoice-portal.biz"]);
+  } finally {
+    await stop();
+  }
+}, 60_000);
+
+test("the Owner adds a Mimecast Integration; an Analyst blocks an email sender's domain from a Case, which links the domain first", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  const mimecast = fakeMimecast();
+  const health = createMimecastHealthChecker(t.deps, { connect: mimecast.connect });
+  const sender = createResponseActionSender(t.deps, { mimecast: mimecast.connect });
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    await owner.api.organization.invitations.$post({ json: { email: "ana@acme.example", role: "analyst" } });
+    const ana = await t.acceptInvite("ana@acme.example", PASSWORD, "Ana Analyst");
+
+    // The Owner adds it: no cloud and no write-back to choose; the worker checks its credentials.
+    const ownerPage = await browser.newPage();
+    await signIn(ownerPage, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
+    await ownerPage.goto(`${baseUrl}/settings/integrations`);
+    await ownerPage.getByRole("button", { name: "+ Add Mimecast Integration" }).click();
+    const dialog = ownerPage.getByRole("dialog", { name: "Add a Mimecast Integration" });
+    expect(await dialog.getByLabel("Falcon cloud").count()).toBe(0);
+    expect(await dialog.getByLabel("Write back to Falcon").count()).toBe(0);
+    await dialog.getByLabel("Name").fill("Mimecast");
+    await dialog.getByLabel("API application client ID").fill("mimecast-app-0003");
+    await dialog.getByLabel("API application client secret").fill("mimecast-secret");
+    await dialog.getByLabel("Response Actions").click();
+    await dialog.getByRole("button", { name: "Add Integration" }).click();
+    const card = ownerPage.getByTestId("integration-Mimecast");
+    await card.getByText("Connecting").waitFor();
+    await health.tick();
+    await card.getByText("Connected").waitFor();
+    await card.getByText(/^Credentials checked/).waitFor();
+    await card.getByText("Block defaults").waitFor();
+
+    await ana.api.cases.$post({ json: { title: "Phishing at Acme", caseType: "phishing", severity: "high" } });
+    await ana.api.cases[":number"].observables.$post({ param: { number: "1" }, json: { type: "email", value: "billing@invoice-portal.biz" } });
+
+    const page = await browser.newPage();
+    await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
+    await page.goto(`${baseUrl}/cases/1/observables`);
+    await page.getByRole("button", { name: "Actions for Email billing@invoice-portal.biz" }).click();
+    await page.getByRole("menuitem", { name: "Take action" }).click();
+    const group = page.getByRole("group", { name: "Mimecast" });
+    await group.getByText("Organization-wide").waitFor();
+    await group.getByRole("menuitem", { name: /^Block domain/ }).click();
+    await page.getByText("Block domain sent through Mimecast").waitFor();
+    await page.getByTestId("observable-invoice-portal.biz").waitFor();
+    const row = page.getByTestId("response-action-invoice-portal.biz");
+    await row.getByText("Pending").waitFor();
+
+    await sender.tick();
+    await row.getByText("Active").waitFor();
+    expect(mimecast.account("mimecast-app-0003").created).toMatchObject([{ type: "domain", value: "invoice-portal.biz", appliesTo: "everyone" }]);
+
+    // Removed from its row: Mimecast stops blocking it.
+    await row.getByRole("cell").first().click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Take action" }).click();
+    await page.getByRole("menuitem", { name: /^Remove block/ }).click();
+    await page.getByRole("dialog", { name: "Remove from Mimecast" }).getByRole("button", { name: "Remove" }).click();
+    await row.getByText("Removing").waitFor();
+    await sender.tick();
+    await row.getByText("Removed").waitFor();
+    expect(mimecast.account("mimecast-app-0003").blocked.size).toBe(0);
   } finally {
     await stop();
   }

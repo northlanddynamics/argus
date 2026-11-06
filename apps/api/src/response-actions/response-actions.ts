@@ -20,12 +20,11 @@ import {
 import { secureId } from "../ids";
 import { type Provider, providerCapabilities, providerLabel } from "../integrations/vocabulary";
 import type { Membership, Participant } from "../members/membership";
-import { NotLinked } from "../observables/observables";
-import { defang, type ObservableType, observableTypeLabel } from "../observables/vocabulary";
+import { linkObservable, NotLinked } from "../observables/observables";
+import { defang, normaliseObservable, type ObservableType, observableTypeLabel } from "../observables/vocabulary";
 import { publish } from "../realtime/signals";
 import {
   type FalconIocAction,
-  type FalconIocType,
   falconAllowsPrevent,
   falconIocActionLabel,
   type FalconIocDefaults,
@@ -35,14 +34,23 @@ import {
   falconIocType,
   iocSeverity,
   LIVE_STATES,
+  type MimecastAction,
+  mimecastTarget,
+  providerActions,
+  providerKind,
+  type ResponseActionAction,
+  responseActionActionLabel,
   type ResponseActionKind,
+  responseActionKindLabel,
   type ResponseActionOrigin,
   type ResponseActionState,
 } from "./vocabulary";
 
 /**
  * Response Actions (ADR 0007): a Member who can work a Case sends one of its Observables to an
- * Integration whose Response Actions setting is on, as a Falcon custom IOC. The Response Action is
+ * Integration whose Response Actions setting is on: to CrowdStrike as a Falcon custom IOC, or to
+ * Mimecast as an Organization-wide Blocked Senders entry for an email address or its domain (the
+ * domain Observable is linked to the Case first if it isn't yet, and is what is blocked). The Response Action is
  * stored Pending with its outbox row in one transaction, and the worker carries it out
  * (`sender.ts`). Guests never take them, and nobody takes one on a Closed Case.
  *
@@ -126,11 +134,14 @@ export class IgnoredNotConfirmed extends Error {
   }
 }
 
-/** A Falcon custom IOC to take: `action` is Detect, or Prevent for hashes. */
+/**
+ * A Response Action to take: for Falcon, `action` is Detect, or Prevent for hashes; for Mimecast,
+ * Block sender or Block domain, for an email address.
+ */
 export type NewResponseAction = {
   observableId: string;
   integrationId: string;
-  action: FalconIocAction;
+  action: ResponseActionAction;
   /** Hidden from the Case's Guests; the Integration's default if left out. */
   internal?: boolean;
   /** Sends it even if it is on the Ignored list. */
@@ -138,13 +149,15 @@ export type NewResponseAction = {
 };
 
 /**
- * Falcon custom IOCs to take at once: one per Observable per Integration. `action` is Detect, or
- * Prevent, which only hashes take: domains and IPs in a Prevent send are skipped.
+ * Response Actions to take at once: one per Observable per Integration, every Integration of the
+ * Provider whose action `action` is. For Falcon it is Detect, or Prevent, which only hashes take:
+ * domains and IPs in a Prevent send are skipped. For Mimecast it is Block sender or Block domain, and
+ * anything but an email address is skipped.
  */
 export type NewResponseActions = {
   observableIds: readonly string[];
   integrationIds: readonly string[];
-  action: FalconIocAction;
+  action: ResponseActionAction;
   /** Hidden from the Case's Guests; each Integration's default if left out. */
   internal?: boolean;
   /** Sends those on the Ignored list too; without it, any among them refuses the whole request. */
@@ -217,18 +230,20 @@ export type ObservableResponseActionView = {
 };
 
 /** The Integrations a Response Action can be sent to, as the Case offers them, with what they send it with. */
-export type EligibleIntegration = { id: string; name: string; provider: string; defaults: FalconIocDefaults };
+export type EligibleIntegration = { id: string; name: string; provider: Provider; defaults: FalconIocDefaults };
 
 type Row = typeof responseActions.$inferSelect;
 
 /** "SHA-256 e3b0…" in full, defanged where it could be clicked. */
 const described = (o: { type: ObservableType; value: string }) => `${observableTypeLabel[o.type]} ${defang(o.type, o.value)}`;
 
-/** How the Case Audit Log names a Response Action. */
-export const responseActionLabel = (o: { type: ObservableType; value: string }) => `Falcon custom IOC: ${described(o)}`;
+/** How the Case Audit Log names a Response Action: "Falcon custom IOC: SHA-256 e3b0…". */
+export const responseActionLabel = (o: { type: ObservableType; value: string }, kind: ResponseActionKind = "falcon_ioc") =>
+  `${responseActionKindLabel[kind]}: ${described(o)}`;
 
-const paramsOf = (r: Pick<Row, "falconAction" | "severity" | "falconPlatforms">) =>
-  [
+/** What it was sent with: "Detect, severity High", or "Block domain, everyone". */
+const paramsOf = (r: Pick<Row, "kind" | "targetType" | "falconAction" | "severity" | "falconPlatforms">) =>
+  r.kind === "mimecast_blocked_sender" ? `${r.targetType === "domain" ? "Block domain" : "Block sender"}, everyone` : [
     falconIocActionLabel[r.falconAction!],
     `severity ${severityLabel[r.severity!]}`,
     ...(r.falconPlatforms && r.falconPlatforms.length < FALCON_IOC_PLATFORMS.length ? [r.falconPlatforms.map((p) => falconIocPlatformLabel[p]).join(", ")] : []),
@@ -269,43 +284,71 @@ const auditAction: Record<StateChange, CaseAuditAction> = {
   relied_on_removed: "response_action.removed",
 };
 
+/** How a Response Action's Timeline Entries and Audit Log entries put it, by kind. */
+function phrasing(r: Row, o: { type: ObservableType; value: string }) {
+  const what = described(o);
+  if (r.kind === "mimecast_blocked_sender") {
+    const tool = providerLabel.mimecast;
+    return {
+      tool,
+      send: `block ${what} in ${tool} as a blocked sender (${paramsOf(r)})`,
+      sent: `Argus blocked ${what} in ${tool} as a blocked sender (${paramsOf(r)})`,
+      notSent: `Argus could not block ${what} in ${tool}`,
+      alreadySent: `${what} was already blocked in ${tool} by Argus, so nothing was sent again`,
+      inTool: `${what} was already a blocked sender in ${tool}, so Argus left it unchanged`,
+      dismissed: `this Case no longer records ${what} as already blocked in ${tool}`,
+      entry: `the blocked sender entry for ${what}`,
+    };
+  }
+  const tool = `${providerLabel.crowdstrike} Falcon`;
+  return {
+    tool,
+    send: `send ${what} to ${tool} as a custom IOC (${paramsOf(r)})`,
+    sent: `Argus sent ${what} to ${tool} as a custom IOC (${paramsOf(r)})`,
+    notSent: `Argus could not send ${what} to ${tool} as a custom IOC`,
+    alreadySent: `${what} was already sent to ${tool} as a custom IOC by Argus, so nothing was sent again`,
+    inTool: `${what} was already in ${tool} as a custom IOC, so Argus left it unchanged`,
+    dismissed: `this Case no longer records ${what} as already in ${tool}`,
+    entry: `the custom IOC for ${what}`,
+  };
+}
+
 /** The Timeline Entry's text: the Provider, never the Integration's name, and never an error. */
 function timelineBody(change: StateChange, r: Row, o: { type: ObservableType; value: string }, by: string) {
-  const what = described(o);
-  const tool = `${providerLabel.crowdstrike} Falcon`;
+  const p = phrasing(r, o);
   switch (change) {
     case "requested":
-      return `Response Action taken by ${by}: send ${what} to ${tool} as a custom IOC (${paramsOf(r)}).`;
+      return `Response Action taken by ${by}: ${p.send}.`;
     case "sent":
-      return `Response Action: Argus sent ${what} to ${tool} as a custom IOC (${paramsOf(r)}).`;
+      return `Response Action: ${p.sent}.`;
     case "failed":
-      return `Response Action failed: Argus could not send ${what} to ${tool} as a custom IOC.`;
+      return `Response Action failed: ${p.notSent}.`;
     case "retried":
-      return `Response Action retried by ${by}: send ${what} to ${tool} as a custom IOC (${paramsOf(r)}).`;
+      return `Response Action retried by ${by}: ${p.send}.`;
     case "already_present":
-      return `Response Action by ${by}: ${what} was already sent to ${tool} as a custom IOC by Argus, so nothing was sent again.`;
+      return `Response Action by ${by}: ${p.alreadySent}.`;
     case "in_tool":
-      return `Response Action: ${what} was already in ${tool} as a custom IOC, so Argus left it unchanged.`;
+      return `Response Action: ${p.inTool}.`;
     case "dismissed":
-      return `Response Action dismissed by ${by}: this Case no longer records ${what} as already in ${tool}; ${tool} was left unchanged.`;
+      return `Response Action dismissed by ${by}: ${p.dismissed}; ${p.tool} was left unchanged.`;
     case "removal_requested":
-      return `Response Action removal asked for by ${by}: remove the custom IOC for ${what} from ${tool}.`;
+      return `Response Action removal asked for by ${by}: remove ${p.entry} from ${p.tool}.`;
     case "removal_retried":
-      return `Response Action removal retried by ${by}: remove the custom IOC for ${what} from ${tool}.`;
+      return `Response Action removal retried by ${by}: remove ${p.entry} from ${p.tool}.`;
     case "removal_failed":
-      return `Response Action removal failed: Argus could not remove the custom IOC for ${what} from ${tool}.`;
+      return `Response Action removal failed: Argus could not remove ${p.entry} from ${p.tool}.`;
     case "removed":
-      return `Response Action removed: Argus removed the custom IOC for ${what} from ${tool}.`;
+      return `Response Action removed: Argus removed ${p.entry} from ${p.tool}.`;
     case "already_gone":
-      return `Response Action removed: the custom IOC for ${what} was already gone from ${tool}.`;
+      return `Response Action removed: ${p.entry} was already gone from ${p.tool}.`;
     case "relied_on_removed":
-      return `Response Action removed: Argus removed the custom IOC for ${what} from ${tool} at the request of the Case that sent it, so this Case no longer records it as present.`;
+      return `Response Action removed: Argus removed ${p.entry} from ${p.tool} at the request of the Case that sent it, so this Case no longer records it as present.`;
   }
 }
 
 /** What the Case Audit Log says of a change, unless an error says it instead. */
 function auditDetail(change: StateChange, r: Row) {
-  const tool = `${providerLabel.crowdstrike} Falcon`;
+  const tool = r.kind === "mimecast_blocked_sender" ? providerLabel.mimecast : `${providerLabel.crowdstrike} Falcon`;
   switch (change) {
     case "already_present":
       return "Already present: sent by Argus before; nothing was sent";
@@ -368,7 +411,7 @@ export async function recordStateChange(
     occurredAt: now,
     actor,
     action: auditAction[change],
-    target: responseActionLabel(observable),
+    target: responseActionLabel(observable, r.kind),
     after: detail ?? auditDetail(change, r),
   });
   await publish(tx, { kind: "case", organizationId: r.organizationId, caseId: r.caseId, membersOnly: r.internal });
@@ -425,12 +468,12 @@ async function liveCreated(
   return found ?? null;
 }
 
-/** The Integrations in `me`'s Organization that take Falcon custom IOCs now. */
+/** The Integrations in `me`'s Organization that take Response Actions now, of any Provider. */
 async function eligible(db: Db | Tx, organizationId: string): Promise<EligibleIntegration[]> {
   const rows = await db
     .select({ id: integrations.id, name: integrations.name, provider: integrations.provider, defaults: integrations.responseActionDefaults })
     .from(integrations)
-    .where(and(eq(integrations.organizationId, organizationId), eq(integrations.responseActions, true), eq(integrations.provider, "crowdstrike")))
+    .where(and(eq(integrations.organizationId, organizationId), eq(integrations.responseActions, true)))
     .orderBy(asc(integrations.createdAt), asc(integrations.id));
   return rows.filter((r) => providerCapabilities[r.provider].responseActions);
 }
@@ -573,20 +616,36 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
           .from(integrations)
           .where(and(inArray(integrations.id, integrationIds), eq(integrations.organizationId, me.organizationId)))
           .for("share");
-        const offered = new Map((await eligible(tx, me.organizationId)).map((i) => [i.id, i.defaults]));
+        const eligibleNow = await eligible(tx, me.organizationId);
+        const offered = new Map(eligibleNow.map((i) => [i.id, i.defaults]));
         if (chosen.length !== integrationIds.length || !chosen.every((i) => offered.has(i.id))) throw new IntegrationNotEligible();
+        // Each action is one Provider's: every Integration chosen must be of it.
+        for (const id of integrationIds) {
+          const { provider } = eligibleNow.find((i) => i.id === id)!;
+          if (!providerActions[provider].includes(input.action)) {
+            throw new IntegrationNotEligible(`${providerLabel[provider]} Integrations don't take "${responseActionActionLabel[input.action]}"`);
+          }
+        }
+        const provider = eligibleNow.find((i) => i.id === integrationIds[0])!.provider;
+        const kind = providerKind[provider];
 
-        // In the order asked: what Falcon takes goes ahead, the rest are skipped with the reason.
+        // In the order asked: what the Provider takes goes ahead, the rest are skipped with the reason.
         const skipped: Skipped[] = [];
-        const accepted: { id: string; type: ObservableType; value: string; key: string; iocType: FalconIocType }[] = [];
+        const accepted: { id: string; type: ObservableType; value: string; key: string; targetType: string; targetValue: string }[] = [];
         for (const id of observableIds) {
           const o = byId.get(id)!;
           const observable = { id, type: o.type, value: o.value };
+          if (provider === "mimecast") {
+            const target = mimecastTarget(o.type, o.key, input.action as MimecastAction);
+            if (!target) skipped.push({ observable, provider, reason: `Mimecast blocks email senders; it takes no ${observableTypeLabel[o.type]}` });
+            else accepted.push({ ...o, targetType: target.type, targetValue: target.value });
+            continue;
+          }
           const iocType = falconIocType(o.type, o.key);
-          if (!iocType) skipped.push({ observable, provider: "crowdstrike", reason: `Falcon takes no custom IOC for an ${observableTypeLabel[o.type]}` });
+          if (!iocType) skipped.push({ observable, provider, reason: `Falcon takes no custom IOC for an ${observableTypeLabel[o.type]}` });
           else if (input.action === "prevent" && !falconAllowsPrevent(iocType)) {
-            skipped.push({ observable, provider: "crowdstrike", reason: "Falcon can only Detect a domain or IP; Prevent is for hashes" });
-          } else accepted.push({ ...o, iocType });
+            skipped.push({ observable, provider, reason: "Falcon can only Detect a domain or IP; Prevent is for hashes" });
+          } else accepted.push({ ...o, targetType: iocType, targetValue: o.key });
         }
 
         if (!input.confirmIgnored && accepted.length) {
@@ -602,12 +661,32 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
           if (unconfirmed.length) throw new IgnoredNotConfirmed(unconfirmed.map(({ id, type, value }) => ({ id, type, value })));
         }
 
-        const pairs = accepted.flatMap((o) =>
-          integrationIds.map((integrationId) => ({
-            o,
-            target: { integrationId, kind: "falcon_ioc" as const, targetType: o.iocType, targetValue: o.key },
-          })),
-        );
+        // Blocking a domain blocks the domain Observable: linked to the Case by hand first, unless it already is.
+        const subjects: (typeof accepted)[number][] = [];
+        for (const o of accepted) {
+          if (o.targetType !== "domain" || provider !== "mimecast") {
+            subjects.push(o);
+            continue;
+          }
+          const domain = normaliseObservable("domain", o.targetValue);
+          if (!domain) throw new Error(`${o.targetValue} is not a domain`);
+          const [linkedAlready] = await tx
+            .select({ id: observables.id, value: observables.value })
+            .from(caseObservables)
+            .innerJoin(observables, eq(caseObservables.itemId, observables.id))
+            .where(and(eq(caseObservables.caseId, current.id), isNull(caseObservables.unlinkedAt), eq(observables.type, "domain"), eq(observables.matchKey, domain.key)))
+            .limit(1);
+          const itemId = linkedAlready?.id ?? (await linkObservable(tx, me, current, "domain", domain, now)).itemId;
+          subjects.push({ ...o, id: itemId, type: "domain" as const, value: linkedAlready?.value ?? domain.value });
+        }
+        const pairs = subjects
+          .filter((o, i) => subjects.findIndex((x) => x.id === o.id) === i)
+          .flatMap((o) =>
+            integrationIds.map((integrationId) => ({
+              o,
+              target: { integrationId, kind, targetType: o.targetType, targetValue: o.targetValue },
+            })),
+          );
         // Every target locked first, in one order, so two sends sharing targets can't deadlock.
         const lockKey = ({ target: t }: (typeof pairs)[number]) => [t.integrationId, t.targetType, t.targetValue].join("\n");
         for (const pair of pairs.toSorted((a, b) => (lockKey(a) < lockKey(b) ? -1 : lockKey(a) > lockKey(b) ? 1 : 0))) await lockTarget(tx, pair.target);
@@ -628,9 +707,13 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
               observableId: o.id,
               ...target,
               // An already present record says what the tool holds: what it was sent with.
-              falconAction: present?.falconAction ?? input.action,
-              severity: present?.severity ?? iocSeverity(offered.get(target.integrationId)!, current.severity),
-              falconPlatforms: present ? present.falconPlatforms : offered.get(target.integrationId)!.platforms,
+              ...(kind === "falcon_ioc"
+                ? {
+                    falconAction: present?.falconAction ?? (input.action as FalconIocAction),
+                    severity: present?.severity ?? iocSeverity(offered.get(target.integrationId)!, current.severity),
+                    falconPlatforms: present ? present.falconPlatforms : offered.get(target.integrationId)!.platforms,
+                  }
+                : {}),
               state: presentFromId ? "active" : "pending",
               origin: presentFromId ? "already_present" : "created",
               presentFromId,

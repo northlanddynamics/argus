@@ -2,7 +2,15 @@ import { queryOptions } from "@tanstack/react-query";
 import { api, errorMessage } from "@/lib/api";
 import type { ObservableType } from "api/observables/vocabulary";
 import { severityLabel, type Severity } from "api/cases/vocabulary";
-import { FALCON_IOC_PLATFORMS, type FalconIocAction, type FalconIocDefaults, falconIocPlatformLabel } from "api/response-actions/vocabulary";
+import type { Provider } from "api/integrations/vocabulary";
+import {
+  FALCON_IOC_PLATFORMS,
+  type FalconIocDefaults,
+  falconIocActionLabel,
+  falconIocPlatformLabel,
+  type ResponseActionAction,
+  type ResponseActionKind,
+} from "api/response-actions/vocabulary";
 
 export {
   DEFAULT_FALCON_IOC_DEFAULTS,
@@ -18,6 +26,12 @@ export {
   falconIocType,
   responseActionKindLabel,
   responseActionStateLabel,
+  MIMECAST_ACTIONS,
+  type MimecastAction,
+  mimecastActionLabel,
+  mimecastTarget,
+  type ResponseActionAction,
+  responseActionActionLabel,
 } from "api/response-actions/vocabulary";
 
 /** Under the Case's key, so its live signal refreshes them. */
@@ -42,8 +56,19 @@ export type ResponseAction = ResponseActionsOnCase["responseActions"][number];
 /** An Integration a Member can send to from the Case, with what it sends an IOC with. */
 export type EligibleIntegration = ResponseActionsOnCase["integrations"][number];
 
-/** "Severity High (from the Case) · every platform", as a menu or dialog says what an IOC goes with. */
-export function describeDefaults(d: FalconIocDefaults, caseSeverity?: Severity) {
+/** The tool a Response Action goes to, as the Case names it: "Falcon" or "Mimecast". */
+export const toolOf = (kind: ResponseActionKind) => (kind === "mimecast_blocked_sender" ? "Mimecast" : "Falcon");
+
+/** What it does, as a row names it: "Detect", "Prevent", "Block sender" or "Block domain". */
+export const actionOf = (r: Pick<ResponseAction, "kind" | "falcon" | "target">) =>
+  r.falcon ? falconIocActionLabel[r.falcon.action] : r.kind === "mimecast_blocked_sender" ? (r.target.type === "domain" ? "Block domain" : "Block sender") : "Sent";
+
+/**
+ * "Severity High (from the Case) · every platform", as a menu or dialog says what an IOC goes with;
+ * for Mimecast, "Organization-wide" and whether it starts Internal.
+ */
+export function describeDefaults(d: FalconIocDefaults, caseSeverity?: Severity, provider: Provider = "crowdstrike") {
+  if (provider === "mimecast") return `Organization-wide${d.internal ? " · Internal" : ""}`;
   const severity =
     d.severity === "case" ? (caseSeverity ? `Severity ${severityLabel[caseSeverity]} (from the Case)` : "Severity from the Case") : `Severity ${severityLabel[d.severity]}`;
   const platforms = d.platforms.length === FALCON_IOC_PLATFORMS.length ? "every platform" : d.platforms.map((p) => falconIocPlatformLabel[p]).join(", ");
@@ -57,13 +82,14 @@ export type SkippedInSend = { observable: IgnoredInSend; provider: string; reaso
 
 /**
  * Sends each of Observables `observableIds` on Case `number` to each of Integrations
- * `integrationIds` as a Falcon custom IOC. Without `confirmIgnored`, a send that includes Ignored
+ * `integrationIds`, all of the Provider whose action `action` is: as a Falcon custom IOC, or a
+ * Mimecast blocked sender. Without `confirmIgnored`, a send that includes Ignored
  * Observables is refused, and they come back in `ignored` to confirm.
  */
 export async function takeResponseActions(
   number: number,
   /** `internal` left out takes each Integration's default. */
-  input: { observableIds: string[]; integrationIds: string[]; action: FalconIocAction; internal?: boolean; confirmIgnored: boolean },
+  input: { observableIds: string[]; integrationIds: string[]; action: ResponseActionAction; internal?: boolean; confirmIgnored: boolean },
 ): Promise<{ ignored: IgnoredInSend[] } | { taken: number; skipped: SkippedInSend[] }> {
   const res = await api.cases[":number"]["response-actions"].bulk.$post({ param: { number: String(number) }, json: input });
   if (res.status === 409) {

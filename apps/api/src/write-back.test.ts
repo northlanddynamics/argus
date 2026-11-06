@@ -247,7 +247,7 @@ describe("Writing back to Falcon", () => {
     await a.detect("ldt:1", "ldt:2");
     await a.openFrom("ldt:1");
     // As if its Provider could not write back: queued and new changes are never sent.
-    await a.t.deps.db.execute(sql`UPDATE integrations SET provider = 'mimecast' WHERE id = ${a.integrationId}`);
+    await a.t.deps.db.execute(sql`UPDATE integrations SET provider = 'mimecast', cloud = NULL WHERE id = ${a.integrationId}`);
     await a.ana.api.alerts.dismiss.$post({ json: { alerts: await a.select("ldt:2"), reason: "benign" } });
     await a.writeBacks.tick();
     expect(a.tenant.patches).toEqual([]);

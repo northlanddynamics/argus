@@ -260,7 +260,7 @@ describe("Providers and Response Actions", () => {
     const a = await acme();
     await a.addProd();
     const mail = await a.addProd({ name: "Mail", clientId: "mimecast-app-0003" });
-    await a.t.deps.db.execute(sql`UPDATE integrations SET provider = 'mimecast' WHERE id = ${mail}`);
+    await a.t.deps.db.execute(sql`UPDATE integrations SET provider = 'mimecast', cloud = NULL WHERE id = ${mail}`);
     const w = a.worker();
     await w.tick();
     expect(a.falcon.tenant(CLIENT_ID).opened).toHaveLength(1);

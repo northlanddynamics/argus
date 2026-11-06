@@ -164,6 +164,67 @@ type Kind<Type extends string> = {
 /** The Response Actions taken on an item, as `me` may see them, read from the Response Actions module. */
 type ResponseActionsOn = (me: Participant, itemId: string) => Promise<ObservableResponseActionView[]>;
 
+/** Signals every Case `itemId` is linked to, so each one's "seen in" refreshes. */
+async function announceLinks<Type extends string>(tx: Tx, kind: Kind<Type>, me: Membership, itemId: string, caseId: string) {
+  const { links } = kind;
+  const others = await tx
+    .select({ caseId: links.caseId })
+    .from(links)
+    .where(and(eq(links.itemId, itemId), isNull(links.unlinkedAt), ne(links.caseId, caseId)));
+  for (const id of new Set([caseId, ...others.map((o) => o.caseId)])) {
+    await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: id });
+  }
+}
+
+/**
+ * Links the Organization's `type` item with this value to Case `current` (locked by `lockCase`),
+ * first adding it to the Organization if it's new. `linked` is false if it was already linked.
+ */
+async function linkItem<Type extends string>(tx: Tx, kind: Kind<Type>, me: Membership, current: { id: string }, type: Type, normalised: Normalised, now: Date) {
+  const { items, links } = kind;
+  await tx
+    .insert(items)
+    .values({
+      id: secureId(),
+      organizationId: me.organizationId,
+      type,
+      value: normalised.value,
+      matchKey: normalised.key,
+      createdAt: now,
+    })
+    .onConflictDoNothing();
+  const [item] = await tx
+    .select({ id: items.id, value: items.value })
+    .from(items)
+    .where(and(eq(items.organizationId, me.organizationId), eq(items.type, type), eq(items.matchKey, normalised.key)));
+  if (!item) throw new Error(`The ${kind.noun} was neither added nor found`);
+  const [already] = await tx
+    .select({ id: links.id, alertId: links.alertId })
+    .from(links)
+    .where(and(eq(links.caseId, current.id), eq(links.itemId, item.id), isNull(links.unlinkedAt)));
+  if (already && !already.alertId) return { itemId: item.id, linked: false };
+  // Linked by an Alert: it becomes a hand-added link, which detaching the Alert leaves.
+  if (already) await tx.update(links).set({ unlinkedById: me.userId, unlinkedAt: now }).where(eq(links.id, already.id));
+  await tx.insert(links).values({
+    id: secureId(),
+    organizationId: me.organizationId,
+    caseId: current.id,
+    itemId: item.id,
+    linkedById: me.userId,
+    linkedAt: now,
+  });
+  await recordCaseAudit(tx, {
+    organizationId: me.organizationId,
+    caseId: current.id,
+    occurredAt: now,
+    actor: actorOf(me),
+    action: kind.linked,
+    target: `${kind.label(type)} ${item.value}`,
+  });
+  await announceLinks(tx, kind, me, item.id, current.id);
+  return { itemId: item.id, linked: true };
+}
+
 function heldOnceStore<Type extends string>(
   { db, clock }: { db: Db; clock: Clock },
   kind: Kind<Type>,
@@ -171,16 +232,7 @@ function heldOnceStore<Type extends string>(
 ) {
   const { items, links } = kind;
 
-  /** Signals every Case `itemId` is linked to, so each one's "seen in" refreshes. */
-  const announce = async (tx: Tx, me: Membership, itemId: string, caseId: string) => {
-    const others = await tx
-      .select({ caseId: links.caseId })
-      .from(links)
-      .where(and(eq(links.itemId, itemId), isNull(links.unlinkedAt), ne(links.caseId, caseId)));
-    for (const id of new Set([caseId, ...others.map((o) => o.caseId)])) {
-      await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: id });
-    }
-  };
+  const announce = (tx: Tx, me: Membership, itemId: string, caseId: string) => announceLinks(tx, kind, me, itemId, caseId);
 
   const describe = (type: Type, value: string) => `${kind.label(type)} ${value}`;
 
@@ -372,53 +424,8 @@ function heldOnceStore<Type extends string>(
     });
   }
 
-  /**
-   * Links the Organization's `type` item with this value to Case `current` (locked by `lockCase`),
-   * first adding it to the Organization if it's new. `linked` is false if it was already linked.
-   */
-  async function linkTo(tx: Tx, me: Membership, current: { id: string }, type: Type, normalised: Normalised, now: Date) {
-    await tx
-      .insert(items)
-      .values({
-        id: secureId(),
-        organizationId: me.organizationId,
-        type,
-        value: normalised.value,
-        matchKey: normalised.key,
-        createdAt: now,
-      })
-      .onConflictDoNothing();
-    const [item] = await tx
-      .select({ id: items.id, value: items.value })
-      .from(items)
-      .where(and(eq(items.organizationId, me.organizationId), eq(items.type, type), eq(items.matchKey, normalised.key)));
-    if (!item) throw new Error(`The ${kind.noun} was neither added nor found`);
-    const [already] = await tx
-      .select({ id: links.id, alertId: links.alertId })
-      .from(links)
-      .where(and(eq(links.caseId, current.id), eq(links.itemId, item.id), isNull(links.unlinkedAt)));
-    if (already && !already.alertId) return { itemId: item.id, linked: false };
-    // Linked by an Alert: it becomes a hand-added link, which detaching the Alert leaves.
-    if (already) await tx.update(links).set({ unlinkedById: me.userId, unlinkedAt: now }).where(eq(links.id, already.id));
-    await tx.insert(links).values({
-      id: secureId(),
-      organizationId: me.organizationId,
-      caseId: current.id,
-      itemId: item.id,
-      linkedById: me.userId,
-      linkedAt: now,
-    });
-    await recordCaseAudit(tx, {
-      organizationId: me.organizationId,
-      caseId: current.id,
-      occurredAt: now,
-      actor: actorOf(me),
-      action: kind.linked,
-      target: describe(type, item.value),
-    });
-    await announce(tx, me, item.id, current.id);
-    return { itemId: item.id, linked: true };
-  }
+  const linkTo = (tx: Tx, me: Membership, current: { id: string }, type: Type, normalised: Normalised, now: Date) =>
+    linkItem(tx, kind, me, current, type, normalised, now);
 
   return {
     list,
@@ -519,6 +526,14 @@ const assetKind: Kind<AssetType> = {
 
 export const observableStore = (deps: { db: Db; clock: Clock }, responseActions?: { onObservable: ResponseActionsOn }) =>
   heldOnceStore(deps, observableKind, responseActions?.onObservable);
+/**
+ * Links the Organization's Observable of `type` with this (normalised) value to Case `current`
+ * (locked by `lockCase`) by hand, as a Member linking it would, first adding it to the Organization
+ * if it's new; for modules that link one as part of another change, such as a Response Action.
+ */
+export const linkObservable = (tx: Tx, me: Membership, current: { id: string }, type: ObservableType, normalised: Normalised, now: Date) =>
+  linkItem(tx, observableKind, me, current, type, normalised, now);
+
 export const assetStore = (deps: { db: Db; clock: Clock }) => heldOnceStore(deps, assetKind);
 
 export type ObservableStore = ReturnType<typeof observableStore>;

@@ -17,7 +17,7 @@ import {
   RelyingCasesNotConfirmed,
   ResponseActionNotFound,
 } from "../response-actions/response-actions";
-import { FALCON_IOC_ACTIONS } from "../response-actions/vocabulary";
+import { RESPONSE_ACTION_ACTIONS } from "../response-actions/vocabulary";
 
 const numberParam = z.object({ number: z.coerce.number().int().positive() });
 const actionParam = numberParam.extend({ id: z.string().min(1) });
@@ -25,8 +25,8 @@ const actionParam = numberParam.extend({ id: z.string().min(1) });
 const takeBody = z.object({
   observableId: z.string().min(1),
   integrationId: z.string().min(1),
-  /** Detect, or Prevent for hashes only. */
-  action: z.enum(FALCON_IOC_ACTIONS),
+  /** For Falcon, Detect, or Prevent for hashes only; for Mimecast, Block sender or Block domain, for an email address. */
+  action: z.enum(RESPONSE_ACTION_ACTIONS),
   /** Hidden from the Case's Guests. */
   internal: z.boolean().optional(),
   /** Sends it even if it is on the Ignored list. */
@@ -37,8 +37,12 @@ const ids = z.array(z.string().min(1).max(100)).min(1).max(500);
 const takeManyBody = z.object({
   observableIds: ids,
   integrationIds: z.array(z.string().min(1).max(100)).min(1).max(50),
-  /** Detect, or Prevent, which only hashes take: domains and IPs in a Prevent send are skipped. */
-  action: z.enum(FALCON_IOC_ACTIONS),
+  /**
+   * One Provider's action, which every Integration chosen must take. Falcon's are Detect, or Prevent,
+   * which only hashes take; Mimecast's Block sender or Block domain, which only email addresses take.
+   * Observables the Provider doesn't take as asked are skipped.
+   */
+  action: z.enum(RESPONSE_ACTION_ACTIONS),
   /** Hidden from the Case's Guests. */
   internal: z.boolean().optional(),
   /** Sends those on the Ignored list too; without it, any among them refuses the request. */

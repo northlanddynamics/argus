@@ -45,7 +45,7 @@ const until = (iso: string) => {
   return minutes <= 0 ? "due" : `in ${minutes} min`;
 };
 
-/** Settings · Integrations: the Organization's CrowdStrike Integrations and how their streams are doing. */
+/** Settings · Integrations: the Organization's CrowdStrike and Mimecast Integrations and how they are doing. */
 export function IntegrationsPage() {
   const integrations = useQuery(integrationsQuery);
   // Health and the last event refresh live.
@@ -54,7 +54,10 @@ export function IntegrationsPage() {
     <>
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Integrations</h1>
-        <AddIntegrationDialog />
+        <div className="flex flex-wrap justify-end gap-2">
+          <AddIntegrationDialog provider="mimecast" />
+          <AddIntegrationDialog provider="crowdstrike" />
+        </div>
       </div>
       {integrations.isPending && <Skeleton className="h-48 w-full rounded-xl" />}
       {integrations.isError && (
@@ -71,7 +74,8 @@ export function IntegrationsPage() {
       {integrations.data?.length === 0 && (
         <Card>
           <CardContent className="text-sm text-muted-foreground">
-            No Integrations yet. Add a CrowdStrike Integration to receive Falcon detections as Alerts.
+            No Integrations yet. Add a CrowdStrike Integration to receive Falcon detections as Alerts, or a Mimecast Integration to block
+            email senders from a Case.
           </CardContent>
         </Card>
       )}
@@ -239,11 +243,9 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
       <CardHeader className="border-b">
         <div className="flex items-center gap-3 self-center">
           <CardTitle>{i.name}</CardTitle>
-          {(receivesAlerts || i.paused) && (
-            <Badge variant={word === "Connected" ? "default" : "outline"} className={word === "Error" ? "border-destructive text-destructive" : undefined}>
-              {word}
-            </Badge>
-          )}
+          <Badge variant={word === "Connected" ? "default" : "outline"} className={word === "Error" ? "border-destructive text-destructive" : undefined}>
+            {word}
+          </Badge>
           {writesBack && !i.writeBack && <Badge variant="outline">Alert write-back off</Badge>}
         </div>
         <CardAction className="flex gap-2">
@@ -255,7 +257,12 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
       </CardHeader>
       <CardContent className="grid gap-4">
         {receivesAlerts && <StreamSummary integration={i} />}
-        {receivesAlerts && i.healthDetail && !i.paused && (
+        {!receivesAlerts && !i.paused && (
+          <p className="text-sm text-muted-foreground">
+            {i.healthCheckedAt ? `Credentials checked ${ago(i.healthCheckedAt)}` : "Checking the credentials…"}
+          </p>
+        )}
+        {i.healthDetail && !i.paused && (
           <Alert variant={i.health === "error" ? "destructive" : "default"}>
             <AlertDescription>{i.healthDetail}</AlertDescription>
           </Alert>
@@ -307,7 +314,14 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
           <ConfirmOn
             title={`Allow Response Actions through ${i.name}?`}
             body={
-              <>The API client needs IOC Management write scope; without it, sends fail on the Case with a 403.</>
+              i.provider === "crowdstrike" ? (
+                <>The API client needs IOC Management write scope; without it, sends fail on the Case with a 403.</>
+              ) : (
+                <>
+                  Members will be able to block email senders and domains for the whole Organization from a Case. The API application's role needs
+                  Gateway · Policies · Edit; without it, blocks fail on the Case.
+                </>
+              )
             }
             confirm="Allow Response Actions"
             onConfirm={() => setResponseActions.mutate(true)}
@@ -329,15 +343,17 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
             <AlertDescription>{setResponseActions.error.message}</AlertDescription>
           </Alert>
         )}
-        {responseActions && i.provider === "crowdstrike" && (
+        {responseActions && (
           // Keyed by what is saved, so a change saved elsewhere replaces the form's.
           <ResponseActionDefaults key={JSON.stringify(i.responseActionDefaults)} integration={i} />
         )}
         {writesBack && <WriteBacks counts={i.writeBacks} />}
-        {responseActions && (i.responseActions || hasAny(i.responseActionCounts)) && <ResponseActionCounts counts={i.responseActionCounts} />}
+        {responseActions && (i.responseActions || hasAny(i.responseActionCounts)) && (
+          <ResponseActionCounts counts={i.responseActionCounts} tool={i.provider === "crowdstrike" ? "Falcon" : providerLabel[i.provider]} />
+        )}
         {i.credentials && (
           <p className="text-sm text-muted-foreground">
-            {i.provider === "crowdstrike" ? `Falcon API credentials: ${falconCloudLabel[i.cloud]} cloud` : `${providerLabel[i.provider]} API credentials`}{" "}
+            {i.provider === "crowdstrike" && i.cloud ? `Falcon API credentials: ${falconCloudLabel[i.cloud]} cloud` : `${providerLabel[i.provider]} API 2.0 credentials`}{" "}
             · client <span className="font-mono">{i.credentials.clientIdHint}</span> · set{" "}
             {new Date(i.credentials.updatedAt).toLocaleDateString()}
           </p>
@@ -374,12 +390,12 @@ function WriteBacks({ counts: w }: { counts: IntegrationView["writeBacks"] }) {
 const hasAny = (c: IntegrationView["responseActionCounts"]) => c.pending + c.active + c.failed > 0;
 
 /** What Argus holds in the tool through this Integration, and what is waiting or failed. */
-function ResponseActionCounts({ counts: c }: { counts: IntegrationView["responseActionCounts"] }) {
+function ResponseActionCounts({ counts: c, tool }: { counts: IntegrationView["responseActionCounts"]; tool: string }) {
   return (
     <div className="grid gap-2" data-testid="response-action-counts">
       <span className="text-sm font-semibold">Response Actions through this Integration</span>
       <div className="flex flex-wrap gap-2">
-        <Badge variant="outline">Created by Argus, in Falcon {c.active}</Badge>
+        <Badge variant="outline">Created by Argus, in {tool} {c.active}</Badge>
         <Badge variant="outline">Pending {c.pending}</Badge>
         {c.failed > 0 && (
           <Badge variant="outline" className="border-destructive text-destructive">
@@ -513,7 +529,7 @@ function ResponseActionsSetting(props: {
         <p className="text-sm text-muted-foreground">
           {provider === "crowdstrike"
             ? "Add custom IOCs to Falcon from a Case. The API client needs IOC Management write scope."
-            : `Take Response Actions in ${providerLabel[provider]} from a Case.`}
+            : `Block email senders and domains for the whole Organization in ${providerLabel[provider]} from a Case.`}
           {lockedReason && ` ${lockedReason}`}
         </p>
       </div>
@@ -524,7 +540,8 @@ function ResponseActionsSetting(props: {
 /**
  * What a custom IOC taken through the Integration is sent with besides alert or block: Falcon needs a
  * severity and platforms, so a Member can take one in a single click (ADR 0008). Admins change them;
- * every Member sees them. Response Actions already taken keep what they were taken with.
+ * every Member sees them. Response Actions already taken keep what they were taken with. Only whether
+ * they start Internal applies to a Mimecast Integration.
  */
 function ResponseActionDefaults({ integration: i }: { integration: IntegrationView }) {
   const queryClient = useQueryClient();
@@ -543,6 +560,7 @@ function ResponseActionDefaults({ integration: i }: { integration: IntegrationVi
   const togglePlatform = (p: FalconIocPlatform, on: boolean) =>
     setDraft((d) => ({ ...d, platforms: FALCON_IOC_PLATFORMS.filter((x) => (x === p ? on : d.platforms.includes(x))) }));
   const id = (field: string) => `ioc-defaults-${field}-${i.id}`;
+  const falcon = i.provider === "crowdstrike";
   return (
     <form
       className="grid gap-3 rounded-lg border p-3"
@@ -554,40 +572,44 @@ function ResponseActionDefaults({ integration: i }: { integration: IntegrationVi
       }}
     >
       <div className="grid gap-0.5">
-        <span className="text-sm font-semibold">IOC defaults</span>
+        <span className="text-sm font-semibold">{falcon ? "IOC defaults" : "Block defaults"}</span>
         {locked && <p className="text-sm text-muted-foreground">Only Admins can change these.</p>}
       </div>
       <div className="grid gap-2 sm:grid-cols-[10rem_1fr] sm:items-center">
-        <Label htmlFor={id("severity")}>Severity</Label>
-        <NativeSelect
-          id={id("severity")}
-          value={draft.severity}
-          disabled={locked}
-          onChange={(e) => setDraft((d) => ({ ...d, severity: e.target.value as FalconIocDefaults["severity"] }))}
-        >
-          <NativeSelectOption value="case">The Case's Severity</NativeSelectOption>
-          {SEVERITIES.map((s) => (
-            <NativeSelectOption key={s} value={s}>
-              {severityLabel[s]}
-            </NativeSelectOption>
-          ))}
-        </NativeSelect>
-        <span className="text-sm font-medium">Platforms</span>
-        <div className="flex flex-wrap gap-4" role="group" aria-label="Platforms">
-          {FALCON_IOC_PLATFORMS.map((p) => (
-            <div key={p} className="flex items-center gap-2">
-              <Checkbox
-                id={id(p)}
-                checked={draft.platforms.includes(p)}
-                disabled={locked}
-                onCheckedChange={(checked) => togglePlatform(p, checked === true)}
-              />
-              <Label htmlFor={id(p)} className="font-normal">
-                {falconIocPlatformLabel[p]}
-              </Label>
+        {falcon && (
+          <>
+            <Label htmlFor={id("severity")}>Severity</Label>
+            <NativeSelect
+              id={id("severity")}
+              value={draft.severity}
+              disabled={locked}
+              onChange={(e) => setDraft((d) => ({ ...d, severity: e.target.value as FalconIocDefaults["severity"] }))}
+            >
+              <NativeSelectOption value="case">The Case's Severity</NativeSelectOption>
+              {SEVERITIES.map((s) => (
+                <NativeSelectOption key={s} value={s}>
+                  {severityLabel[s]}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+            <span className="text-sm font-medium">Platforms</span>
+            <div className="flex flex-wrap gap-4" role="group" aria-label="Platforms">
+              {FALCON_IOC_PLATFORMS.map((p) => (
+                <div key={p} className="flex items-center gap-2">
+                  <Checkbox
+                    id={id(p)}
+                    checked={draft.platforms.includes(p)}
+                    disabled={locked}
+                    onCheckedChange={(checked) => togglePlatform(p, checked === true)}
+                  />
+                  <Label htmlFor={id(p)} className="font-normal">
+                    {falconIocPlatformLabel[p]}
+                  </Label>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          </>
+        )}
         <span className="text-sm font-medium">Visibility</span>
         <div className="flex items-center gap-2">
           <Checkbox
@@ -623,15 +645,16 @@ function ResponseActionDefaults({ integration: i }: { integration: IntegrationVi
   );
 }
 
-function CredentialFields() {
+function CredentialFields({ provider = "crowdstrike" }: { provider?: Provider }) {
+  const app = provider === "crowdstrike" ? "API client" : "API application client";
   return (
     <>
       <div className="grid gap-2">
-        <Label htmlFor="falcon-client-id">API client ID</Label>
+        <Label htmlFor="falcon-client-id">{app} ID</Label>
         <Input id="falcon-client-id" name="clientId" required autoComplete="off" />
       </div>
       <div className="grid gap-2">
-        <Label htmlFor="falcon-client-secret">API client secret</Label>
+        <Label htmlFor="falcon-client-secret">{app} secret</Label>
         <Input id="falcon-client-secret" name="clientSecret" type="password" required autoComplete="new-password" />
       </div>
     </>
@@ -640,19 +663,17 @@ function CredentialFields() {
 
 const credentialsFrom = (form: FormData) => ({ clientId: String(form.get("clientId")), clientSecret: String(form.get("clientSecret")) });
 
-function AddIntegrationDialog() {
+/** Adds a CrowdStrike Integration, or a Mimecast one, which has no cloud, Alert stream or write-back. */
+function AddIntegrationDialog({ provider }: { provider: Provider }) {
   const [isOpen, setIsOpen] = useState(false);
   const queryClient = useQueryClient();
+  const falcon = provider === "crowdstrike";
   const add = useMutation({
-    mutationFn: async (json: {
-      name: string;
-      cloud: FalconCloud;
-      clientId: string;
-      clientSecret: string;
-      writeBack: boolean;
-      responseActions: boolean;
-    }) =>
-      ok(await api.integrations.$post({ json }), "Could not add the Integration"),
+    mutationFn: async (
+      json:
+        | { provider: "crowdstrike"; name: string; cloud: FalconCloud; clientId: string; clientSecret: string; writeBack: boolean; responseActions: boolean }
+        | { provider: "mimecast"; name: string; clientId: string; clientSecret: string; responseActions: boolean },
+    ) => ok(await api.integrations.$post({ json }), "Could not add the Integration"),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: integrationsKey });
       setIsOpen(false);
@@ -661,13 +682,12 @@ function AddIntegrationDialog() {
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    add.mutate({
-      name: String(form.get("name")),
-      cloud: form.get("cloud") as FalconCloud,
-      writeBack: form.get("writeBack") === "on",
-      responseActions: form.get("responseActions") === "on",
-      ...credentialsFrom(form),
-    });
+    const common = { name: String(form.get("name")), responseActions: form.get("responseActions") === "on", ...credentialsFrom(form) };
+    add.mutate(
+      falcon
+        ? { provider, ...common, cloud: form.get("cloud") as FalconCloud, writeBack: form.get("writeBack") === "on" }
+        : { provider: "mimecast", ...common },
+    );
   };
   return (
     <Dialog
@@ -678,47 +698,59 @@ function AddIntegrationDialog() {
       }}
     >
       <DialogTrigger asChild>
-        <Button>+ Add CrowdStrike Integration</Button>
+        <Button variant={falcon ? "default" : "outline"}>+ Add {providerLabel[provider]} Integration</Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add a CrowdStrike Integration</DialogTitle>
-          <DialogDescription>Create an API client in the Falcon console with these scopes:</DialogDescription>
-          <ul className="grid gap-1 text-sm">
-            <li>
-              <span className="font-medium">Event Streams: Read</span>
-              <span className="text-muted-foreground"> — always, to receive detections as Alerts</span>
-            </li>
-            <li>
-              <span className="font-medium">Alerts: Write</span>
-              <span className="text-muted-foreground"> — for write-back</span>
-            </li>
-            <li>
-              <span className="font-medium">IOC Management: Write</span>
-              <span className="text-muted-foreground"> — for Response Actions</span>
-            </li>
-          </ul>
+          <DialogTitle>Add a {providerLabel[provider]} Integration</DialogTitle>
+          {!falcon && (
+            <DialogDescription>
+              Create an API 2.0 application in the Mimecast Administration Console whose role has Gateway · Policies · Edit, for blocking
+              senders. Argus checks its credentials once it is added. It sends no Alerts and writes nothing back.
+            </DialogDescription>
+          )}
+          {falcon && (
+            <>
+              <DialogDescription>Create an API client in the Falcon console with these scopes:</DialogDescription>
+              <ul className="grid gap-1 text-sm">
+                <li>
+                  <span className="font-medium">Event Streams: Read</span>
+                  <span className="text-muted-foreground"> — always, to receive detections as Alerts</span>
+                </li>
+                <li>
+                  <span className="font-medium">Alerts: Write</span>
+                  <span className="text-muted-foreground"> — for write-back</span>
+                </li>
+                <li>
+                  <span className="font-medium">IOC Management: Write</span>
+                  <span className="text-muted-foreground"> — for Response Actions</span>
+                </li>
+              </ul>
+            </>
+          )}
         </DialogHeader>
         <form className="grid gap-4" onSubmit={onSubmit}>
-          <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
+          <div className={falcon ? "grid gap-4 sm:grid-cols-[1fr_auto]" : "grid gap-4"}>
             <div className="grid gap-2">
               <Label htmlFor="integration-name">Name</Label>
-              <Input id="integration-name" name="name" required maxLength={80} placeholder="CrowdStrike — Prod" />
+              <Input id="integration-name" name="name" required maxLength={80} placeholder={falcon ? "CrowdStrike — Prod" : "Mimecast"} />
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="integration-cloud">Falcon cloud</Label>
-              <NativeSelect id="integration-cloud" name="cloud" defaultValue="us-1">
-                {FALCON_CLOUDS.map((c) => (
-                  <NativeSelectOption key={c} value={c}>
-                    {falconCloudLabel[c]}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
-            </div>
+            {falcon && (
+              <div className="grid gap-2">
+                <Label htmlFor="integration-cloud">Falcon cloud</Label>
+                <NativeSelect id="integration-cloud" name="cloud" defaultValue="us-1">
+                  {FALCON_CLOUDS.map((c) => (
+                    <NativeSelectOption key={c} value={c}>
+                      {falconCloudLabel[c]}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              </div>
+            )}
           </div>
-          <CredentialFields />
-          <WriteBackSetting id="integration-write-back" name="writeBack" defaultChecked={false} />
-          <ResponseActionsSetting id="integration-response-actions" provider="crowdstrike" name="responseActions" defaultChecked={false} />
+          <CredentialFields provider={provider} />
+          {falcon && <WriteBackSetting id="integration-write-back" name="writeBack" defaultChecked={false} />}
+          <ResponseActionsSetting id="integration-response-actions" provider={provider} name="responseActions" defaultChecked={false} />
           {add.error && (
             <Alert variant="destructive">
               <AlertDescription>{add.error.message}</AlertDescription>
@@ -768,7 +800,7 @@ function RotateCredentialsDialog({ integration }: { integration: IntegrationView
           <DialogTitle>Rotate credentials of {integration.name}</DialogTitle>
         </DialogHeader>
         <form className="grid gap-4" onSubmit={onSubmit}>
-          <CredentialFields />
+          <CredentialFields provider={integration.provider} />
           {rotate.error && (
             <Alert variant="destructive">
               <AlertDescription>{rotate.error.message}</AlertDescription>

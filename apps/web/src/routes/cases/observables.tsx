@@ -28,7 +28,7 @@ import {
 } from "@/lib/observables";
 import { responseActionsQuery } from "@/lib/response-actions";
 import { useCaseNumber } from "@/routes/cases/case-layout";
-import { falconIocActionLabel, type ResponseAction } from "@/lib/response-actions";
+import { actionOf, type ResponseAction } from "@/lib/response-actions";
 import { falconTakes, holdingOn, ResponseActionsCard } from "@/routes/cases/response-actions";
 import { BulkObservableActions, ObservableActions } from "@/routes/cases/observable-actions";
 import { when } from "@/lib/when";
@@ -50,8 +50,9 @@ export function CaseObservablesPage() {
   const eligible = responseActions.data?.integrations ?? [];
   const canSend = !readOnly && eligible.length > 0;
   const held = responseActions.data?.responseActions ?? [];
-  // Only what is still linked, and Falcon takes, counts as selected.
-  const chosen = (observables.data ?? []).filter((o) => selected.includes(o.id) && falconTakes(o.type, o.value));
+  // Only what is still linked, and a tool takes, counts as selected.
+  const takes = (o: { type: ObservableType; value: string }) => falconTakes(o.type, o.value) || (o.type === "email" && eligible.some((i) => i.provider === "mimecast"));
+  const chosen = (observables.data ?? []).filter((o) => selected.includes(o.id) && takes(o));
   return (
     <div className="grid gap-4">
       {/* Observables get the full width: their rows carry what was sent, and Send beside Unlink. */}
@@ -82,7 +83,7 @@ export function CaseObservablesPage() {
             </ObservableActions>
           )}
           selection={
-            canSend ? { selected: chosen.map((o) => o.id), onChange: setSelected, selectable: (o) => falconTakes(o.type, o.value) } : undefined
+            canSend ? { selected: chosen.map((o) => o.id), onChange: setSelected, selectable: takes } : undefined
           }
           headerAction={
             canSend && chosen.length > 0 ? (
@@ -353,7 +354,7 @@ function SentLine({ held }: { held: ResponseAction[] }) {
     <ul className="mt-1 grid gap-0.5 text-xs text-muted-foreground" aria-label="Sent from this Case">
       {held.map((r) => (
         <li key={r.id}>
-          {r.falcon ? falconIocActionLabel[r.falcon.action] : "Sent"}
+          {actionOf(r)}
           {r.integration && ` · ${r.integration.name}`}
           {", "}
           {r.state === "pending"

@@ -20,9 +20,8 @@ const credentialsBody = z.object({
   clientId: z.string().trim().min(1).max(200),
   clientSecret: z.string().trim().min(1).max(500),
 });
-const createBody = credentialsBody.extend({
-  /** Only CrowdStrike can be added so far; Mimecast arrives with its connector. */
-  provider: z.enum(["crowdstrike"]).default("crowdstrike"),
+const crowdstrikeBody = credentialsBody.extend({
+  provider: z.literal("crowdstrike").default("crowdstrike"),
   name: z.string().trim().min(1).max(80),
   cloud: z.enum(FALCON_CLOUDS),
   /** Off unless asked for: an Integration only reads from Falcon until an Admin allows write-back. */
@@ -32,28 +31,29 @@ const createBody = credentialsBody.extend({
   /** What its Response Actions are sent with; severity from the Case, every platform, not Internal, if left out. */
   responseActionDefaults: defaultsBody.optional(),
 });
+/** A Mimecast API 2.0 application: no cloud, no Alert stream and no write-back to choose. */
+const mimecastBody = z.strictObject({
+  ...credentialsBody.shape,
+  provider: z.literal("mimecast"),
+  name: z.string().trim().min(1).max(80),
+  responseActions: z.boolean().default(false),
+  responseActionDefaults: defaultsBody.optional(),
+});
+const createBody = z.union([crowdstrikeBody, mimecastBody]);
 const enabledBody = z.object({ enabled: z.boolean() });
 
 
 const notPermitted = { error: "Not permitted" } as const;
 
-/** Integrations: every Member sees them and their health; Admins add, rotate, pause, resume them and set their write-back, Response Actions and Response Action defaults. */
+/** Integrations (CrowdStrike or Mimecast): every Member sees them and their health; Admins add, rotate, pause, resume them and set their write-back, Response Actions and Response Action defaults. */
 export const integrationRoutes = (deps: Deps, { integrations }: Modules) =>
   new Hono<MemberEnv>()
     .use(requireMember(deps.db))
     .get("/", async (c) => c.json({ integrations: await integrations.list(c.get("membership")) }, 200))
     .post("/", zValidator("json", createBody), async (c) => {
-      const { provider, name, cloud, clientId, clientSecret, writeBack, responseActions, responseActionDefaults } = c.req.valid("json");
+      const { clientId, clientSecret, ...rest } = c.req.valid("json");
       try {
-        const created = await integrations.create(c.get("membership"), {
-          provider,
-          name,
-          cloud,
-          writeBack,
-          responseActions,
-          responseActionDefaults,
-          credentials: { clientId, clientSecret },
-        });
+        const created = await integrations.create(c.get("membership"), { ...rest, credentials: { clientId, clientSecret } });
         return c.json({ integration: created }, 201);
       } catch (e) {
         if (e instanceof NotPermitted) return c.json(notPermitted, 403);

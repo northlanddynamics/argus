@@ -26,6 +26,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { type ObservableType, observableTypeLabel, shownObservable } from "@/lib/observables";
 import {
+  actionOf,
   describeDefaults,
   type EligibleIntegration,
   type FalconIocAction,
@@ -43,6 +44,7 @@ import {
   retryResponseAction,
   type SkippedInSend,
   takeResponseActions,
+  toolOf,
 } from "@/lib/response-actions";
 import { exactTime, when } from "@/lib/when";
 import { caseRef, type Severity } from "@/lib/cases";
@@ -403,7 +405,7 @@ function StateLine({ r }: { r: ResponseAction }) {
   if (r.state === "removed" && r.dismissedBy && r.dismissedAt) {
     return (
       <span>
-        Dismissed by {r.dismissedBy.name} <At iso={r.dismissedAt} />; left unchanged in Falcon
+        Dismissed by {r.dismissedBy.name} <At iso={r.dismissedAt} />; left unchanged in {toolOf(r.kind)}
       </span>
     );
   }
@@ -460,7 +462,7 @@ function OriginLine({ r, number }: { r: ResponseAction; number: number }) {
       </span>
     );
   }
-  if (r.origin === "in_tool") return <span>Already present in Falcon; Argus left it unchanged</span>;
+  if (r.origin === "in_tool") return <span>Already present in {toolOf(r.kind)}; Argus left it unchanged</span>;
   return null;
 }
 
@@ -485,7 +487,13 @@ export function RemoveDialog({ number, r, onClose }: { number: number; r: Respon
     onSettled: () => void queryClient.invalidateQueries({ queryKey: responseActionsKey(number) }),
   });
   const count = relying ? relying.cases.length + relying.otherCases : 0;
-  const stops = r.falcon?.action === "prevent" ? "Falcon stops blocking and detecting it." : "Falcon stops detecting it.";
+  const mimecast = r.kind === "mimecast_blocked_sender";
+  const stops = mimecast
+    ? "Mimecast stops blocking it for the Organization."
+    : r.falcon?.action === "prevent"
+      ? "Falcon stops blocking and detecting it."
+      : "Falcon stops detecting it.";
+  const entry = mimecast ? "blocked sender entry" : "custom IOC";
   return (
     <Dialog
       open={isOpen}
@@ -499,9 +507,9 @@ export function RemoveDialog({ number, r, onClose }: { number: number; r: Respon
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Remove from Falcon</DialogTitle>
+          <DialogTitle>Remove from {toolOf(r.kind)}</DialogTitle>
           <DialogDescription>
-            Argus deletes the custom IOC for {observableTypeLabel[r.observable.type]}{" "}
+            Argus deletes the {entry} for {observableTypeLabel[r.observable.type]}{" "}
             <span className="font-mono break-all">{fullValue(r.observable)}</span>
             {r.integration && ` from ${r.integration.name}`}. {stops}
           </DialogDescription>
@@ -510,7 +518,7 @@ export function RemoveDialog({ number, r, onClose }: { number: number; r: Respon
           <Alert className={notice}>
             <AlertDescription className="grid gap-2">
               <span>
-                {count === 1 ? "Another Case relies" : `${count} other Cases rely`} on this custom IOC. Removing it marks their Response Actions
+                {count === 1 ? "Another Case relies" : `${count} other Cases rely`} on this {entry}. Removing it marks their Response Actions
                 Removed too:
               </span>
               <ul className="grid gap-0.5">
@@ -549,7 +557,7 @@ export function RemoveDialog({ number, r, onClose }: { number: number; r: Respon
   );
 }
 
-/** "Dismiss", opened from a menu: this Case stops recording an already present IOC as its own; the tool is left alone. */
+/** "Dismiss", opened from a menu: this Case stops recording an already present IOC or block as its own; the tool is left alone. */
 export function DismissDialog({ r, disabled, onDismiss, onClose }: { r: ResponseAction; disabled: boolean; onDismiss: () => void; onClose: () => void }) {
   return (
     <AlertDialog defaultOpen onOpenChange={(next) => !next && onClose()}>
@@ -673,7 +681,7 @@ export function ResponseActionsCard({
                           <span className="text-xs text-muted-foreground">{observableTypeLabel[r.observable.type]}</span>
                         </TableCell>
                         <TableCell className="whitespace-normal">
-                          {r.falcon ? falconIocActionLabel[r.falcon.action] : responseActionKindLabel[r.kind]}
+                          {actionOf(r)}
                           <span className="block text-xs text-muted-foreground">
                             {r.integration ? r.integration.name : responseActionKindLabel[r.kind]}
                           </span>
