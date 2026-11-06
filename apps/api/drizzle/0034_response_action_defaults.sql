@@ -1,0 +1,2 @@
+ALTER TABLE "integrations" ADD COLUMN "response_action_defaults" jsonb DEFAULT '{"severity":"case","platforms":["windows","mac","linux"],"internal":false}'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "response_actions" ADD COLUMN "falcon_platforms" jsonb;

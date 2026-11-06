@@ -11,10 +11,12 @@ import { type ProviderCredentials, sealCredentials } from "./credentials";
 import { type Provider, providerCapabilities, providerLabel } from "./vocabulary";
 import type { Membership } from "../members/membership";
 import { publish } from "../realtime/signals";
+import { severityLabel } from "../cases/vocabulary";
+import { DEFAULT_FALCON_IOC_DEFAULTS, type FalconIocDefaults, FALCON_IOC_PLATFORMS, falconIocPlatformLabel } from "../response-actions/vocabulary";
 
 /**
  * Integrations as Admins manage them: add one, rotate its credentials, pause and resume it, allow or
- * deny write-back to Falcon, and turn Response Actions on or off, each recorded in the Organization
+ * deny write-back to Falcon, turn Response Actions on or off and set what they are sent with, each recorded in the Organization
  * Audit Log. What an Integration can do comes from its Provider (`vocabulary.ts`, ADR 0007). Every
  * Member sees the Organization's Integrations and how their streams are doing; only Admins see which
  * credentials are in use.
@@ -56,6 +58,9 @@ export class NotSupportedByProvider extends Error {
   }
 }
 
+/** The defaults asked for can't be used, such as no platform at all. */
+export class InvalidDefaults extends Error {}
+
 export class IntegrationNameTaken extends Error {
   constructor(name: string) {
     super(`An Integration is already called "${name}"`);
@@ -93,10 +98,25 @@ export type NewIntegration = {
   credentials: ProviderCredentials["crowdstrike"];
   writeBack: boolean;
   responseActions: boolean;
+  /** What its Response Actions are sent with; ADR 0007's if left out. */
+  responseActionDefaults?: FalconIocDefaults;
 };
 
 const writeBackLabel = (on: boolean) => (on ? "write-back on" : "read only");
 const responseActionsLabel = (on: boolean) => (on ? "Response Actions on" : "Response Actions off");
+/** "Severity from the Case · Windows, macOS, Linux · visible to Guests", as the Org Audit Log says it. */
+export const defaultsLabel = (d: FalconIocDefaults) =>
+  [
+    d.severity === "case" ? "Severity from the Case" : `Severity ${severityLabel[d.severity]}`,
+    d.platforms.length === FALCON_IOC_PLATFORMS.length ? "every platform" : d.platforms.map((p) => falconIocPlatformLabel[p]).join(", "),
+    d.internal ? "Internal" : "visible to Guests",
+  ].join(" · ");
+/** In a fixed order and without repeats, so equal defaults compare equal. */
+const normalized = (d: FalconIocDefaults): FalconIocDefaults => ({
+  severity: d.severity,
+  platforms: FALCON_IOC_PLATFORMS.filter((p) => d.platforms.includes(p)),
+  internal: d.internal,
+});
 
 export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, "db" | "clock" | "credentials">) {
   const seal = (provider: Provider, c: ProviderCredentials[Provider]) => sealCredentials(sealer, provider, c);
@@ -131,6 +151,8 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
         paused: row.paused,
         writeBack: row.writeBack,
         responseActions: row.responseActions,
+        /** What a Response Action taken through it is sent with besides its action. */
+        responseActionDefaults: row.responseActionDefaults,
         health: row.health,
         healthDetail: row.healthDetail,
         healthChangedAt: row.healthChangedAt.toISOString(),
@@ -171,6 +193,7 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
             credentialsUpdatedAt: now,
             writeBack: input.writeBack,
             responseActions: input.responseActions,
+            responseActionDefaults: normalized(input.responseActionDefaults ?? DEFAULT_FALCON_IOC_DEFAULTS),
             health: "connecting",
             healthChangedAt: now,
             createdById: me.userId,
@@ -303,6 +326,37 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
           target: row.name,
           before: responseActionsLabel(row.responseActions),
           after: responseActionsLabel(responseActions),
+        });
+        await publish(tx, { kind: "alerts", organizationId: me.organizationId });
+      });
+    },
+
+    /**
+     * Sets what a Falcon custom IOC taken through the Integration is sent with besides its action:
+     * its severity (fixed, or the Case's), its platforms (at least one) and whether it starts
+     * Internal. Response Actions already taken keep what they were taken with. Admins only. Doing
+     * what is already so changes nothing.
+     */
+    async setResponseActionDefaults(me: Membership, id: string, defaults: FalconIocDefaults) {
+      if (!organizationPolicy.canManageIntegrations(me)) throw new NotPermitted();
+      const next = normalized(defaults);
+      if (!next.platforms.length) throw new InvalidDefaults("Choose at least one platform");
+      await db.transaction(async (tx) => {
+        const row = await find(tx, me, id);
+        if (!providerCapabilities[row.provider].responseActions) throw new NotSupportedByProvider(row.provider, "Response Actions");
+        const before = normalized(row.responseActionDefaults);
+        if (defaultsLabel(before) === defaultsLabel(next)) return;
+        const now = clock.now();
+        await tx.update(integrations).set({ responseActionDefaults: next }).where(eq(integrations.id, id));
+        await recordOrgAudit(tx, {
+          organizationId: me.organizationId,
+          occurredAt: now,
+          actor: actorOf(me),
+          category: "integrations",
+          action: "integration.response_action_defaults_changed",
+          target: row.name,
+          before: defaultsLabel(before),
+          after: defaultsLabel(next),
         });
         await publish(tx, { kind: "alerts", organizationId: me.organizationId });
       });

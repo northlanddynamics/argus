@@ -195,7 +195,7 @@ export function createResponseActionSender(
             value: due.r.targetValue,
             action: due.r.falconAction!,
             severity: due.r.severity!,
-            platforms: IOC_PLATFORMS,
+            platforms: due.r.falconPlatforms ?? IOC_PLATFORMS,
             appliedGlobally: true,
             source: "Argus",
             description: iocDescription(due.case, baseUrl),

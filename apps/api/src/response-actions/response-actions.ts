@@ -28,7 +28,12 @@ import {
   type FalconIocType,
   falconAllowsPrevent,
   falconIocActionLabel,
+  type FalconIocDefaults,
+  FALCON_IOC_PLATFORMS,
+  type FalconIocPlatform,
+  falconIocPlatformLabel,
   falconIocType,
+  iocSeverity,
   LIVE_STATES,
   type ResponseActionKind,
   type ResponseActionOrigin,
@@ -126,7 +131,7 @@ export type NewResponseAction = {
   observableId: string;
   integrationId: string;
   action: FalconIocAction;
-  /** Hidden from the Case's Guests. */
+  /** Hidden from the Case's Guests; the Integration's default if left out. */
   internal?: boolean;
   /** Sends it even if it is on the Ignored list. */
   confirmIgnored?: boolean;
@@ -140,7 +145,7 @@ export type NewResponseActions = {
   observableIds: readonly string[];
   integrationIds: readonly string[];
   action: FalconIocAction;
-  /** Hidden from the Case's Guests. */
+  /** Hidden from the Case's Guests; each Integration's default if left out. */
   internal?: boolean;
   /** Sends those on the Ignored list too; without it, any among them refuses the whole request. */
   confirmIgnored?: boolean;
@@ -162,7 +167,8 @@ export type ResponseActionView = {
   observable: { id: string; type: ObservableType; value: string };
   /** What the tool was sent. */
   target: { type: string; value: string };
-  falcon: { action: FalconIocAction; severity: Severity } | null;
+  /** What the IOC was sent with; `platforms` null for one taken before they were configurable, meaning all. */
+  falcon: { action: FalconIocAction; severity: Severity; platforms: FalconIocPlatform[] | null } | null;
   /** The Integration it went through. Never told to Guests. */
   integration: { id: string; name: string } | null;
   /** Hidden from Guests. */
@@ -200,7 +206,8 @@ export type ObservableResponseActionView = {
   case: { number: number; title: string };
   /** The Integration it went through. Never told to Guests. */
   integration: { id: string; name: string } | null;
-  falcon: { action: FalconIocAction; severity: Severity } | null;
+  /** What the IOC was sent with; `platforms` null for one taken before they were configurable, meaning all. */
+  falcon: { action: FalconIocAction; severity: Severity; platforms: FalconIocPlatform[] | null } | null;
   /** Hidden from Guests. */
   internal: boolean;
   requestedAt: string;
@@ -209,8 +216,8 @@ export type ObservableResponseActionView = {
   sentAt: string | null;
 };
 
-/** The Integrations a Response Action can be sent to, as the Case offers them. */
-export type EligibleIntegration = { id: string; name: string; provider: string };
+/** The Integrations a Response Action can be sent to, as the Case offers them, with what they send it with. */
+export type EligibleIntegration = { id: string; name: string; provider: string; defaults: FalconIocDefaults };
 
 type Row = typeof responseActions.$inferSelect;
 
@@ -220,8 +227,12 @@ const described = (o: { type: ObservableType; value: string }) => `${observableT
 /** How the Case Audit Log names a Response Action. */
 export const responseActionLabel = (o: { type: ObservableType; value: string }) => `Falcon custom IOC: ${described(o)}`;
 
-const paramsOf = (r: Pick<Row, "falconAction" | "severity">) =>
-  `${falconIocActionLabel[r.falconAction!]}, severity ${severityLabel[r.severity!]}`;
+const paramsOf = (r: Pick<Row, "falconAction" | "severity" | "falconPlatforms">) =>
+  [
+    falconIocActionLabel[r.falconAction!],
+    `severity ${severityLabel[r.severity!]}`,
+    ...(r.falconPlatforms && r.falconPlatforms.length < FALCON_IOC_PLATFORMS.length ? [r.falconPlatforms.map((p) => falconIocPlatformLabel[p]).join(", ")] : []),
+  ].join(", ");
 
 /** What happened to a Response Action, as its Timeline Entry and Case Audit Log entry say it. */
 export type StateChange =
@@ -396,7 +407,7 @@ async function liveCreated(
 ) {
   const t = responseActions;
   const [found] = await tx
-    .select({ id: t.id, falconAction: t.falconAction, severity: t.severity })
+    .select({ id: t.id, falconAction: t.falconAction, severity: t.severity, falconPlatforms: t.falconPlatforms })
     .from(t)
     .where(
       and(
@@ -415,9 +426,9 @@ async function liveCreated(
 }
 
 /** The Integrations in `me`'s Organization that take Falcon custom IOCs now. */
-async function eligible(db: Db | Tx, organizationId: string) {
+async function eligible(db: Db | Tx, organizationId: string): Promise<EligibleIntegration[]> {
   const rows = await db
-    .select({ id: integrations.id, name: integrations.name, provider: integrations.provider })
+    .select({ id: integrations.id, name: integrations.name, provider: integrations.provider, defaults: integrations.responseActionDefaults })
     .from(integrations)
     .where(and(eq(integrations.organizationId, organizationId), eq(integrations.responseActions, true), eq(integrations.provider, "crowdstrike")))
     .orderBy(asc(integrations.createdAt), asc(integrations.id));
@@ -500,7 +511,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
       state: row.state,
       observable: { id: row.observableId, type: observableType as ObservableType, value: observableValue },
       target: { type: row.targetType, value: row.targetValue },
-      falcon: row.falconAction && row.severity ? { action: row.falconAction, severity: row.severity } : null,
+      falcon: row.falconAction && row.severity ? { action: row.falconAction, severity: row.severity, platforms: row.falconPlatforms } : null,
       integration: insider ? { id: row.integrationId, name: integrationName } : null,
       internal: row.internal,
       requestedBy: { id: row.createdById, name: requestedByName },
@@ -562,7 +573,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
           .from(integrations)
           .where(and(inArray(integrations.id, integrationIds), eq(integrations.organizationId, me.organizationId)))
           .for("share");
-        const offered = new Set((await eligible(tx, me.organizationId)).map((i) => i.id));
+        const offered = new Map((await eligible(tx, me.organizationId)).map((i) => [i.id, i.defaults]));
         if (chosen.length !== integrationIds.length || !chosen.every((i) => offered.has(i.id))) throw new IntegrationNotEligible();
 
         // In the order asked: what Falcon takes goes ahead, the rest are skipped with the reason.
@@ -616,13 +627,14 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
               caseId: current.id,
               observableId: o.id,
               ...target,
-              // An already present record says what the tool holds: the action and severity it was sent with.
+              // An already present record says what the tool holds: what it was sent with.
               falconAction: present?.falconAction ?? input.action,
-              severity: present?.severity ?? current.severity,
+              severity: present?.severity ?? iocSeverity(offered.get(target.integrationId)!, current.severity),
+              falconPlatforms: present ? present.falconPlatforms : offered.get(target.integrationId)!.platforms,
               state: presentFromId ? "active" : "pending",
               origin: presentFromId ? "already_present" : "created",
               presentFromId,
-              internal: input.internal ?? false,
+              internal: input.internal ?? offered.get(target.integrationId)!.internal,
               createdById: me.userId,
               createdAt: now,
               stateChangedAt: now,
@@ -679,7 +691,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
         origin: row.origin,
         case: { number: caseNumber, title: caseTitle },
         integration: insider ? { id: row.integrationId, name: integrationName } : null,
-        falcon: row.falconAction && row.severity ? { action: row.falconAction, severity: row.severity } : null,
+        falcon: row.falconAction && row.severity ? { action: row.falconAction, severity: row.severity, platforms: row.falconPlatforms } : null,
         internal: row.internal,
         requestedAt: row.createdAt.toISOString(),
         stateChangedAt: row.stateChangedAt.toISOString(),

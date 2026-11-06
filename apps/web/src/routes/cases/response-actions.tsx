@@ -14,7 +14,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,11 +26,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { type ObservableType, observableTypeLabel, shownObservable } from "@/lib/observables";
 import {
+  describeDefaults,
+  type EligibleIntegration,
   type FalconIocAction,
   falconAllowsPrevent,
   falconIocActionLabel,
   falconIocType,
-  dismissResponseAction,
   type IgnoredInSend,
   type RelyingCases,
   removeResponseAction,
@@ -45,9 +45,10 @@ import {
   takeResponseActions,
 } from "@/lib/response-actions";
 import { exactTime, when } from "@/lib/when";
-import { caseRef, type Severity, severityLabel } from "@/lib/cases";
+import { caseRef, type Severity } from "@/lib/cases";
+import { ObservableActions } from "@/routes/cases/observable-actions";
 
-type Eligible = { id: string; name: string };
+type Eligible = Pick<EligibleIntegration, "id" | "name" | "defaults">;
 type Sendable = { id: string; type: ObservableType; value: string };
 
 /** The Amber Notice treatment (DESIGN.md): the one warning style. */
@@ -68,6 +69,16 @@ const HOLDING = new Set<ResponseAction["state"]>(["pending", "active", "removing
 
 /** This Case's Response Actions on Observable `id` that still hold it in an Integration. */
 export const holdingOn = (held: readonly ResponseAction[], id: string) => held.filter((r) => r.observable.id === id && HOLDING.has(r.state));
+
+/** Where the IOC goes and with what: one Integration's defaults, or each Integration's own. */
+function sentWith(integrations: readonly Eligible[], severity: Severity) {
+  const [only] = integrations;
+  if (integrations.length === 1 && only) return `${describeDefaults(only.defaults, severity)}`;
+  return "with each Integration's severity and platforms";
+}
+
+/** Whether a send starts Internal: so when every Integration it goes to says so by default. */
+export const startsInternal = (integrations: readonly Eligible[]) => integrations.length > 0 && integrations.every((i) => i.defaults.internal);
 
 /** A time a person can read, with the exact time for pointer and assistive tech alike. */
 function At({ iso }: { iso: string }) {
@@ -95,6 +106,8 @@ export function SendToFalconDialog({
   integrations,
   held,
   trigger,
+  defaultOpen = false,
+  onClose,
   onSent,
 }: {
   number: number;
@@ -104,16 +117,26 @@ export function SendToFalconDialog({
   integrations: Eligible[];
   /** The Case's Response Actions, to say what is already sent. */
   held: readonly ResponseAction[];
-  /** Opens the dialog. */
-  trigger: ReactNode;
+  /** Opens the dialog; left out, the dialog opens when mounted (`defaultOpen`), as from a menu. */
+  trigger?: ReactNode;
+  /** Open as soon as it is mounted. */
+  defaultOpen?: boolean;
+  /** Called whenever it closes. */
+  onClose?: () => void;
   /** Called once something was sent. */
   onSent?: () => void;
 }) {
   const queryClient = useQueryClient();
-  const [isOpen, setIsOpen] = useState(false);
-  const [integrationIds, setIntegrationIds] = useState<string[]>([]);
+  const [isOpen, setOpenState] = useState(defaultOpen);
+  const setIsOpen = (next: boolean) => {
+    setOpenState(next);
+    if (!next) onClose?.();
+  };
+  /** With one Integration there is nothing to choose; with several, the Member picks. */
+  const initialIds = () => (integrations.length === 1 ? [integrations[0]!.id] : []);
+  const [integrationIds, setIntegrationIds] = useState<string[]>(initialIds);
   const [action, setAction] = useState<FalconIocAction>("detect");
-  const [internal, setInternal] = useState(false);
+  const [internal, setInternal] = useState(() => startsInternal(integrations.filter((i) => initialIds().includes(i.id))));
   /** Ignored Observables the API asked to confirm, and whether the Member has. */
   const [ignored, setIgnored] = useState<IgnoredInSend[]>([]);
   const [confirmIgnored, setConfirmIgnored] = useState(false);
@@ -199,8 +222,11 @@ export function SendToFalconDialog({
     setIsOpen(false);
     if (result && result.taken > 0) onSent?.();
   };
-  const toggleIntegration = (id: string, on: boolean) =>
-    setIntegrationIds((ids) => (on ? integrations.map((i) => i.id).filter((x) => x === id || ids.includes(x)) : ids.filter((x) => x !== id)));
+  const toggleIntegration = (id: string, on: boolean) => {
+    const ids = on ? integrations.map((i) => i.id).filter((x) => x === id || integrationIds.includes(x)) : integrationIds.filter((x) => x !== id);
+    setIntegrationIds(ids);
+    setInternal(startsInternal(integrations.filter((i) => ids.includes(i.id))));
+  };
 
   return (
     <Dialog
@@ -209,10 +235,9 @@ export function SendToFalconDialog({
         if (!next) return close();
         setIsOpen(next);
         if (next) {
-          // With one Integration there is nothing to choose; with several, the Member picks.
-          setIntegrationIds(integrations.length === 1 ? [integrations[0]!.id] : []);
+          setIntegrationIds(initialIds());
           setAction("detect");
-          setInternal(false);
+          setInternal(startsInternal(integrations.filter((i) => initialIds().includes(i.id))));
           setIgnored([]);
           setConfirmIgnored(false);
           setResult(null);
@@ -221,7 +246,7 @@ export function SendToFalconDialog({
         }
       }}
     >
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Send to Falcon as a custom IOC</DialogTitle>
@@ -233,8 +258,8 @@ export function SendToFalconDialog({
             ) : (
               <>{observables.length} Observables are</>
             )}{" "}
-            added to Falcon globally, for every platform, as Severity {severityLabel[severity]} (from{" "}
-            <span className="font-mono">{caseRef(number)}</span>) with a link back to the Case.
+            added to Falcon globally, {sentWith(integrationIds.length ? integrations.filter((i) => integrationIds.includes(i.id)) : integrations, severity)}, with a
+            link back to <span className="font-mono">{caseRef(number)}</span>.
           </DialogDescription>
         </DialogHeader>
         {result ? (
@@ -315,14 +340,13 @@ export function SendToFalconDialog({
             </ul>
             <Field orientation="horizontal" className="w-auto">
               <Checkbox id="response-action-internal" checked={internal} onCheckedChange={(checked) => setInternal(checked === true)} />
-              <FieldLabel htmlFor="response-action-internal">Internal (hidden from Guests)</FieldLabel>
+              <FieldLabel htmlFor="response-action-internal">Internal</FieldLabel>
             </Field>
             {ignored.length > 0 && (
               <Alert className={notice}>
                 <AlertDescription className="grid gap-2">
                   <span>
-                    {ignored.length === 1 ? "This Observable is" : "These Observables are"} on the Organization's Ignored list, as too common to
-                    mean anything:
+                    {ignored.length === 1 ? "This Observable is" : "These Observables are"} on the Ignored list:
                   </span>
                   <ul className="grid gap-0.5">
                     {ignored.map((o) => (
@@ -361,9 +385,9 @@ export function SendToFalconDialog({
 }
 
 /** Says a send went through, and offers the way to the rows it added. */
-function announce(taken: number, names: string[]) {
+export function announce(taken: number, names: string[]) {
   toast(`${taken} Response Action${taken === 1 ? "" : "s"} taken through ${list(names)}`, {
-    description: "Pending until Falcon confirms; shown under Response Actions.",
+    description: "Shown under Response Actions.",
     action: { label: "Show", onClick: () => document.getElementById(CARD_ID)?.scrollIntoView({ behavior: "smooth", block: "start" }) },
   });
 }
@@ -441,12 +465,16 @@ function OriginLine({ r, number }: { r: ResponseAction; number: number }) {
 }
 
 /**
- * "Remove": asks before Argus deletes what it created in the tool. When other Cases rely on it, says
+ * "Remove", opened from a menu: asks before Argus deletes what it created in the tool. When other Cases rely on it, says
  * which (those the viewer can see, and how many others) and needs a second confirmation.
  */
-function RemoveDialog({ number, r }: { number: number; r: ResponseAction }) {
+export function RemoveDialog({ number, r, onClose }: { number: number; r: ResponseAction; onClose: () => void }) {
   const queryClient = useQueryClient();
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setOpenState] = useState(true);
+  const setIsOpen = (next: boolean) => {
+    setOpenState(next);
+    if (!next) onClose();
+  };
   const [relying, setRelying] = useState<RelyingCases | null>(null);
   const remove = useMutation({
     mutationFn: () => removeResponseAction(number, r.id, relying !== null),
@@ -469,18 +497,13 @@ function RemoveDialog({ number, r }: { number: number; r: ResponseAction }) {
         }
       }}
     >
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm" aria-label={`Remove the Response Action on ${r.observable.value}`}>
-          Remove
-        </Button>
-      </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Remove from Falcon</DialogTitle>
           <DialogDescription>
             Argus deletes the custom IOC for {observableTypeLabel[r.observable.type]}{" "}
             <span className="font-mono break-all">{fullValue(r.observable)}</span>
-            {r.integration && ` from ${r.integration.name}`}. {stops} This Case keeps the record, marked Removed.
+            {r.integration && ` from ${r.integration.name}`}. {stops}
           </DialogDescription>
         </DialogHeader>
         {relying && (
@@ -526,27 +549,24 @@ function RemoveDialog({ number, r }: { number: number; r: ResponseAction }) {
   );
 }
 
-/** "Dismiss": this Case stops recording an already present IOC as its own; the tool is left alone. */
-function DismissDialog({ r, disabled, onDismiss }: { r: ResponseAction; disabled: boolean; onDismiss: () => void }) {
+/** "Dismiss", opened from a menu: this Case stops recording an already present IOC as its own; the tool is left alone. */
+export function DismissDialog({ r, disabled, onDismiss, onClose }: { r: ResponseAction; disabled: boolean; onDismiss: () => void; onClose: () => void }) {
   return (
-    <AlertDialog>
-      <AlertDialogTrigger asChild>
-        <Button variant="outline" size="sm" disabled={disabled} aria-label={`Dismiss the record of ${r.observable.value}`}>
-          Dismiss
-        </Button>
-      </AlertDialogTrigger>
+    <AlertDialog defaultOpen onOpenChange={(next) => !next && onClose()}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Dismiss this record?</AlertDialogTitle>
           <AlertDialogDescription>
             This Case stops recording {observableTypeLabel[r.observable.type]}{" "}
             <span className="font-mono break-all">{fullValue(r.observable)}</span> as already present
-            {r.integration ? ` in ${r.integration.name}` : ""}. Nothing changes in Falcon, and the record stays here, marked Dismissed.
+            {r.integration ? ` in ${r.integration.name}` : ""}.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction onClick={onDismiss}>Dismiss</AlertDialogAction>
+          <AlertDialogAction disabled={disabled} onClick={onDismiss}>
+            Dismiss
+          </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
@@ -590,30 +610,21 @@ export function ResponseActionsCard({
     mutationFn: (id: string) => retryResponseAction(number, id),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: responseActionsKey(number) }),
   });
-  const dismiss = useMutation({
-    mutationFn: (id: string) => dismissResponseAction(number, id),
-    onSettled: () => void queryClient.invalidateQueries({ queryKey: responseActionsKey(number) }),
-  });
   const all = query.data?.responseActions ?? [];
   const eligible = query.data?.integrations ?? [];
   const { failed, open, closed } = arrange(all);
   const rows = [...failed, ...open, ...(showClosed ? closed : [])];
-  const hasActions = !readOnly || canRemove;
-  const columns = 4 + (canMarkInternal ? 1 : 0) + (hasActions ? 1 : 0);
-  /** The error of a Retry or Dismiss on row `id`, shown on that row. */
-  const errorOn = (id: string) => (retry.variables === id && retry.error) || (dismiss.variables === id && dismiss.error) || null;
+  const columns = 5 + (canMarkInternal ? 1 : 0);
+  /** The error of a Retry on row `id`, shown on that row. */
+  const errorOn = (id: string) => (retry.variables === id && retry.error) || null;
 
-  const description = readOnly
-    ? "What Argus sent to your security tools from this Case."
-    : eligible.length > 0
-      ? "What Argus sent to your security tools from this Case. Send an Observable from its row above, or tick several and send them together."
-      : "What Argus sent to your security tools from this Case. No Integration takes Response Actions right now: an Admin turns them on under Settings · Integrations.";
+  const description = !readOnly && eligible.length === 0 ? "Response Actions are off. An Admin turns them on under Settings · Integrations." : null;
 
   return (
     <Card id={CARD_ID} className="scroll-mt-16">
       <CardHeader>
         <CardTitle>Response Actions</CardTitle>
-        <CardDescription>{description}</CardDescription>
+        {description && <CardDescription>{description}</CardDescription>}
       </CardHeader>
       <CardContent className="grid gap-4">
         {query.isError ? (
@@ -634,11 +645,9 @@ export function ResponseActionsCard({
                 <TableHead>State</TableHead>
                 <TableHead>Taken by</TableHead>
                 {canMarkInternal && <TableHead>Visibility</TableHead>}
-                {hasActions && (
-                  <TableHead className="w-0">
-                    <span className="sr-only">Actions</span>
-                  </TableHead>
-                )}
+                <TableHead className="w-0">
+                  <span className="sr-only">Actions</span>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody aria-live="polite" aria-busy={query.isPending}>
@@ -652,78 +661,79 @@ export function ResponseActionsCard({
                 ))}
               {rows.map((r) => {
                 const error = errorOn(r.id);
+                // Right-click or ⋯ for what can be done with its Observable: Remove, Dismiss, another IOC.
                 return (
-                  <TableRow key={r.id} data-testid={`response-action-${r.observable.value}`} className={r.state === "removed" ? "text-muted-foreground" : undefined}>
-                    <TableCell className="min-w-52 whitespace-normal">
-                      <ItemLink kind="observable" id={r.observable.id} className="block font-mono text-xs break-all hover:underline" title={r.observable.value}>
-                        {shownObservable(r.observable.type, r.observable.value)}
-                      </ItemLink>
-                      <span className="text-xs text-muted-foreground">{observableTypeLabel[r.observable.type]}</span>
-                    </TableCell>
-                    <TableCell className="whitespace-normal">
-                      {r.falcon ? falconIocActionLabel[r.falcon.action] : responseActionKindLabel[r.kind]}
-                      <span className="block text-xs text-muted-foreground">
-                        {r.integration ? r.integration.name : responseActionKindLabel[r.kind]}
-                      </span>
-                    </TableCell>
-                    <TableCell className="whitespace-normal">
-                      <Badge variant={stateVariant[r.state]} className={r.state === "removed" ? "text-muted-foreground" : undefined}>
-                        {stateLabel(r)}
-                      </Badge>
-                      <span className="mt-1 block text-xs text-muted-foreground">
-                        <StateLine r={r} />
-                      </span>
-                      {r.origin !== "created" && (
-                        <span className="mt-1 block text-xs text-muted-foreground">
-                          <OriginLine r={r} number={number} />
-                        </span>
-                      )}
-                      {r.lastError && <span className="mt-1 block text-xs break-words text-destructive">{r.lastError}</span>}
-                    </TableCell>
-                    <TableCell className="min-w-28 text-xs whitespace-normal">
-                      {r.requestedBy.name}
-                      <span className="block text-muted-foreground">
-                        <At iso={r.requestedAt} />
-                      </span>
-                    </TableCell>
-                    {canMarkInternal && (
-                      <TableCell>
-                        <Visibility
-                          number={number}
-                          item={{ kind: "response_action", id: r.id }}
-                          internal={r.internal}
-                          label={`Response Action on ${r.observable.value}`}
-                          canMark={!readOnly}
-                        />
-                      </TableCell>
-                    )}
-                    {hasActions && (
-                      <TableCell className="w-0 text-right">
-                        <div className="flex flex-col items-end gap-1">
-                          {r.state === "active" && r.origin === "created" && canRemove && <RemoveDialog number={number} r={r} />}
-                          {r.state === "failed" && (r.removalRequestedAt ? canRemove : !readOnly) && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={retry.isPending && retry.variables === r.id}
-                              aria-label={`Retry the Response Action on ${r.observable.value}`}
-                              onClick={() => retry.mutate(r.id)}
-                            >
-                              Retry
-                            </Button>
+                  <ObservableActions key={r.id} number={number} observable={r.observable}>
+                    {(menuButton) => (
+                      <TableRow data-testid={`response-action-${r.observable.value}`} className={r.state === "removed" ? "text-muted-foreground" : undefined}>
+                        <TableCell className="min-w-52 whitespace-normal">
+                          <ItemLink kind="observable" id={r.observable.id} className="block font-mono text-xs break-all hover:underline" title={r.observable.value}>
+                            {shownObservable(r.observable.type, r.observable.value)}
+                          </ItemLink>
+                          <span className="text-xs text-muted-foreground">{observableTypeLabel[r.observable.type]}</span>
+                        </TableCell>
+                        <TableCell className="whitespace-normal">
+                          {r.falcon ? falconIocActionLabel[r.falcon.action] : responseActionKindLabel[r.kind]}
+                          <span className="block text-xs text-muted-foreground">
+                            {r.integration ? r.integration.name : responseActionKindLabel[r.kind]}
+                          </span>
+                        </TableCell>
+                        <TableCell className="whitespace-normal">
+                          <Badge variant={stateVariant[r.state]} className={r.state === "removed" ? "text-muted-foreground" : undefined}>
+                            {stateLabel(r)}
+                          </Badge>
+                          <span className="mt-1 block text-xs text-muted-foreground">
+                            <StateLine r={r} />
+                          </span>
+                          {r.origin !== "created" && (
+                            <span className="mt-1 block text-xs text-muted-foreground">
+                              <OriginLine r={r} number={number} />
+                            </span>
                           )}
-                          {r.state === "active" && r.origin !== "created" && !readOnly && (
-                            <DismissDialog r={r} disabled={dismiss.isPending && dismiss.variables === r.id} onDismiss={() => dismiss.mutate(r.id)} />
-                          )}
+                          {r.lastError && <span className="mt-1 block text-xs break-words text-destructive">{r.lastError}</span>}
+                        </TableCell>
+                        <TableCell className="min-w-28 text-xs whitespace-normal">
+                          {r.requestedBy.name}
+                          <span className="block text-muted-foreground">
+                            <At iso={r.requestedAt} />
+                          </span>
+                        </TableCell>
+                        {canMarkInternal && (
+                          <TableCell>
+                            <Visibility
+                              number={number}
+                              item={{ kind: "response_action", id: r.id }}
+                              internal={r.internal}
+                              label={`Response Action on ${r.observable.value}`}
+                              canMark={!readOnly}
+                            />
+                          </TableCell>
+                        )}
+                        <TableCell className="w-0 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            {/* Failed needs someone, so Retry stays in sight; the rest is in the menu. */}
+                            {r.state === "failed" && (r.removalRequestedAt ? canRemove : !readOnly) && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={retry.isPending && retry.variables === r.id}
+                                aria-label={`Retry the Response Action on ${r.observable.value}`}
+                                onClick={() => retry.mutate(r.id)}
+                              >
+                                Retry
+                              </Button>
+                            )}
+                            {menuButton}
+                          </div>
                           {error && (
-                            <span role="alert" className="max-w-48 text-left text-xs whitespace-normal text-destructive">
+                            <span role="alert" className="mt-1 block max-w-48 text-left text-xs whitespace-normal text-destructive">
                               {error.message}
                             </span>
                           )}
-                        </div>
-                      </TableCell>
+                        </TableCell>
+                      </TableRow>
                     )}
-                  </TableRow>
+                  </ObservableActions>
                 );
               })}
               {query.isSuccess && all.length === 0 && (

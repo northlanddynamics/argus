@@ -4,10 +4,18 @@ import { z } from "zod";
 import { NotPermitted } from "../access/policy";
 import { FALCON_CLOUDS } from "../alerts/vocabulary";
 import type { Deps } from "../deps";
-import { IntegrationNameTaken, IntegrationNotFound, NotSupportedByProvider } from "../integrations/integrations";
+import { IntegrationNameTaken, IntegrationNotFound, InvalidDefaults, NotSupportedByProvider } from "../integrations/integrations";
+import { SEVERITIES } from "../cases/vocabulary";
+import { FALCON_IOC_PLATFORMS } from "../response-actions/vocabulary";
 import { type MemberEnv, requireMember } from "../members/membership";
 import type { Modules } from "../modules";
 
+/** What a Falcon custom IOC is sent with besides its action (ADR 0008). */
+const defaultsBody = z.object({
+  severity: z.enum(["case", ...SEVERITIES]),
+  platforms: z.array(z.enum(FALCON_IOC_PLATFORMS)).min(1, "Choose at least one platform"),
+  internal: z.boolean(),
+});
 const credentialsBody = z.object({
   clientId: z.string().trim().min(1).max(200),
   clientSecret: z.string().trim().min(1).max(500),
@@ -21,18 +29,21 @@ const createBody = credentialsBody.extend({
   writeBack: z.boolean().default(false),
   /** Off unless asked for: no Response Actions are taken through it until an Admin turns them on. */
   responseActions: z.boolean().default(false),
+  /** What its Response Actions are sent with; severity from the Case, every platform, not Internal, if left out. */
+  responseActionDefaults: defaultsBody.optional(),
 });
 const enabledBody = z.object({ enabled: z.boolean() });
 
+
 const notPermitted = { error: "Not permitted" } as const;
 
-/** Integrations: every Member sees them and their health; Admins add, rotate, pause, resume them and set their write-back and Response Actions. */
+/** Integrations: every Member sees them and their health; Admins add, rotate, pause, resume them and set their write-back, Response Actions and Response Action defaults. */
 export const integrationRoutes = (deps: Deps, { integrations }: Modules) =>
   new Hono<MemberEnv>()
     .use(requireMember(deps.db))
     .get("/", async (c) => c.json({ integrations: await integrations.list(c.get("membership")) }, 200))
     .post("/", zValidator("json", createBody), async (c) => {
-      const { provider, name, cloud, clientId, clientSecret, writeBack, responseActions } = c.req.valid("json");
+      const { provider, name, cloud, clientId, clientSecret, writeBack, responseActions, responseActionDefaults } = c.req.valid("json");
       try {
         const created = await integrations.create(c.get("membership"), {
           provider,
@@ -40,6 +51,7 @@ export const integrationRoutes = (deps: Deps, { integrations }: Modules) =>
           cloud,
           writeBack,
           responseActions,
+          responseActionDefaults,
           credentials: { clientId, clientSecret },
         });
         return c.json({ integration: created }, 201);
@@ -98,6 +110,18 @@ export const integrationRoutes = (deps: Deps, { integrations }: Modules) =>
         if (e instanceof NotPermitted) return c.json(notPermitted, 403);
         if (e instanceof IntegrationNotFound) return c.json({ error: e.message }, 404);
         if (e instanceof NotSupportedByProvider) return c.json({ error: e.message }, 422);
+        throw e;
+      }
+    })
+    .put("/:id/response-action-defaults", zValidator("json", defaultsBody), async (c) => {
+      try {
+        await integrations.setResponseActionDefaults(c.get("membership"), c.req.param("id"), c.req.valid("json"));
+        return c.json({ ok: true }, 200);
+      } catch (e) {
+        if (e instanceof NotPermitted) return c.json(notPermitted, 403);
+        if (e instanceof IntegrationNotFound) return c.json({ error: e.message }, 404);
+        if (e instanceof NotSupportedByProvider) return c.json({ error: e.message }, 422);
+        if (e instanceof InvalidDefaults) return c.json({ error: e.message }, 422);
         throw e;
       }
     });

@@ -231,6 +231,31 @@ describe("Providers and Response Actions", () => {
     ]);
   });
 
+  test("only Admins set what Response Actions are sent with, each change in the Organization Audit Log", async () => {
+    const a = await acme();
+    const id = await a.addProd();
+    const set = (as: typeof a.admin, json: { severity: "case" | "low" | "critical"; platforms: ("windows" | "mac" | "linux")[]; internal: boolean }, on = id) =>
+      as.api.integrations[":id"]["response-action-defaults"].$put({ param: { id: on }, json });
+
+    expect((await a.integration(id, a.ana)).responseActionDefaults).toEqual({ severity: "case", platforms: ["windows", "mac", "linux"], internal: false });
+    expect((await set(a.ana, { severity: "low", platforms: ["windows"], internal: false })).status).toBe(403);
+    expect((await set(a.admin, { severity: "low", platforms: [], internal: false })).status).toBe(400);
+    expect((await set(a.admin, { severity: "low", platforms: ["linux", "windows", "linux"], internal: true })).status).toBe(200);
+    expect((await a.integration(id)).responseActionDefaults).toEqual({ severity: "low", platforms: ["windows", "linux"], internal: true });
+    // The same again changes nothing.
+    expect((await set(a.owner, { severity: "low", platforms: ["windows", "linux"], internal: true })).status).toBe(200);
+    expect((await set(a.admin, { severity: "case", platforms: ["windows"], internal: false }, "nope")).status).toBe(404);
+
+    expect((await a.orgAudit())[0]).toMatchObject({
+      action: "integration.response_action_defaults_changed",
+      actor: { name: "Adam Admin" },
+      target: "CrowdStrike — Prod",
+      before: "Severity from the Case · every platform · visible to Guests",
+      after: "Severity Low · Windows, Linux · Internal",
+    });
+    expect((await a.orgAudit())[1]!.action).toBe("integration.created");
+  });
+
   test("workers stream only from Integrations whose Provider sends Alerts", async () => {
     const a = await acme();
     await a.addProd();

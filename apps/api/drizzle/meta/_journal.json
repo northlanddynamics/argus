@@ -239,6 +239,13 @@
       "when": 1793931467275,
       "tag": "0033_response_actions_removal",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1793976546724,
+      "tag": "0034_response_action_defaults",
+      "breakpoints": true
     }
   ]
 }

@@ -1,10 +1,17 @@
 import { queryOptions } from "@tanstack/react-query";
 import { api, errorMessage } from "@/lib/api";
 import type { ObservableType } from "api/observables/vocabulary";
-import type { FalconIocAction } from "api/response-actions/vocabulary";
+import { severityLabel, type Severity } from "api/cases/vocabulary";
+import { FALCON_IOC_PLATFORMS, type FalconIocAction, type FalconIocDefaults, falconIocPlatformLabel } from "api/response-actions/vocabulary";
 
 export {
+  DEFAULT_FALCON_IOC_DEFAULTS,
   FALCON_IOC_ACTIONS,
+  FALCON_IOC_PLATFORMS,
+  type FalconIocDefaults,
+  type FalconIocPlatform,
+  falconIocPlatformLabel,
+  iocSeverity,
   type FalconIocAction,
   falconAllowsPrevent,
   falconIocActionLabel,
@@ -32,6 +39,16 @@ export const responseActionsQuery = (number: number) =>
 
 export type ResponseActionsOnCase = NonNullable<Awaited<ReturnType<ReturnType<typeof responseActionsQuery>["queryFn"] & {}>>>;
 export type ResponseAction = ResponseActionsOnCase["responseActions"][number];
+/** An Integration a Member can send to from the Case, with what it sends an IOC with. */
+export type EligibleIntegration = ResponseActionsOnCase["integrations"][number];
+
+/** "Severity High (from the Case) · every platform", as a menu or dialog says what an IOC goes with. */
+export function describeDefaults(d: FalconIocDefaults, caseSeverity?: Severity) {
+  const severity =
+    d.severity === "case" ? (caseSeverity ? `Severity ${severityLabel[caseSeverity]} (from the Case)` : "Severity from the Case") : `Severity ${severityLabel[d.severity]}`;
+  const platforms = d.platforms.length === FALCON_IOC_PLATFORMS.length ? "every platform" : d.platforms.map((p) => falconIocPlatformLabel[p]).join(", ");
+  return `${severity} · ${platforms}`;
+}
 
 /** An Observable on the Ignored list that a send has to confirm. */
 export type IgnoredInSend = { id: string; type: ObservableType; value: string };
@@ -45,7 +62,8 @@ export type SkippedInSend = { observable: IgnoredInSend; provider: string; reaso
  */
 export async function takeResponseActions(
   number: number,
-  input: { observableIds: string[]; integrationIds: string[]; action: FalconIocAction; internal: boolean; confirmIgnored: boolean },
+  /** `internal` left out takes each Integration's default. */
+  input: { observableIds: string[]; integrationIds: string[]; action: FalconIocAction; internal?: boolean; confirmIgnored: boolean },
 ): Promise<{ ignored: IgnoredInSend[] } | { taken: number; skipped: SkippedInSend[] }> {
   const res = await api.cases[":number"]["response-actions"].bulk.$post({ param: { number: String(number) }, json: input });
   if (res.status === 409) {
