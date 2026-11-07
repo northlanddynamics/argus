@@ -4,6 +4,7 @@ import { assetFalconDevices, assets, caseAssets, falconHostLookups, falconHostSn
 import type { Deps } from "../deps";
 import { secureId } from "../ids";
 import { publish } from "../realtime/signals";
+import { containmentLiftedInFalcon } from "../response-actions/response-actions";
 import { type FalconClient, type FalconConnector, type FalconHost, FalconScopeMissing } from "./falcon";
 import { streamConnection } from "./stream-state";
 
@@ -22,6 +23,11 @@ import { streamConnection } from "./stream-state";
  * marked due and done by the worker the same way. Every match is recorded on the host, several
  * making it ambiguous, and from then on its `aid` is used and not the hostname. No match shows as
  * not found in Falcon, and is looked up again the next time the host's Enrichment is fetched.
+ *
+ * A fetch showing a device released (neither contained nor being contained) ends every containment
+ * Response Action Active for it, as lifted in Falcon (`containmentLiftedInFalcon`): for containment,
+ * Active means Falcon last reported the host contained. A failed fetch, or a device Falcon doesn't
+ * know, changes nothing.
  *
  * Enrichment is read-only, so it needs no Admin setting. When an Integration's API client lacks
  * Hosts: Read, the Integration's health says so (`host_enrichment_error`) and nothing else changes.
@@ -170,8 +176,11 @@ type Claimed = { id: string; organizationId: string; integrationId: string; devi
 /** What one fetch of an Integration's devices returned, or why it failed. */
 type Fetched = { hosts: FalconHost[] } | { error: string; scopeMissing: boolean };
 
-/** Stores what one fetch of `claimed`, all through one Integration, returned. */
-async function storeFetched(tx: Tx, integrationId: string, claimed: readonly Claimed[], fetched: Fetched, now: Date) {
+/** Whether Falcon reports a host neither contained nor being contained. */
+const released = (h: FalconHost) => h.containment !== null && h.containment !== "contained" && h.containment !== "containment_pending";
+
+/** Stores what one fetch of `claimed`, all through one Integration and asked for at `askedAt`, returned. */
+async function storeFetched(tx: Tx, integrationId: string, claimed: readonly Claimed[], fetched: Fetched, askedAt: Date, now: Date) {
   const s = falconHostSnapshots;
   if ("error" in fetched) {
     await tx
@@ -187,6 +196,9 @@ async function storeFetched(tx: Tx, integrationId: string, claimed: readonly Cla
         .set({ host: byId.get(c.deviceId) ?? null, fetchedAt: now, checkedAt: now, error: null })
         .where(eq(s.id, c.id));
     }
+    const claimedIds = new Set(claimed.map((c) => c.deviceId));
+    const releasedIds = fetched.hosts.filter((h) => claimedIds.has(h.deviceId) && released(h)).map((h) => h.deviceId);
+    await containmentLiftedInFalcon(tx, { integrationId, deviceIds: releasedIds, askedAt, now });
   }
   await recordHealth(tx, integrationId, fetched);
 }
@@ -288,6 +300,7 @@ export function createHostEnricher({ db, clock, credentials }: Pick<Deps, "db" |
     for (const d of due) byIntegration.set(d.integrationId, [...(byIntegration.get(d.integrationId) ?? []), d]);
     for (const [integrationId, claimed] of byIntegration) {
       let fetched: Fetched;
+      const askedAt = clock.now();
       try {
         const client = await clientFor(integrationId);
         fetched = client
@@ -297,7 +310,7 @@ export function createHostEnricher({ db, clock, credentials }: Pick<Deps, "db" |
         fetched = failureOf(e);
       }
       await db.transaction(async (tx) => {
-        await storeFetched(tx, integrationId, claimed, fetched, clock.now());
+        await storeFetched(tx, integrationId, claimed, fetched, askedAt, clock.now());
         await announce(tx, claimed[0]!.organizationId, { devices: claimed });
       });
     }

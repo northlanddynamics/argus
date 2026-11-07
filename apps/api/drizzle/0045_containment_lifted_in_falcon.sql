@@ -1,0 +1,1 @@
+ALTER TABLE "response_actions" ADD COLUMN "lifted_in_tool_at" timestamp with time zone;

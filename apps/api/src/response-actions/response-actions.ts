@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { casePolicy, NotPermitted, visibleCases, visibleItems } from "../access/policy";
 import { actorOf, CaseClosed, CaseNotFound, lockCase } from "../cases/cases";
@@ -92,6 +92,10 @@ import {
  * Falcon already reports contained is recorded "already present in the tool", and nothing is sent.
  * Lifting containment Argus imposed is its removal, as for an IOC: Removing, then Removed once Falcon
  * has lifted it or reports the host already released.
+ * Unlike an IOC, containment's real state comes back in Enrichment: a fetch showing the host released
+ * moves every Active containment record for that device to Removed, "lifted in Falcon", attributed
+ * to CrowdStrike (`containmentLiftedInFalcon`). So for containment, Active means Falcon last
+ * reported the host contained.
  */
 
 /** The Observable isn't of a type the Integration's Provider takes. */
@@ -239,6 +243,8 @@ export type ResponseActionView = {
   /** Who last asked Argus to remove it from the tool, and when. A Failed one with these set failed to be removed. */
   removalRequestedBy: Person | null;
   removalRequestedAt: string | null;
+  /** When it moved to Removed because the tool showed it undone outside Argus: for containment, "lifted in Falcon". */
+  liftedInToolAt: string | null;
 };
 
 /** A Response Action taken on an Observable, as its page lists it. */
@@ -339,7 +345,8 @@ export type StateChange =
   | "removal_failed"
   | "removed"
   | "already_gone"
-  | "relied_on_removed";
+  | "relied_on_removed"
+  | "lifted_in_tool";
 
 /** The changes that follow a request to remove it: their Timeline Entries are recorded by whoever asked. */
 const REMOVAL_CHANGES = new Set<StateChange>(["removal_requested", "removal_retried", "removal_failed", "removed", "already_gone"]);
@@ -358,6 +365,7 @@ const auditAction: Record<StateChange, CaseAuditAction> = {
   removed: "response_action.removed",
   already_gone: "response_action.removed",
   relied_on_removed: "response_action.removed",
+  lifted_in_tool: "response_action.removed",
 };
 
 /** How removing `entry` from `tool` is put. */
@@ -367,6 +375,7 @@ const removal = (entry: string, tool: string) => ({
   removed: `Argus removed ${entry} from ${tool}`,
   alreadyGone: `${entry} was already gone from ${tool}`,
   reliedOnRemoved: `Argus removed ${entry} from ${tool} at the request of the Case that sent it, so this Case no longer records it as present`,
+  liftedInTool: `${entry} was removed from ${tool} outside Argus`,
 });
 
 /** How a Response Action's Timeline Entries and Audit Log entries put it, by kind. */
@@ -387,6 +396,7 @@ function phrasing(r: Row, o: Subject) {
       removed: `Argus lifted the containment of ${what} in ${tool}`,
       alreadyGone: `${what} was already released in ${tool}`,
       reliedOnRemoved: `Argus lifted the containment of ${what} in ${tool} at the request of the Case that contained it, so this Case no longer records it as contained`,
+      liftedInTool: `the containment of ${what} was lifted in ${tool}, outside Argus`,
     };
   }
   if (r.kind === "mimecast_blocked_sender") {
@@ -445,6 +455,8 @@ function timelineBody(change: StateChange, r: Row, o: Subject, by: string) {
       return `Response Action removed: ${p.alreadyGone}.`;
     case "relied_on_removed":
       return `Response Action removed: ${p.reliedOnRemoved}.`;
+    case "lifted_in_tool":
+      return `Response Action removed: ${p.liftedInTool}.`;
   }
 }
 
@@ -459,6 +471,8 @@ function auditDetail(change: StateChange, r: Row) {
         return `Already released in ${tool}; nothing to lift`;
       case "relied_on_removed":
         return `Containment lifted in ${tool} by the Case that contained it`;
+      case "lifted_in_tool":
+        return `Lifted in ${tool}, outside Argus`;
       case "removal_requested":
       case "removal_retried":
         return `Lift containment in ${tool}`;
@@ -477,6 +491,8 @@ function auditDetail(change: StateChange, r: Row) {
       return `Already gone from ${tool}; nothing to remove`;
     case "relied_on_removed":
       return `Removed from ${tool} by the Case that sent it`;
+    case "lifted_in_tool":
+      return `Removed in ${tool}, outside Argus`;
     case "removal_requested":
     case "removal_retried":
       return `Remove from ${tool}`;
@@ -530,6 +546,46 @@ export async function recordStateChange(
     after: detail ?? auditDetail(change, r),
   });
   await publish(tx, { kind: "case", organizationId: r.organizationId, caseId: r.caseId, membersOnly: r.internal });
+}
+
+/** Who the Case Audit Log says lifted containment in Falcon outside Argus. */
+const CROWDSTRIKE: CaseActor = { type: "crowdstrike", name: providerLabel.crowdstrike };
+
+/**
+ * Falcon reported devices `deviceIds` of CrowdStrike Integration `integrationId` released, in a fetch
+ * asked for at `askedAt` (ADR 0009). Every containment Response Action for them that was Active by
+ * then, on any Case and whatever its origin, moves to Removed, marked lifted in Falcon, and the Case
+ * Audit Log attributes that to CrowdStrike. One that became Active after the fetch was asked for is
+ * left alone, since what Falcon said may predate it. Call in the transaction storing the fetch.
+ */
+export async function containmentLiftedInFalcon(tx: Tx, { integrationId, deviceIds, askedAt, now }: { integrationId: string; deviceIds: readonly string[]; askedAt: Date; now: Date }) {
+  if (!deviceIds.length) return;
+  const r = responseActions;
+  const ended = await tx
+    .select({ id: r.id, asset: { type: assets.type, value: assets.value } })
+    .from(r)
+    .innerJoin(assets, eq(r.assetId, assets.id))
+    .where(
+      and(
+        eq(r.integrationId, integrationId),
+        eq(r.kind, "falcon_containment"),
+        eq(r.targetType, CONTAINMENT_TARGET_TYPE),
+        inArray(r.targetValue, [...deviceIds]),
+        eq(r.state, "active"),
+        lte(r.stateChangedAt, askedAt),
+      ),
+    )
+    .orderBy(asc(r.seq))
+    .for("update", { of: r });
+  for (const e of ended) {
+    const [lifted] = await tx
+      .update(r)
+      .set({ state: "removed", stateChangedAt: now, liftedInToolAt: now, lastError: null })
+      .where(and(eq(r.id, e.id), eq(r.state, "active")))
+      .returning();
+    if (!lifted) continue;
+    await recordStateChange(tx, { r: lifted, subject: { type: e.asset.type as AssetType, value: e.asset.value }, change: "lifted_in_tool", actor: CROWDSTRIKE, now });
+  }
 }
 
 /** Queues an attempt to send Response Action `id`, or to remove it, due now. */
@@ -699,6 +755,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
       dismissedAt: row.dismissedAt?.toISOString() ?? null,
       removalRequestedBy: row.removalRequestedById && removerName ? { id: row.removalRequestedById, name: removerName } : null,
       removalRequestedAt: row.removalRequestedAt?.toISOString() ?? null,
+      liftedInToolAt: row.liftedInToolAt?.toISOString() ?? null,
     }));
   }
 

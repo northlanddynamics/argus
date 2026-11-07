@@ -535,3 +535,74 @@ describe("Lifting containment Argus imposed", () => {
     expect(await lift(a, a.ada, id)).toMatchObject({ status: 409, body: { error: "Only an Active Response Action can be removed" } });
   });
 });
+
+/** Has the laptop's Enrichment fetched afresh, as the confirmation does. */
+async function refresh(a: Acme) {
+  await a.check(a.ben);
+  await a.enricher.tick();
+}
+
+describe("Containment lifted in Falcon", () => {
+  test("a fetch showing the host released moves every Active containment record for the device to Removed, marked lifted in Falcon", async () => {
+    const a = await acme();
+    const id = await contained(a);
+    const lateral = await a.open("Lateral movement");
+    await a.linkHost("FIN-LT-0231", lateral);
+    const relyingId = (await a.contain(a.ben, { on: lateral })).body.responseAction!.id;
+    a.t.clock.advance(60_000);
+
+    a.tenant.hosts.set(AID, fakeHost(AID, { containment: "normal" }));
+    await refresh(a);
+    const at = a.t.clock.now().toISOString();
+    expect((await a.list(a.ben)).responseActions).toMatchObject([{ id, state: "removed", liftedInToolAt: at, stateChangedAt: at, removalRequestedBy: null }]);
+    expect((await a.list(a.ben, lateral)).responseActions).toMatchObject([{ id: relyingId, state: "removed", liftedInToolAt: at }]);
+    // Nothing was sent to Falcon.
+    expect(a.tenant.lifts).toEqual([]);
+    // Guests see it too.
+    expect((await a.list(a.guest)).responseActions).toMatchObject([{ id, state: "removed", liftedInToolAt: at }]);
+  });
+
+  test("is on the Timeline, and the Audit Log attributes it to CrowdStrike", async () => {
+    const a = await acme();
+    await contained(a);
+    a.tenant.hosts.set(AID, fakeHost(AID, { containment: "lift_containment_pending" }));
+    await refresh(a);
+    expect((await a.timeline(a.ben)).at(-1)).toBe(`Response Action removed: the containment of ${HOST} was lifted in CrowdStrike Falcon, outside Argus.`);
+    expect((await a.auditLog()).at(-1)).toMatchObject({
+      action: "response_action.removed",
+      actor: { type: "crowdstrike", name: "CrowdStrike" },
+      target: `Falcon host containment: ${HOST}`,
+      after: "Lifted in CrowdStrike Falcon, outside Argus",
+    });
+  });
+
+  test("a host still contained, being contained, unknown to Falcon, or a failed fetch, changes nothing", async () => {
+    const a = await acme();
+    const id = await contained(a);
+    await refresh(a);
+    a.tenant.hosts.set(AID, fakeHost(AID, { containment: "containment_pending" }));
+    await refresh(a);
+    a.tenant.hosts.delete(AID);
+    await refresh(a);
+    a.tenant.hosts.set(AID, fakeHost(AID, { containment: "normal" }));
+    a.tenant.failNextHostReads = 1;
+    await refresh(a);
+    expect((await a.list(a.ben)).responseActions).toMatchObject([{ id, state: "active", liftedInToolAt: null }]);
+  });
+
+  test("leaves Pending and Removing records alone", async () => {
+    const a = await acme();
+    // Pending: queued, not yet sent.
+    const pending = (await a.contain(a.ben)).body.responseAction!.id;
+    await refresh(a);
+    expect((await a.list(a.ben)).responseActions).toMatchObject([{ id: pending, state: "pending" }]);
+
+    // Removing: Argus is lifting it itself, and says so when done.
+    await a.worker.tick();
+    a.tenant.hosts.set(AID, fakeHost(AID, { containment: "contained" }));
+    await lift(a, a.ben, pending);
+    a.tenant.hosts.set(AID, fakeHost(AID, { containment: "normal" }));
+    await refresh(a);
+    expect((await a.list(a.ben)).responseActions).toMatchObject([{ id: pending, state: "removing", liftedInToolAt: null }]);
+  });
+});
