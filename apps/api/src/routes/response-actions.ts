@@ -88,7 +88,7 @@ const unlessNotFound = <T>(work: Promise<T>) =>
  *
  * Containing a host (ADR 0009) is confirmed first: `POST …/assets/:assetId/containment-check` asks
  * Falcon for the host afresh and `GET` reads what came back, which the confirmation shows; then
- * `POST …/response-actions/containment` contains the device picked.
+ * `POST …/response-actions/containment` contains the device picked. Lifting it is removing it.
  */
 export const responseActionRoutes = (deps: Deps, { responseActions }: Modules) =>
   new Hono<ParticipantEnv>()

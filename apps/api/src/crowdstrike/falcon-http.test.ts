@@ -304,6 +304,25 @@ describe("The Falcon API client", () => {
     await expect(read).rejects.toBeInstanceOf(FalconScopeMissing);
   });
 
+  test("contains a device and lifts its containment by aid; refused for want of Hosts: Write says so", async () => {
+    const { requests, fetchImpl } = stubFalcon({
+      "POST https://api.eu-1.crowdstrike.com/oauth2/token": token,
+      "POST https://api.eu-1.crowdstrike.com/devices/entities/devices-actions/v2": () => Response.json({ resources: [{ id: "8f1c" }] }, { status: 202 }),
+    });
+    const client = falconHttpClient(connection, fetchImpl);
+    await client.containHost("8f1c2b3a4d5e6f708192a3b4c5d6e7f8");
+    await client.liftContainment("8f1c2b3a4d5e6f708192a3b4c5d6e7f8");
+    expect(requests.slice(1).map((r) => new URL(r.url).searchParams.get("action_name"))).toEqual(["contain", "lift_containment"]);
+    expect(await requests[2]!.json()).toEqual({ ids: ["8f1c2b3a4d5e6f708192a3b4c5d6e7f8"] });
+
+    const refused = stubFalcon({
+      "POST https://api.eu-1.crowdstrike.com/oauth2/token": token,
+      "POST https://api.eu-1.crowdstrike.com/devices/entities/devices-actions/v2": () => Response.json({ errors: [{ code: 403, message: "access denied" }] }, { status: 403 }),
+    });
+    const lift = falconHttpClient(connection, refused.fetchImpl).liftContainment("8f1c2b3a4d5e6f708192a3b4c5d6e7f8");
+    await expect(lift).rejects.toThrow(new FalconScopeMissing("Lifting containment in Falcon failed: the API client lacks the Hosts: Write scope"));
+  });
+
   test("finds hosts by hostname, page by page, as lower-case aids", async () => {
     const pages = [
       { resources: ["8F1C2B3A4D5E6F708192A3B4C5D6E7F8"], meta: { pagination: { offset: 0, limit: 100, total: 2 } } },

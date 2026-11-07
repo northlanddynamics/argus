@@ -36,6 +36,8 @@ import { recordStateChange, type Subject } from "./response-actions";
  * reports it contained already (or containment pending), it is "already present in the tool" and
  * nothing is sent. Once sent, its Enrichment is asked for again, so the Case shows it being contained.
  * Containment waits on the Integration's Host containment setting, not its Response Actions one.
+ * Lifting it reads the device first too: one Falcon already reports released (or being released, or
+ * no longer knows) is already gone, and nothing is sent. Either way its Enrichment is asked for again.
  */
 
 /** The most attempts made in one transaction. */
@@ -63,12 +65,23 @@ type Tool = {
   remove(r: typeof responseActions.$inferSelect & { externalId: string }): Promise<boolean>;
 };
 
-/** Whether Falcon reports device `deviceId` contained, or being contained. Rejects when Falcon doesn't know it. */
-async function contained(client: FalconClient, deviceId: string) {
+/**
+ * Whether Falcon reports device `deviceId` contained, or being contained. Rejects when Falcon doesn't
+ * know it, unless `unknown` says what to take that as: a device gone from Falcon is no longer contained.
+ */
+async function contained(client: FalconClient, deviceId: string, { unknown }: { unknown?: boolean } = {}) {
   const [host] = await client.hosts([deviceId]);
+  if (!host && unknown !== undefined) return unknown;
   if (!host) throw new Error(`Falcon doesn't know the device ${deviceId}`);
   return host.containment === "contained" || host.containment === "containment_pending";
 }
+
+/** Asks for the Enrichment of the device a containment Response Action is against afresh. */
+const refetchHost = (tx: Tx, r: { organizationId: string; integrationId: string; targetValue: string }) =>
+  tx
+    .insert(falconHostSnapshots)
+    .values({ id: secureId(), organizationId: r.organizationId, integrationId: r.integrationId, deviceId: r.targetValue, due: true })
+    .onConflictDoUpdate({ target: [falconHostSnapshots.integrationId, falconHostSnapshots.deviceId], set: { due: true } });
 
 /**
  * `connect` makes Falcon clients and `mimecast` Mimecast ones; a Response Action through a Provider
@@ -104,8 +117,11 @@ export function createResponseActionSender(
         });
       },
       remove: async (r) => {
-        if (r.kind === "falcon_containment") throw new Error("Argus can't lift containment yet");
-        return client.deleteIoc(r.externalId);
+        if (r.kind !== "falcon_containment") return client.deleteIoc(r.externalId);
+        // A host Falcon already reports released (or being released) needs nothing lifted.
+        if (!(await contained(client, r.externalId, { unknown: false }))) return false;
+        await client.liftContainment(r.externalId);
+        return true;
       },
     };
     return { revision: found.credentialsRevision, tool };
@@ -256,6 +272,8 @@ export function createResponseActionSender(
           if (removing) {
             // Only ever what Argus created, by the id the tool gave it.
             await removed(tx, due, due.r.externalId ? await client.remove({ ...due.r, externalId: due.r.externalId }) : false, now);
+            // The Case shows the host being released once its Enrichment is fetched again.
+            if (due.r.kind === "falcon_containment") await refetchHost(tx, due.r);
             continue;
           }
           // Never overwrite what is already there: if the tool holds it, nothing is written.
@@ -283,13 +301,8 @@ export function createResponseActionSender(
             .where(eq(responseActions.id, due.r.id))
             .returning();
           await recordStateChange(tx, { r: sent!, subject: due.subject, change: "sent", actor: ARGUS, now });
-          if (sent!.kind === "falcon_containment") {
-            // The Case shows the host being contained once its Enrichment is fetched again.
-            await tx
-              .insert(falconHostSnapshots)
-              .values({ id: secureId(), organizationId: sent!.organizationId, integrationId: sent!.integrationId, deviceId: sent!.targetValue, due: true })
-              .onConflictDoUpdate({ target: [falconHostSnapshots.integrationId, falconHostSnapshots.deviceId], set: { due: true } });
-          }
+          // The Case shows the host being contained once its Enrichment is fetched again.
+          if (sent!.kind === "falcon_containment") await refetchHost(tx, sent!);
         } catch (e) {
           const message = e instanceof Error ? e.message : String(e);
           const attempts = due.attempt.attempts + 1;

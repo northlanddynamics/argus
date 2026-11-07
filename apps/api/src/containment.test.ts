@@ -404,16 +404,134 @@ describe("Containing a host", () => {
     expect((await a.timeline(a.guest)).some((b) => b.includes("KIOSK-01"))).toBe(false);
   });
 
-  test("Guests can't contain; nobody can on a Closed Case, and Argus doesn't lift it from a Case yet", async () => {
+  test("Guests can't contain, and nobody can on a Closed Case", async () => {
     const a = await acme();
     expect(await a.contain(a.guest)).toMatchObject({ status: 403 });
-    const id = (await a.contain(a.ben)).body.responseAction!.id;
-    await a.worker.tick();
-    const remove = await a.ben.api.cases[":number"]["response-actions"][":id"].remove.$post({ param: { ...param(a.number), id }, json: {} });
-    expect(remove.status).toBe(409);
-    expect(a.tenant.containments).toEqual([AID]);
-
     await a.ben.api.cases[":number"].close.$post({ param: param(a.number), json: { resolution: "true_positive" } });
     expect(await a.contain(a.owner)).toEqual({ status: 409, body: { error: "This Case is Closed and read-only; an Admin can reopen it" } });
+  });
+});
+
+type Acme = Awaited<ReturnType<typeof acme>>;
+
+/** Contains the laptop from the Case as Ben, sent and Active, and Falcon reports it contained; returns its id. */
+async function contained(a: Acme) {
+  const id = (await a.contain(a.ben)).body.responseAction!.id;
+  await a.worker.tick();
+  a.tenant.hosts.set(AID, fakeHost(AID, { containment: "contained" }));
+  return id;
+}
+
+/** Lifts containment Response Action `id` from Case `on` as `as`; returns the status and body. */
+async function lift(a: Acme, as: Acme["ben"] | Acme["guest"], id: string, { on = a.number, confirmRelying }: { on?: number; confirmRelying?: boolean } = {}) {
+  const res = await as.api.cases[":number"]["response-actions"][":id"].remove.$post({ param: { ...param(on), id }, json: { confirmRelying } });
+  return { status: res.status, body: (await res.json()) as Record<string, unknown> & { responseAction?: { state: string } } };
+}
+
+describe("Lifting containment Argus imposed", () => {
+  test("is Removing, then Removed once Falcon has lifted it; the Case then shows the host being released", async () => {
+    const a = await acme();
+    const id = await contained(a);
+    expect(await lift(a, a.ben, id)).toMatchObject({ status: 200, body: { responseAction: { state: "removing", removalRequestedBy: { name: "Ben Analyst" } } } });
+    expect(a.tenant.lifts).toEqual([]);
+    await a.worker.tick();
+    expect(a.tenant.lifts).toEqual([AID]);
+    expect((await a.list(a.ben)).responseActions).toMatchObject([{ id, state: "removed", lastError: null }]);
+    await a.enricher.tick();
+    const host = (await a.assets(a.ben)).find((x) => x.id === a.hostId)!;
+    expect(host.falcon[0]!.devices[0]!.containment).toBe("lift_containment_pending");
+  });
+
+  test("a host Falcon already reports released counts as lifted, and nothing is sent", async () => {
+    const a = await acme();
+    const id = await contained(a);
+    a.tenant.hosts.set(AID, fakeHost(AID, { containment: "normal" }));
+    await lift(a, a.ben, id);
+    await a.worker.tick();
+    expect(a.tenant.lifts).toEqual([]);
+    expect((await a.list(a.ben)).responseActions).toMatchObject([{ id, state: "removed" }]);
+    expect((await a.timeline(a.ben)).at(-1)).toBe(`Response Action removed: ${HOST} was already released in CrowdStrike Falcon.`);
+    expect((await a.auditLog()).at(-1)).toMatchObject({ action: "response_action.removed", after: "Already released in CrowdStrike Falcon; nothing to lift" });
+  });
+
+  test("a lift Falcon keeps refusing fails, notifies whoever asked, and can be retried", async () => {
+    const a = await acme();
+    const id = await contained(a);
+    a.tenant.refuseLifts = "Lifting containment in Falcon failed: the API client lacks the Hosts: Write scope";
+    await lift(a, a.ada, id);
+    await a.exhaust();
+    expect((await a.list(a.ben)).responseActions).toMatchObject([
+      { id, state: "failed", lastError: "Lifting containment in Falcon failed: the API client lacks the Hosts: Write scope", removalRequestedBy: { name: "Ada Admin" } },
+    ]);
+    expect(await (await a.ada.api.notifications.$get()).json()).toMatchObject({ unread: 1, notifications: [{ kind: "response_action_removal_failed" }] });
+    expect((await a.timeline(a.ben)).at(-1)).toBe(`Response Action removal failed: Argus could not lift the containment of ${HOST} in CrowdStrike Falcon.`);
+
+    a.tenant.refuseLifts = null;
+    const retried = await a.ben.api.cases[":number"]["response-actions"][":id"].retry.$post({ param: { ...param(a.number), id } });
+    expect(await retried.json()).toMatchObject({ responseAction: { state: "removing", lastError: null } });
+    await a.worker.tick();
+    expect(a.tenant.lifts).toEqual([AID]);
+    expect((await a.list(a.ben)).responseActions).toMatchObject([{ id, state: "removed" }]);
+  });
+
+  test("names the other Cases relying on it that the Member can see, and lifting it ends their records too", async () => {
+    const a = await acme();
+    const id = await contained(a);
+    const lateral = await a.open("Lateral movement");
+    await a.linkHost("FIN-LT-0231", lateral);
+    const relyingId = (await a.contain(a.ben, { on: lateral })).body.responseAction!.id;
+    // A Restricted Case Ben can't see relies on it too.
+    const insider = await a.open("Insider");
+    await a.linkHost("FIN-LT-0231", insider);
+    expect((await a.contain(a.owner, { on: insider })).body.responseAction).toMatchObject({ origin: "already_present" });
+    expect((await a.owner.api.cases[":number"].$patch({ param: param(insider), json: { restricted: true } })).status).toBe(200);
+
+    expect(await lift(a, a.ben, id)).toEqual({
+      status: 409,
+      body: { error: "2 other Cases rely on this Response Action; confirm to lift it anyway", relyingCases: [{ number: lateral, title: "Lateral movement" }], otherCases: 1 },
+    });
+    expect((await a.list(a.ben)).responseActions).toMatchObject([{ id, state: "active" }]);
+    expect((await lift(a, a.ben, id, { confirmRelying: true })).status).toBe(200);
+    await a.worker.tick();
+    expect(a.tenant.lifts).toEqual([AID]);
+    expect((await a.list(a.ben, lateral)).responseActions).toMatchObject([{ id: relyingId, state: "removed" }]);
+    expect((await a.list(a.owner, insider)).responseActions).toMatchObject([{ state: "removed" }]);
+    const body = await (await a.ben.api.cases[":number"].timeline.$get({ param: param(lateral) })).json();
+    if (!("entries" in body)) throw new Error("Could not read the Timeline");
+    expect(body.entries.map((e) => e.body).at(-1)).toBe(
+      `Response Action removed: Argus lifted the containment of ${HOST} in CrowdStrike Falcon at the request of the Case that contained it, so this Case no longer records it as contained.`,
+    );
+  });
+
+  test("is on the Timeline and in the Audit Log", async () => {
+    const a = await acme();
+    const id = await contained(a);
+    await lift(a, a.ben, id);
+    await a.worker.tick();
+    expect((await a.timeline(a.ben)).slice(2)).toEqual([
+      `Response Action removal asked for by Ben Analyst: lift the containment of ${HOST} in CrowdStrike Falcon.`,
+      `Response Action removed: Argus lifted the containment of ${HOST} in CrowdStrike Falcon.`,
+    ]);
+    const target = `Falcon host containment: ${HOST}`;
+    expect((await a.auditLog()).slice(2)).toMatchObject([
+      { action: "response_action.removal_requested", actor: { type: "member", name: "Ben Analyst" }, target, after: "Lift containment in CrowdStrike Falcon" },
+      { action: "response_action.removed", actor: { type: "system", name: "Argus" }, target, after: "Containment lifted in CrowdStrike Falcon" },
+    ]);
+  });
+
+  test("is for Members, of containment Argus imposed and that is Active; on a Closed Case only Admins lift it", async () => {
+    const a = await acme();
+    const id = await contained(a);
+    expect((await lift(a, a.guest, id)).status).toBe(403);
+    a.tenant.hosts.set(AID, fakeHost(AID, { containment: "normal" }));
+    const elsewhere = await a.open("Elsewhere");
+    await a.linkHost("FIN-LT-0231", elsewhere);
+    const present = (await a.contain(a.ben, { on: elsewhere })).body.responseAction!.id;
+    expect(await lift(a, a.ben, present, { on: elsewhere })).toMatchObject({ status: 409 });
+
+    await a.ben.api.cases[":number"].close.$post({ param: param(a.number), json: { resolution: "true_positive" } });
+    expect(await lift(a, a.ben, id)).toMatchObject({ status: 409, body: { error: "This Case is Closed and read-only; an Admin can reopen it" } });
+    expect(await lift(a, a.ada, id, { confirmRelying: true })).toMatchObject({ status: 200, body: { responseAction: { state: "removing" } } });
+    expect(await lift(a, a.ada, id)).toMatchObject({ status: 409, body: { error: "Only an Active Response Action can be removed" } });
   });
 });

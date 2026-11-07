@@ -292,6 +292,18 @@ export function falconHttpClient({ cloud, credentials, appId }: FalconConnection
     return records(body.data?.entities?.nodes);
   };
 
+  /** Takes device action `action` (contain, or lift containment) on device `deviceId`; needs Hosts: Write. */
+  const deviceAction = async (action: "contain" | "lift_containment", deviceId: string, what: string) => {
+    const res = await fetchImpl(`${base}/devices/entities/devices-actions/v2?${new URLSearchParams({ action_name: action })}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${await accessToken()}`, "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ ids: [deviceId] }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (res.status === 403) throw new FalconScopeMissing(`${what} failed: the API client lacks the Hosts: Write scope`);
+    if (!res.ok) throw await failure(what, res);
+  };
+
   return {
     async openStream() {
       const url = `${base}/sensors/entities/datafeed/v2?${new URLSearchParams({ appId, format: "json" })}`;
@@ -457,14 +469,11 @@ export function falconHttpClient({ cloud, credentials, appId }: FalconConnection
     },
 
     async containHost(deviceId) {
-      const res = await fetchImpl(`${base}/devices/entities/devices-actions/v2?${new URLSearchParams({ action_name: "contain" })}`, {
-        method: "POST",
-        headers: { authorization: `Bearer ${await accessToken()}`, "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({ ids: [deviceId] }),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      });
-      if (res.status === 403) throw new FalconScopeMissing("Containing a host in Falcon failed: the API client lacks the Hosts: Write scope");
-      if (!res.ok) throw await failure("Containing a host in Falcon", res);
+      await deviceAction("contain", deviceId, "Containing a host in Falcon");
+    },
+
+    async liftContainment(deviceId) {
+      await deviceAction("lift_containment", deviceId, "Lifting containment in Falcon");
     },
 
     async identities(entityIds) {
