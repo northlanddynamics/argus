@@ -1,20 +1,21 @@
 import { and, asc, eq, isNull, lte } from "drizzle-orm";
 import { caseRoleHolderIds } from "../case-roles/holders";
 import { caseRef } from "../cases/vocabulary";
-import { IOC_PLATFORMS, type FalconConnector } from "../crowdstrike/falcon";
+import { type FalconClient, IOC_PLATFORMS, type FalconConnector } from "../crowdstrike/falcon";
 import { streamConnection } from "../crowdstrike/stream-state";
 import type { Tx } from "../db/client";
-import { cases, integrations, observables, organization, responseActionOutbox, responseActions } from "../db/schema";
+import { assets, cases, falconHostSnapshots, integrations, observables, organization, responseActionOutbox, responseActions } from "../db/schema";
+import { secureId } from "../ids";
 import type { Deps } from "../deps";
 import { guestGrantsOf } from "../guests/grants";
 import { openCredentials } from "../integrations/credentials";
 import { providerCapabilities } from "../integrations/vocabulary";
 import type { BlockedSenderType, MimecastConnector } from "../mimecast/mimecast";
 import { notify } from "../notifications/notifications";
-import type { ObservableType } from "../observables/vocabulary";
+import type { AssetType, ObservableType } from "../observables/vocabulary";
 import { publish } from "../realtime/signals";
 import type { FalconIocType } from "./vocabulary";
-import { recordStateChange } from "./response-actions";
+import { recordStateChange, type Subject } from "./response-actions";
 
 /**
  * The worker's half of Response Actions (ADR 0007): sends what the outbox holds, to Falcon as custom
@@ -30,6 +31,11 @@ import { recordStateChange } from "./response-actions";
  * Removing deletes what Argus created, by the id the tool gave it. If the tool says it is already
  * gone, the removal has still succeeded. Once removed, every "already present" record relying on it,
  * on any Case, is Removed too. When removal fails for good, the Member who asked for it is notified.
+ *
+ * Containment (ADR 0009) goes to Falcon by the device's `aid`. The device is read first: if Falcon
+ * reports it contained already (or containment pending), it is "already present in the tool" and
+ * nothing is sent. Once sent, its Enrichment is asked for again, so the Case shows it being contained.
+ * Containment waits on the Integration's Host containment setting, not its Response Actions one.
  */
 
 /** The most attempts made in one transaction. */
@@ -54,8 +60,15 @@ type Tool = {
   holds(r: typeof responseActions.$inferSelect): Promise<boolean>;
   create(r: typeof responseActions.$inferSelect, c: { number: number; title: string }): Promise<string>;
   /** True when the tool deleted it, false when it is already gone. */
-  remove(externalId: string): Promise<boolean>;
+  remove(r: typeof responseActions.$inferSelect & { externalId: string }): Promise<boolean>;
 };
+
+/** Whether Falcon reports device `deviceId` contained, or being contained. Rejects when Falcon doesn't know it. */
+async function contained(client: FalconClient, deviceId: string) {
+  const [host] = await client.hosts([deviceId]);
+  if (!host) throw new Error(`Falcon doesn't know the device ${deviceId}`);
+  return host.containment === "contained" || host.containment === "containment_pending";
+}
 
 /**
  * `connect` makes Falcon clients and `mimecast` Mimecast ones; a Response Action through a Provider
@@ -71,9 +84,15 @@ export function createResponseActionSender(
     if (!connect) throw new Error("This worker can't reach Falcon");
     const client = connect(found.connection);
     const tool: Tool = {
-      holds: async (r) => !!(await client.findIoc(r.targetType as FalconIocType, r.targetValue)),
-      create: (r, c) =>
-        client.createIoc({
+      holds: async (r) =>
+        r.kind === "falcon_containment" ? contained(client, r.targetValue) : !!(await client.findIoc(r.targetType as FalconIocType, r.targetValue)),
+      create: async (r, c) => {
+        if (r.kind === "falcon_containment") {
+          await client.containHost(r.targetValue);
+          // Falcon names the containment by the device it contains.
+          return r.targetValue;
+        }
+        return client.createIoc({
           type: r.targetType as FalconIocType,
           value: r.targetValue,
           action: r.falconAction!,
@@ -82,8 +101,12 @@ export function createResponseActionSender(
           appliedGlobally: true,
           source: "Argus",
           description: iocDescription(c, baseUrl),
-        }),
-      remove: (id) => client.deleteIoc(id),
+        });
+      },
+      remove: async (r) => {
+        if (r.kind === "falcon_containment") throw new Error("Argus can't lift containment yet");
+        return client.deleteIoc(r.externalId);
+      },
     };
     return { revision: found.credentialsRevision, tool };
   };
@@ -95,7 +118,7 @@ export function createResponseActionSender(
       holds: async (r) => !!(await client.findBlockedSender(r.targetType as BlockedSenderType, r.targetValue)),
       create: (r, c) =>
         client.blockSender({ type: r.targetType as BlockedSenderType, value: r.targetValue, appliesTo: "everyone", description: iocDescription(c, baseUrl) }),
-      remove: (id) => client.deleteBlockedSender(id),
+      remove: (r) => client.deleteBlockedSender(r.externalId),
     };
     return { revision: row.credentialsRevision, tool };
   };
@@ -125,7 +148,7 @@ export function createResponseActionSender(
       .set({ state: "failed", stateChangedAt: now, lastError: message })
       .where(eq(responseActions.id, due.r.id))
       .returning();
-    await recordStateChange(tx, { r: failed!, observable: due.observable, change: removing ? "removal_failed" : "failed", actor: ARGUS, now, detail: message });
+    await recordStateChange(tx, { r: failed!, subject: due.subject, change: removing ? "removal_failed" : "failed", actor: ARGUS, now, detail: message });
     const theCase = {
       id: due.r.caseId,
       organizationId: due.r.organizationId,
@@ -154,23 +177,24 @@ export function createResponseActionSender(
       .set({ state: "removed", stateChangedAt: now, lastError: null })
       .where(eq(responseActions.id, due.r.id))
       .returning();
-    await recordStateChange(tx, { r: gone!, observable: due.observable, change: deleted ? "removed" : "already_gone", actor: ARGUS, now });
+    await recordStateChange(tx, { r: gone!, subject: due.subject, change: deleted ? "removed" : "already_gone", actor: ARGUS, now });
     const relying = await tx
       .update(responseActions)
       .set({ state: "removed", stateChangedAt: now })
       .where(and(eq(responseActions.presentFromId, due.r.id), eq(responseActions.state, "active"), eq(responseActions.origin, "already_present")))
       .returning();
     for (const r of relying) {
-      await recordStateChange(tx, { r, observable: due.observable, change: "relied_on_removed", actor: ARGUS, now });
+      await recordStateChange(tx, { r, subject: due.subject, change: "relied_on_removed", actor: ARGUS, now });
     }
   };
 
   type Due = {
     attempt: typeof responseActionOutbox.$inferSelect;
     r: typeof responseActions.$inferSelect;
-    observable: { type: ObservableType; value: string };
+    subject: Subject;
     case: { number: number; title: string; restricted: boolean; assigneeId: string | null };
-    responseActionsOn: boolean;
+    /** Whether the Integration takes this kind now: its Host containment setting for containment, else its Response Actions one. */
+    takesIt: boolean;
     provider: keyof typeof providerCapabilities;
   };
 
@@ -183,18 +207,20 @@ export function createResponseActionSender(
         .select({
           attempt: o,
           r: responseActions,
-          observableType: observables.type,
-          observableValue: observables.value,
+          observable: { type: observables.type, value: observables.value },
+          asset: { type: assets.type, value: assets.value },
           caseNumber: cases.number,
           caseTitle: cases.title,
           caseRestricted: cases.restricted,
           caseAssigneeId: cases.assigneeId,
           responseActionsOn: integrations.responseActions,
+          hostContainment: integrations.hostContainment,
           provider: integrations.provider,
         })
         .from(o)
         .innerJoin(responseActions, eq(o.responseActionId, responseActions.id))
-        .innerJoin(observables, eq(responseActions.observableId, observables.id))
+        .leftJoin(observables, eq(responseActions.observableId, observables.id))
+        .leftJoin(assets, eq(responseActions.assetId, assets.id))
         .innerJoin(cases, eq(responseActions.caseId, cases.id))
         .innerJoin(integrations, eq(responseActions.integrationId, integrations.id))
         .innerJoin(organization, eq(o.organizationId, organization.id))
@@ -208,14 +234,17 @@ export function createResponseActionSender(
         const due: Due = {
           attempt: row.attempt,
           r: row.r,
-          observable: { type: row.observableType as ObservableType, value: row.observableValue },
+          subject: row.observable
+            ? { type: row.observable.type as ObservableType, value: row.observable.value }
+            : { type: row.asset!.type as AssetType, value: row.asset!.value },
           case: { number: row.caseNumber, title: row.caseTitle, restricted: row.caseRestricted, assigneeId: row.caseAssigneeId },
-          responseActionsOn: row.responseActionsOn,
+          takesIt: row.r.kind === "falcon_containment" ? row.hostContainment : row.responseActionsOn,
           provider: row.provider,
         };
         const removing = due.attempt.operation === "remove";
-        if (!due.responseActionsOn || !providerCapabilities[due.provider].responseActions) {
-          await giveUp(tx, due, `Response Actions were turned off for the Integration before this was ${removing ? "removed" : "sent"}`, now);
+        if (!due.takesIt || !providerCapabilities[due.provider].responseActions) {
+          const setting = due.r.kind === "falcon_containment" ? "Host containment was" : "Response Actions were";
+          await giveUp(tx, due, `${setting} turned off for the Integration before this was ${removing ? "removed" : "sent"}`, now);
           continue;
         }
         try {
@@ -226,7 +255,7 @@ export function createResponseActionSender(
           }
           if (removing) {
             // Only ever what Argus created, by the id the tool gave it.
-            await removed(tx, due, due.r.externalId ? await client.remove(due.r.externalId) : false, now);
+            await removed(tx, due, due.r.externalId ? await client.remove({ ...due.r, externalId: due.r.externalId }) : false, now);
             continue;
           }
           // Never overwrite what is already there: if the tool holds it, nothing is written.
@@ -240,7 +269,7 @@ export function createResponseActionSender(
               .set({ state: "active", origin: "in_tool", stateChangedAt: now, lastError: null })
               .where(eq(responseActions.id, due.r.id))
               .returning();
-            await recordStateChange(tx, { r: present!, observable: due.observable, change: "in_tool", actor: ARGUS, now });
+            await recordStateChange(tx, { r: present!, subject: due.subject, change: "in_tool", actor: ARGUS, now });
             continue;
           }
           const externalId = await client.create(due.r, due.case);
@@ -253,7 +282,14 @@ export function createResponseActionSender(
             .set({ state: "active", externalId, sentAt: now, stateChangedAt: now, lastError: null })
             .where(eq(responseActions.id, due.r.id))
             .returning();
-          await recordStateChange(tx, { r: sent!, observable: due.observable, change: "sent", actor: ARGUS, now });
+          await recordStateChange(tx, { r: sent!, subject: due.subject, change: "sent", actor: ARGUS, now });
+          if (sent!.kind === "falcon_containment") {
+            // The Case shows the host being contained once its Enrichment is fetched again.
+            await tx
+              .insert(falconHostSnapshots)
+              .values({ id: secureId(), organizationId: sent!.organizationId, integrationId: sent!.integrationId, deviceId: sent!.targetValue, due: true })
+              .onConflictDoUpdate({ target: [falconHostSnapshots.integrationId, falconHostSnapshots.deviceId], set: { due: true } });
+          }
         } catch (e) {
           const message = e instanceof Error ? e.message : String(e);
           const attempts = due.attempt.attempts + 1;

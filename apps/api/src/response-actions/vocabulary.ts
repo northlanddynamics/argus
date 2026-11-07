@@ -7,21 +7,29 @@ import type { Severity } from "../cases/vocabulary";
 import type { Provider } from "../integrations/vocabulary";
 import type { ObservableType } from "../observables/vocabulary";
 
-export const RESPONSE_ACTION_KINDS = ["falcon_ioc", "mimecast_blocked_sender"] as const;
+/**
+ * `falcon_ioc` and `mimecast_blocked_sender` are taken against an Observable; `falcon_containment`
+ * against a host Asset, one Falcon device (`aid`) of it (ADR 0009).
+ */
+export const RESPONSE_ACTION_KINDS = ["falcon_ioc", "mimecast_blocked_sender", "falcon_containment"] as const;
 export type ResponseActionKind = (typeof RESPONSE_ACTION_KINDS)[number];
 export const responseActionKindLabel: Record<ResponseActionKind, string> = {
   falcon_ioc: "Falcon custom IOC",
   mimecast_blocked_sender: "Mimecast blocked sender",
+  falcon_containment: "Falcon host containment",
 };
 
-/** The kind of Response Action each Provider takes. */
+/** What a containment Response Action targets in Falcon: one device, by `aid`. */
+export const CONTAINMENT_TARGET_TYPE = "device";
+
+/** The kind of Response Action each Provider takes against an Observable. */
 export const providerKind: Record<Provider, ResponseActionKind> = { crowdstrike: "falcon_ioc", mimecast: "mimecast_blocked_sender" };
 
 /**
  * Where a Response Action stands:
  *
  * ```
- * Pending  → Active    (sent, or found already in the tool)
+ * Pending  → Active    (sent, or found already in the tool: for containment, the host already contained)
  * Pending  → Failed    (send attempts exhausted)
  * Failed   → Pending   (Retry, when sending failed)
  * Active   → Removing  (Remove, only one Argus created)

@@ -8,6 +8,7 @@ import { membersOnly, type ParticipantEnv, requireParticipant } from "../members
 import type { Modules } from "../modules";
 import { NotLinked } from "../observables/observables";
 import {
+  HostNotContainable,
   IgnoredNotConfirmed,
   IntegrationNotEligible,
   NotDismissable,
@@ -49,6 +50,16 @@ const takeManyBody = z.object({
   confirmIgnored: z.boolean().default(false),
 });
 
+const containBody = z.object({
+  assetId: z.string().min(1),
+  integrationId: z.string().min(1),
+  /** The Falcon device (`aid`) to contain: one recorded on the host, picked when it has several. */
+  deviceId: z.string().min(1).max(100),
+  /** Hidden from the Case's Guests. */
+  internal: z.boolean().optional(),
+});
+const assetParam = numberParam.extend({ assetId: z.string().min(1) });
+
 const removeBody = z.object({
   /** Removes it even though other Cases' "already present" records rely on it. */
   confirmRelying: z.boolean().default(false),
@@ -74,6 +85,10 @@ const unlessNotFound = <T>(work: Promise<T>) =>
  * (which deletes it in the tool; refused, naming the Cases that rely on it, unless confirmed), and
  * dismiss an "already present" one (which leaves the tool alone). All but listing are for Members, on
  * a Case that isn't Closed; on a Closed Case Admins may still remove, and retry a failed removal.
+ *
+ * Containing a host (ADR 0009) is confirmed first: `POST …/assets/:assetId/containment-check` asks
+ * Falcon for the host afresh and `GET` reads what came back, which the confirmation shows; then
+ * `POST …/response-actions/containment` contains the device picked.
  */
 export const responseActionRoutes = (deps: Deps, { responseActions }: Modules) =>
   new Hono<ParticipantEnv>()
@@ -108,6 +123,43 @@ export const responseActionRoutes = (deps: Deps, { responseActions }: Modules) =
         if (e instanceof IntegrationNotEligible) return c.json({ error: e.message }, 400);
         if (e instanceof IgnoredNotConfirmed) return c.json(ignoredRefusal(e), 409);
         if (e instanceof CaseClosed) return c.json({ error: e.message }, 409);
+        throw e;
+      }
+    })
+    .post("/:number/response-actions/containment", membersOnly, zValidator("param", numberParam), zValidator("json", containBody), async (c) => {
+      try {
+        const taken = await unlessNotFound(responseActions.contain(c.get("membership"), c.req.valid("param").number, c.req.valid("json")));
+        if (!taken) return c.json(notFound, 404);
+        return c.json({ responseAction: taken }, 201);
+      } catch (e) {
+        if (e instanceof NotPermitted) return c.json({ error: "Guests can't contain hosts" }, 403);
+        if (e instanceof NotLinked) return c.json({ error: e.message }, 404);
+        if (e instanceof IntegrationNotEligible || e instanceof HostNotContainable) return c.json({ error: e.message }, 400);
+        if (e instanceof CaseClosed) return c.json({ error: e.message }, 409);
+        throw e;
+      }
+    })
+    .get("/:number/assets/:assetId/containment-check", membersOnly, zValidator("param", assetParam), async (c) => {
+      const { number, assetId } = c.req.valid("param");
+      try {
+        const check = await unlessNotFound(responseActions.containmentCheck(c.get("membership"), number, assetId));
+        if (!check) return c.json(notFound, 404);
+        return c.json(check, 200);
+      } catch (e) {
+        if (e instanceof NotPermitted) return c.json({ error: "Guests can't contain hosts" }, 403);
+        if (e instanceof NotLinked) return c.json({ error: e.message }, 404);
+        throw e;
+      }
+    })
+    .post("/:number/assets/:assetId/containment-check", membersOnly, zValidator("param", assetParam), async (c) => {
+      const { number, assetId } = c.req.valid("param");
+      try {
+        const check = await unlessNotFound(responseActions.containmentCheck(c.get("membership"), number, assetId, { refresh: true }));
+        if (!check) return c.json(notFound, 404);
+        return c.json(check, 200);
+      } catch (e) {
+        if (e instanceof NotPermitted) return c.json({ error: "Guests can't contain hosts" }, 403);
+        if (e instanceof NotLinked) return c.json({ error: e.message }, 404);
         throw e;
       }
     })

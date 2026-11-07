@@ -3,11 +3,13 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chromium, type Browser, type Page } from "playwright";
 import { defaultWebDist } from "../src/config";
 import { createCommentSyncer } from "../src/crowdstrike/comment-sync";
+import epp from "../src/crowdstrike/fixtures/epp-detection.json";
+import { createHostEnricher } from "../src/crowdstrike/host-enrichment";
 import { createStreamWorker } from "../src/crowdstrike/stream-worker";
 import { createMimecastHealthChecker } from "../src/mimecast/health";
 import { createResponseActionSender } from "../src/response-actions/sender";
 import { createServerApp } from "../src/server-app";
-import { fakeFalcon } from "../src/test/fake-falcon";
+import { fakeFalcon, fakeHost } from "../src/test/fake-falcon";
 import { fakeMimecast } from "../src/test/fake-mimecast";
 import { buildTestApp } from "../src/test/harness";
 
@@ -358,6 +360,65 @@ test("an Analyst sends an Observable on a Case to Falcon in one click from its m
   }
 }, 60_000);
 
+
+test("the Owner allows Host containment; an Analyst contains a host from a Case after confirming its freshly fetched details", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  const falcon = fakeFalcon();
+  const tenant = falcon.tenant("falcon-client-0001");
+  const aid = "8f1c2b3a4d5e6f708192a3b4c5d6e7f8";
+  tenant.hosts.set(aid, fakeHost(aid, { hostGroups: ["Finance laptops"] }));
+  const worker = createStreamWorker(t.deps, { connect: falcon.connect, workerId: "worker-1" });
+  t.onCleanup(worker.close);
+  const enricher = createHostEnricher(t.deps, { connect: falcon.connect });
+  const sender = createResponseActionSender(t.deps, { connect: falcon.connect });
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    await owner.api.organization.invitations.$post({ json: { email: "ana@acme.example", role: "analyst" } });
+    const ana = await t.acceptInvite("ana@acme.example", PASSWORD, "Ana Analyst");
+    await owner.api.integrations.$post({ json: { name: "CrowdStrike — Prod", cloud: "us-1", clientId: "falcon-client-0001", clientSecret: "falcon-secret" } });
+    await worker.tick();
+    tenant.emit("EppDetectionSummaryEvent", epp);
+    await tenant.drained();
+    const queue = await (await owner.api.alerts.$get({ query: {} })).json();
+    if (!("alerts" in queue)) throw new Error("No Alert queue");
+    const alert = queue.alerts[0]!;
+    await ana.api.cases.$post({ json: { title: "Encoded PowerShell", caseType: "malware", severity: "high" } });
+    await owner.api.alerts.attach.$post({ json: { case: 1, alerts: [{ id: alert.id, version: alert.version }] } });
+
+    // The Owner turns Host containment on, confirming what it allows.
+    const ownerPage = await browser.newPage();
+    await signIn(ownerPage, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
+    await ownerPage.goto(`${baseUrl}/settings/integrations`);
+    await ownerPage.getByTestId("integration-CrowdStrike — Prod").getByRole("switch", { name: "Host containment" }).click();
+    await ownerPage.getByRole("alertdialog").getByRole("button", { name: "Allow Host containment" }).click();
+    await ownerPage.getByTestId("integration-CrowdStrike — Prod").getByRole("switch", { name: "Host containment", checked: true }).waitFor();
+
+    // Ana opens the host's menu on the Case: the confirmation waits for Falcon's answer.
+    const page = await browser.newPage();
+    await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
+    await page.goto(`${baseUrl}/cases/1/observables`);
+    await page.getByRole("button", { name: "Actions for Host FIN-LT-0231" }).click();
+    await page.getByRole("menuitem", { name: "Contain host…" }).click();
+    const dialog = page.getByRole("dialog", { name: "Contain FIN-LT-0231?" });
+    await dialog.getByText("Fetching from Falcon…").waitFor();
+    expect(await dialog.getByRole("button", { name: "Contain host" }).isDisabled()).toBe(true);
+    await enricher.tick();
+    await dialog.getByText("Finance laptops").waitFor();
+    await dialog.getByText(`aid ${aid}`).waitFor();
+    await dialog.getByRole("button", { name: "Contain host" }).click();
+    await page.getByText("Containment of FIN-LT-0231 queued").waitFor();
+    const row = page.getByTestId("response-action-FIN-LT-0231");
+    await row.getByText("Pending").waitFor();
+    await row.getByRole("cell", { name: /^Contain/ }).waitFor();
+
+    await sender.tick();
+    await row.getByText("Active").waitFor();
+    expect(tenant.containments).toEqual([aid]);
+  } finally {
+    await stop();
+  }
+}, 60_000);
 
 test("an Analyst pivots from search to an Observable's page and its Case, sends several Observables to Falcon at once, and sees them become Active", async () => {
   const { t, baseUrl, stop } = await serveTestApp();

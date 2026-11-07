@@ -105,13 +105,26 @@ async function lockItem(tx: Tx, caseId: string, item: InternalItem): Promise<Mar
     }
     case "response_action": {
       const [row] = await tx
-        .select({ internal: responseActions.internal, kind: responseActions.kind, type: observables.type, value: observables.value })
+        .select({
+          internal: responseActions.internal,
+          kind: responseActions.kind,
+          observable: { type: observables.type, value: observables.value },
+          asset: { type: assets.type, value: assets.value },
+        })
         .from(responseActions)
-        .innerJoin(observables, eq(responseActions.observableId, observables.id))
+        .leftJoin(observables, eq(responseActions.observableId, observables.id))
+        .leftJoin(assets, eq(responseActions.assetId, assets.id))
         .where(and(eq(responseActions.id, item.id), eq(responseActions.caseId, caseId)))
         .for("update", { of: responseActions });
       return row
-        ? { internal: row.internal, label: `Response Action: ${responseActionLabel({ type: row.type as ObservableType, value: row.value }, row.kind)}`, involves: [] }
+        ? {
+            internal: row.internal,
+            label: `Response Action: ${responseActionLabel(
+              row.observable ? { type: row.observable.type as ObservableType, value: row.observable.value } : { type: row.asset!.type as AssetType, value: row.asset!.value },
+              row.kind,
+            )}`,
+            involves: [],
+          }
         : missing();
     }
     case "asset": {

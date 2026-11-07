@@ -173,7 +173,14 @@ export function outline(report: CaseReport): Block[] {
   // Says when Argus sent it, never that it is in force now.
   const responseActions = report.responseActions.map(
     (r): Item => ({
-      title: [label(`${responseActionKindLabel[r.kind]}: `), mono(`${observableTypeLabel[r.observable.type]} ${defang(r.observable.type, r.observable.value)}`)],
+      title: [
+        label(`${responseActionKindLabel[r.kind]}: `),
+        mono(
+          r.observable
+            ? `${observableTypeLabel[r.observable.type]} ${defang(r.observable.type, r.observable.value)}`
+            : `${assetTypeLabel[r.asset!.type]} ${r.asset!.value} (device ${r.target.value})`,
+        ),
+      ],
       details: withInternal(r, [
         [label("State: "), text(responseActionStateLabel[r.state] + (r.sentAt ? `, sent ${utc(r.sentAt)}` : ""))],
         ...(r.origin === "already_present" && r.presentFrom

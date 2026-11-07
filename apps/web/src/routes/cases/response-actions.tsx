@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { type FormEvent, type ReactNode, useState } from "react";
+import { type FormEvent, Fragment, type ReactNode, useState } from "react";
 import { toast } from "sonner";
 import { ItemLink } from "@/components/item-link";
 import { Visibility } from "@/components/visibility";
@@ -27,6 +27,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { type ObservableType, observableTypeLabel, shownObservable } from "@/lib/observables";
 import {
   actionOf,
+  dismissResponseAction,
   describeDefaults,
   type EligibleIntegration,
   type FalconIocAction,
@@ -42,6 +43,7 @@ import {
   responseActionsQuery,
   responseActionStateLabel,
   retryResponseAction,
+  subjectOf,
   type SkippedInSend,
   takeResponseActions,
   toolOf,
@@ -70,7 +72,7 @@ const fullValue = (o: Sendable) => (["md5", "sha1", "sha256"].includes(o.type) ?
 const HOLDING = new Set<ResponseAction["state"]>(["pending", "active", "removing"]);
 
 /** This Case's Response Actions on Observable `id` that still hold it in an Integration. */
-export const holdingOn = (held: readonly ResponseAction[], id: string) => held.filter((r) => r.observable.id === id && HOLDING.has(r.state));
+export const holdingOn = (held: readonly ResponseAction[], id: string) => held.filter((r) => r.observable?.id === id && HOLDING.has(r.state));
 
 /** Where the IOC goes and with what: one Integration's defaults, or each Integration's own. */
 function sentWith(integrations: readonly Eligible[], severity: Severity) {
@@ -509,8 +511,7 @@ export function RemoveDialog({ number, r, onClose }: { number: number; r: Respon
         <DialogHeader>
           <DialogTitle>Remove from {toolOf(r.kind)}</DialogTitle>
           <DialogDescription>
-            Argus deletes the {entry} for {observableTypeLabel[r.observable.type]}{" "}
-            <span className="font-mono break-all">{fullValue(r.observable)}</span>
+            Argus deletes the {entry} for <SubjectText r={r} />
             {r.integration && ` from ${r.integration.name}`}. {stops}
           </DialogDescription>
         </DialogHeader>
@@ -565,8 +566,7 @@ export function DismissDialog({ r, disabled, onDismiss, onClose }: { r: Response
         <AlertDialogHeader>
           <AlertDialogTitle>Dismiss this record?</AlertDialogTitle>
           <AlertDialogDescription>
-            This Case stops recording {observableTypeLabel[r.observable.type]}{" "}
-            <span className="font-mono break-all">{fullValue(r.observable)}</span> as already present
+            This Case stops recording <SubjectText r={r} /> as already present
             {r.integration ? ` in ${r.integration.name}` : ""}.
           </AlertDialogDescription>
         </AlertDialogHeader>
@@ -581,16 +581,32 @@ export function DismissDialog({ r, disabled, onDismiss, onClose }: { r: Response
   );
 }
 
+/** "SHA-256 e3b0…" in full, defanged where it could be clicked; "Host FIN-LT-0231 (device 8f1c…)" for containment. */
+function SubjectText({ r }: { r: ResponseAction }) {
+  if (r.observable) {
+    return (
+      <>
+        {observableTypeLabel[r.observable.type]} <span className="font-mono break-all">{fullValue(r.observable)}</span>
+      </>
+    );
+  }
+  return (
+    <>
+      host <span className="font-mono break-all">{r.asset?.value}</span> (device <span className="font-mono break-all">{r.target.value}</span>)
+    </>
+  );
+}
+
 /**
- * Failed ones first, since they need someone; then the rest grouped by Observable, in the order they
- * were taken. Removed and dismissed ones go last, folded away.
+ * Failed ones first, since they need someone; then the rest grouped by what they were taken against,
+ * in the order they were taken. Removed and dismissed ones go last, folded away.
  */
 function arrange(all: readonly ResponseAction[]) {
   const order = new Map(all.map((r, i) => [r.id, i]));
   const firstOf = new Map<string, number>();
-  for (const r of all) if (!firstOf.has(r.observable.id)) firstOf.set(r.observable.id, order.get(r.id)!);
+  for (const r of all) if (!firstOf.has(subjectOf(r).id)) firstOf.set(subjectOf(r).id, order.get(r.id)!);
   const byObservable = (a: ResponseAction, b: ResponseAction) =>
-    firstOf.get(a.observable.id)! - firstOf.get(b.observable.id)! || order.get(a.id)! - order.get(b.id)!;
+    firstOf.get(subjectOf(a).id)! - firstOf.get(subjectOf(b).id)! || order.get(a.id)! - order.get(b.id)!;
   return {
     failed: all.filter((r) => r.state === "failed").toSorted(byObservable),
     open: all.filter((r) => r.state !== "failed" && r.state !== "removed").toSorted(byObservable),
@@ -618,6 +634,12 @@ export function ResponseActionsCard({
     mutationFn: (id: string) => retryResponseAction(number, id),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: responseActionsKey(number) }),
   });
+  const dismiss = useMutation({
+    mutationFn: (id: string) => dismissResponseAction(number, id),
+    onError: (e) => toast.error(e.message),
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: responseActionsKey(number) }),
+  });
+  const [dismissing, setDismissing] = useState<ResponseAction | null>(null);
   const all = query.data?.responseActions ?? [];
   const eligible = query.data?.integrations ?? [];
   const { failed, open, closed } = arrange(all);
@@ -626,7 +648,9 @@ export function ResponseActionsCard({
   /** The error of a Retry on row `id`, shown on that row. */
   const errorOn = (id: string) => (retry.variables === id && retry.error) || null;
 
-  const description = !readOnly && eligible.length === 0 ? "Response Actions are off. An Admin turns them on under Settings · Integrations." : null;
+  const containing = query.data?.containment ?? [];
+  const description =
+    !readOnly && eligible.length === 0 && containing.length === 0 ? "Response Actions are off. An Admin turns them on under Settings · Integrations." : null;
 
   return (
     <Card id={CARD_ID} className="scroll-mt-16">
@@ -649,7 +673,7 @@ export function ResponseActionsCard({
             {/* Column headings only once there is something under them. */}
             <TableHeader className={query.isPending || all.length ? undefined : "sr-only"}>
               <TableRow>
-                <TableHead>Observable</TableHead>
+                <TableHead>Target</TableHead>
                 <TableHead>Action</TableHead>
                 <TableHead>State</TableHead>
                 <TableHead>Taken by</TableHead>
@@ -670,16 +694,27 @@ export function ResponseActionsCard({
                 ))}
               {rows.map((r) => {
                 const error = errorOn(r.id);
-                // Right-click or ⋯ for what can be done with its Observable: Remove, Dismiss, another IOC.
-                return (
-                  <ObservableActions key={r.id} number={number} observable={r.observable}>
-                    {(menuButton) => (
-                      <TableRow data-testid={`response-action-${r.observable.value}`} className={r.state === "removed" ? "text-muted-foreground" : undefined}>
+                const subject = subjectOf(r);
+                const row = (menuButton: ReactNode) => (
+                      <TableRow data-testid={`response-action-${subject.value}`} className={r.state === "removed" ? "text-muted-foreground" : undefined}>
                         <TableCell className="min-w-52 whitespace-normal">
-                          <ItemLink kind="observable" id={r.observable.id} className="block font-mono text-xs break-all hover:underline" title={r.observable.value}>
-                            {shownObservable(r.observable.type, r.observable.value)}
-                          </ItemLink>
-                          <span className="text-xs text-muted-foreground">{observableTypeLabel[r.observable.type]}</span>
+                          {r.observable ? (
+                            <>
+                              <ItemLink kind="observable" id={r.observable.id} className="block font-mono text-xs break-all hover:underline" title={r.observable.value}>
+                                {shownObservable(r.observable.type, r.observable.value)}
+                              </ItemLink>
+                              <span className="text-xs text-muted-foreground">{observableTypeLabel[r.observable.type]}</span>
+                            </>
+                          ) : (
+                            <>
+                              <ItemLink kind="asset" id={subject.id} className="block font-mono text-xs break-all hover:underline" title={subject.value}>
+                                {subject.value}
+                              </ItemLink>
+                              <span className="text-xs break-all text-muted-foreground">
+                                Host · device <span className="font-mono">{r.target.value}</span>
+                              </span>
+                            </>
+                          )}
                         </TableCell>
                         <TableCell className="whitespace-normal">
                           {actionOf(r)}
@@ -713,7 +748,7 @@ export function ResponseActionsCard({
                               number={number}
                               item={{ kind: "response_action", id: r.id }}
                               internal={r.internal}
-                              label={`Response Action on ${r.observable.value}`}
+                              label={`Response Action on ${subject.value}`}
                               canMark={!readOnly}
                             />
                           </TableCell>
@@ -726,10 +761,16 @@ export function ResponseActionsCard({
                                 variant="outline"
                                 size="sm"
                                 disabled={retry.isPending && retry.variables === r.id}
-                                aria-label={`Retry the Response Action on ${r.observable.value}`}
+                                aria-label={`Retry the Response Action on ${subject.value}`}
                                 onClick={() => retry.mutate(r.id)}
                               >
                                 Retry
+                              </Button>
+                            )}
+                            {/* A host has no Observable menu: an already present containment is dismissed here. */}
+                            {!r.observable && !readOnly && r.state === "active" && r.origin !== "created" && (
+                              <Button variant="ghost" size="sm" aria-label={`Dismiss the Response Action on ${subject.value}`} onClick={() => setDismissing(r)}>
+                                Dismiss
                               </Button>
                             )}
                             {menuButton}
@@ -741,8 +782,14 @@ export function ResponseActionsCard({
                           )}
                         </TableCell>
                       </TableRow>
-                    )}
+                );
+                // Right-click or ⋯ for what can be done with its Observable: Remove, Dismiss, another IOC.
+                return r.observable ? (
+                  <ObservableActions key={r.id} number={number} observable={r.observable}>
+                    {row}
                   </ObservableActions>
+                ) : (
+                  <Fragment key={r.id}>{row(null)}</Fragment>
                 );
               })}
               {query.isSuccess && all.length === 0 && (
@@ -754,6 +801,14 @@ export function ResponseActionsCard({
               )}
             </TableBody>
           </Table>
+        )}
+        {dismissing && (
+          <DismissDialog
+            r={dismissing}
+            disabled={dismiss.isPending}
+            onDismiss={() => dismiss.mutate(dismissing.id)}
+            onClose={() => setDismissing(null)}
+          />
         )}
         {closed.length > 0 && (
           <Button variant="ghost" size="sm" className="justify-self-start" aria-expanded={showClosed} onClick={() => setShowClosed((s) => !s)}>

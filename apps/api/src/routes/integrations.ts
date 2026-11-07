@@ -45,7 +45,7 @@ const enabledBody = z.object({ enabled: z.boolean() });
 
 const notPermitted = { error: "Not permitted" } as const;
 
-/** Integrations (CrowdStrike or Mimecast): every Member sees them and their health; Admins add, rotate, pause, resume them and set their write-back, Response Actions and Response Action defaults. */
+/** Integrations (CrowdStrike or Mimecast): every Member sees them and their health; Admins add, rotate, pause, resume them and set their write-back, Response Actions, Response Action defaults and Host containment. */
 export const integrationRoutes = (deps: Deps, { integrations }: Modules) =>
   new Hono<MemberEnv>()
     .use(requireMember(deps.db))
@@ -105,6 +105,17 @@ export const integrationRoutes = (deps: Deps, { integrations }: Modules) =>
     .put("/:id/response-actions", zValidator("json", enabledBody), async (c) => {
       try {
         await integrations.setResponseActions(c.get("membership"), c.req.param("id"), c.req.valid("json").enabled);
+        return c.json({ ok: true }, 200);
+      } catch (e) {
+        if (e instanceof NotPermitted) return c.json(notPermitted, 403);
+        if (e instanceof IntegrationNotFound) return c.json({ error: e.message }, 404);
+        if (e instanceof NotSupportedByProvider) return c.json({ error: e.message }, 422);
+        throw e;
+      }
+    })
+    .put("/:id/host-containment", zValidator("json", enabledBody), async (c) => {
+      try {
+        await integrations.setHostContainment(c.get("membership"), c.req.param("id"), c.req.valid("json").enabled);
         return c.json({ ok: true }, 200);
       } catch (e) {
         if (e instanceof NotPermitted) return c.json(notPermitted, 403);

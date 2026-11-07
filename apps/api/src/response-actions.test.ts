@@ -543,7 +543,7 @@ describe("Already present: never sending twice, never overwriting", () => {
 
     // A different Integration is a different tool: it is sent there.
     const eu = await a.add("CrowdStrike — EU", "falcon-client-0002", true);
-    const toEu = await a.take(a.ana, (await a.listOn(a.ana, other))[0]!.observable.id, { on: other, integration: eu });
+    const toEu = await a.take(a.ana, (await a.listOn(a.ana, other))[0]!.observable!.id, { on: other, integration: eu });
     expect(toEu.body.responseAction).toMatchObject({ state: "pending", origin: "created", presentFrom: null });
     await a.worker.tick();
     expect(a.falcon.tenant("falcon-client-0002").iocsCreated).toHaveLength(1);
@@ -664,7 +664,7 @@ describe("Already present: never sending twice, never overwriting", () => {
     });
     const inTool = await a.take(a.ana, await a.link("domain", "held.example"));
     const created = await a.take(a.ana, await a.link("domain", "evil.example"));
-    const present = await a.take(a.ana, (await a.list(a.ana)).responseActions[1]!.observable.id);
+    const present = await a.take(a.ana, (await a.list(a.ana)).responseActions[1]!.observable!.id);
     await a.worker.tick();
     const iocs = new Map(a.tenant.iocs);
 
@@ -992,7 +992,7 @@ describe("Removing Response Actions", () => {
     expect((await a.remove(a.ana, id)).status).toBe(409);
 
     // Removed, it no longer holds the value: sending it again creates it again.
-    expect((await a.take(a.ana, (await a.list(a.ana)).responseActions[0]!.observable.id)).body.responseAction).toMatchObject({ state: "pending", origin: "created" });
+    expect((await a.take(a.ana, (await a.list(a.ana)).responseActions[0]!.observable!.id)).body.responseAction).toMatchObject({ state: "pending", origin: "created" });
     await a.worker.tick();
     expect(a.tenant.iocsCreated).toHaveLength(2);
   });
@@ -1246,17 +1246,21 @@ describe("What a Response Action targets", () => {
     const asset = linked.asset.id;
     const db = a.t.deps.db;
 
-    expect(await dbError(db.execute(sql`UPDATE response_actions SET asset_id = ${asset} WHERE id = ${id}`))).toContain("response_actions_one_target");
+    // An IOC given a host as well breaks both rules; Postgres names whichever it checks first.
+    expect(await dbError(db.execute(sql`UPDATE response_actions SET asset_id = ${asset} WHERE id = ${id}`))).toMatch(/response_actions_(one|containment)_target/);
     expect(await dbError(db.execute(sql`UPDATE response_actions SET observable_id = NULL WHERE id = ${id}`))).toContain("response_actions_one_target");
 
-    const copy = (observableId: string | null, assetId: string | null, as: string) => sql`
+    const copy = (observableId: string | null, assetId: string | null, as: string, kind = "falcon_containment") => sql`
       INSERT INTO response_actions (id, organization_id, case_id, observable_id, asset_id, integration_id, kind, target_type,
         target_value, state, created_by_id, created_at, state_changed_at)
-      SELECT ${as}, organization_id, case_id, ${observableId}, ${assetId}, integration_id, 'mimecast_blocked_sender', target_type,
+      SELECT ${as}, organization_id, case_id, ${observableId}, ${assetId}, integration_id, ${kind}, target_type,
         target_value, 'removed', created_by_id, created_at, state_changed_at
       FROM response_actions WHERE id = ${id}`;
-    expect(await dbError(db.execute(copy(null, null, "ra-neither")))).toContain("response_actions_one_target");
+    expect(await dbError(db.execute(copy(null, null, "ra-neither", "mimecast_blocked_sender")))).toContain("response_actions_one_target");
     expect(await dbError(db.execute(copy(hash, asset, "ra-both")))).toContain("response_actions_one_target");
     expect(await dbError(db.execute(copy(null, asset, "ra-asset")))).toBeNull();
+    // Containment, and only containment, is taken against an Asset.
+    expect(await dbError(db.execute(copy(null, asset, "ra-blocked-host", "mimecast_blocked_sender")))).toContain("response_actions_containment_target");
+    expect(await dbError(db.execute(copy(hash, null, "ra-contained-hash")))).toContain("response_actions_containment_target");
   });
 });

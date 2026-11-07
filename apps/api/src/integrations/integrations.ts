@@ -16,7 +16,8 @@ import { DEFAULT_FALCON_IOC_DEFAULTS, type FalconIocDefaults, FALCON_IOC_PLATFOR
 
 /**
  * Integrations as Admins manage them: add one, rotate its credentials, pause and resume it, allow or
- * deny write-back to Falcon, turn Response Actions on or off and set what they are sent with, each recorded in the Organization
+ * deny write-back to Falcon, turn Response Actions on or off and set what they are sent with, turn
+ * Host containment on or off (ADR 0009), each recorded in the Organization
  * Audit Log. What an Integration can do comes from its Provider (`vocabulary.ts`, ADR 0007). Every
  * Member sees the Organization's Integrations and how their streams are doing; only Admins see which
  * credentials are in use.
@@ -115,6 +116,7 @@ export type NewIntegration =
 
 const writeBackLabel = (on: boolean) => (on ? "write-back on" : "read only");
 const responseActionsLabel = (on: boolean) => (on ? "Response Actions on" : "Response Actions off");
+const hostContainmentLabel = (on: boolean) => (on ? "Host containment on" : "Host containment off");
 /**
  * "Severity from the Case · Windows, macOS, Linux · visible to Guests", as the Org Audit Log says it.
  * Only the last applies to a Provider that takes no Falcon IOCs.
@@ -167,6 +169,8 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
         responseActions: row.responseActions,
         /** What a Response Action taken through it is sent with besides its action. */
         responseActionDefaults: row.responseActionDefaults,
+        /** Whether Members may contain hosts through it (ADR 0009). */
+        hostContainment: row.hostContainment,
         health: row.health,
         healthDetail: row.healthDetail,
         healthChangedAt: row.healthChangedAt.toISOString(),
@@ -348,6 +352,33 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
           target: row.name,
           before: responseActionsLabel(row.responseActions),
           after: responseActionsLabel(responseActions),
+        });
+        await publish(tx, { kind: "alerts", organizationId: me.organizationId });
+      });
+    },
+
+    /**
+     * Turns Host containment on or off for a CrowdStrike Integration (ADR 0009). Independent of
+     * Response Actions: its API client needs Hosts: Write for it. Containments already taken are left
+     * as they are. Admins only. Doing what is already so changes nothing.
+     */
+    async setHostContainment(me: Membership, id: string, hostContainment: boolean) {
+      if (!organizationPolicy.canManageIntegrations(me)) throw new NotPermitted();
+      await db.transaction(async (tx) => {
+        const row = await find(tx, me, id);
+        if (row.provider !== "crowdstrike") throw new NotSupportedByProvider(row.provider, "Host containment");
+        if (row.hostContainment === hostContainment) return;
+        const now = clock.now();
+        await tx.update(integrations).set({ hostContainment }).where(eq(integrations.id, id));
+        await recordOrgAudit(tx, {
+          organizationId: me.organizationId,
+          occurredAt: now,
+          actor: actorOf(me),
+          category: "integrations",
+          action: hostContainment ? "integration.host_containment_enabled" : "integration.host_containment_disabled",
+          target: row.name,
+          before: hostContainmentLabel(row.hostContainment),
+          after: hostContainmentLabel(hostContainment),
         });
         await publish(tx, { kind: "alerts", organizationId: me.organizationId });
       });

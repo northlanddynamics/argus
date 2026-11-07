@@ -15,6 +15,7 @@ import {
   ShieldIcon,
   SlidersHorizontalIcon,
   Undo2Icon,
+  WifiOffIcon,
   ZapIcon,
 } from "lucide-react";
 import { type ComponentType, type ReactElement, type ReactNode, useState } from "react";
@@ -56,6 +57,7 @@ import { caseQuery, isReadOnly, type Severity } from "@/lib/cases";
 import { useMarkInternal } from "@/lib/internal";
 import { defang, type ObservableType, observableTypeLabel, shownObservable } from "@/lib/observables";
 import {
+  type ContainmentIntegration,
   describeDefaults,
   dismissResponseAction,
   type EligibleIntegration,
@@ -74,6 +76,7 @@ import {
   takeResponseActions,
 } from "@/lib/response-actions";
 import { when } from "@/lib/when";
+import { ContainHostDialog } from "@/routes/cases/contain-host-dialog";
 import { DismissDialog, holdingOn, RemoveDialog, SendToFalconDialog } from "@/routes/cases/response-actions";
 
 /**
@@ -257,7 +260,7 @@ export function ObservableActions({
   const canRemove = !!c && c.can.work && (c.status !== "closed" || c.can.reopen);
   const all = actions.data?.responseActions ?? [];
   const eligible = actions.data?.integrations ?? [];
-  const mine = all.filter((r) => r.observable.id === observable.id);
+  const mine = all.filter((r) => r.observable?.id === observable.id);
   const held = holdingOn(all, observable.id);
   const iocType = falconIocType(observable.type, observable.value);
   // The full send dialog is Falcon's.
@@ -503,10 +506,13 @@ export function AssetActions({
   label,
   onUnlink,
   canMarkInternal = false,
+  containment = [],
   children,
 }: {
   number: number;
   asset: { id: string; value: string; internal: boolean };
+  /** For a host on a Case that can be worked: the Integrations it can be contained through (ADR 0009). */
+  containment?: ContainmentIntegration[];
   /** Its type and identifier, naming the ⋯ button. */
   label: string;
   onUnlink?: () => void;
@@ -517,6 +523,7 @@ export function AssetActions({
   const navigate = useNavigate();
   const copy = () => void navigator.clipboard.writeText(asset.value).then(() => toast("Copied"));
   const mark = useMarkInternal(number);
+  const [containing, setContaining] = useState(false);
   const setInternal = (internal: boolean, undoable = true) =>
     mark.mutate(
       { item: { kind: "asset", id: asset.id }, internal },
@@ -550,6 +557,16 @@ export function AssetActions({
           {asset.internal ? "Show to Guests" : "Mark Internal"}
         </kit.Item>
       )}
+      {containment.length > 0 && (
+        <>
+          <kit.Separator />
+          <kit.Label>Take action</kit.Label>
+          <kit.Item onSelect={() => setContaining(true)}>
+            <WifiOffIcon />
+            Contain host…
+          </kit.Item>
+        </>
+      )}
       {onUnlink && (
         <>
           <kit.Separator />
@@ -574,10 +591,13 @@ export function AssetActions({
     </DropdownMenu>
   );
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>{children(menuButton)}</ContextMenuTrigger>
-      <ContextMenuContent className="w-56">{items(contextKit)}</ContextMenuContent>
-    </ContextMenu>
+    <>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>{children(menuButton)}</ContextMenuTrigger>
+        <ContextMenuContent className="w-56">{items(contextKit)}</ContextMenuContent>
+      </ContextMenu>
+      {containing && <ContainHostDialog number={number} asset={asset} integrations={containment} onClose={() => setContaining(false)} />}
+    </>
   );
 }
 
