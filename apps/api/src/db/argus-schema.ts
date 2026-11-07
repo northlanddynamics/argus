@@ -16,7 +16,7 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import type { FalconHost } from "../crowdstrike/falcon";
+import type { FalconHost, FalconIdentity } from "../crowdstrike/falcon";
 import type { CaseSummary } from "../cases/case-summary";
 import { CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabulary";
 import { STORED_LINK_TYPES } from "../case-links/vocabulary";
@@ -795,6 +795,12 @@ export const integrations = pgTable(
      * (ADR 0009); null while it works, or before it is first tried. Nothing else depends on it.
      */
     hostEnrichmentError: text("host_enrichment_error"),
+    /**
+     * Why identity Enrichment is unavailable through it, as when its API client lacks Identity
+     * Protection Entities: Read or the subscription lacks Identity Protection (ADR 0009); null while
+     * it works, or before it is first tried. Nothing else depends on it.
+     */
+    identityEnrichmentError: text("identity_enrichment_error"),
     /** The worker that holds the stream, while one does. */
     workerId: text("worker_id"),
     streamOffset: bigint("stream_offset", { mode: "number" }),
@@ -929,6 +935,98 @@ export const falconHostLookups = pgTable(
     error: text("error"),
   },
   (t) => [uniqueIndex("falcon_host_lookups_host_idx").on(t.assetId, t.integrationId), index("falcon_host_lookups_due_idx").on(t.due).where(sql`${t.due}`)],
+);
+
+/**
+ * The Falcon Identity Protection identities (entity IDs) recorded on an account Asset, per
+ * CrowdStrike Integration, found by looking the account up by name (ADR 0009). The account name
+ * stays its match key; once an identity is recorded, its entity ID is used in place of the name. An
+ * account with more than one identity for the same Integration, as a bare SAM name shared across
+ * domains can be, is ambiguous. Never deleted (ADR 0003).
+ */
+export const assetFalconIdentities = pgTable(
+  "asset_falcon_identities",
+  {
+    id: text("id").primaryKey(),
+    /** Insertion order, to sort identities recorded at the same instant. */
+    seq: bigserial("seq", { mode: "number" }).notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "restrict" }),
+    integrationId: text("integration_id")
+      .notNull()
+      .references(() => integrations.id, { onDelete: "restrict" }),
+    /** Identity Protection's entity ID. */
+    entityId: text("entity_id").notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    uniqueIndex("asset_falcon_identities_unique_idx").on(t.assetId, t.integrationId, t.entityId),
+    index("asset_falcon_identities_entity_idx").on(t.integrationId, t.entityId),
+  ],
+);
+
+/**
+ * The latest Enrichment of an Identity Protection identity, as `falcon_host_snapshots` is of a
+ * device (ADR 0009): only the latest is kept; `identity` is null once Falcon has said it doesn't
+ * know the identity; `due` marks it wanted (`crowdstrike/identity-enrichment.ts`) until a worker
+ * fetches it; `checked_at` is when the last fetch was tried and `error` why it failed, if it did.
+ */
+export const falconIdentitySnapshots = pgTable(
+  "falcon_identity_snapshots",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    integrationId: text("integration_id")
+      .notNull()
+      .references(() => integrations.id, { onDelete: "restrict" }),
+    entityId: text("entity_id").notNull(),
+    due: boolean("due").notNull().default(false),
+    identity: jsonb("identity").$type<FalconIdentity>(),
+    /** When `identity` was fetched; null until a fetch succeeds. */
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }),
+    checkedAt: timestamp("checked_at", { withTimezone: true }),
+    error: text("error"),
+  },
+  (t) => [
+    uniqueIndex("falcon_identity_snapshots_entity_idx").on(t.integrationId, t.entityId),
+    index("falcon_identity_snapshots_due_idx").on(t.due).where(sql`${t.due}`),
+  ],
+);
+
+/**
+ * Looking an account up in Identity Protection by name, through an Integration that has recorded no
+ * identity on it (ADR 0009), as `falcon_host_lookups` is for hosts: by UPN or email with an `@`, by
+ * domain and SAM name for `DOMAIN\user`, by SAM name alone otherwise. Every match is recorded on the
+ * account (`asset_falcon_identities`). Asked without error and with nothing recorded, the account is
+ * not found in Falcon, and is asked about again the next time its Enrichment is fetched.
+ */
+export const falconIdentityLookups = pgTable(
+  "falcon_identity_lookups",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "restrict" }),
+    integrationId: text("integration_id")
+      .notNull()
+      .references(() => integrations.id, { onDelete: "restrict" }),
+    due: boolean("due").notNull().default(false),
+    checkedAt: timestamp("checked_at", { withTimezone: true }),
+    error: text("error"),
+  },
+  (t) => [
+    uniqueIndex("falcon_identity_lookups_account_idx").on(t.assetId, t.integrationId),
+    index("falcon_identity_lookups_due_idx").on(t.due).where(sql`${t.due}`),
+  ],
 );
 
 /**

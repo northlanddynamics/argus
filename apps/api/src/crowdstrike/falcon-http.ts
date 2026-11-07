@@ -10,6 +10,7 @@ import {
   type FalconConnection,
   type FalconContainment,
   type FalconHost,
+  type FalconIdentity,
   type FalconIoc,
   FalconScopeMissing,
   type NewIoc,
@@ -20,7 +21,8 @@ import {
 /**
  * The Falcon API over HTTP: OAuth2 client credentials, then the Event Streams discovery, refresh and
  * data feed endpoints, the Alerts update and read endpoints, the user lookup, the IOC Management
- * endpoints and the Hosts API (read by `aid`, and searched by hostname). Unverified against a live tenant (see spec #1, "Further Notes").
+ * endpoints, the Hosts API (read by `aid`, and searched by hostname) and Identity Protection's
+ * GraphQL API (identities read by entity ID, and searched by account name). Unverified against a live tenant (see spec #1, "Further Notes").
  */
 
 const BASE_URLS: Record<FalconCloud, string> = {
@@ -160,6 +162,88 @@ export function readHost(r: Record<string, unknown>, groupNames: ReadonlyMap<str
   };
 }
 
+/** The most identities read in one Identity Protection query. */
+const IDENTITIES_PER_CALL = 100;
+
+const record = (v: unknown) => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
+const records = (v: unknown) => (Array.isArray(v) ? v.map(record).filter((r): r is Record<string, unknown> => r !== null) : []);
+const bool = (v: unknown) => (typeof v === "boolean" ? v : null);
+
+/** What Identity Protection's GraphQL API is asked about each identity (`readIdentity` reads it). */
+const IDENTITY_FIELDS = `
+  entityId primaryDisplayName secondaryDisplayName type riskScore riskScoreSeverity watched mostRecentActivity
+  riskFactors { type severity }
+  roles { type }
+  ... on UserEntity {
+    emailAddresses
+    accounts {
+      ... on ActiveDirectoryAccountDescriptor {
+        domain samAccountName upn ou department title enabled lockoutTime
+        passwordAttributes { lastChange mayNeverExpire }
+      }
+    }
+  }
+  associations {
+    ... on EntityAssociation { bindingType entity { type primaryDisplayName } }
+  }
+`;
+
+/** Risk factors that say an account is stale, or its password never expires. */
+const STALE = new Set(["STALE_ACCOUNT", "INACTIVE_ACCOUNT"]);
+const NEVER_EXPIRES = "PASSWORD_NEVER_EXPIRES";
+
+/** A user identity as Identity Protection's GraphQL API returns it. */
+export function readIdentity(node: Record<string, unknown>): FalconIdentity | null {
+  const entityId = text(node.entityId);
+  if (!entityId) return null;
+  const account = records(node.accounts)[0] ?? {};
+  const password = record(account.passwordAttributes) ?? {};
+  const riskFactors = records(node.riskFactors).flatMap((f) => {
+    const type = text(f.type);
+    return type ? [{ type, severity: text(f.severity) }] : [];
+  });
+  const factor = (types: (t: string) => boolean) => riskFactors.some((f) => types(f.type.toUpperCase()));
+  const roles = records(node.roles);
+  const associated = records(node.associations).flatMap((a) => {
+    const entity = record(a.entity);
+    const name = text(entity?.primaryDisplayName);
+    return entity && name ? [{ type: text(entity.type)?.toUpperCase() ?? null, name }] : [];
+  });
+  const score = typeof node.riskScore === "number" && Number.isFinite(node.riskScore) ? node.riskScore : null;
+  const lockout = account.lockoutTime;
+  return {
+    entityId,
+    displayName: text(node.primaryDisplayName),
+    upn: text(account.upn),
+    samAccountName: text(account.samAccountName),
+    riskScore: score,
+    riskSeverity: text(node.riskScoreSeverity),
+    riskFactors,
+    enabled: bool(account.enabled),
+    lockedOut: typeof lockout === "boolean" ? lockout : lockout === undefined ? null : when(lockout) !== null,
+    stale: "riskFactors" in node ? factor((t) => STALE.has(t)) : null,
+    privileged: roles.length > 0 || factor((t) => t.includes("PRIVILEGED")) ? true : "roles" in node ? false : null,
+    privilegedGroups: [...new Set(associated.filter((a) => a.type === "GROUP").map((a) => a.name))],
+    watched: bool(node.watched),
+    passwordLastSet: isoTime(password.lastChange),
+    passwordNeverExpires: bool(password.mayNeverExpire) ?? (factor((t) => t === NEVER_EXPIRES) || null),
+    lastActivity: isoTime(node.mostRecentActivity),
+    email: texts(node.emailAddresses)[0] ?? null,
+    department: text(account.department),
+    title: text(account.title),
+    domain: text(account.domain),
+    ou: text(account.ou),
+    endpoints: [...new Set(associated.filter((a) => a.type === "ENDPOINT").map((a) => a.name))],
+  };
+}
+
+/** Whether identity `i` goes by `domain`: its DNS name, or that name's first label (the NetBIOS name, usually). */
+export const inDomain = (i: { domain: string | null }, domain: string) => {
+  const d = i.domain?.toLowerCase();
+  const wanted = domain.toLowerCase();
+  return d === wanted || d?.split(".")[0] === wanted;
+};
+
 /** A Falcon API call failed; the message says which and how. */
 export class FalconError extends Error {}
 
@@ -189,6 +273,23 @@ export function falconHttpClient({ cloud, credentials, appId }: FalconConnection
     const body = (await res.json()) as { access_token: string; expires_in: number };
     token = { value: body.access_token, expiresAt: Date.now() + body.expires_in * 1000 };
     return token.value;
+  };
+
+  /** The user identities Identity Protection returns for `filter`, which uses `$values`. */
+  const identityQuery = async (what: string, filter: string, values: readonly string[]) => {
+    const query = `query ($values: [String!]) { entities(types: [USER], ${filter}) { nodes { ${IDENTITY_FIELDS} } } }`;
+    const res = await fetchImpl(`${base}/identity-protection/combined/graphql/v1`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${await accessToken()}`, "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ query, variables: { values } }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    // Without the scope, or without an Identity Protection subscription, Falcon refuses with 403.
+    if (res.status === 403) throw new FalconScopeMissing((await failure(what, res)).message);
+    if (!res.ok) throw await failure(what, res);
+    const body = (await res.json()) as { data?: { entities?: { nodes?: unknown } } | null; errors?: { message?: string }[] | null };
+    if (body.errors?.length) throw new FalconError(`${what} failed: ${body.errors.map((e) => e.message).filter(Boolean).join("; ")}`);
+    return records(body.data?.entities?.nodes);
   };
 
   return {
@@ -353,6 +454,29 @@ export function falconHttpClient({ cloud, credentials, appId }: FalconConnection
         if (!ids.length || typeof total !== "number" || offset >= total) break;
       }
       return [...found];
+    },
+
+    async identities(entityIds) {
+      const found: FalconIdentity[] = [];
+      for (let i = 0; i < entityIds.length; i += IDENTITIES_PER_CALL) {
+        const ids = entityIds.slice(i, i + IDENTITIES_PER_CALL);
+        const nodes = await identityQuery("Reading identities from Falcon", `entityIds: $values, first: ${ids.length}`, ids);
+        found.push(...nodes.map(readIdentity).filter((n): n is FalconIdentity => n !== null));
+      }
+      return found;
+    },
+
+    async findIdentities(name) {
+      const what = "Finding identities in Falcon";
+      if ("upn" in name) {
+        const byUpn = await identityQuery(what, `userPrincipalNames: $values, first: ${IDENTITIES_PER_CALL}`, [name.upn]);
+        const byEmail = await identityQuery(what, `emailAddresses: $values, first: ${IDENTITIES_PER_CALL}`, [name.upn]);
+        return [...new Set([...byUpn, ...byEmail].map((n) => text(n.entityId)).filter((id): id is string => id !== null))];
+      }
+      const nodes = (await identityQuery(what, `samAccountNames: $values, first: ${IDENTITIES_PER_CALL}`, [name.samAccountName]))
+        .map(readIdentity)
+        .filter((n): n is FalconIdentity => n !== null);
+      return nodes.filter((n) => !("domain" in name) || inDomain(n, name.domain)).map((n) => n.entityId);
     },
 
     async *consume(session, offset, signal) {

@@ -1,10 +1,12 @@
 import type {
+  AccountName,
   AlertPatch,
   FalconClient,
   FalconComment,
   FalconConnection,
   FalconConnector,
   FalconHost,
+  FalconIdentity,
   FalconIoc,
   NewIoc,
   StreamEvent,
@@ -21,7 +23,8 @@ import { FalconScopeMissing } from "../crowdstrike/falcon";
  * And it has IOC Management: the custom IOCs it holds, every one it was asked to create or delete,
  * and the means to refuse or fail those calls. And the Hosts API: the devices it knows, every read
  * of them and every search of them by hostname, and the means to refuse it for want of Hosts: Read
- * or to fail it.
+ * or to fail it. And Identity Protection: the identities it knows, every read of them and every
+ * search of them by account name, and the means to refuse it (no scope or subscription) or fail it.
  */
 
 /** A device as Falcon would report it, with `fields` changed. */
@@ -50,6 +53,44 @@ export function fakeHost(deviceId: string, fields: Partial<FalconHost> = {}): Fa
     containment: "normal",
     ...fields,
   };
+}
+
+/** A user identity as Identity Protection would report it, with `fields` changed. */
+export function fakeIdentity(entityId: string, fields: Partial<FalconIdentity> = {}): FalconIdentity {
+  return {
+    entityId,
+    displayName: "Dana Howe",
+    upn: "d.howe@acme.example",
+    samAccountName: "d.howe",
+    riskScore: 0.62,
+    riskSeverity: "MEDIUM",
+    riskFactors: [{ type: "WEAK_PASSWORD_POLICY", severity: "MEDIUM" }],
+    enabled: true,
+    lockedOut: false,
+    stale: false,
+    privileged: true,
+    privilegedGroups: ["Domain Admins"],
+    watched: false,
+    passwordLastSet: "2025-11-02T09:00:00.000Z",
+    passwordNeverExpires: false,
+    lastActivity: "2026-01-01T08:55:00.000Z",
+    email: "dana.howe@acme.example",
+    department: "Finance",
+    title: "Controller",
+    domain: "ACME.LOCAL",
+    ou: "ACME.LOCAL/Finance/Users",
+    endpoints: ["FIN-LT-0231"],
+    ...fields,
+  };
+}
+
+const same = (a: string | null, b: string) => a?.toLowerCase() === b.toLowerCase();
+
+/** Whether `identity` goes by `name`, as Identity Protection matches account names: whatever their case. */
+function goesBy(identity: FalconIdentity, name: AccountName) {
+  if ("upn" in name) return same(identity.upn, name.upn) || same(identity.email, name.upn);
+  if (!same(identity.samAccountName, name.samAccountName)) return false;
+  return !("domain" in name) || same(identity.domain, name.domain) || same(identity.domain?.split(".")[0] ?? null, name.domain);
 }
 
 type Consumer = {
@@ -121,6 +162,17 @@ function fakeTenant() {
     failNextHostReads: 0,
     /** Every hostname the Hosts API was searched for, in order. */
     hostSearches: [] as string[],
+
+    /** The user identities Identity Protection knows, by entity ID. */
+    identities: new Map<string, FalconIdentity>(),
+    /** The entity IDs of every read of identities, in order. */
+    identityReads: [] as string[][],
+    /** Every account name identities were searched for, in order. */
+    identitySearches: [] as AccountName[],
+    /** Set to make every Identity Protection call fail for want of its scope or subscription, with this message. */
+    refuseIdentities: null as string | null,
+    /** How many more Identity Protection calls fail before they succeed again. */
+    failNextIdentityCalls: 0,
 
     /** Adds a custom IOC, as someone would in the console; returns its id. */
     holdIoc(ioc: Omit<FalconIoc, "id">) {
@@ -237,6 +289,14 @@ export function fakeFalcon() {
         throw new Error("Calling IOC Management in Falcon failed: 503");
       }
     };
+    /** Fails as the tenant is set to. */
+    const identityCall = (what: string) => {
+      if (t.refuseIdentities) throw new FalconScopeMissing(t.refuseIdentities);
+      if (t.failNextIdentityCalls > 0) {
+        t.failNextIdentityCalls--;
+        throw new Error(`${what} failed: 503`);
+      }
+    };
     return {
       async openStream() {
         if (t.refuse) throw new Error(t.refuse);
@@ -315,6 +375,19 @@ export function fakeFalcon() {
         t.hostSearches.push(hostname);
         // Falcon matches hostnames whatever their case.
         return [...t.hosts.values()].filter((h) => h.hostname?.toLowerCase() === hostname.toLowerCase()).map((h) => h.deviceId);
+      },
+      async identities(entityIds) {
+        identityCall("Reading identities from Falcon");
+        t.identityReads.push([...entityIds]);
+        return entityIds.flatMap((id) => {
+          const identity = t.identities.get(id);
+          return identity ? [{ ...identity }] : [];
+        });
+      },
+      async findIdentities(name) {
+        identityCall("Finding identities in Falcon");
+        t.identitySearches.push(name);
+        return [...t.identities.values()].filter((i) => goesBy(i, name)).map((i) => i.entityId);
       },
     };
   };
