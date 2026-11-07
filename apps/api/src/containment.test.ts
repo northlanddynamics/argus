@@ -606,3 +606,163 @@ describe("Containment lifted in Falcon", () => {
     expect((await a.list(a.ben)).responseActions).toMatchObject([{ id: pending, state: "removing", liftedInToolAt: null }]);
   });
 });
+
+/** Lifts containment Argus didn't impose of the laptop's device from Case `on` as `as`; returns the status and body. */
+async function liftForeign(a: Acme, as: Acme["ben"] | Acme["guest"], { on = a.number, confirmNotImposed = true }: { on?: number; confirmNotImposed?: boolean } = {}) {
+  const res = await as.api.cases[":number"]["response-actions"]["containment-lift"].$post({
+    param: param(on),
+    json: { assetId: a.hostId, integrationId: a.integrationId, deviceId: AID, confirmNotImposed },
+  });
+  return {
+    status: res.status,
+    body: (await res.json()) as Record<string, unknown> & { responseAction?: { id: string; kind: string; state: string; origin: string } },
+  };
+}
+
+/** Falcon reports the laptop contained, set outside Argus; a containment from the Case is recorded already in the tool. Returns its id. */
+async function containedOutsideArgus(a: Acme, on = a.number) {
+  a.tenant.hosts.set(AID, fakeHost(AID, { containment: "contained" }));
+  const id = (await a.contain(a.ben, { on })).body.responseAction!.id;
+  await a.worker.tick();
+  return id;
+}
+
+describe("Lifting containment Argus didn't impose", () => {
+  test("is for Admins only, after confirming Argus didn't impose it; it is queued as its own Response Action", async () => {
+    const a = await acme();
+    a.tenant.hosts.set(AID, fakeHost(AID, { containment: "contained" }));
+    expect(await liftForeign(a, a.ben)).toEqual({ status: 403, body: { error: "Only Admins can lift containment that Argus didn't impose" } });
+    expect((await liftForeign(a, a.guest)).status).toBe(403);
+    expect(await liftForeign(a, a.ada, { confirmNotImposed: false })).toEqual({
+      status: 409,
+      body: { error: "Argus didn't contain this host; confirm to lift its containment anyway" },
+    });
+    expect((await a.list(a.ben)).responseActions).toEqual([]);
+
+    const { status, body } = await liftForeign(a, a.ada);
+    expect(status).toBe(201);
+    expect(body.responseAction).toMatchObject({ kind: "falcon_containment_lift", state: "pending", origin: "created", target: { value: AID }, requestedBy: { name: "Ada Admin" } });
+    expect(a.tenant.lifts).toEqual([]);
+    await a.worker.tick();
+    expect(a.tenant.lifts).toEqual([AID]);
+    expect((await a.list(a.ben)).responseActions).toMatchObject([{ kind: "falcon_containment_lift", state: "active", sentAt: a.t.clock.now().toISOString() }]);
+    // The Case shows the host being released once its Enrichment is fetched again.
+    await a.enricher.tick();
+    expect((await a.assets(a.ben)).find((x) => x.id === a.hostId)!.falcon[0]!.devices[0]!.containment).toBe("lift_containment_pending");
+  });
+
+  test("ends every Argus containment record for the device, on any Case, naming the lifting Case to those who can see it", async () => {
+    const a = await acme();
+    const here = await containedOutsideArgus(a);
+    const lateral = await a.open("Lateral movement");
+    await a.linkHost("FIN-LT-0231", lateral);
+    const there = (await a.contain(a.ben, { on: lateral })).body.responseAction!.id;
+    await a.worker.tick();
+    // Lifted from a Case Ben can't see.
+    const insider = await a.open("Insider");
+    await a.linkHost("FIN-LT-0231", insider);
+    await a.owner.api.cases[":number"].$patch({ param: param(insider), json: { restricted: true } });
+    await a.check(a.owner, (await a.assets(a.owner, insider)).find((x) => x.value === "FIN-LT-0231")!.id, insider);
+    expect((await a.list(a.ben, lateral)).responseActions).toMatchObject([{ id: there, state: "active", origin: "in_tool" }]);
+
+    const res = await a.ada.api.cases[":number"]["response-actions"]["containment-lift"].$post({
+      param: param(insider),
+      json: { assetId: a.hostId, integrationId: a.integrationId, deviceId: AID, confirmNotImposed: true },
+    });
+    expect(res.status).toBe(201);
+    await a.worker.tick();
+    const at = a.t.clock.now().toISOString();
+    expect((await a.list(a.ben)).responseActions).toMatchObject([{ id: here, state: "removed", liftedBy: { case: null, at }, liftedInToolAt: null }]);
+    expect((await a.list(a.owner, lateral)).responseActions).toMatchObject([
+      { id: there, state: "removed", liftedBy: { case: { number: insider, title: "Insider" }, at } },
+    ]);
+    expect((await a.timeline(a.ben)).at(-1)).toBe(
+      `Response Action removed: Argus lifted the containment of ${HOST} in CrowdStrike Falcon at an Admin's request, so this Case no longer records it as contained.`,
+    );
+    expect((await a.auditLog()).at(-1)).toMatchObject({
+      action: "response_action.removed",
+      actor: { type: "system", name: "Argus" },
+      target: `Falcon host containment: ${HOST}`,
+      after: "Containment lifted in CrowdStrike Falcon by an Admin's Lift containment",
+    });
+  });
+
+  test("is on the Timeline and in the Audit Log of the Case it is taken from", async () => {
+    const a = await acme();
+    await containedOutsideArgus(a);
+    await liftForeign(a, a.ada);
+    await a.worker.tick();
+    expect((await a.timeline(a.ben)).slice(2)).toEqual([
+      `Response Action taken by Ada Admin: lift the containment of ${HOST} in CrowdStrike Falcon, which Argus didn't impose (device ${AID}).`,
+      `Response Action: Argus lifted the containment of ${HOST} in CrowdStrike Falcon (device ${AID}).`,
+      `Response Action removed: Argus lifted the containment of ${HOST} in CrowdStrike Falcon at an Admin's request, so this Case no longer records it as contained.`,
+    ]);
+    const target = `Falcon containment lift: ${HOST}`;
+    expect((await a.auditLog()).slice(2)).toMatchObject([
+      { action: "response_action.requested", actor: { type: "member", name: "Ada Admin" }, target, after: `device ${AID}; Argus didn't impose the containment` },
+      { action: "response_action.sent", actor: { type: "system", name: "Argus" }, target, after: `device ${AID}` },
+      { action: "response_action.removed", target: `Falcon host containment: ${HOST}` },
+    ]);
+  });
+
+  test("is refused while Argus holds containment of the device, naming the Case that imposed it", async () => {
+    const a = await acme();
+    await contained(a);
+    const lateral = await a.open("Lateral movement");
+    await a.linkHost("FIN-LT-0231", lateral);
+    expect(await liftForeign(a, a.ada, { on: lateral })).toEqual({
+      status: 409,
+      body: { error: `Argus contained this host from C-${a.number}; lift the containment there`, imposedFrom: { number: a.number, title: "Encoded PowerShell" } },
+    });
+    expect(a.tenant.lifts).toEqual([]);
+  });
+
+  test("a host Falcon already reports released is recorded already in the tool, nothing is sent, and Enrichment ends the records", async () => {
+    const a = await acme();
+    const here = await containedOutsideArgus(a);
+    await liftForeign(a, a.ada);
+    a.tenant.hosts.set(AID, fakeHost(AID, { containment: "normal" }));
+    await a.worker.tick();
+    expect(a.tenant.lifts).toEqual([]);
+    expect((await a.list(a.ben)).responseActions).toMatchObject([
+      { id: here, state: "active" },
+      { kind: "falcon_containment_lift", state: "active", origin: "in_tool", sentAt: null },
+    ]);
+    expect((await a.timeline(a.ben)).at(-1)).toBe(`Response Action: ${HOST} was already released in CrowdStrike Falcon, so Argus sent nothing.`);
+    await a.enricher.tick();
+    expect((await a.list(a.ben)).responseActions).toMatchObject([{ id: here, state: "removed", liftedBy: null, liftedInToolAt: a.t.clock.now().toISOString() }, {}]);
+  });
+
+  test("a lift Falcon keeps refusing fails, notifies the Admin, and only Admins retry it", async () => {
+    const a = await acme();
+    await containedOutsideArgus(a);
+    const id = (await liftForeign(a, a.ada)).body.responseAction!.id;
+    a.tenant.refuseLifts = "Lifting containment in Falcon failed: the API client lacks the Hosts: Write scope";
+    await a.exhaust();
+    expect((await a.list(a.ben)).responseActions.at(-1)).toMatchObject({ id, state: "failed", lastError: a.tenant.refuseLifts });
+    expect(await (await a.ada.api.notifications.$get()).json()).toMatchObject({ unread: 1, notifications: [{ kind: "response_action_failed" }] });
+
+    a.tenant.refuseLifts = null;
+    const retry = (as: Acme["ben"]) => as.api.cases[":number"]["response-actions"][":id"].retry.$post({ param: { ...param(a.number), id } });
+    const refused = await retry(a.ben);
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toEqual({ error: "Only Admins can lift containment that Argus didn't impose" });
+    expect(await (await retry(a.owner)).json()).toMatchObject({ responseAction: { state: "pending", lastError: null } });
+    await a.worker.tick();
+    expect(a.tenant.lifts).toEqual([AID]);
+  });
+
+  test("can't be removed or dismissed, and isn't taken on a Closed Case", async () => {
+    const a = await acme();
+    await containedOutsideArgus(a);
+    const id = (await liftForeign(a, a.ada)).body.responseAction!.id;
+    a.tenant.hosts.set(AID, fakeHost(AID, { containment: "normal" }));
+    await a.worker.tick();
+    expect(await lift(a, a.ada, id)).toMatchObject({ status: 409, body: { error: "A Lift containment can't be undone; contain the host again instead" } });
+    const dismissed = await a.ada.api.cases[":number"]["response-actions"][":id"].dismiss.$post({ param: { ...param(a.number), id } });
+    expect(dismissed.status).toBe(409);
+
+    await a.ben.api.cases[":number"].close.$post({ param: param(a.number), json: { resolution: "true_positive" } });
+    expect(await liftForeign(a, a.owner)).toEqual({ status: 409, body: { error: "This Case is Closed and read-only; an Admin can reopen it" } });
+  });
+});

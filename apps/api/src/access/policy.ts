@@ -123,6 +123,8 @@ export const casePolicy = {
   canRestrict: (actor: Actor, c: Pick<CaseAccessFacts, "assigneeId">) => seesEveryCase(actor) || isAssignee(actor, c),
   /** Only Admins and the Owner reopen a Closed Case. */
   canReopen: (actor: Actor) => managesOrganization(actor),
+  /** Only Admins and the Owner lift Containment that Argus didn't impose (ADR 0009). */
+  canLiftForeignContainment: (actor: Actor) => managesOrganization(actor),
   /** Admins, the Owner and the Case's Assignee invite Guests to it and remove them. */
   canManageGuests: (actor: Actor, c: Pick<CaseAccessFacts, "assigneeId">) => seesEveryCase(actor) || isAssignee(actor, c),
   /** Members only: Guests never see a Case's Audit Log. */
@@ -177,6 +179,7 @@ export const casePermissions = (actor: Actor, c: Pick<CaseAccessFacts, "assignee
   markInternal: casePolicy.canMarkInternal(actor),
   restrict: casePolicy.canRestrict(actor, c),
   reopen: casePolicy.canReopen(actor),
+  liftForeignContainment: casePolicy.canLiftForeignContainment(actor),
   manageGuests: casePolicy.canManageGuests(actor, c),
   readAuditLog: casePolicy.canReadAuditLog(actor),
   exportCompleteReport: casePolicy.canExportCompleteReport(actor),

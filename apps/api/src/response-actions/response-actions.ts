@@ -3,7 +3,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { casePolicy, NotPermitted, visibleCases, visibleItems } from "../access/policy";
 import { actorOf, CaseClosed, CaseNotFound, lockCase } from "../cases/cases";
 import { type CaseActor, recordCaseAudit } from "../cases/case-audit-log";
-import { type CaseAuditAction, type Severity, severityLabel } from "../cases/vocabulary";
+import { type CaseAuditAction, caseRef, type Severity, severityLabel } from "../cases/vocabulary";
 import type { Clock } from "../clock";
 import type { Db, Tx } from "../db/client";
 import {
@@ -36,6 +36,7 @@ import {
   type FalconIocDefaults,
   FALCON_IOC_PLATFORMS,
   type FalconIocPlatform,
+  isHostKind,
   falconIocPlatformLabel,
   falconIocType,
   iocSeverity,
@@ -96,6 +97,14 @@ import {
  * moves every Active containment record for that device to Removed, "lifted in Falcon", attributed
  * to CrowdStrike (`containmentLiftedInFalcon`). So for containment, Active means Falcon last
  * reported the host contained.
+ *
+ * An Admin may lift containment that Argus didn't impose (set outside Argus, or recorded only as
+ * already in the tool) as its own "Lift containment" Response Action (`liftContainment`), after
+ * confirming they know Argus didn't impose it. It is refused while Argus holds containment of the
+ * device, which is lifted from the Case that imposed it. Once Falcon has lifted it, every Active
+ * containment record for the device, on any Case, is Removed, noting the Lift containment
+ * (`containmentLiftedBy`). A Lift containment is never removed or dismissed. The exception to ADR
+ * 0007's rule is for containment only.
  */
 
 /** The Observable isn't of a type the Integration's Provider takes. */
@@ -142,6 +151,26 @@ export class NotDismissable extends Error {
 
 /** The host can't be contained as asked: no device is recorded on it, or not the one asked for. */
 export class HostNotContainable extends Error {}
+
+/** Argus holds containment of the device, so it is lifted from the Case that imposed it, not by a Lift containment. */
+export class ContainmentImposedByArgus extends Error {
+  readonly case: { number: number; title: string } | null;
+  constructor(c: { number: number; title: string } | null) {
+    super(
+      c
+        ? `Argus contained this host from ${caseRef(c.number)}; lift the containment there`
+        : "Argus contained this host from another Case; the containment is lifted from that Case",
+    );
+    this.case = c;
+  }
+}
+
+/** Lifting containment Argus didn't impose needs the request to confirm the Admin knows that. */
+export class NotImposedNotConfirmed extends Error {
+  constructor() {
+    super("Argus didn't contain this host; confirm to lift its containment anyway");
+  }
+}
 
 /** Some of the Observables are on the Ignored list, and the request didn't confirm sending them. */
 export class IgnoredNotConfirmed extends Error {
@@ -198,6 +227,12 @@ export type NewContainment = {
   internal?: boolean;
 };
 
+/** Containment Argus didn't impose to lift: as `NewContainment`, confirmed by the Admin. */
+export type NewContainmentLift = NewContainment & {
+  /** The Admin was warned that Argus didn't contain the host. */
+  confirmNotImposed?: boolean;
+};
+
 /** An Observable left out of a send because a Provider doesn't take it, and why. */
 export type Skipped = {
   observable: { id: string; type: ObservableType; value: string };
@@ -245,6 +280,11 @@ export type ResponseActionView = {
   removalRequestedAt: string | null;
   /** When it moved to Removed because the tool showed it undone outside Argus: for containment, "lifted in Falcon". */
   liftedInToolAt: string | null;
+  /**
+   * For containment ended by an Admin's Lift containment: the Case it was taken from, unless the
+   * viewer can't see it, and when it ended this record.
+   */
+  liftedBy: { case: { number: number; title: string } | null; at: string } | null;
 };
 
 /** A Response Action taken on an Observable, as its page lists it. */
@@ -324,7 +364,7 @@ const subjectOf = (o: { type: string; value: string } | null, a: { type: string;
 
 /** What it was sent with: "Detect, severity High", "Block domain, everyone", or "device 8f1c…". */
 const paramsOf = (r: Pick<Row, "kind" | "targetType" | "targetValue" | "falconAction" | "severity" | "falconPlatforms">) =>
-  r.kind === "falcon_containment" ? `device ${r.targetValue}` :
+  isHostKind(r.kind) ? `device ${r.targetValue}` :
   r.kind === "mimecast_blocked_sender" ? `${r.targetType === "domain" ? "Block domain" : "Block sender"}, everyone` : [
     falconIocActionLabel[r.falconAction!],
     `severity ${severityLabel[r.severity!]}`,
@@ -346,7 +386,8 @@ export type StateChange =
   | "removed"
   | "already_gone"
   | "relied_on_removed"
-  | "lifted_in_tool";
+  | "lifted_in_tool"
+  | "lifted_by_lift";
 
 /** The changes that follow a request to remove it: their Timeline Entries are recorded by whoever asked. */
 const REMOVAL_CHANGES = new Set<StateChange>(["removal_requested", "removal_retried", "removal_failed", "removed", "already_gone"]);
@@ -366,6 +407,7 @@ const auditAction: Record<StateChange, CaseAuditAction> = {
   already_gone: "response_action.removed",
   relied_on_removed: "response_action.removed",
   lifted_in_tool: "response_action.removed",
+  lifted_by_lift: "response_action.removed",
 };
 
 /** How removing `entry` from `tool` is put. */
@@ -376,11 +418,25 @@ const removal = (entry: string, tool: string) => ({
   alreadyGone: `${entry} was already gone from ${tool}`,
   reliedOnRemoved: `Argus removed ${entry} from ${tool} at the request of the Case that sent it, so this Case no longer records it as present`,
   liftedInTool: `${entry} was removed from ${tool} outside Argus`,
+  liftedByLift: `${entry} was removed from ${tool}`,
 });
 
 /** How a Response Action's Timeline Entries and Audit Log entries put it, by kind. */
 function phrasing(r: Row, o: Subject) {
   const what = described(o);
+  if (r.kind === "falcon_containment_lift") {
+    const tool = `${providerLabel.crowdstrike} Falcon`;
+    return {
+      tool,
+      send: `lift the containment of ${what} in ${tool}, which Argus didn't impose (${paramsOf(r)})`,
+      sent: `Argus lifted the containment of ${what} in ${tool} (${paramsOf(r)})`,
+      notSent: `Argus could not lift the containment of ${what} in ${tool}`,
+      alreadySent: `the containment of ${what} in ${tool} was already being lifted, so nothing was sent again`,
+      inTool: `${what} was already released in ${tool}, so Argus sent nothing`,
+      dismissed: `this Case no longer records lifting the containment of ${what} in ${tool}`,
+      ...removal(`the lift of ${what}'s containment`, tool),
+    };
+  }
   if (r.kind === "falcon_containment") {
     const tool = `${providerLabel.crowdstrike} Falcon`;
     return {
@@ -397,6 +453,7 @@ function phrasing(r: Row, o: Subject) {
       alreadyGone: `${what} was already released in ${tool}`,
       reliedOnRemoved: `Argus lifted the containment of ${what} in ${tool} at the request of the Case that contained it, so this Case no longer records it as contained`,
       liftedInTool: `the containment of ${what} was lifted in ${tool}, outside Argus`,
+      liftedByLift: `Argus lifted the containment of ${what} in ${tool} at an Admin's request, so this Case no longer records it as contained`,
     };
   }
   if (r.kind === "mimecast_blocked_sender") {
@@ -457,12 +514,22 @@ function timelineBody(change: StateChange, r: Row, o: Subject, by: string) {
       return `Response Action removed: ${p.reliedOnRemoved}.`;
     case "lifted_in_tool":
       return `Response Action removed: ${p.liftedInTool}.`;
+    case "lifted_by_lift":
+      return `Response Action removed: ${p.liftedByLift}.`;
   }
 }
 
 /** What the Case Audit Log says of a change, unless an error says it instead. */
 function auditDetail(change: StateChange, r: Row) {
   const tool = r.kind === "mimecast_blocked_sender" ? providerLabel.mimecast : `${providerLabel.crowdstrike} Falcon`;
+  if (r.kind === "falcon_containment_lift") {
+    switch (change) {
+      case "requested":
+        return `${paramsOf(r)}; Argus didn't impose the containment`;
+      case "in_tool":
+        return `Already released in ${tool}; nothing was sent`;
+    }
+  }
   if (r.kind === "falcon_containment") {
     switch (change) {
       case "removed":
@@ -473,6 +540,8 @@ function auditDetail(change: StateChange, r: Row) {
         return `Containment lifted in ${tool} by the Case that contained it`;
       case "lifted_in_tool":
         return `Lifted in ${tool}, outside Argus`;
+      case "lifted_by_lift":
+        return `Containment lifted in ${tool} by an Admin's Lift containment`;
       case "removal_requested":
       case "removal_retried":
         return `Lift containment in ${tool}`;
@@ -493,6 +562,8 @@ function auditDetail(change: StateChange, r: Row) {
       return `Removed from ${tool} by the Case that sent it`;
     case "lifted_in_tool":
       return `Removed in ${tool}, outside Argus`;
+    case "lifted_by_lift":
+      return `Removed from ${tool}`;
     case "removal_requested":
     case "removal_retried":
       return `Remove from ${tool}`;
@@ -588,6 +659,42 @@ export async function containmentLiftedInFalcon(tx: Tx, { integrationId, deviceI
   }
 }
 
+/**
+ * Falcon lifted containment of the device that Lift containment `lift` (ADR 0009) is against. Every
+ * containment Response Action for that device through its Integration that is Active, on any Case and
+ * whatever its origin, moves to Removed, noting `lift`. Call in the transaction recording the lift.
+ */
+export async function containmentLiftedBy(tx: Tx, lift: Row, now: Date) {
+  const r = responseActions;
+  const ended = await tx
+    .select({ id: r.id, asset: { type: assets.type, value: assets.value } })
+    .from(r)
+    .innerJoin(assets, eq(r.assetId, assets.id))
+    .where(
+      and(
+        eq(r.integrationId, lift.integrationId),
+        eq(r.kind, "falcon_containment"),
+        eq(r.targetType, CONTAINMENT_TARGET_TYPE),
+        eq(r.targetValue, lift.targetValue),
+        eq(r.state, "active"),
+      ),
+    )
+    .orderBy(asc(r.seq))
+    .for("update", { of: r });
+  for (const e of ended) {
+    const [lifted] = await tx
+      .update(r)
+      .set({ state: "removed", stateChangedAt: now, liftedById: lift.id, lastError: null })
+      .where(and(eq(r.id, e.id), eq(r.state, "active")))
+      .returning();
+    if (!lifted) continue;
+    await recordStateChange(tx, { r: lifted, subject: { type: e.asset.type as AssetType, value: e.asset.value }, change: "lifted_by_lift", actor: ARGUS, now });
+  }
+}
+
+/** Who the Case Audit Log says made a change the worker made. */
+const ARGUS: CaseActor = { type: "system", name: "Argus" };
+
 /** Queues an attempt to send Response Action `id`, or to remove it, due now. */
 const queue = (tx: Tx, organizationId: string, id: string, now: Date, operation: "send" | "remove" = "send") =>
   tx.insert(responseActionOutbox).values({
@@ -672,6 +779,52 @@ async function lock(tx: Tx, caseId: string, id: string) {
   return { r: found.row, subject: subjectOf(found.observable, found.asset) };
 }
 
+/**
+ * Host `input.assetId`, linked to Case `caseId`, and CrowdStrike Integration `input.integrationId`,
+ * which contains hosts, with device `input.deviceId` recorded on the host for it. Throws `NotLinked`,
+ * `IntegrationNotEligible` and `HostNotContainable`. Shares the Integration's row until the
+ * transaction ends.
+ */
+async function hostDevice(tx: Tx, me: Membership, caseId: string, input: { assetId: string; integrationId: string; deviceId: string }) {
+  const [host] = await tx
+    .select({ id: assets.id, type: assets.type, value: assets.value })
+    .from(caseAssets)
+    .innerJoin(assets, eq(caseAssets.itemId, assets.id))
+    .where(and(eq(caseAssets.caseId, caseId), eq(caseAssets.itemId, input.assetId), isNull(caseAssets.unlinkedAt)))
+    .limit(1);
+  if (!host || host.type !== "host") throw new NotLinked("That host isn't linked to this Case");
+  const [integration] = await tx
+    .select({ id: integrations.id, provider: integrations.provider, hostContainment: integrations.hostContainment, defaults: integrations.responseActionDefaults })
+    .from(integrations)
+    .where(and(eq(integrations.id, input.integrationId), eq(integrations.organizationId, me.organizationId)))
+    .for("share");
+  if (!integration || integration.provider !== "crowdstrike" || !integration.hostContainment) {
+    throw new IntegrationNotEligible("That Integration doesn't contain hosts; an Admin can turn Host containment on in its settings");
+  }
+  const recorded = await tx
+    .select({ deviceId: assetFalconDevices.deviceId })
+    .from(assetFalconDevices)
+    .where(and(eq(assetFalconDevices.assetId, host.id), eq(assetFalconDevices.integrationId, integration.id)));
+  if (!recorded.length) throw new HostNotContainable("Falcon has no device recorded for this host, so it can't be contained");
+  if (!recorded.some((d) => d.deviceId === input.deviceId)) throw new HostNotContainable("That device isn't recorded on this host");
+  return { host, integration };
+}
+
+/**
+ * Throws `ContainmentImposedByArgus`, naming the Case if `me` can see it, when Argus holds
+ * containment of device `deviceId` through Integration `integrationId`. Call with the target locked.
+ */
+async function refuseImposed(tx: Tx, me: Membership, integrationId: string, deviceId: string) {
+  const held = await liveCreated(tx, { integrationId, kind: "falcon_containment", targetType: CONTAINMENT_TARGET_TYPE, targetValue: deviceId });
+  if (!held) return;
+  const [c] = await tx
+    .select({ number: cases.number, title: cases.title })
+    .from(responseActions)
+    .innerJoin(cases, eq(responseActions.caseId, cases.id))
+    .where(and(eq(responseActions.id, held.id), visibleCases(me)));
+  throw new ContainmentImposedByArgus(c ?? null);
+}
+
 /** The CrowdStrike Integrations in the Organization that contain hosts now, oldest first. */
 async function containing(db: Db | Tx, organizationId: string): Promise<ContainmentIntegration[]> {
   const rows = await db
@@ -700,6 +853,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
     const originalCaseRow = alias(cases, "original_case");
     const dismisser = alias(user, "dismisser");
     const remover = alias(user, "remover");
+    const lift = alias(responseActions, "lift");
     const rows = await db
       .select({
         row: r,
@@ -711,6 +865,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
         removerName: remover.name,
         original: { at: sql<Date>`coalesce(${originalAction.sentAt}, ${originalAction.createdAt})`.mapWith(originalAction.createdAt), caseId: originalAction.caseId },
         originalCase: { number: originalCaseRow.number, title: originalCaseRow.title },
+        liftCaseId: lift.caseId,
       })
       .from(r)
       .leftJoin(observables, eq(r.observableId, observables.id))
@@ -721,17 +876,23 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
       .leftJoin(remover, eq(r.removalRequestedById, remover.id))
       .leftJoin(originalAction, eq(r.presentFromId, originalAction.id))
       .leftJoin(originalCaseRow, eq(originalAction.caseId, originalCaseRow.id))
+      .leftJoin(lift, eq(r.liftedById, lift.id))
       .where(and(eq(r.caseId, caseId), visibleItems(me, r.internal), ids ? inArray(r.id, [...ids]) : undefined))
       .orderBy(asc(r.seq));
     const insider = casePolicy.canSeeInternal(me);
-    // The Cases the originals were sent from that `me` may see; the rest go unnamed.
-    const originalCaseIds = [...new Set(rows.flatMap((x) => (x.original?.caseId ? [x.original.caseId] : [])))];
-    const seen = new Set(
-      originalCaseIds.length
-        ? (await db.select({ id: cases.id }).from(cases).where(and(visibleCases(me), inArray(cases.id, originalCaseIds)))).map((c) => c.id)
+    // The Cases the originals were sent from, and Lift containments taken from, that `me` may see; the rest go unnamed.
+    const otherCaseIds = [...new Set(rows.flatMap((x) => [x.original?.caseId, x.liftCaseId].filter((id): id is string => !!id)))];
+    const seenCases = new Map(
+      otherCaseIds.length
+        ? (
+            await db
+              .select({ id: cases.id, number: cases.number, title: cases.title })
+              .from(cases)
+              .where(and(visibleCases(me), inArray(cases.id, otherCaseIds)))
+          ).map((c) => [c.id, { number: c.number, title: c.title }])
         : [],
     );
-    return rows.map(({ row, observable, asset, integrationName, requestedByName, dismissedByName, removerName, original, originalCase }) => ({
+    return rows.map(({ row, observable, asset, integrationName, requestedByName, dismissedByName, removerName, original, originalCase, liftCaseId }) => ({
       id: row.id,
       kind: row.kind,
       state: row.state,
@@ -749,13 +910,14 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
       origin: row.origin,
       presentFrom:
         original?.caseId && originalCase
-          ? { case: seen.has(original.caseId) ? originalCase : null, at: original.at.toISOString() }
+          ? { case: seenCases.has(original.caseId) ? originalCase : null, at: original.at.toISOString() }
           : null,
       dismissedBy: row.dismissedById && dismissedByName ? { id: row.dismissedById, name: dismissedByName } : null,
       dismissedAt: row.dismissedAt?.toISOString() ?? null,
       removalRequestedBy: row.removalRequestedById && removerName ? { id: row.removalRequestedById, name: removerName } : null,
       removalRequestedAt: row.removalRequestedAt?.toISOString() ?? null,
       liftedInToolAt: row.liftedInToolAt?.toISOString() ?? null,
+      liftedBy: liftCaseId ? { case: seenCases.get(liftCaseId) ?? null, at: row.stateChangedAt.toISOString() } : null,
     }));
   }
 
@@ -833,28 +995,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
       const now = clock.now();
       const outcome = await db.transaction(async (tx) => {
         const current = await lockCase(tx, me, number);
-        const [host] = await tx
-          .select({ id: assets.id, type: assets.type, value: assets.value })
-          .from(caseAssets)
-          .innerJoin(assets, eq(caseAssets.itemId, assets.id))
-          .where(and(eq(caseAssets.caseId, current.id), eq(caseAssets.itemId, input.assetId), isNull(caseAssets.unlinkedAt)))
-          .limit(1);
-        if (!host || host.type !== "host") throw new NotLinked("That host isn't linked to this Case");
-        const [integration] = await tx
-          .select({ id: integrations.id, provider: integrations.provider, hostContainment: integrations.hostContainment, defaults: integrations.responseActionDefaults })
-          .from(integrations)
-          .where(and(eq(integrations.id, input.integrationId), eq(integrations.organizationId, me.organizationId)))
-          .for("share");
-        if (!integration || integration.provider !== "crowdstrike" || !integration.hostContainment) {
-          throw new IntegrationNotEligible("That Integration doesn't contain hosts; an Admin can turn Host containment on in its settings");
-        }
-        const recorded = await tx
-          .select({ deviceId: assetFalconDevices.deviceId })
-          .from(assetFalconDevices)
-          .where(and(eq(assetFalconDevices.assetId, host.id), eq(assetFalconDevices.integrationId, integration.id)));
-        if (!recorded.length) throw new HostNotContainable("Falcon has no device recorded for this host, so it can't be contained");
-        if (!recorded.some((d) => d.deviceId === input.deviceId)) throw new HostNotContainable("That device isn't recorded on this host");
-
+        const { host, integration } = await hostDevice(tx, me, current.id, input);
         const target = { integrationId: integration.id, kind: "falcon_containment" as const, targetType: CONTAINMENT_TARGET_TYPE, targetValue: input.deviceId };
         await lockTarget(tx, target);
         // Already contained by Argus, from this Case or another: recorded, and nothing is sent again.
@@ -884,6 +1025,52 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
           await queue(tx, me.organizationId, id, now);
           await recordStateChange(tx, { r: r!, subject, change: "requested", actor: actorOf(me), now });
         }
+        return { caseId: current.id, id };
+      });
+      return (await select(me, outcome.caseId, [outcome.id]))[0]!;
+    },
+
+    /**
+     * Lifts containment that Argus didn't impose (ADR 0009): device `deviceId` of host `assetId`,
+     * linked to Case `number`, through CrowdStrike Integration `integrationId`, as its own Lift
+     * containment Response Action, stored Pending and queued for the worker. Admins only
+     * (`NotPermitted`), and only with `confirmNotImposed` (`NotImposedNotConfirmed`). Throws
+     * `ContainmentImposedByArgus` while Argus holds containment of the device, and as `contain` does
+     * otherwise. Not on a Closed Case.
+     */
+    async liftContainment(me: Membership, number: number, input: NewContainmentLift): Promise<ResponseActionView> {
+      if (!casePolicy.canWork(me)) throw new NotPermitted();
+      if (!casePolicy.canLiftForeignContainment(me)) throw new NotPermitted("Only Admins can lift containment that Argus didn't impose");
+      const now = clock.now();
+      const outcome = await db.transaction(async (tx) => {
+        const current = await lockCase(tx, me, number);
+        const { host, integration } = await hostDevice(tx, me, current.id, input);
+        // Held against a containment being sent from another Case meanwhile.
+        await lockTarget(tx, { integrationId: integration.id, kind: "falcon_containment", targetType: CONTAINMENT_TARGET_TYPE, targetValue: input.deviceId });
+        await refuseImposed(tx, me, integration.id, input.deviceId);
+        if (!input.confirmNotImposed) throw new NotImposedNotConfirmed();
+        const id = secureId();
+        const [r] = await tx
+          .insert(responseActions)
+          .values({
+            id,
+            organizationId: me.organizationId,
+            caseId: current.id,
+            assetId: host.id,
+            integrationId: integration.id,
+            kind: "falcon_containment_lift",
+            targetType: CONTAINMENT_TARGET_TYPE,
+            targetValue: input.deviceId,
+            state: "pending",
+            origin: "created",
+            internal: input.internal ?? integration.defaults.internal,
+            createdById: me.userId,
+            createdAt: now,
+            stateChangedAt: now,
+          })
+          .returning();
+        await queue(tx, me.organizationId, id, now);
+        await recordStateChange(tx, { r: r!, subject: { type: "host", value: host.value }, change: "requested", actor: actorOf(me), now });
         return { caseId: current.id, id };
       });
       return (await select(me, outcome.caseId, [outcome.id]))[0]!;
@@ -1109,6 +1296,19 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
           return current.id;
         }
         if (current.status === "closed") throw new CaseClosed();
+        if (r.kind === "falcon_containment_lift") {
+          if (!casePolicy.canLiftForeignContainment(me)) throw new NotPermitted("Only Admins can lift containment that Argus didn't impose");
+          await lockTarget(tx, { ...r, kind: "falcon_containment" });
+          await refuseImposed(tx, me, r.integrationId, r.targetValue);
+          const [pending] = await tx
+            .update(responseActions)
+            .set({ state: "pending", stateChangedAt: now, lastError: null })
+            .where(eq(responseActions.id, id))
+            .returning();
+          await queue(tx, r.organizationId, id, now);
+          await recordStateChange(tx, { r: pending!, subject, change: "retried", actor: actorOf(me), now, by: { id: me.userId, name: me.name } });
+          return current.id;
+        }
         await lockTarget(tx, r);
         const original = await liveCreated(tx, r, r.id);
         if (original) {
@@ -1153,6 +1353,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
         const current = await lockCase(tx, me, number, "allow");
         if (current.status === "closed" && !casePolicy.canReopen(me)) throw new CaseClosed();
         const { r, subject } = await lock(tx, current.id, id);
+        if (r.kind === "falcon_containment_lift") throw new NotRemovable("A Lift containment can't be undone; contain the host again instead");
         if (r.origin !== "created") throw new NotRemovable("Argus didn't create this Response Action, so it can't remove it; dismiss it instead");
         if (r.state !== "active") throw new NotRemovable("Only an Active Response Action can be removed");
         if (!confirmRelying) {
@@ -1188,7 +1389,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
       const caseId = await db.transaction(async (tx) => {
         const current = await lockCase(tx, me, number);
         const { r, subject } = await lock(tx, current.id, id);
-        if (r.state !== "active" || r.origin === "created") throw new NotDismissable();
+        if (r.state !== "active" || r.origin === "created" || r.kind === "falcon_containment_lift") throw new NotDismissable();
         const [dismissed] = await tx
           .update(responseActions)
           .set({ state: "removed", stateChangedAt: now, dismissedById: me.userId, dismissedAt: now })

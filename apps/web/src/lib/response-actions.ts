@@ -61,7 +61,7 @@ export const toolOf = (kind: ResponseActionKind) => (kind === "mimecast_blocked_
 
 /** What it does, as a row names it: "Detect", "Prevent", "Block sender" or "Block domain". */
 export const actionOf = (r: Pick<ResponseAction, "kind" | "falcon" | "target">) =>
-  r.kind === "falcon_containment" ? "Contain" : r.falcon ? falconIocActionLabel[r.falcon.action] : r.kind === "mimecast_blocked_sender" ? (r.target.type === "domain" ? "Block domain" : "Block sender") : "Sent";
+  r.kind === "falcon_containment" ? "Contain" : r.kind === "falcon_containment_lift" ? "Lift containment" : r.falcon ? falconIocActionLabel[r.falcon.action] : r.kind === "mimecast_blocked_sender" ? (r.target.type === "domain" ? "Block domain" : "Block sender") : "Sent";
 
 /**
  * "Severity High (from the Case) · every platform", as a menu or dialog says what an IOC goes with;
@@ -168,6 +168,18 @@ export async function requestContainmentCheck(number: number, assetId: string) {
 export async function containHost(number: number, input: { assetId: string; integrationId: string; deviceId: string }) {
   const res = await api.cases[":number"]["response-actions"].containment.$post({ param: { number: String(number) }, json: input });
   if (!res.ok) throw new Error(await errorMessage(res, "Could not contain the host"));
+}
+
+/**
+ * Lifts containment Argus didn't impose (Admins only) of device `deviceId` of host `assetId` on Case
+ * `number`, through Integration `integrationId`, the Admin having been warned of that.
+ */
+export async function liftForeignContainment(number: number, input: { assetId: string; integrationId: string; deviceId: string }) {
+  const res = await api.cases[":number"]["response-actions"]["containment-lift"].$post({
+    param: { number: String(number) },
+    json: { ...input, confirmNotImposed: true },
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, "Could not lift the containment"));
 }
 
 /** What a Response Action was taken against, whichever it is: its Observable, or its host. */

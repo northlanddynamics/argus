@@ -420,6 +420,60 @@ test("the Owner allows Host containment; an Analyst contains a host from a Case 
   }
 }, 60_000);
 
+test("an Admin lifts containment Argus didn't impose from a Case, after a warning that Argus didn't contain the host", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  const falcon = fakeFalcon();
+  const tenant = falcon.tenant("falcon-client-0001");
+  const aid = "8f1c2b3a4d5e6f708192a3b4c5d6e7f8";
+  // Contained in the Falcon console, outside Argus.
+  tenant.hosts.set(aid, fakeHost(aid, { containment: "contained" }));
+  const worker = createStreamWorker(t.deps, { connect: falcon.connect, workerId: "worker-1" });
+  t.onCleanup(worker.close);
+  const enricher = createHostEnricher(t.deps, { connect: falcon.connect });
+  const sender = createResponseActionSender(t.deps, { connect: falcon.connect });
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    const added = await (
+      await owner.api.integrations.$post({ json: { name: "CrowdStrike — Prod", cloud: "us-1", clientId: "falcon-client-0001", clientSecret: "falcon-secret" } })
+    ).json();
+    if (!("integration" in added)) throw new Error("Could not add an Integration");
+    await owner.api.integrations[":id"]["host-containment"].$put({ param: { id: added.integration.id }, json: { enabled: true } });
+    await worker.tick();
+    tenant.emit("EppDetectionSummaryEvent", epp);
+    await tenant.drained();
+    const queue = await (await owner.api.alerts.$get({ query: {} })).json();
+    if (!("alerts" in queue)) throw new Error("No Alert queue");
+    const alert = queue.alerts[0]!;
+    await owner.api.cases.$post({ json: { title: "Encoded PowerShell", caseType: "malware", severity: "high" } });
+    await owner.api.alerts.attach.$post({ json: { case: 1, alerts: [{ id: alert.id, version: alert.version }] } });
+
+    const page = await browser.newPage();
+    await signIn(page, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
+    await page.goto(`${baseUrl}/cases/1/observables`);
+    await page.getByRole("button", { name: "Actions for Host FIN-LT-0231" }).click();
+    await page.getByRole("menuitem", { name: "Lift containment…" }).click();
+    const dialog = page.getByRole("dialog", { name: "Lift the containment of FIN-LT-0231?" });
+    await dialog.getByText("Fetching from Falcon…").waitFor();
+    expect(await dialog.getByRole("button", { name: "Lift containment" }).isDisabled()).toBe(true);
+    await enricher.tick();
+    await dialog.getByText(/Argus didn't contain this host/).waitFor();
+    await dialog.getByText(/Falcon reports it contained as of/).waitFor();
+    await dialog.getByRole("button", { name: "Lift containment" }).click();
+    await page.getByText("Lifting the containment of FIN-LT-0231 queued").waitFor();
+    const row = page.getByTestId("response-action-FIN-LT-0231");
+    await row.getByRole("cell", { name: /^Lift containment/ }).waitFor();
+    await row.getByText("Pending").waitFor();
+
+    await sender.tick();
+    await row.getByText("Active").waitFor();
+    await row.getByText(/^Lifted /).waitFor();
+    expect(tenant.lifts).toEqual([aid]);
+  } finally {
+    await stop();
+  }
+}, 60_000);
+
 test("an Analyst pivots from search to an Observable's page and its Case, sends several Observables to Falcon at once, and sees them become Active", async () => {
   const { t, baseUrl, stop } = await serveTestApp();
   const falcon = fakeFalcon();

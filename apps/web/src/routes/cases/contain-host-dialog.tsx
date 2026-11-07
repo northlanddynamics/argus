@@ -15,6 +15,7 @@ import {
   type ContainmentIntegration,
   containmentCheckKey,
   containmentCheckQuery,
+  liftForeignContainment,
   requestContainmentCheck,
   responseActionsKey,
 } from "@/lib/response-actions";
@@ -30,6 +31,9 @@ const containmentLabel: Record<NonNullable<ContainmentDevice["containment"]>, st
   lift_containment_pending: "Lifting containment",
 };
 
+/** Falcon reports it contained, or being contained. */
+const isContained = (d: ContainmentDevice) => d.containment === "contained" || d.containment === "containment_pending";
+
 /** Fetched afresh since the confirmation opened, without error: what may be contained. */
 const fresh = (d: ContainmentDevice) => !d.refreshing && d.fetchedAt !== null && !d.notFound && d.error === null;
 
@@ -39,16 +43,22 @@ const fresh = (d: ContainmentDevice) => !d.refreshing && d.fetchedAt !== null &&
  * groups, last seen and containment. The Member picks the Integration where there are several, and
  * the device where the host is ambiguous (nothing is picked for them then). Confirming is allowed only
  * once the device picked has been fetched afresh. A host with no device can't be contained.
+ *
+ * With `lift`, it is "Lift containment…" instead, for Admins (ADR 0009): the same check, then a
+ * warning that Argus didn't contain the host and as of when Falcon reports it contained. Only a device
+ * Falcon reports contained (or being contained) can have its containment lifted.
  */
 export function ContainHostDialog({
   number,
   asset,
   integrations,
+  lift = false,
   onClose,
 }: {
   number: number;
   asset: { id: string; value: string };
   integrations: ContainmentIntegration[];
+  lift?: boolean;
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -74,9 +84,10 @@ export function ContainHostDialog({
   const picked = shown?.devices.find((d) => d.deviceId === (deviceId || onlyDevice));
 
   const contain = useMutation({
-    mutationFn: () => containHost(number, { assetId: asset.id, integrationId, deviceId: picked!.deviceId }),
+    mutationFn: () =>
+      (lift ? liftForeignContainment : containHost)(number, { assetId: asset.id, integrationId, deviceId: picked!.deviceId }),
     onSuccess: () => {
-      toast(`Containment of ${asset.value} queued`);
+      toast(lift ? `Lifting the containment of ${asset.value} queued` : `Containment of ${asset.value} queued`);
       onClose();
     },
     onSettled: () => void queryClient.invalidateQueries({ queryKey: responseActionsKey(number) }),
@@ -86,10 +97,11 @@ export function ContainHostDialog({
     <Dialog defaultOpen onOpenChange={(next) => !next && onClose()}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>Contain {asset.value}?</DialogTitle>
+          <DialogTitle>{lift ? `Lift the containment of ${asset.value}?` : `Contain ${asset.value}?`}</DialogTitle>
           <DialogDescription>
-            Falcon cuts the host off from the network, except for Falcon itself, until containment is lifted. Check the host groups: a server
-            or domain controller going offline affects everyone who relies on it.
+            {lift
+              ? "Falcon puts the host back on the network. Any Argus records of its containment, on any Case, end."
+              : "Falcon cuts the host off from the network, except for Falcon itself, until containment is lifted. Check the host groups: a server or domain controller going offline affects everyone who relies on it."}
           </DialogDescription>
         </DialogHeader>
 
@@ -149,9 +161,27 @@ export function ContainHostDialog({
           </FieldSet>
         )}
 
-        {picked && (picked.containment === "contained" || picked.containment === "containment_pending") && (
+        {!lift && picked && isContained(picked) && (
           <Alert className={notice}>
-            <AlertDescription>Falcon already reports this device {containmentLabel[picked.containment].toLowerCase()}. Argus records it and sends nothing.</AlertDescription>
+            <AlertDescription>Falcon already reports this device {containmentLabel[picked.containment!].toLowerCase()}. Argus records it and sends nothing.</AlertDescription>
+          </Alert>
+        )}
+        {lift && picked && fresh(picked) && (
+          <Alert className={notice}>
+            <AlertDescription>
+              {isContained(picked) ? (
+                <>
+                  Argus didn't contain this host: someone did in Falcon, or it was already contained when Argus looked. Falcon reports it{" "}
+                  {containmentLabel[picked.containment!].toLowerCase()} as of{" "}
+                  <time dateTime={picked.fetchedAt!} title={exactTime(picked.fetchedAt!)}>
+                    {when(picked.fetchedAt!)}
+                  </time>
+                  . Lift it only if you know why it was contained.
+                </>
+              ) : (
+                "Falcon doesn't report this device contained, so there is nothing to lift."
+              )}
+            </AlertDescription>
           </Alert>
         )}
         {contain.error && (
@@ -163,8 +193,13 @@ export function ContainHostDialog({
           <Button type="button" variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="button" variant="destructive" disabled={!picked || !fresh(picked) || contain.isPending} onClick={() => contain.mutate()}>
-            Contain host
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={!picked || !fresh(picked) || (lift && !isContained(picked)) || contain.isPending}
+            onClick={() => contain.mutate()}
+          >
+            {lift ? "Lift containment" : "Contain host"}
           </Button>
         </DialogFooter>
       </DialogContent>
