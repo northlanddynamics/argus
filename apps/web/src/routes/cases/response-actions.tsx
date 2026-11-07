@@ -427,6 +427,13 @@ function StateLine({ r }: { r: ResponseAction }) {
       </span>
     );
   }
+  if (r.state === "removed" && r.liftedInToolAt) {
+    return (
+      <span>
+        Lifted in Falcon <At iso={r.liftedInToolAt} />
+      </span>
+    );
+  }
   if (r.state === "removed") {
     return (
       <span>

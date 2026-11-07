@@ -1332,6 +1332,8 @@ export const responseActions = pgTable(
     /** Who last asked Argus to remove it from the tool, and when; set from Remove on. */
     removalRequestedById: text("removal_requested_by_id").references(() => user.id, { onDelete: "restrict" }),
     removalRequestedAt: timestamp("removal_requested_at", { withTimezone: true }),
+    /** When enrichment showed what it did undone in the tool, outside Argus (containment lifted in Falcon), moving it to Removed. */
+    liftedInToolAt: timestamp("lifted_in_tool_at", { withTimezone: true }),
   },
   (t) => [
     index("response_actions_case_idx").on(t.caseId, t.seq),

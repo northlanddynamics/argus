@@ -37,6 +37,7 @@ export const providerKind: Record<Provider, ResponseActionKind> = { crowdstrike:
  * Removing → Failed    (remove attempts exhausted)
  * Failed   → Removing  (Retry, when removing failed)
  * Active   → Removed   (an "already present" record dismissed, or the one it relies on removed)
+ * Active   → Removed   (containment only: Falcon shows the host released, "lifted in Falcon")
  * ```
  *
  * A Response Action recorded as already sent from another Case starts Active.
