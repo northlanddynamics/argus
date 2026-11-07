@@ -7,6 +7,9 @@ import { buildTestApp } from "./test/harness";
 const PASSWORD = "correct-horse-battery";
 const CLIENT_ID = "falcon-client-0001";
 const COUNSEL = "k.patel@lawfirm.example";
+/** Devices other than the fixture's, for detections on other hosts. */
+const HR_0007 = "a0000000000000000000000000000007";
+const HR_0008 = "a0000000000000000000000000000008";
 const param = (number: number) => ({ number: String(number) });
 
 /**
@@ -301,8 +304,8 @@ describe("Correlation in the Alert queue", () => {
     await a.observe(two, "ip", "185.220.101.4");
     await a.hold(two, "FIN-LT-0231");
     const both = await a.detect();
-    const ipOnly = await a.detect({ Hostname: "HR-LT-0007" });
-    const neither = await a.detect({ Hostname: "HR-LT-0008", NetworkAccesses: [] });
+    const ipOnly = await a.detect({ Hostname: "HR-LT-0007", AgentId: HR_0007 });
+    const neither = await a.detect({ Hostname: "HR-LT-0008", AgentId: HR_0008, NetworkAccesses: [] });
 
     const [best, tied, none] = await a.marked([both, ipOnly, neither]);
     expect(best).toBe(`C-${two} +1`);
@@ -345,9 +348,9 @@ describe("Correlation on the Case", () => {
     const number = await a.open("Invoice phishing");
     await a.observe(number, "ip", "185.220.101.4");
     await a.hold(number, "FIN-LT-0231");
-    const ipOnly = await a.detect({ Hostname: "HR-LT-0007" });
+    const ipOnly = await a.detect({ Hostname: "HR-LT-0007", AgentId: HR_0007 });
     const both = await a.detect();
-    const neither = await a.detect({ Hostname: "HR-LT-0008", NetworkAccesses: [] });
+    const neither = await a.detect({ Hostname: "HR-LT-0008", AgentId: HR_0008, NetworkAccesses: [] });
 
     expect(await a.related(number)).toEqual([`${both} 2: 185.220.101.4, FIN-LT-0231`, `${ipOnly} 1: 185.220.101.4`]);
     const found = await a.onCase(number);
@@ -430,5 +433,58 @@ describe("Correlation on the Case", () => {
     const guest = await a.t.guestSignIn(COUNSEL);
     expect((await guest.api.cases[":number"].correlations.$get({ param: param(number) })).status as number).toBe(403);
     expect((await guest.api.alerts.$get({ query: {} })).status as number).toBe(403);
+  });
+});
+
+/** A Case holding host FIN-LT-0231, whose `aid` an earlier detection recorded, and an Alert naming that device as FIN-LT-0231-R. */
+async function renamed() {
+  const a = await acme();
+  const number = await a.open("Invoice phishing");
+  const host = await a.hold(number, "FIN-LT-0231");
+  const before = await a.detect();
+  const id = await a.detect({ Hostname: "FIN-LT-0231-R" });
+  const renamedHost = (await a.alert(id)).indicators.assets.find((x) => x.value === "FIN-LT-0231-R");
+  if (!renamedHost) throw new Error("The renamed host isn't named");
+  return { ...a, number, host, renamedHost: renamedHost.id, before, id };
+}
+
+describe("Correlation by Falcon device", () => {
+  test("an Alert whose aid is on a linked host correlates despite a different hostname", async () => {
+    const a = await renamed();
+    expect(await a.suggested(a.id)).toEqual([`C-${a.number} 1: FIN-LT-0231`]);
+    expect(await a.marked([a.id])).toEqual([`C-${a.number} +0`]);
+    expect(await a.related(a.number)).toContain(`${a.id} 1: FIN-LT-0231`);
+  });
+
+  test("a host matched by both name and aid counts once", async () => {
+    const a = await renamed();
+    expect(await a.suggested(a.before)).toEqual([`C-${a.number} 1: FIN-LT-0231`]);
+  });
+
+  test("an Alert naming another device under a new name doesn't correlate", async () => {
+    const a = await renamed();
+    const other = await a.detect({ Hostname: "FIN-LT-0231-R", AgentId: "0123456789abcdef0123456789abcdef" });
+    expect(await a.suggested(other)).toEqual([]);
+  });
+
+  test("an Ignored host never produces a Correlation, by name or by aid", async () => {
+    const a = await renamed();
+    await a.admin.api.assets[":id"].ignored.$put({ param: { id: a.host } });
+    expect(await a.suggested(a.id)).toEqual([]);
+    expect(await a.suggested(a.before)).toEqual([]);
+    expect(await a.marked([a.id, a.before])).toEqual([null, null]);
+    expect(await a.related(a.number)).toEqual([]);
+
+    await a.admin.api.assets[":id"].ignored.$delete({ param: { id: a.host } });
+    await a.admin.api.assets[":id"].ignored.$put({ param: { id: a.renamedHost } });
+    expect(await a.suggested(a.id)).toEqual([]);
+    expect(await a.related(a.number)).toEqual([`${a.before} 1: FIN-LT-0231`]);
+  });
+
+  test("Assets are never merged", async () => {
+    const a = await renamed();
+    const indicators = (await a.alert(a.id)).indicators.assets.map((x) => x.value);
+    expect(indicators).toContain("FIN-LT-0231-R");
+    expect(indicators).not.toContain("FIN-LT-0231");
   });
 });

@@ -111,7 +111,7 @@ The external security tool an Integration connects to, which fixes what that Int
 _Avoid_: Vendor, platform, connector type
 
 **Correlation**:
-A suggestion that an Alert belongs with a Case because the Alert names Observables or Assets already linked to it; Argus only suggests, and an Analyst decides whether to attach.
+A suggestion that an Alert belongs with a Case because the Alert names Observables or Assets already linked to it, or names a Falcon device recorded on a host linked to it whatever the host is now called; Argus only suggests, and an Analyst decides whether to attach.
 _Avoid_: Match, auto-link, cluster
 
 ### Record of a Case

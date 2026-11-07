@@ -53,7 +53,9 @@ import { queueTeamsPost, sendTeamsPosts } from "../teams/teams";
  *
  * Correlation suggests the Cases an Alert may belong with: the Cases the Member can see, in any
  * Status, linked to an Observable or Asset the Alert names that isn't on the Ignored list, ranked
- * by how many they share. It is worked out as it is read, and never attaches anything: the Member
+ * by how many they share. A host also counts as named when the Alert names a Falcon device (`aid`)
+ * recorded on it for the Alert's Integration, so a renamed host still correlates (ADR 0009); Assets
+ * are never merged. It is worked out as it is read, and never attaches anything: the Member
  * attaches from a suggestion with the ordinary attach, which for a Closed Case an Admin may ask to
  * reopen it first. The same rules mark each Alert in the queue with its strongest Case, and list on a
  * Case the New Alerts sharing its Observables or Assets.
