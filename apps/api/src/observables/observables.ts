@@ -14,6 +14,7 @@ import {
   alertAssets,
   alertObservables,
   alerts,
+  alertFalconDevices,
   assetFalconDevices,
   assets,
   caseAssets,
@@ -738,11 +739,11 @@ export async function recordAlertIndicators(
 
 /**
  * Records the Falcon devices a detection names against their host Assets for the Integration it
- * came from (ADR 0009), once each. Call it after the hosts are added.
+ * came from (ADR 0009), and against the Alert, once each. Call it after the hosts are added.
  */
 async function recordFalconDevices(
   tx: Tx,
-  alert: { organizationId: string; integrationId: string },
+  alert: { id: string; organizationId: string; integrationId: string },
   devices: readonly { hostKey: string; deviceId: string }[],
   now: Date,
 ) {
@@ -758,7 +759,12 @@ async function recordFalconDevices(
       ? [{ id: secureId(), organizationId: alert.organizationId, assetId, integrationId: alert.integrationId, deviceId: d.deviceId, recordedAt: now }]
       : [];
   });
-  if (rows.length) await tx.insert(assetFalconDevices).values(rows).onConflictDoNothing();
+  if (!rows.length) return;
+  await tx.insert(assetFalconDevices).values(rows).onConflictDoNothing();
+  await tx
+    .insert(alertFalconDevices)
+    .values(rows.map(({ assetId, deviceId }) => ({ organizationId: alert.organizationId, alertId: alert.id, assetId, deviceId })))
+    .onConflictDoNothing();
 }
 
 /**
@@ -978,7 +984,8 @@ type SharedLink = { alertId: string; caseId: string; caseNumber: number; caseUpd
 /**
  * What Alerts share with Cases: each non-ignored Observable or Asset that an Alert matching
  * `alertsWhere` names and a Case `me` can see, in any Status, links, other than the Case the Alert
- * is on. In the order the Alerts first named them, Observables first.
+ * is on, and each such host shared by Falcon device (`sharedHostsByDevice`), each item once per
+ * Alert and Case. In the order the Alerts first named them, Observables first.
  */
 async function sharedLinks(db: Db | Tx, me: MemberActor, alertsWhere: SQL | undefined, casesWhere?: SQL): Promise<SharedLink[]> {
   const rows = await Promise.all(
@@ -1024,7 +1031,71 @@ async function sharedLinks(db: Db | Tx, me: MemberActor, alertsWhere: SQL | unde
       })),
     ),
   );
-  return rows.flat();
+  const byDevice = await sharedHostsByDevice(db, me, alertsWhere, casesWhere);
+  const seen = new Set<string>();
+  return [...rows.flat(), ...byDevice].filter((l) => {
+    const key = `${l.alertId}\u0000${l.caseId}\u0000${l.item.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * The hosts Alerts share with Cases by Falcon device (ADR 0009): each host a Case `me` can see links
+ * on which a device an Alert matching `alertsWhere` names is recorded for the Alert's Integration,
+ * whatever either host is called. Neither host may be on the Ignored list.
+ */
+async function sharedHostsByDevice(db: Db | Tx, me: MemberActor, alertsWhere: SQL | undefined, casesWhere?: SQL): Promise<SharedLink[]> {
+  const caseHost = alias(assets, "case_host");
+  const rows = await db
+    .select({
+      alertId: alertFalconDevices.alertId,
+      caseId: cases.id,
+      caseNumber: cases.number,
+      caseUpdatedAt: cases.updatedAt,
+      id: caseHost.id,
+      type: caseHost.type,
+      value: caseHost.value,
+    })
+    .from(alertFalconDevices)
+    .innerJoin(alerts, eq(alertFalconDevices.alertId, alerts.id))
+    .innerJoin(
+      assetFalconDevices,
+      and(eq(assetFalconDevices.deviceId, alertFalconDevices.deviceId), eq(assetFalconDevices.integrationId, alerts.integrationId)),
+    )
+    .innerJoin(caseHost, and(eq(caseHost.id, assetFalconDevices.assetId), eq(caseHost.organizationId, alerts.organizationId)))
+    .innerJoin(caseAssets, and(eq(caseAssets.itemId, caseHost.id), isNull(caseAssets.unlinkedAt)))
+    .innerJoin(cases, eq(caseAssets.caseId, cases.id))
+    .where(
+      and(
+        eq(alerts.organizationId, me.organizationId),
+        alertsWhere,
+        casesWhere,
+        visibleCases(me),
+        sql`${alerts.caseId} is distinct from ${cases.id}`,
+        notExists(
+          db
+            .select({ id: ignoredObservables.id })
+            .from(ignoredObservables)
+            .where(and(eq(ignoredObservables.assetId, caseHost.id), isNull(ignoredObservables.endedAt))),
+        ),
+        notExists(
+          db
+            .select({ id: ignoredObservables.id })
+            .from(ignoredObservables)
+            .where(and(eq(ignoredObservables.assetId, alertFalconDevices.assetId), isNull(ignoredObservables.endedAt))),
+        ),
+      ),
+    )
+    .orderBy(asc(assetFalconDevices.seq));
+  return rows.map(({ alertId, caseId, caseNumber, caseUpdatedAt, ...item }) => ({
+    alertId,
+    caseId,
+    caseNumber,
+    caseUpdatedAt,
+    item: { ...item, kind: "asset" } as SharedItem,
+  }));
 }
 
 /** Groups `links` by `key`, keeping their order. */

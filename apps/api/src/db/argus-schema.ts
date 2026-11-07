@@ -850,6 +850,30 @@ export const assetFalconDevices = pgTable(
 );
 
 /**
+ * The Falcon devices (`aid`) an Alert's detection names, each with the host Asset it names it for
+ * (ADR 0009). An Alert correlates with a Case holding a host on which one of these is recorded for
+ * the Alert's Integration, whatever that host is called. Never deleted (ADR 0003).
+ */
+export const alertFalconDevices = pgTable(
+  "alert_falcon_devices",
+  {
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    alertId: text("alert_id")
+      .notNull()
+      .references((): AnyPgColumn => alerts.id, { onDelete: "restrict" }),
+    /** The host the detection names the device for. */
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "restrict" }),
+    /** Falcon's device ID, lower case. */
+    deviceId: text("device_id").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.alertId, t.assetId, t.deviceId] }), index("alert_falcon_devices_device_idx").on(t.deviceId)],
+);
+
+/**
  * The latest Enrichment of a Falcon device: what the Hosts API last reported about it through an
  * Integration (ADR 0009). Only the latest is kept, replaced on every fetch; `host` is null once
  * Falcon has said it doesn't know the device. `due` marks it wanted by someone opening a host's page
