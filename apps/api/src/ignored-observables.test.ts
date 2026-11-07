@@ -138,6 +138,40 @@ describe("Ignored Observables", () => {
     await expect(duplicate()).rejects.toThrow();
   });
 
+  test("the Case's lists and search results mark what is ignored", async () => {
+    const a = await acme();
+    const resolver = await a.observe("ip", "8.8.8.8");
+    await a.observe("ip", "185.220.101.4");
+    const host = await a.hold("DC01");
+    await a.ignore(a.admin, "observables", resolver);
+    await a.ignore(a.admin, "assets", host);
+
+    const linked = await (await a.ana.api.cases[":number"].observables.$get({ param: param(a.number) })).json();
+    if (!("observables" in linked)) throw new Error("No Observables");
+    expect(linked.observables.map((o) => [o.value, o.ignored])).toEqual([
+      ["8.8.8.8", true],
+      ["185.220.101.4", false],
+    ]);
+    const held = await (await a.ana.api.cases[":number"].assets.$get({ param: param(a.number) })).json();
+    if (!("assets" in held)) throw new Error("No Assets");
+    expect(held.assets.map((x) => [x.value, x.ignored])).toEqual([["DC01", true]]);
+
+    const found = async (as: Pick<typeof a.ana, "api">, q: string) => {
+      const body = await (await as.api.search.$get({ query: { q } })).json();
+      if (!("results" in body)) throw new Error("Could not search");
+      return body.results.hits.flatMap((h) => (h.kind === "observables" || h.kind === "assets" ? [[h.item.value, h.item.ignored]] : []));
+    };
+    expect(await found(a.ana, "8.8.8.8")).toEqual([["8.8.8.8", true]]);
+    expect(await found(a.ana, "DC01")).toEqual([["DC01", true]]);
+
+    // Guests aren't told.
+    const guest = await a.inviteGuest();
+    const theirs = await (await guest.api.cases[":number"].observables.$get({ param: param(a.number) })).json();
+    if (!("observables" in theirs)) throw new Error("No Observables");
+    expect(theirs.observables.every((o) => !o.ignored)).toBe(true);
+    expect(await found(guest, "8.8.8.8")).toEqual([["8.8.8.8", false]]);
+  });
+
   test("ignored items are still linked, on their page and found by search", async () => {
     const a = await acme();
     const resolver = await a.observe("ip", "8.8.8.8");

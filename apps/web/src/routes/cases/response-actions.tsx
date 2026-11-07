@@ -646,7 +646,8 @@ export function ResponseActionsCard({
           </Alert>
         ) : (
           <Table aria-label="Response Actions">
-            <TableHeader>
+            {/* Column headings only once there is something under them. */}
+            <TableHeader className={query.isPending || all.length ? undefined : "sr-only"}>
               <TableRow>
                 <TableHead>Observable</TableHead>
                 <TableHead>Action</TableHead>

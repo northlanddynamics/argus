@@ -82,6 +82,8 @@ export type LinkedView<Type extends string> = {
   fromAlert: { alert: { id: string; externalId: string; title: string } | null } | null;
   /** Other Cases it is linked to that the actor can see, newest first. */
   seenIn: SeenIn[];
+  /** Whether it is on the Organization's Ignored list. Always false for Guests, who aren't told. */
+  ignored: boolean;
 };
 
 /** A Case an Observable or Asset is linked to, on its page. */
@@ -305,10 +307,12 @@ function heldOnceStore<Type extends string>(
             )
             .orderBy(desc(cases.number))
         : [];
+      const ignored = new Set(isGuest(me) ? [] : await ignoredAmong(db, kind.ignoredItem, rows.map((r) => r.id)));
       return rows.map((r) => ({
         id: r.id,
         type: r.type as Type,
         value: r.value,
+        ignored: ignored.has(r.id),
         linkedBy: { id: r.linkedById, name: r.linkedByName },
         linkedAt: r.linkedAt.toISOString(),
         seenIn: seen.filter((s) => s.itemId === r.id).map((s) => ({ number: s.number, title: s.title })),
@@ -575,6 +579,16 @@ export type AssetStore = ReturnType<typeof assetStore>;
 /* The Ignored list. */
 
 /** Who put item `itemId` on the Ignored list and when, if it is on it. */
+/** Which of `itemIds` are on the Ignored list now. */
+export async function ignoredAmong(db: Db | Tx, column: Kind<string>["ignoredItem"], itemIds: string[]): Promise<string[]> {
+  if (!itemIds.length) return [];
+  const rows = await db
+    .select({ id: column })
+    .from(ignoredObservables)
+    .where(and(inArray(column, itemIds), isNull(ignoredObservables.endedAt)));
+  return rows.flatMap((r) => (r.id ? [r.id] : []));
+}
+
 async function ignoredMark(db: Db | Tx, column: Kind<string>["ignoredItem"], itemId: string): Promise<IgnoredMark | null> {
   const [entry] = await db
     .select({ byId: user.id, byName: user.name, at: ignoredObservables.ignoredAt })

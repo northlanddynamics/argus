@@ -1,8 +1,9 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { createRootRouteWithContext, createRoute, createRouter, lazyRouteComponent, Outlet, redirect } from "@tanstack/react-router";
 import { meQuery } from "@/lib/api";
+import { validateItemPageSearch } from "@/lib/observables";
 import { validateDashboardSearch } from "@/lib/metrics";
-import { validateSearchPageSearch } from "@/lib/search";
+import { parseSearch, stringifySearch, validateSearchPageSearch } from "@/lib/search";
 import { queryClient } from "@/lib/query-client";
 import { canManage } from "@/lib/roles";
 import { AppShell } from "@/components/app-shell";
@@ -131,12 +132,14 @@ const dashboardRoute = createRoute({
 const observableRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/observables/$id",
+  validateSearch: validateItemPageSearch,
   component: ObservablePage,
 });
 
 const assetRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/assets/$id",
+  validateSearch: validateItemPageSearch,
   component: AssetPage,
 });
 
@@ -256,6 +259,8 @@ export const router = createRouter({
     inviteRoute,
   ]),
   context: { queryClient },
+  parseSearch,
+  stringifySearch,
 });
 
 declare module "@tanstack/react-router" {

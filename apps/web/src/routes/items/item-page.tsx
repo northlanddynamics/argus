@@ -1,9 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams, useRouteContext } from "@tanstack/react-router";
-import { BellOffIcon, CheckIcon, CopyIcon, ExternalLinkIcon, FingerprintIcon, LockIcon, MonitorIcon, RefreshCwIcon, UserIcon } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { BellOffIcon, CheckIcon, CopyIcon, ExternalLinkIcon, FingerprintIcon, LockIcon, MonitorIcon, RefreshCwIcon, SearchIcon, UserIcon } from "lucide-react";
+import { Fragment, type ReactNode, useState } from "react";
 import { SeverityBadge, StatusBadge } from "@/components/case-badges";
 import { observableIcon } from "@/components/search/search-hit";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -50,6 +61,17 @@ const shown = (kind: ItemKind, item: ItemPage) => (kind === "observable" ? defan
 const typeLabel = (kind: ItemKind, item: ItemPage) =>
   kind === "observable" ? observableTypeLabel[item.type as ObservableType] : assetTypeLabel[item.type as AssetType];
 
+/** A long value with places it may wrap: after each / ? & = and dot, never inside an escape like %2F. */
+function Breakable({ text }: { text: string }) {
+  const parts = text.split(/(?<=[/?&=.])/);
+  return parts.map((part, i) => (
+    <Fragment key={i}>
+      {i > 0 && <wbr />}
+      {part}
+    </Fragment>
+  ));
+}
+
 function TypeIcon({ kind, item }: { kind: ItemKind; item: ItemPage }) {
   const className = "size-4 text-muted-foreground";
   if (kind === "asset") return item.type === "host" ? <MonitorIcon className={className} aria-hidden /> : <UserIcon className={className} aria-hidden />;
@@ -70,7 +92,7 @@ function ItemPageView({ kind, id }: { kind: ItemKind; id: string }) {
 
   if (page.isPending) {
     return (
-      <div className="mx-auto grid w-full max-w-5xl grid-cols-1 gap-4">
+      <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-4">
         <Skeleton className="h-16" />
         <Skeleton className="h-40" />
       </div>
@@ -79,7 +101,7 @@ function ItemPageView({ kind, id }: { kind: ItemKind; id: string }) {
   if (page.isError) return <p className="py-8 text-center text-sm text-destructive">{page.error.message}. Try again.</p>;
   if (!item) {
     return (
-      <div className="mx-auto grid w-full max-w-5xl gap-2 py-8 text-center">
+      <div className="mx-auto grid w-full max-w-6xl gap-2 py-8 text-center">
         <h1 className="text-lg font-semibold">{noun[kind]} not found</h1>
         <p className="text-sm text-muted-foreground">It doesn't exist, or it isn't on any Case you can see.</p>
       </div>
@@ -87,18 +109,26 @@ function ItemPageView({ kind, id }: { kind: ItemKind; id: string }) {
   }
 
   return (
-    <div className="mx-auto grid w-full max-w-5xl grid-cols-1 gap-4">
+    <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-4">
       <section aria-label={noun[kind]} className="grid gap-1">
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <TypeIcon kind={kind} item={item} />
           {noun[kind]} · {typeLabel(kind, item)}
         </p>
-        <div className="flex min-w-0 items-start gap-2">
-          <h1 className="min-w-0 font-mono text-xl font-semibold tracking-tight break-all" title={item.value}>
-            {shown(kind, item)}
+        <div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-2">
+          <h1 className="min-w-0 flex-1 basis-80 font-mono text-2xl font-semibold tracking-tight [overflow-wrap:anywhere]" title={item.value}>
+            <Breakable text={shown(kind, item)} />
           </h1>
-          <CopyButton text={shown(kind, item)} />
-          {canManage(me.organization?.role) && <IgnoreButton kind={kind} item={item} />}
+          <div className="flex shrink-0 items-center gap-1">
+            <CopyButton text={shown(kind, item)} />
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/search" search={{ q: item.value }}>
+                <SearchIcon />
+                Search for this
+              </Link>
+            </Button>
+            {canManage(me.organization?.role) && <IgnoreButton kind={kind} item={item} />}
+          </div>
         </div>
         {item.ignored && (
           <p className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
@@ -147,20 +177,61 @@ function ItemPageView({ kind, id }: { kind: ItemKind; id: string }) {
   );
 }
 
-/** Admins put it on the Organization's Ignored list, or take it off. */
+/**
+ * Admins put it on the Organization's Ignored list, or take it off. Ignoring reaches every Case in
+ * the Organization, so it asks first; taking it off doesn't.
+ */
 function IgnoreButton({ kind, item }: { kind: ItemKind; item: ItemPage }) {
   const queryClient = useQueryClient();
+  const [confirming, setConfirming] = useState(false);
   const toggle = useMutation({
     mutationFn: () => setIgnored(kind, item.id, !item.ignored),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: itemPagesKey }),
+    onSuccess: () => setConfirming(false),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: [...itemPagesKey] }),
   });
+  const error = toggle.isError && <p className="text-xs text-destructive">{toggle.error.message}</p>;
+  if (item.ignored) {
+    return (
+      <div className="grid justify-items-end gap-1">
+        <Button variant="outline" size="sm" disabled={toggle.isPending} onClick={() => toggle.mutate()}>
+          Stop ignoring
+        </Button>
+        {error}
+      </div>
+    );
+  }
   return (
-    <div className="ml-auto grid shrink-0 justify-items-end gap-1">
-      <Button variant="outline" size="sm" disabled={toggle.isPending} onClick={() => toggle.mutate()}>
-        {item.ignored ? "Stop ignoring" : "Ignore"}
-      </Button>
-      {toggle.isError && <p className="text-xs text-destructive">{toggle.error.message}</p>}
-    </div>
+    <AlertDialog open={confirming} onOpenChange={setConfirming}>
+      <AlertDialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          <BellOffIcon />
+          Ignore…
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Ignore this {typeLabel(kind, item)}?</AlertDialogTitle>
+          <p className="font-mono text-xs [overflow-wrap:anywhere]">{shown(kind, item)}</p>
+          <AlertDialogDescription>
+            It goes on the Organization's Ignored list, for every Case: it will never suggest which Case an Alert belongs with, and
+            sending it as a Response Action asks first. It stays linked and searchable, and an Admin can stop ignoring it at any time.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        {error}
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={toggle.isPending}
+            onClick={(e) => {
+              e.preventDefault();
+              toggle.mutate();
+            }}
+          >
+            Ignore
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
@@ -363,7 +434,7 @@ function CasesCard({ item, actions }: { item: ItemPage; actions: boolean }) {
       </CardHeader>
       <CardContent>
         <Table aria-label="Linked Cases">
-          <TableHeader>
+          <TableHeader className={item.cases.length ? undefined : "sr-only"}>
             <TableRow>
               <TableHead>Case</TableHead>
               <TableHead>Status</TableHead>
@@ -430,7 +501,7 @@ function AlertsCard({ item }: { item: ItemPage }) {
       </CardHeader>
       <CardContent>
         <Table aria-label="Alerts naming it">
-          <TableHeader>
+          <TableHeader className={item.alerts.length ? undefined : "sr-only"}>
             <TableRow>
               <TableHead>Alert</TableHead>
               <TableHead>Status</TableHead>
@@ -499,7 +570,7 @@ function ResponseActionsCard({ item, actions }: { item: ItemPage; actions: boole
       </CardHeader>
       <CardContent>
         <Table aria-label="Response Actions">
-          <TableHeader>
+          <TableHeader className={item.responseActions.length ? undefined : "sr-only"}>
             <TableRow>
               <TableHead>Action</TableHead>
               <TableHead>State</TableHead>

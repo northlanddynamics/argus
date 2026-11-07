@@ -3,8 +3,9 @@ import { isGuest, visibleAlerts, visibleCases, visibleItems } from "../access/po
 import type { AlertStatus } from "../alerts/vocabulary";
 import type { Severity, Status } from "../cases/vocabulary";
 import type { Db } from "../db/client";
-import { alertAssets, alertObservables, alerts, assets, caseAssets, caseObservables, cases, integrations, observables } from "../db/schema";
+import { alertAssets, alertObservables, alerts, assets, caseAssets, caseObservables, cases, ignoredObservables, integrations, observables } from "../db/schema";
 import type { Participant } from "../members/membership";
+import { ignoredAmong } from "../observables/observables";
 import type { AssetType, ObservableType } from "../observables/vocabulary";
 import { EXACT_ONLY_TYPES, readIndicator, refangWords, type IndicatorQuery } from "./indicators";
 import { SEARCH_DEFAULT_PAGE_SIZE, SEARCH_KINDS, type SearchKind } from "./vocabulary";
@@ -21,9 +22,11 @@ import { SEARCH_DEFAULT_PAGE_SIZE, SEARCH_KINDS, type SearchKind } from "./vocab
  *
  * Observables and Assets are also found by indicator (`indicators.ts`), as analysts paste them: the
  * query is refanged and normalised as stored values are, and an exact match ranks above any text
- * match. A domain also finds its subdomains, and URLs and email addresses on it or a subdomain; 8 or
- * more hex characters find the hashes they start. IPs and hashes match only so, never by full text,
- * so part of an IP, or a short run of hex, finds none.
+ * match. A domain also finds its subdomains, and URLs and email addresses on it or a subdomain; a URL
+ * finds the URLs that start with it; the first two or three parts of an IPv4 address find that range;
+ * 8 or more hex characters find the hashes they start, and 4 to 7 do when they mix digits and letters
+ * (ranked as a text match). IPs and hashes match only so, never by full text, so a run of digits that
+ * isn't a whole part of an address, or a word made of hex letters, finds none.
  *
  * Results go through the access policy like every other read:
  * - Cases: those `visibleCases` lets the actor see, so Restricted Cases never leak.
@@ -55,6 +58,8 @@ type ItemHit<Type extends string> = {
   value: string;
   /** The Cases it is linked to that the actor can see, newest first. */
   cases: CaseRef[];
+  /** Whether it is on the Organization's Ignored list. Always false for Guests, who aren't told. */
+  ignored: boolean;
 };
 
 /** One result: its kind, how well it matches (comparable across kinds; higher is better) and what it is. */
@@ -117,11 +122,17 @@ function observableIndicator(indicator: IndicatorQuery) {
       sql`(${type} = 'email' and ${onDomain(sql`substring(${matchKey} from '@([^@]+)$')`, d)})`,
     );
   }
-  if (indicator.hashPrefix) {
-    const p = indicator.hashPrefix;
-    related.push(sql`(${type} in ('md5', 'sha1', 'sha256') and left(${matchKey}, ${p.length}) = ${p})`);
-  }
-  return { exact, related: related.length ? sql`(${sql.join(related, sql` or `)})` : sql`false` };
+  const startsWith = (types: string[], prefix: string) =>
+    sql`(${type} in (${sql.join(
+      types.map((t) => sql`${t}`),
+      sql`, `,
+    )}) and left(${matchKey}, ${prefix.length}) = ${prefix})`;
+  if (indicator.hashPrefix) related.push(startsWith(["md5", "sha1", "sha256"], indicator.hashPrefix));
+  if (indicator.ipPrefix) related.push(startsWith(["ip"], indicator.ipPrefix));
+  if (indicator.urlPrefix) related.push(startsWith(["url"], indicator.urlPrefix));
+  // Found, but ranked as a text match would be: a short run of hex is a weak signal.
+  const weak = indicator.shortHashPrefix ? startsWith(["md5", "sha1", "sha256"], indicator.shortHashPrefix) : sql`false`;
+  return { exact, related: related.length ? sql`(${sql.join(related, sql` or `)})` : sql`false`, weak };
 }
 
 /** Whether an Asset is the one `indicator` names. */
@@ -130,8 +141,8 @@ const assetIndicator = (indicator: IndicatorQuery) =>
 
 export function searchStore({ db }: { db: Db }) {
   const itemKinds = {
-    observables: { items: observables, links: caseObservables, alertLinks: alertObservables },
-    assets: { items: assets, links: caseAssets, alertLinks: alertAssets },
+    observables: { items: observables, links: caseObservables, alertLinks: alertObservables, ignoredItem: ignoredObservables.observableId },
+    assets: { items: assets, links: caseAssets, alertLinks: alertAssets, ignoredItem: ignoredObservables.assetId },
   } as const;
   type ItemKind = (typeof itemKinds)[keyof typeof itemKinds];
 
@@ -188,7 +199,8 @@ export function searchStore({ db }: { db: Db }) {
     const { items } = kind;
     const rows = await db.select({ id: items.id, type: items.type, value: items.value }).from(items).where(inArray(items.id, ids));
     const linked = await linkedCases(me, kind, ids);
-    return new Map(rows.map((r) => [r.id, { ...r, cases: linked.get(r.id) ?? [] }]));
+    const ignored = new Set(isGuest(me) ? [] : await ignoredAmong(db, kind.ignoredItem, ids));
+    return new Map(rows.map((r) => [r.id, { ...r, cases: linked.get(r.id) ?? [], ignored: ignored.has(r.id) }]));
   }
 
   async function caseHits(ids: string[]) {
@@ -274,7 +286,7 @@ export function searchStore({ db }: { db: Db }) {
               isGuest(me) ? and(visibleCases(me), visibleItems(me, alerts.internal)) : visibleAlerts(me, alerts.caseId),
             )}`,
           (() => {
-            const { exact: named, related } = observableIndicator(indicator);
+            const { exact: named, related, weak } = observableIndicator(indicator);
             // IPs and hashes are found only as indicators: a text match on one is a partial match.
             const byText = and(notInArray(observables.type, [...EXACT_ONLY_TYPES]), matches(observables.search));
             return sql`select 'observables', 2, ${observables.id},
@@ -282,7 +294,7 @@ export function searchStore({ db }: { db: Db }) {
                 else ${rank(observables.search)} end)::real,
               ${observables.createdAt}
               from ${observables}
-              where ${and(eq(observables.organizationId, me.organizationId), or(byText, named, related), findableItem(me, itemKinds.observables))}`;
+              where ${and(eq(observables.organizationId, me.organizationId), or(byText, named, related, weak), findableItem(me, itemKinds.observables))}`;
           })(),
           (() => {
             const named = assetIndicator(indicator);
