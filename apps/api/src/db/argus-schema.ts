@@ -16,6 +16,7 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import type { FalconHost } from "../crowdstrike/falcon";
 import type { CaseSummary } from "../cases/case-summary";
 import { CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabulary";
 import { STORED_LINK_TYPES } from "../case-links/vocabulary";
@@ -787,6 +788,11 @@ export const integrations = pgTable(
     healthChangedAt: timestamp("health_changed_at", { withTimezone: true }).notNull(),
     /** When a worker last checked the credentials of an Integration with no Alert stream (`mimecast/health.ts`). */
     healthCheckedAt: timestamp("health_checked_at", { withTimezone: true }),
+    /**
+     * Why host Enrichment is unavailable through it, as when its API client lacks Hosts: Read
+     * (ADR 0009); null while it works, or before it is first tried. Nothing else depends on it.
+     */
+    hostEnrichmentError: text("host_enrichment_error"),
     /** The worker that holds the stream, while one does. */
     workerId: text("worker_id"),
     streamOffset: bigint("stream_offset", { mode: "number" }),
@@ -839,6 +845,35 @@ export const assetFalconDevices = pgTable(
     uniqueIndex("asset_falcon_devices_unique_idx").on(t.assetId, t.integrationId, t.deviceId),
     index("asset_falcon_devices_device_idx").on(t.integrationId, t.deviceId),
   ],
+);
+
+/**
+ * The latest Enrichment of a Falcon device: what the Hosts API last reported about it through an
+ * Integration (ADR 0009). Only the latest is kept, replaced on every fetch; `host` is null once
+ * Falcon has said it doesn't know the device. `due` marks it wanted by someone opening a host's page
+ * (`crowdstrike/host-enrichment.ts`); a worker fetches it and clears the mark. `checked_at` is when
+ * the last fetch was tried, and `error` why it failed, if it did, leaving the snapshot before it.
+ */
+export const falconHostSnapshots = pgTable(
+  "falcon_host_snapshots",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    integrationId: text("integration_id")
+      .notNull()
+      .references(() => integrations.id, { onDelete: "restrict" }),
+    /** Falcon's device ID, lower case. */
+    deviceId: text("device_id").notNull(),
+    due: boolean("due").notNull().default(false),
+    host: jsonb("host").$type<FalconHost>(),
+    /** When `host` was fetched; null until a fetch succeeds. */
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }),
+    checkedAt: timestamp("checked_at", { withTimezone: true }),
+    error: text("error"),
+  },
+  (t) => [uniqueIndex("falcon_host_snapshots_device_idx").on(t.integrationId, t.deviceId), index("falcon_host_snapshots_due_idx").on(t.due).where(sql`${t.due}`)],
 );
 
 /**

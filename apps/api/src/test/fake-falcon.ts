@@ -4,11 +4,13 @@ import type {
   FalconComment,
   FalconConnection,
   FalconConnector,
+  FalconHost,
   FalconIoc,
   NewIoc,
   StreamEvent,
   StreamSession,
 } from "../crowdstrike/falcon";
+import { FalconScopeMissing } from "../crowdstrike/falcon";
 
 /**
  * A fake Falcon for tests: one Event Stream per tenant (keyed by API client id), with consecutive
@@ -17,8 +19,37 @@ import type {
  * Alerts API, recording every patch it accepts and serving each Alert's comments, and users to
  * look up by email. A comment in a patch it accepts becomes one of the Alert's comments, as in Falcon.
  * And it has IOC Management: the custom IOCs it holds, every one it was asked to create or delete,
- * and the means to refuse or fail those calls.
+ * and the means to refuse or fail those calls. And the Hosts API: the devices it knows, every read
+ * of them, and the means to refuse it for want of Hosts: Read or to fail it.
  */
+
+/** A device as Falcon would report it, with `fields` changed. */
+export function fakeHost(deviceId: string, fields: Partial<FalconHost> = {}): FalconHost {
+  return {
+    deviceId,
+    hostname: "FIN-LT-0231",
+    platform: "Windows",
+    osVersion: "Windows 11",
+    sensorVersion: "7.18.18403.0",
+    sensorStatus: "Normal",
+    firstSeen: "2025-03-02T08:15:00.000Z",
+    lastSeen: "2026-01-01T08:55:00.000Z",
+    localIp: "10.20.4.31",
+    externalIp: "203.0.113.24",
+    macAddress: "3c-52-82-1a-9b-04",
+    domain: "ACME",
+    ou: ["Finance", "Laptops"],
+    site: "Leeds",
+    serialNumber: "PF3XK2LM",
+    manufacturer: "LENOVO",
+    model: "ThinkPad T14 Gen 4",
+    lastLoggedOnUser: "ACME\\d.howe",
+    hostGroups: ["Finance laptops"],
+    tags: ["FalconGroupingTags/finance"],
+    containment: "normal",
+    ...fields,
+  };
+}
 
 type Consumer = {
   next: number;
@@ -78,6 +109,15 @@ function fakeTenant() {
     refuseIocs: null as string | null,
     /** How many more IOC Management calls fail before they succeed again. */
     failNextIocCalls: 0,
+
+    /** The devices the Hosts API knows, by `aid`. */
+    hosts: new Map<string, FalconHost>(),
+    /** The `aid`s of every read of the Hosts API, in order. */
+    hostReads: [] as string[][],
+    /** Set to make every Hosts API read fail for want of Hosts: Read, with this message. */
+    refuseHosts: null as string | null,
+    /** How many more Hosts API reads fail before they succeed again. */
+    failNextHostReads: 0,
 
     /** Adds a custom IOC, as someone would in the console; returns its id. */
     holdIoc(ioc: Omit<FalconIoc, "id">) {
@@ -250,6 +290,18 @@ export function fakeFalcon() {
         if (!t.iocs.delete(id)) return false;
         t.iocsDeleted.push(id);
         return true;
+      },
+      async hosts(deviceIds) {
+        if (t.refuseHosts) throw new FalconScopeMissing(t.refuseHosts);
+        if (t.failNextHostReads > 0) {
+          t.failNextHostReads--;
+          throw new Error("Reading hosts from Falcon failed: 503");
+        }
+        t.hostReads.push([...deviceIds]);
+        return deviceIds.flatMap((id) => {
+          const host = t.hosts.get(id);
+          return host ? [{ ...host }] : [];
+        });
       },
     };
   };

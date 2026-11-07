@@ -172,6 +172,8 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
         healthChangedAt: row.healthChangedAt.toISOString(),
         /** When its credentials were last checked, for a Provider with no stream. */
         healthCheckedAt: row.healthCheckedAt?.toISOString() ?? null,
+        /** Why host Enrichment is unavailable through it (ADR 0009); null while it works. */
+        hostEnrichmentError: row.hostEnrichmentError,
         lastEventAt: row.lastEventAt?.toISOString() ?? null,
         streamOffset: row.streamOffset,
         sessionRefreshAt: row.sessionRefreshAt?.toISOString() ?? null,

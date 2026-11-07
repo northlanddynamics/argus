@@ -267,6 +267,11 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
             <AlertDescription>{i.healthDetail}</AlertDescription>
           </Alert>
         )}
+        {i.hostEnrichmentError && !i.paused && (
+          <Alert>
+            <AlertDescription>{i.hostEnrichmentError}. Grant it to the API client to see hosts' Enrichment; nothing else is affected.</AlertDescription>
+          </Alert>
+        )}
         {i.lastGap && (
           <Alert className="border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80">
             <AlertTitle>Gap in the stream, noticed {new Date(i.lastGap.at).toLocaleString()}</AlertTitle>

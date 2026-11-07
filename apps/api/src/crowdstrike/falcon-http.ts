@@ -2,12 +2,25 @@ import type { FalconCloud } from "../alerts/vocabulary";
 import { createHash } from "node:crypto";
 import type { Severity } from "../cases/vocabulary";
 import type { FalconIocAction, FalconIocType } from "../response-actions/vocabulary";
-import type { AlertPatch, FalconClient, FalconComment, FalconConnection, FalconIoc, NewIoc, StreamEvent, StreamSession } from "./falcon";
+import {
+  type AlertPatch,
+  FALCON_CONTAINMENT,
+  type FalconClient,
+  type FalconComment,
+  type FalconConnection,
+  type FalconContainment,
+  type FalconHost,
+  type FalconIoc,
+  FalconScopeMissing,
+  type NewIoc,
+  type StreamEvent,
+  type StreamSession,
+} from "./falcon";
 
 /**
  * The Falcon API over HTTP: OAuth2 client credentials, then the Event Streams discovery, refresh and
- * data feed endpoints, the Alerts update and read endpoints, the user lookup and the IOC Management
- * endpoints. Unverified against a live tenant (see spec #1, "Further Notes").
+ * data feed endpoints, the Alerts update and read endpoints, the user lookup, the IOC Management
+ * endpoints and the Hosts API. Unverified against a live tenant (see spec #1, "Further Notes").
  */
 
 const BASE_URLS: Record<FalconCloud, string> = {
@@ -98,6 +111,52 @@ export function readIoc(r: Record<string, unknown>): FalconIoc | null {
     appliedGlobally: true,
     source: typeof r.source === "string" ? r.source : "",
     description: typeof r.description === "string" ? r.description : "",
+  };
+}
+
+/** The most devices the Hosts API returns in one call. */
+const HOSTS_PER_CALL = 100;
+
+const texts = (v: unknown) => (Array.isArray(v) ? v.map(text).filter((t): t is string => t !== null) : []);
+
+const isoTime = (v: unknown) => when(v)?.toISOString() ?? null;
+
+/** The sensor's state, from its reduced functionality mode and provisioning status. */
+function sensorStatus(r: Record<string, unknown>) {
+  const rfm = text(r.reduced_functionality_mode)?.toLowerCase();
+  if (rfm === "yes") return "Reduced functionality mode";
+  const provisioned = text(r.provision_status);
+  if (provisioned && provisioned.toLowerCase() !== "provisioned") return provisioned;
+  return rfm === "no" || provisioned ? "Normal" : null;
+}
+
+/** A device as the Hosts API returns it, its host groups named by `groupNames` where known. */
+export function readHost(r: Record<string, unknown>, groupNames: ReadonlyMap<string, string> = new Map()): FalconHost | null {
+  const deviceId = text(r.device_id)?.toLowerCase();
+  if (!deviceId) return null;
+  const status = text(r.status)?.toLowerCase();
+  return {
+    deviceId,
+    hostname: text(r.hostname),
+    platform: text(r.platform_name),
+    osVersion: text(r.os_version) ?? text(r.os_product_name),
+    sensorVersion: text(r.agent_version),
+    sensorStatus: sensorStatus(r),
+    firstSeen: isoTime(r.first_seen),
+    lastSeen: isoTime(r.last_seen),
+    localIp: text(r.local_ip),
+    externalIp: text(r.external_ip),
+    macAddress: text(r.mac_address),
+    domain: text(r.machine_domain),
+    ou: texts(r.ou),
+    site: text(r.site_name),
+    serialNumber: text(r.serial_number),
+    manufacturer: text(r.system_manufacturer),
+    model: text(r.system_product_name),
+    lastLoggedOnUser: text(r.last_login_user),
+    hostGroups: texts(r.groups).map((id) => groupNames.get(id) ?? id),
+    tags: texts(r.tags),
+    containment: status && (FALCON_CONTAINMENT as readonly string[]).includes(status) ? (status as FalconContainment) : null,
   };
 }
 
@@ -235,6 +294,45 @@ export function falconHttpClient({ cloud, credentials, appId }: FalconConnection
       if (res.status === 404) return false;
       if (!res.ok) throw await failure("Deleting a custom IOC in Falcon", res);
       return true;
+    },
+
+    async hosts(deviceIds) {
+      const found: Record<string, unknown>[] = [];
+      for (let i = 0; i < deviceIds.length; i += HOSTS_PER_CALL) {
+        const res = await fetchImpl(`${base}/devices/entities/devices/v2`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${await accessToken()}`, "content-type": "application/json", accept: "application/json" },
+          body: JSON.stringify({ ids: deviceIds.slice(i, i + HOSTS_PER_CALL) }),
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        });
+        if (res.status === 403) throw new FalconScopeMissing((await failure("Reading hosts from Falcon", res)).message);
+        // Falcon answers 404 when some of the devices are unknown, with the ones it knows.
+        if (!res.ok && res.status !== 404) throw await failure("Reading hosts from Falcon", res);
+        const body = (await res.json().catch(() => ({}))) as { resources?: Record<string, unknown>[] | null };
+        found.push(...(body.resources ?? []));
+      }
+      // Host group names need Host groups: Read; without it the groups are shown by id.
+      const groupIds = [...new Set(found.flatMap((r) => texts(r.groups)))];
+      const groupNames = new Map<string, string>();
+      if (groupIds.length) {
+        try {
+          const res = await fetchImpl(`${base}/devices/entities/host-groups/v1?${new URLSearchParams(groupIds.map((id): [string, string] => ["ids", id]))}`, {
+            headers: { authorization: `Bearer ${await accessToken()}`, accept: "application/json" },
+            signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+          });
+          if (res.ok) {
+            const body = (await res.json()) as { resources?: { id?: unknown; name?: unknown }[] | null };
+            for (const g of body.resources ?? []) {
+              const id = text(g.id);
+              const name = text(g.name);
+              if (id && name) groupNames.set(id, name);
+            }
+          }
+        } catch {
+          // The ids will do.
+        }
+      }
+      return found.map((r) => readHost(r, groupNames)).filter((h): h is FalconHost => h !== null);
     },
 
     async *consume(session, offset, signal) {

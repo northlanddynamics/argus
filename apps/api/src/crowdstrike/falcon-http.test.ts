@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { FalconScopeMissing } from "./falcon";
 import { falconHttpClient, readComments } from "./falcon-http";
 
 /** A Falcon API that answers from `routes`, recording each request. */
@@ -229,5 +230,77 @@ describe("The Falcon API client", () => {
     await expect(falconHttpClient(connection, refused.fetchImpl).createIoc(ioc)).rejects.toThrow(
       "Creating a custom IOC in Falcon failed: Prevent is not supported for domain",
     );
+  });
+
+  test("reads hosts by aid, naming their host groups, and leaves out those Falcon doesn't know", async () => {
+    const device = {
+      device_id: "8F1C2B3A4D5E6F708192A3B4C5D6E7F8",
+      hostname: "FIN-LT-0231",
+      platform_name: "Windows",
+      os_version: "Windows 11",
+      agent_version: "7.18.18403.0",
+      reduced_functionality_mode: "no",
+      provision_status: "Provisioned",
+      first_seen: "2025-03-02T08:15:00Z",
+      last_seen: "2026-01-01T08:55:00Z",
+      local_ip: "10.20.4.31",
+      external_ip: "203.0.113.24",
+      mac_address: "3c-52-82-1a-9b-04",
+      machine_domain: "ACME",
+      ou: ["Finance", "Laptops"],
+      site_name: "Leeds",
+      serial_number: "PF3XK2LM",
+      system_manufacturer: "LENOVO",
+      system_product_name: "ThinkPad T14 Gen 4",
+      last_login_user: "ACME\\d.howe",
+      groups: ["g1", "g2"],
+      tags: ["FalconGroupingTags/finance"],
+      status: "contained",
+    };
+    const { requests, fetchImpl } = stubFalcon({
+      "POST https://api.eu-1.crowdstrike.com/oauth2/token": token,
+      // One of the two is unknown: Falcon says 404 and returns the other.
+      "POST https://api.eu-1.crowdstrike.com/devices/entities/devices/v2": () =>
+        Response.json({ resources: [device], errors: [{ code: 404, message: "Device not found" }] }, { status: 404 }),
+      "GET https://api.eu-1.crowdstrike.com/devices/entities/host-groups/v1": () => Response.json({ resources: [{ id: "g1", name: "Finance laptops" }] }),
+    });
+    const hosts = await falconHttpClient(connection, fetchImpl).hosts(["8f1c2b3a4d5e6f708192a3b4c5d6e7f8", "0123456789abcdef0123456789abcdef"]);
+    expect(await requests[1]!.json()).toEqual({ ids: ["8f1c2b3a4d5e6f708192a3b4c5d6e7f8", "0123456789abcdef0123456789abcdef"] });
+    expect(new URL(requests[2]!.url).searchParams.getAll("ids")).toEqual(["g1", "g2"]);
+    expect(hosts).toEqual([
+      {
+        deviceId: "8f1c2b3a4d5e6f708192a3b4c5d6e7f8",
+        hostname: "FIN-LT-0231",
+        platform: "Windows",
+        osVersion: "Windows 11",
+        sensorVersion: "7.18.18403.0",
+        sensorStatus: "Normal",
+        firstSeen: "2025-03-02T08:15:00.000Z",
+        lastSeen: "2026-01-01T08:55:00.000Z",
+        localIp: "10.20.4.31",
+        externalIp: "203.0.113.24",
+        macAddress: "3c-52-82-1a-9b-04",
+        domain: "ACME",
+        ou: ["Finance", "Laptops"],
+        site: "Leeds",
+        serialNumber: "PF3XK2LM",
+        manufacturer: "LENOVO",
+        model: "ThinkPad T14 Gen 4",
+        lastLoggedOnUser: "ACME\\d.howe",
+        hostGroups: ["Finance laptops", "g2"],
+        tags: ["FalconGroupingTags/finance"],
+        containment: "contained",
+      },
+    ]);
+  });
+
+  test("a hosts read refused for want of a scope says so", async () => {
+    const { fetchImpl } = stubFalcon({
+      "POST https://api.eu-1.crowdstrike.com/oauth2/token": token,
+      "POST https://api.eu-1.crowdstrike.com/devices/entities/devices/v2": () =>
+        Response.json({ errors: [{ code: 403, message: "access denied, authorization failed" }] }, { status: 403 }),
+    });
+    const read = falconHttpClient(connection, fetchImpl).hosts(["8f1c2b3a4d5e6f708192a3b4c5d6e7f8"]);
+    await expect(read).rejects.toBeInstanceOf(FalconScopeMissing);
   });
 });
