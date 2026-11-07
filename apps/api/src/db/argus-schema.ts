@@ -877,6 +877,35 @@ export const falconHostSnapshots = pgTable(
 );
 
 /**
+ * Looking a host up in Falcon by hostname, through an Integration that has recorded no device on it
+ * (ADR 0009): a host added by hand, or named only by detections without an `aid`. `due` marks it
+ * wanted by someone opening the host's page (`crowdstrike/host-enrichment.ts`); a worker asks Falcon
+ * and clears the mark. Every match is recorded on the host (`asset_falcon_devices`), after which its
+ * `aid` is used and the hostname no longer is. `checked_at` is when Falcon was last asked and `error`
+ * why that failed, if it did; asked without error and with nothing recorded, the host is not found in
+ * Falcon, and is asked about again the next time its Enrichment is fetched.
+ */
+export const falconHostLookups = pgTable(
+  "falcon_host_lookups",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "restrict" }),
+    integrationId: text("integration_id")
+      .notNull()
+      .references(() => integrations.id, { onDelete: "restrict" }),
+    due: boolean("due").notNull().default(false),
+    checkedAt: timestamp("checked_at", { withTimezone: true }),
+    error: text("error"),
+  },
+  (t) => [uniqueIndex("falcon_host_lookups_host_idx").on(t.assetId, t.integrationId), index("falcon_host_lookups_due_idx").on(t.due).where(sql`${t.due}`)],
+);
+
+/**
  * An Alert: a detection received from an Integration. `external_id` is Falcon's `CompositeId`, unique
  * per Integration, so a detection delivered again updates its Alert instead of adding another.
  * `payload` is the detection event as Falcon sent it last. `version` moves on whenever the Alert

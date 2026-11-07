@@ -20,7 +20,8 @@ import { FalconScopeMissing } from "../crowdstrike/falcon";
  * look up by email. A comment in a patch it accepts becomes one of the Alert's comments, as in Falcon.
  * And it has IOC Management: the custom IOCs it holds, every one it was asked to create or delete,
  * and the means to refuse or fail those calls. And the Hosts API: the devices it knows, every read
- * of them, and the means to refuse it for want of Hosts: Read or to fail it.
+ * of them and every search of them by hostname, and the means to refuse it for want of Hosts: Read
+ * or to fail it.
  */
 
 /** A device as Falcon would report it, with `fields` changed. */
@@ -118,6 +119,8 @@ function fakeTenant() {
     refuseHosts: null as string | null,
     /** How many more Hosts API reads fail before they succeed again. */
     failNextHostReads: 0,
+    /** Every hostname the Hosts API was searched for, in order. */
+    hostSearches: [] as string[],
 
     /** Adds a custom IOC, as someone would in the console; returns its id. */
     holdIoc(ioc: Omit<FalconIoc, "id">) {
@@ -302,6 +305,16 @@ export function fakeFalcon() {
           const host = t.hosts.get(id);
           return host ? [{ ...host }] : [];
         });
+      },
+      async findHosts(hostname) {
+        if (t.refuseHosts) throw new FalconScopeMissing(t.refuseHosts);
+        if (t.failNextHostReads > 0) {
+          t.failNextHostReads--;
+          throw new Error("Finding hosts in Falcon failed: 503");
+        }
+        t.hostSearches.push(hostname);
+        // Falcon matches hostnames whatever their case.
+        return [...t.hosts.values()].filter((h) => h.hostname?.toLowerCase() === hostname.toLowerCase()).map((h) => h.deviceId);
       },
     };
   };

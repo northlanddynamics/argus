@@ -5,7 +5,7 @@ import { recordOrgAudit } from "../audit/org-audit-log";
 import { type AlertStatus, falconDeviceUrl } from "../alerts/vocabulary";
 import { actorOf, CaseNotFound, lockCase } from "../cases/cases";
 import { recordCaseAudit } from "../cases/case-audit-log";
-import { enrichmentKey, hostEnrichmentOf, type HostEnrichmentView, requestHostEnrichment } from "../crowdstrike/host-enrichment";
+import { enrichmentKey, hostEnrichmentOf, type HostEnrichmentView, hostLookupsOf, type HostLookupView, requestHostEnrichment } from "../crowdstrike/host-enrichment";
 import type { CaseAuditAction, Severity, Status } from "../cases/vocabulary";
 import type { Clock } from "../clock";
 import type { Db, Tx } from "../db/client";
@@ -143,12 +143,15 @@ export type ItemDetail<Type extends string> = {
 /**
  * The Falcon devices recorded on a host for one Integration; `ambiguous` when there are several.
  * Each has its latest Enrichment (ADR 0009). `enrichmentUnavailable` says why the Integration can't
- * enrich hosts, as when its API client lacks Hosts: Read.
+ * enrich hosts, as when its API client lacks Hosts: Read. An Integration that has recorded no device
+ * on the host has none here, and `lookup` says how looking the host up by hostname went; it is null
+ * once a device is recorded.
  */
 export type FalconDevices = {
   integration: { id: string; name: string; enrichmentUnavailable: string | null };
   ambiguous: boolean;
   devices: { deviceId: string; consoleUrl: string; recordedAt: string; enrichment: HostEnrichmentView }[];
+  lookup: HostLookupView | null;
 };
 
 /** Who put an item on the Ignored list, and when. */
@@ -400,13 +403,14 @@ function heldOnceStore<Type extends string>(
 
   /**
    * Item `itemId`'s page as `detail` gives it, first asking Falcon again for the Enrichment of a host
-   * a Member opens (ADR 0009): every snapshot older than 15 minutes, or with `refresh` all of them.
-   * The worker fetches them; the page shows them as refreshing meanwhile.
+   * a Member opens (ADR 0009): every snapshot older than 15 minutes, or with `refresh` all of them,
+   * and likewise the hostname lookup through each CrowdStrike Integration with no device recorded on
+   * the host. The worker does them; the page shows them as refreshing meanwhile.
    */
   async function open(me: Participant, itemId: string, { refresh = false } = {}): Promise<ItemDetail<Type>> {
     const seen = await detail(me, itemId);
-    if (kind.name !== "asset" || seen.type !== "host" || isGuest(me) || !seen.falconDevices.length) return seen;
-    await requestHostEnrichment(db, itemId, clock.now(), { ifStale: !refresh });
+    if (kind.name !== "asset" || seen.type !== "host" || isGuest(me)) return seen;
+    if (!(await requestHostEnrichment(db, itemId, clock.now(), { ifStale: !refresh }))) return seen;
     return detail(me, itemId);
   }
 
@@ -705,7 +709,8 @@ async function recordFalconDevices(
 /**
  * The Falcon devices recorded on host `assetId`, by Integration in the order each was first
  * recorded, with a link to each in its Integration's console. More than one for an Integration
- * makes the host ambiguous there.
+ * makes the host ambiguous there. After them come the Integrations that have recorded no device on
+ * the host but have looked it up by hostname, by name.
  */
 async function falconDevicesOf(db: Db, assetId: string): Promise<FalconDevices[]> {
   const rows = await db
@@ -729,6 +734,7 @@ async function falconDevicesOf(db: Db, assetId: string): Promise<FalconDevices[]
       integration: { id: r.integrationId, name: r.integrationName, enrichmentUnavailable: r.enrichmentUnavailable },
       ambiguous: false,
       devices: [],
+      lookup: null,
     };
     entry.devices.push({
       deviceId: r.deviceId,
@@ -738,6 +744,18 @@ async function falconDevicesOf(db: Db, assetId: string): Promise<FalconDevices[]
     });
     entry.ambiguous = entry.devices.length > 1;
     byIntegration.set(r.integrationId, entry);
+  }
+  const lookups = await hostLookupsOf(db, assetId);
+  if (lookups.size) {
+    const looked = await db
+      .select({ id: integrations.id, name: integrations.name, enrichmentUnavailable: integrations.hostEnrichmentError })
+      .from(integrations)
+      .where(inArray(integrations.id, [...lookups.keys()]))
+      .orderBy(asc(integrations.name));
+    for (const i of looked) {
+      if (byIntegration.has(i.id)) continue;
+      byIntegration.set(i.id, { integration: i, ambiguous: false, devices: [], lookup: lookups.get(i.id)! });
+    }
   }
   return [...byIntegration.values()];
 }

@@ -270,8 +270,9 @@ const containmentLabel: Record<NonNullable<HostFacts["containment"]>, string> = 
  * The Falcon devices recorded on a host, from the detections that name it, each linking to the
  * device in its Integration's Falcon console with what Falcon last reported about it (Enrichment,
  * ADR 0009). Several for one Integration mark the host ambiguous there: the same name has been seen
- * on more than one sensor, and their Enrichment is shown side by side. Opening the page asks again
- * for anything older than 15 minutes; Refresh asks again now. A signal brings the result.
+ * on more than one sensor, and their Enrichment is shown side by side. An Integration with no device
+ * recorded looks the host up by hostname, and shows what it found. Opening the page asks again for
+ * anything older than 15 minutes; Refresh asks again now. A signal brings the result.
  */
 function FalconDevicesCard({ item }: { item: ItemPage }) {
   const queryClient = useQueryClient();
@@ -280,12 +281,13 @@ function FalconDevicesCard({ item }: { item: ItemPage }) {
     onSettled: () => queryClient.invalidateQueries({ queryKey: itemPagesKey }),
   });
   const devices = item.falconDevices.flatMap((group) => group.devices.map((device) => ({ group, device })));
-  const refreshing = devices.some((d) => d.device.enrichment.refreshing);
+  const lookups = item.falconDevices.flatMap((group) => (group.devices.length === 0 && group.lookup ? [{ group, lookup: group.lookup }] : []));
+  const refreshing = devices.some((d) => d.device.enrichment.refreshing) || lookups.some((l) => l.lookup.refreshing);
   return (
     <Card>
       <CardHeader>
         <CardTitle>Falcon devices</CardTitle>
-        {devices.length > 0 && (
+        {item.falconDevices.length > 0 && (
           <CardAction>
             <Button variant="outline" size="sm" disabled={refresh.isPending || refreshing} onClick={() => refresh.mutate()}>
               <RefreshCwIcon className={refreshing ? "animate-spin" : undefined} aria-hidden />
@@ -309,9 +311,12 @@ function FalconDevicesCard({ item }: { item: ItemPage }) {
               </AlertDescription>
             </Alert>
           ))}
-        {devices.length === 0 ? (
+        {lookups.map(({ group, lookup }) => (
+          <HostLookup key={group.integration.id} integration={group.integration.name} lookup={lookup} />
+        ))}
+        {item.falconDevices.length === 0 ? (
           <p className="text-sm text-muted-foreground">No detection has named its Falcon device yet.</p>
-        ) : (
+        ) : devices.length === 0 ? null : (
           <div className={devices.length > 1 ? "grid gap-3 md:grid-cols-2" : "grid gap-3"}>
             {devices.map(({ group, device }) => (
               <section
@@ -348,6 +353,30 @@ function FalconDevicesCard({ item }: { item: ItemPage }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/** How looking the host up by hostname went, through an Integration with no device recorded on it. */
+function HostLookup({ integration, lookup }: { integration: string; lookup: NonNullable<ItemPage["falconDevices"][number]["lookup"]> }) {
+  const { refreshing, checkedAt, notFound, error } = lookup;
+  return (
+    <section aria-label={`Looking up in ${integration}`} className="grid gap-1 rounded-lg border p-3">
+      <p className="text-xs text-muted-foreground">{integration}</p>
+      {notFound ? (
+        <p className="text-sm">Not found in Falcon.</p>
+      ) : (
+        !checkedAt && (
+          <p className="text-sm text-muted-foreground">{refreshing ? "Looking up this hostname in Falcon…" : "Not looked up in Falcon yet."}</p>
+        )
+      )}
+      {checkedAt && (
+        <p className="text-xs text-muted-foreground">
+          Checked <span title={exactTime(checkedAt)}>{when(checkedAt)}</span>
+          {refreshing && " · checking again…"}
+        </p>
+      )}
+      {error && <p className="text-xs text-destructive">Last lookup failed: {error}</p>}
+    </section>
   );
 }
 

@@ -303,4 +303,35 @@ describe("The Falcon API client", () => {
     const read = falconHttpClient(connection, fetchImpl).hosts(["8f1c2b3a4d5e6f708192a3b4c5d6e7f8"]);
     await expect(read).rejects.toBeInstanceOf(FalconScopeMissing);
   });
+
+  test("finds hosts by hostname, page by page, as lower-case aids", async () => {
+    const pages = [
+      { resources: ["8F1C2B3A4D5E6F708192A3B4C5D6E7F8"], meta: { pagination: { offset: 0, limit: 100, total: 2 } } },
+      { resources: ["0123456789abcdef0123456789abcdef"], meta: { pagination: { offset: 1, limit: 100, total: 2 } } },
+    ];
+    const { requests, fetchImpl } = stubFalcon({
+      "POST https://api.eu-1.crowdstrike.com/oauth2/token": token,
+      "GET https://api.eu-1.crowdstrike.com/devices/queries/devices/v1": () => Response.json(pages.shift()),
+    });
+    const found = await falconHttpClient(connection, fetchImpl).findHosts("FIN-LT-0231's");
+    expect(found).toEqual(["8f1c2b3a4d5e6f708192a3b4c5d6e7f8", "0123456789abcdef0123456789abcdef"]);
+    const queries = requests.slice(1).map((r) => new URL(r.url).searchParams);
+    expect(queries.map((q) => q.get("filter"))).toEqual(["hostname:'FIN-LT-0231\\'s'", "hostname:'FIN-LT-0231\\'s'"]);
+    expect(queries.map((q) => q.get("offset"))).toEqual(["0", "1"]);
+  });
+
+  test("a hostname search with no match finds nothing, and one refused for want of a scope says so", async () => {
+    const empty = stubFalcon({
+      "POST https://api.eu-1.crowdstrike.com/oauth2/token": token,
+      "GET https://api.eu-1.crowdstrike.com/devices/queries/devices/v1": () => Response.json({ resources: [], meta: { pagination: { total: 0 } } }),
+    });
+    expect(await falconHttpClient(connection, empty.fetchImpl).findHosts("FIN-LT-0231")).toEqual([]);
+
+    const refused = stubFalcon({
+      "POST https://api.eu-1.crowdstrike.com/oauth2/token": token,
+      "GET https://api.eu-1.crowdstrike.com/devices/queries/devices/v1": () =>
+        Response.json({ errors: [{ code: 403, message: "access denied, authorization failed" }] }, { status: 403 }),
+    });
+    await expect(falconHttpClient(connection, refused.fetchImpl).findHosts("FIN-LT-0231")).rejects.toBeInstanceOf(FalconScopeMissing);
+  });
 });

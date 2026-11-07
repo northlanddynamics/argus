@@ -1,6 +1,6 @@
-import { and, asc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lt, notExists, or, sql } from "drizzle-orm";
 import type { Db, Tx } from "../db/client";
-import { assetFalconDevices, falconHostSnapshots, integrations, organization } from "../db/schema";
+import { assetFalconDevices, assets, falconHostLookups, falconHostSnapshots, integrations, organization } from "../db/schema";
 import type { Deps } from "../deps";
 import { secureId } from "../ids";
 import { publish } from "../realtime/signals";
@@ -17,6 +17,12 @@ import { streamConnection } from "./stream-state";
  * marks them due; the worker fetches due snapshots (`createHostEnricher`), so opening a page never
  * waits on Falcon, and a signal brings the page the result.
  *
+ * A host with no device recorded for a CrowdStrike Integration (added by hand, or named only by
+ * detections without an `aid`) is first looked up in Falcon by hostname (`falcon_host_lookups`),
+ * marked due and done by the worker the same way. Every match is recorded on the host, several
+ * making it ambiguous, and from then on its `aid` is used and not the hostname. No match shows as
+ * not found in Falcon, and is looked up again the next time the host's Enrichment is fetched.
+ *
  * Enrichment is read-only, so it needs no Admin setting. When an Integration's API client lacks
  * Hosts: Read, the Integration's health says so (`host_enrichment_error`) and nothing else changes.
  */
@@ -30,25 +36,49 @@ export const HOST_ENRICHMENT_BATCH = 100;
 export const HOST_ENRICHMENT_UNAVAILABLE = "Host enrichment is unavailable: the API client lacks the Hosts: Read scope";
 
 /**
- * Marks the snapshots of every device recorded on host `assetId` due. With `ifStale`, as when someone
- * opens the host's page, snapshots tried within `HOST_ENRICHMENT_MAX_AGE_MS` are left alone.
+ * Marks the snapshots of every device recorded on host `assetId` due, and the hostname lookup of
+ * every CrowdStrike Integration that has recorded none on it. With `ifStale`, as when someone opens
+ * the host's page, those tried within `HOST_ENRICHMENT_MAX_AGE_MS` are left alone. Resolves to
+ * whether there was anything to ask Falcon for.
  */
 export async function requestHostEnrichment(db: Db | Tx, assetId: string, now: Date, { ifStale = false } = {}) {
+  const [host] = await db.select({ organizationId: assets.organizationId }).from(assets).where(and(eq(assets.id, assetId), eq(assets.type, "host")));
+  if (!host) return false;
   const devices = await db
     .selectDistinct({ organizationId: assetFalconDevices.organizationId, integrationId: assetFalconDevices.integrationId, deviceId: assetFalconDevices.deviceId })
     .from(assetFalconDevices)
     .where(eq(assetFalconDevices.assetId, assetId));
-  if (!devices.length) return;
+  const withDevices = new Set(devices.map((d) => d.integrationId));
+  const unresolved = (
+    await db
+      .select({ id: integrations.id })
+      .from(integrations)
+      .where(and(eq(integrations.organizationId, host.organizationId), eq(integrations.provider, "crowdstrike")))
+  ).filter((i) => !withDevices.has(i.id));
   const since = new Date(now.getTime() - HOST_ENRICHMENT_MAX_AGE_MS);
   const s = falconHostSnapshots;
-  await db
-    .insert(s)
-    .values(devices.map((d) => ({ id: secureId(), ...d, due: true })))
-    .onConflictDoUpdate({
-      target: [s.integrationId, s.deviceId],
-      set: { due: true },
-      setWhere: and(eq(s.due, false), ifStale ? or(isNull(s.checkedAt), lt(s.checkedAt, since)) : undefined),
-    });
+  if (devices.length) {
+    await db
+      .insert(s)
+      .values(devices.map((d) => ({ id: secureId(), ...d, due: true })))
+      .onConflictDoUpdate({
+        target: [s.integrationId, s.deviceId],
+        set: { due: true },
+        setWhere: and(eq(s.due, false), ifStale ? or(isNull(s.checkedAt), lt(s.checkedAt, since)) : undefined),
+      });
+  }
+  const l = falconHostLookups;
+  if (unresolved.length) {
+    await db
+      .insert(l)
+      .values(unresolved.map((i) => ({ id: secureId(), organizationId: host.organizationId, assetId, integrationId: i.id, due: true })))
+      .onConflictDoUpdate({
+        target: [l.assetId, l.integrationId],
+        set: { due: true },
+        setWhere: and(eq(l.due, false), ifStale ? or(isNull(l.checkedAt), lt(l.checkedAt, since)) : undefined),
+      });
+  }
+  return devices.length > 0 || unresolved.length > 0;
 }
 
 /** One device's Enrichment, as a host's page shows it. */
@@ -93,6 +123,46 @@ export async function hostEnrichmentOf(db: Db | Tx, devices: readonly { integrat
   return views;
 }
 
+/** Looking a host up in Falcon by hostname, through an Integration that has recorded no device on it. */
+export type HostLookupView = {
+  /** A lookup is wanted and the worker hasn't done it yet. */
+  refreshing: boolean;
+  /** When Falcon was last asked; null before it first is. */
+  checkedAt: string | null;
+  /** Falcon said, when last asked, that it knows no device by the hostname. */
+  notFound: boolean;
+  /** Why the last lookup failed, if it did. */
+  error: string | null;
+};
+
+/**
+ * The hostname lookups of host `assetId`, by Integration, for the Integrations that have recorded no
+ * device on it. A lookup that found devices has recorded them, so isn't among these.
+ */
+export async function hostLookupsOf(db: Db | Tx, assetId: string) {
+  const l = falconHostLookups;
+  const rows = await db
+    .select({ integrationId: l.integrationId, due: l.due, checkedAt: l.checkedAt, error: l.error })
+    .from(l)
+    .where(
+      and(
+        eq(l.assetId, assetId),
+        notExists(
+          db
+            .select({ id: assetFalconDevices.id })
+            .from(assetFalconDevices)
+            .where(and(eq(assetFalconDevices.assetId, l.assetId), eq(assetFalconDevices.integrationId, l.integrationId))),
+        ),
+      ),
+    );
+  return new Map(
+    rows.map((r): [string, HostLookupView] => [
+      r.integrationId,
+      { refreshing: r.due, checkedAt: r.checkedAt?.toISOString() ?? null, notFound: r.checkedAt !== null && r.error === null, error: r.error },
+    ]),
+  );
+}
+
 export const enrichmentKey = (d: { integrationId: string; deviceId: string }) => `${d.integrationId}\u0000${d.deviceId}`;
 
 type Claimed = { id: string; organizationId: string; integrationId: string; deviceId: string };
@@ -118,14 +188,29 @@ async function storeFetched(tx: Tx, integrationId: string, claimed: readonly Cla
         .where(eq(s.id, c.id));
     }
   }
-  const unavailable = "error" in fetched && fetched.scopeMissing ? HOST_ENRICHMENT_UNAVAILABLE : null;
-  if (!("error" in fetched) || unavailable) {
+  await recordHealth(tx, integrationId, fetched);
+}
+
+/**
+ * Says in the Integration's health that host Enrichment is unavailable when Falcon refused for want
+ * of Hosts: Read, and clears that once a call works. Other failures leave it as it was.
+ */
+async function recordHealth(tx: Tx, integrationId: string, outcome: object) {
+  const failed = "error" in outcome;
+  const unavailable = "scopeMissing" in outcome && outcome.scopeMissing ? HOST_ENRICHMENT_UNAVAILABLE : null;
+  if (!failed || unavailable) {
     await tx
       .update(integrations)
       .set({ hostEnrichmentError: unavailable })
       .where(and(eq(integrations.id, integrationId), sql`${integrations.hostEnrichmentError} IS DISTINCT FROM ${unavailable}`));
   }
 }
+
+/** Why a call to Falcon failed, as a fetch or lookup records it. */
+const failureOf = (e: unknown) =>
+  e instanceof FalconScopeMissing
+    ? { error: HOST_ENRICHMENT_UNAVAILABLE, scopeMissing: true }
+    : { error: e instanceof Error ? e.message : String(e), scopeMissing: false };
 
 /**
  * Fetches the snapshots marked due. Each batch is claimed in a short transaction with
@@ -179,9 +264,7 @@ export function createHostEnricher({ db, clock, credentials }: Pick<Deps, "db" |
           ? { hosts: await client.hosts(claimed.map((c) => c.deviceId)) }
           : { error: "The Integration no longer exists", scopeMissing: false };
       } catch (e) {
-        fetched = e instanceof FalconScopeMissing
-          ? { error: HOST_ENRICHMENT_UNAVAILABLE, scopeMissing: true }
-          : { error: e instanceof Error ? e.message : String(e), scopeMissing: false };
+        fetched = failureOf(e);
       }
       await db.transaction(async (tx) => {
         await storeFetched(tx, integrationId, claimed, fetched, clock.now());
@@ -192,12 +275,88 @@ export function createHostEnricher({ db, clock, credentials }: Pick<Deps, "db" |
     return due.length;
   };
 
+  const l = falconHostLookups;
+  const claimLookups = () =>
+    db.transaction(async (tx) => {
+      const due = await tx
+        .select({ id: l.id, organizationId: l.organizationId, assetId: l.assetId, integrationId: l.integrationId, hostname: assets.value })
+        .from(l)
+        .innerJoin(assets, eq(l.assetId, assets.id))
+        .innerJoin(integrations, eq(l.integrationId, integrations.id))
+        .innerJoin(organization, eq(l.organizationId, organization.id))
+        .where(and(eq(l.due, true), eq(integrations.paused, false), isNull(organization.deletedAt)))
+        .orderBy(asc(l.integrationId), asc(l.assetId))
+        .limit(HOST_ENRICHMENT_BATCH)
+        .for("update", { of: l, skipLocked: true });
+      if (due.length) {
+        await tx
+          .update(l)
+          .set({ due: false })
+          .where(inArray(l.id, due.map((d) => d.id)));
+      }
+      return due;
+    });
+
+  /**
+   * Looks each claimed host up by hostname, unless a device has been recorded on it for that
+   * Integration meanwhile. Every match is recorded on the host, and its snapshot marked due, so the
+   * snapshots fetched next include it.
+   */
+  const lookUpBatch = async () => {
+    const due = await claimLookups();
+    for (const d of due) {
+      const now = clock.now();
+      const [recorded] = await db
+        .select({ id: assetFalconDevices.id })
+        .from(assetFalconDevices)
+        .where(and(eq(assetFalconDevices.assetId, d.assetId), eq(assetFalconDevices.integrationId, d.integrationId)))
+        .limit(1);
+      if (recorded) {
+        await db.update(l).set({ checkedAt: now, error: null }).where(eq(l.id, d.id));
+        continue;
+      }
+      let outcome: { deviceIds: string[] } | { error: string; scopeMissing: boolean };
+      try {
+        const client = await clientFor(d.integrationId);
+        outcome = client ? { deviceIds: await client.findHosts(d.hostname) } : { error: "The Integration no longer exists", scopeMissing: false };
+      } catch (e) {
+        outcome = failureOf(e);
+      }
+      await db.transaction(async (tx) => {
+        if ("deviceIds" in outcome && outcome.deviceIds.length) {
+          const found = outcome.deviceIds.map((deviceId) => ({ organizationId: d.organizationId, integrationId: d.integrationId, deviceId }));
+          await tx
+            .insert(assetFalconDevices)
+            .values(found.map((f) => ({ id: secureId(), ...f, assetId: d.assetId, recordedAt: now })))
+            .onConflictDoNothing();
+          await tx
+            .insert(s)
+            .values(found.map((f) => ({ id: secureId(), ...f, due: true })))
+            .onConflictDoUpdate({ target: [s.integrationId, s.deviceId], set: { due: true } });
+        }
+        await tx
+          .update(l)
+          .set({ checkedAt: now, error: "error" in outcome ? outcome.error : null })
+          .where(eq(l.id, d.id));
+        await recordHealth(tx, d.integrationId, outcome);
+        await publish(tx, { kind: "alerts", organizationId: d.organizationId });
+      });
+    }
+    return due.length;
+  };
+
   let running: Promise<void> | null = null;
   return {
-    /** Fetches every due snapshot, batch by batch. A tick while one is running waits for that one. */
+    /**
+     * Does every due hostname lookup, then fetches every due snapshot (those of devices just found
+     * included), batch by batch. A tick while one is running waits for that one.
+     */
     tick() {
       running ??= (async () => {
         try {
+          for (let batch = 0; batch < 20; batch++) {
+            if ((await lookUpBatch()) < HOST_ENRICHMENT_BATCH) break;
+          }
           for (let batch = 0; batch < 20; batch++) {
             if ((await fetchBatch()) < HOST_ENRICHMENT_BATCH) return;
           }
