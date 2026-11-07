@@ -41,6 +41,7 @@ import {
 import { falconIocActionLabel, responseActionKindLabel, responseActionStateLabel } from "@/lib/response-actions";
 import { exactTime, when } from "@/lib/when";
 import { ObservableActions } from "@/routes/cases/observable-actions";
+import { FalconIdentitiesCard } from "@/routes/items/falcon-identities-card";
 
 /** `/observables/$id`: everything Argus knows about one Observable that the viewer may see. */
 export function ObservablePage() {
@@ -165,6 +166,7 @@ function ItemPageView({ kind, id }: { kind: ItemKind; id: string }) {
       </section>
 
       {kind === "asset" && item.type === "host" && !guest && <FalconDevicesCard item={item} />}
+      {kind === "asset" && item.type === "account" && !guest && <FalconIdentitiesCard item={item} />}
       <CasesCard item={item} actions={kind === "observable" && !guest} />
       {!guest && <AlertsCard item={item} />}
       {kind === "observable" && <ResponseActionsCard item={item} actions={!guest} />}

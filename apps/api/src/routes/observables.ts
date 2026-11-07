@@ -43,7 +43,7 @@ const itemRoutes = <Store extends Modules["observables"] | Modules["assets"]>(de
 };
 
 export const observableRoutes = (deps: Deps, { observables }: Modules) => itemRoutes(deps, observables);
-/** A host's Enrichment is fetched from Falcon again when a Member asks (`POST /:id/enrichment`, ADR 0009). */
+/** A host's or account's Enrichment is fetched from Falcon again when a Member asks (`POST /:id/enrichment`, ADR 0009). */
 export const assetRoutes = (deps: Deps, { assets }: Modules) =>
   itemRoutes(deps, assets).post("/:id/enrichment", zValidator("param", idParam), membersOnly, async (c) => {
     try {

@@ -334,4 +334,114 @@ describe("The Falcon API client", () => {
     });
     await expect(falconHttpClient(connection, refused.fetchImpl).findHosts("FIN-LT-0231")).rejects.toBeInstanceOf(FalconScopeMissing);
   });
+
+  const GRAPHQL = "POST https://api.eu-1.crowdstrike.com/identity-protection/combined/graphql/v1";
+  const node = {
+    entityId: "e3a1c9f0-dana",
+    primaryDisplayName: "Dana Howe",
+    secondaryDisplayName: "ACME.LOCAL\\d.howe",
+    type: "USER",
+    riskScore: 0.62,
+    riskScoreSeverity: "MEDIUM",
+    watched: true,
+    mostRecentActivity: "2026-01-01T08:55:00Z",
+    riskFactors: [
+      { type: "STALE_ACCOUNT", severity: "MEDIUM" },
+      { type: "PASSWORD_NEVER_EXPIRES", severity: "LOW" },
+    ],
+    roles: [{ type: "DomainAdminsRole" }],
+    emailAddresses: ["dana.howe@acme.example"],
+    accounts: [
+      {
+        domain: "ACME.LOCAL",
+        samAccountName: "d.howe",
+        upn: "d.howe@acme.example",
+        ou: "ACME.LOCAL/Finance/Users",
+        department: "Finance",
+        title: "Controller",
+        enabled: true,
+        lockoutTime: null,
+        passwordAttributes: { lastChange: "2025-11-02T09:00:00Z", mayNeverExpire: true },
+      },
+    ],
+    associations: [
+      { bindingType: "OWNERSHIP", entity: { type: "ENDPOINT", primaryDisplayName: "FIN-LT-0231" } },
+      { bindingType: "MEMBER_OF", entity: { type: "GROUP", primaryDisplayName: "Domain Admins" } },
+    ],
+  };
+
+  test("reads identities by entity ID from Identity Protection's GraphQL API", async () => {
+    const { requests, fetchImpl } = stubFalcon({
+      "POST https://api.eu-1.crowdstrike.com/oauth2/token": token,
+      [GRAPHQL]: () => Response.json({ data: { entities: { nodes: [node] } } }),
+    });
+    const found = await falconHttpClient(connection, fetchImpl).identities(["e3a1c9f0-dana"]);
+    const sent = (await requests[1]!.json()) as { query: string; variables: unknown };
+    expect(sent.query).toContain("entityIds: $values");
+    expect(sent.variables).toEqual({ values: ["e3a1c9f0-dana"] });
+    expect(found).toEqual([
+      {
+        entityId: "e3a1c9f0-dana",
+        displayName: "Dana Howe",
+        upn: "d.howe@acme.example",
+        samAccountName: "d.howe",
+        riskScore: 0.62,
+        riskSeverity: "MEDIUM",
+        riskFactors: [
+          { type: "STALE_ACCOUNT", severity: "MEDIUM" },
+          { type: "PASSWORD_NEVER_EXPIRES", severity: "LOW" },
+        ],
+        enabled: true,
+        lockedOut: false,
+        stale: true,
+        privileged: true,
+        privilegedGroups: ["Domain Admins"],
+        watched: true,
+        passwordLastSet: "2025-11-02T09:00:00.000Z",
+        passwordNeverExpires: true,
+        lastActivity: "2026-01-01T08:55:00.000Z",
+        email: "dana.howe@acme.example",
+        department: "Finance",
+        title: "Controller",
+        domain: "ACME.LOCAL",
+        ou: "ACME.LOCAL/Finance/Users",
+        endpoints: ["FIN-LT-0231"],
+      },
+    ]);
+  });
+
+  test("finds identities by UPN or email, and by SAM name within a domain given by its DNS or NetBIOS name", async () => {
+    const lab = { ...node, entityId: "7b20d4aa-dana-lab", accounts: [{ ...node.accounts[0], domain: "LAB.ACME.LOCAL" }] };
+    const { requests, fetchImpl } = stubFalcon({
+      "POST https://api.eu-1.crowdstrike.com/oauth2/token": token,
+      [GRAPHQL]: () => Response.json({ data: { entities: { nodes: [node, lab] } } }),
+    });
+    const client = falconHttpClient(connection, fetchImpl);
+    expect(await client.findIdentities({ upn: "d.howe@acme.example" })).toEqual(["e3a1c9f0-dana", "7b20d4aa-dana-lab"]);
+    expect(await client.findIdentities({ samAccountName: "d.howe" })).toEqual(["e3a1c9f0-dana", "7b20d4aa-dana-lab"]);
+    expect(await client.findIdentities({ domain: "LAB", samAccountName: "d.howe" })).toEqual(["7b20d4aa-dana-lab"]);
+    expect(await client.findIdentities({ domain: "acme.local", samAccountName: "d.howe" })).toEqual(["e3a1c9f0-dana"]);
+    const queries = await Promise.all(requests.filter((r) => r.url.includes("graphql")).map(async (r) => ((await r.json()) as { query: string }).query));
+    expect(queries.map((q) => q.match(/entities\(types: \[USER\], (\w+):/)?.[1])).toEqual([
+      "userPrincipalNames",
+      "emailAddresses",
+      "samAccountNames",
+      "samAccountNames",
+      "samAccountNames",
+    ]);
+  });
+
+  test("an identity call refused, for want of the scope or the subscription, says so; GraphQL errors fail it", async () => {
+    const refused = stubFalcon({
+      "POST https://api.eu-1.crowdstrike.com/oauth2/token": token,
+      [GRAPHQL]: () => Response.json({ errors: [{ code: 403, message: "access denied, authorization failed" }] }, { status: 403 }),
+    });
+    await expect(falconHttpClient(connection, refused.fetchImpl).identities(["x"])).rejects.toBeInstanceOf(FalconScopeMissing);
+    await expect(falconHttpClient(connection, refused.fetchImpl).findIdentities({ samAccountName: "d.howe" })).rejects.toBeInstanceOf(FalconScopeMissing);
+    const broken = stubFalcon({
+      "POST https://api.eu-1.crowdstrike.com/oauth2/token": token,
+      [GRAPHQL]: () => Response.json({ data: null, errors: [{ message: "Cannot query field" }] }),
+    });
+    await expect(falconHttpClient(connection, broken.fetchImpl).identities(["x"])).rejects.toThrow("Reading identities from Falcon failed: Cannot query field");
+  });
 });

@@ -174,6 +174,8 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
         healthCheckedAt: row.healthCheckedAt?.toISOString() ?? null,
         /** Why host Enrichment is unavailable through it (ADR 0009); null while it works. */
         hostEnrichmentError: row.hostEnrichmentError,
+        /** Why identity Enrichment is unavailable through it (ADR 0009); null while it works. */
+        identityEnrichmentError: row.identityEnrichmentError,
         lastEventAt: row.lastEventAt?.toISOString() ?? null,
         streamOffset: row.streamOffset,
         sessionRefreshAt: row.sessionRefreshAt?.toISOString() ?? null,

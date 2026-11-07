@@ -5,6 +5,7 @@ import { recordOrgAudit } from "../audit/org-audit-log";
 import { type AlertStatus, falconDeviceUrl } from "../alerts/vocabulary";
 import { actorOf, CaseNotFound, lockCase } from "../cases/cases";
 import { recordCaseAudit } from "../cases/case-audit-log";
+import { type FalconIdentities, falconIdentitiesOf, requestIdentityEnrichment } from "../crowdstrike/identity-enrichment";
 import { enrichmentKey, hostEnrichmentOf, type HostEnrichmentView, hostLookupsOf, type HostLookupView, requestHostEnrichment } from "../crowdstrike/host-enrichment";
 import type { CaseAuditAction, Severity, Status } from "../cases/vocabulary";
 import type { FalconContainment } from "../crowdstrike/falcon";
@@ -177,6 +178,11 @@ export type ItemDetail<Type extends string> = {
    * Observables, accounts and Guests.
    */
   falconDevices: FalconDevices[];
+  /**
+   * The Falcon Identity Protection identities recorded on an account, by CrowdStrike Integration,
+   * with their Enrichment (ADR 0009). Always empty for Observables, hosts and Guests.
+   */
+  falconIdentities: FalconIdentities[];
 };
 
 /**
@@ -454,19 +460,21 @@ function heldOnceStore<Type extends string>(
       ignored,
       responseActions: await responseActionsOn(me, itemId),
       falconDevices: kind.name === "asset" && item.type === "host" && !isGuest(me) ? await falconDevicesOf(db, itemId) : [],
+      falconIdentities: kind.name === "asset" && item.type === "account" && !isGuest(me) ? await falconIdentitiesOf(db, itemId) : [],
     };
   }
 
   /**
    * Item `itemId`'s page as `detail` gives it, first asking Falcon again for the Enrichment of a host
-   * a Member opens (ADR 0009): every snapshot older than 15 minutes, or with `refresh` all of them,
-   * and likewise the hostname lookup through each CrowdStrike Integration with no device recorded on
-   * the host. The worker does them; the page shows them as refreshing meanwhile.
+   * or account a Member opens (ADR 0009): every snapshot older than 15 minutes, or with `refresh` all
+   * of them, and likewise the lookup by hostname or account name through each CrowdStrike Integration
+   * with nothing recorded on it. The worker does them; the page shows them as refreshing meanwhile.
    */
   async function open(me: Participant, itemId: string, { refresh = false } = {}): Promise<ItemDetail<Type>> {
     const seen = await detail(me, itemId);
-    if (kind.name !== "asset" || seen.type !== "host" || isGuest(me)) return seen;
-    if (!(await requestHostEnrichment(db, itemId, clock.now(), { ifStale: !refresh }))) return seen;
+    if (kind.name !== "asset" || isGuest(me)) return seen;
+    const request = seen.type === "host" ? requestHostEnrichment : seen.type === "account" ? requestIdentityEnrichment : null;
+    if (!request || !(await request(db, itemId, clock.now(), { ifStale: !refresh }))) return seen;
     return detail(me, itemId);
   }
 

@@ -12,6 +12,9 @@ import type { FalconIocAction, FalconIocType } from "../response-actions/vocabul
  * looked up, created and deleted for Response Actions (`response-actions/sender.ts`, ADR 0007),
  * which an Integration takes only when its Response Actions setting is on. Hosts are read, and
  * found by hostname, for Enrichment (`host-enrichment.ts`, ADR 0009), which needs only the Hosts: Read scope.
+ * Identity Protection identities are read, and found by account name, for identity Enrichment
+ * (`identity-enrichment.ts`, ADR 0009), which needs Identity Protection Entities: Read and an
+ * Identity Protection subscription.
  */
 
 export type FalconCredentials = { clientId: string; clientSecret: string };
@@ -99,7 +102,61 @@ export interface FalconClient {
    * Rejects with `FalconScopeMissing` when the API client lacks Hosts: Read.
    */
   findHosts(hostname: string): Promise<string[]>;
+  /**
+   * What Identity Protection reports now about each of these identities (entity IDs). An identity
+   * Falcon doesn't know is left out. Rejects with `FalconScopeMissing` when the API client lacks
+   * Identity Protection Entities: Read, or the subscription lacks Identity Protection.
+   */
+  identities(entityIds: readonly string[]): Promise<FalconIdentity[]>;
+  /**
+   * The entity IDs of every user identity Identity Protection knows by this account name; none when
+   * it knows none. Rejects with `FalconScopeMissing` as `identities` does.
+   */
+  findIdentities(name: AccountName): Promise<string[]>;
 }
+
+/**
+ * An account Asset's name as Identity Protection is searched by it (ADR 0009): a UPN or email
+ * address, a domain and SAM account name (`DOMAIN\user`), or a SAM account name alone, which
+ * several identities in different domains may share.
+ */
+export type AccountName = { upn: string } | { domain: string; samAccountName: string } | { samAccountName: string };
+
+/** One of an identity's risk factors, as Identity Protection names and grades it. */
+export type FalconRiskFactor = { type: string; severity: string | null };
+
+/**
+ * One user identity as Identity Protection reports it: what identity Enrichment shows. Anything
+ * Falcon didn't say is null (or empty).
+ */
+export type FalconIdentity = {
+  entityId: string;
+  displayName: string | null;
+  upn: string | null;
+  samAccountName: string | null;
+  /** 0 to 1, as Falcon scores it. */
+  riskScore: number | null;
+  /** Falcon's grade of the score: "NORMAL", "MEDIUM" or "HIGH". */
+  riskSeverity: string | null;
+  riskFactors: FalconRiskFactor[];
+  enabled: boolean | null;
+  lockedOut: boolean | null;
+  stale: boolean | null;
+  privileged: boolean | null;
+  /** The privileged groups the identity is in, by name. */
+  privilegedGroups: string[];
+  watched: boolean | null;
+  passwordLastSet: string | null;
+  passwordNeverExpires: boolean | null;
+  lastActivity: string | null;
+  email: string | null;
+  department: string | null;
+  title: string | null;
+  domain: string | null;
+  ou: string | null;
+  /** The endpoints associated with the identity, by hostname. Never linked as Assets. */
+  endpoints: string[];
+};
 
 /** Falcon refused a call because the API client lacks the scope it needs. */
 export class FalconScopeMissing extends Error {}
