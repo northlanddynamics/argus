@@ -1334,21 +1334,25 @@ export const responseActions = pgTable(
     removalRequestedAt: timestamp("removal_requested_at", { withTimezone: true }),
     /** When enrichment showed what it did undone in the tool, outside Argus (containment lifted in Falcon), moving it to Removed. */
     liftedInToolAt: timestamp("lifted_in_tool_at", { withTimezone: true }),
+    /** The Lift containment (ADR 0009) that ended this containment record, moving it to Removed. */
+    liftedById: text("lifted_by_id").references((): AnyPgColumn => responseActions.id, { onDelete: "restrict" }),
   },
   (t) => [
     index("response_actions_case_idx").on(t.caseId, t.seq),
     index("response_actions_observable_idx").on(t.observableId).where(sql`${t.observableId} IS NOT NULL`),
     index("response_actions_asset_idx").on(t.assetId).where(sql`${t.assetId} IS NOT NULL`),
     index("response_actions_present_from_idx").on(t.presentFromId).where(sql`${t.presentFromId} IS NOT NULL`),
+    index("response_actions_lifted_by_idx").on(t.liftedById).where(sql`${t.liftedById} IS NOT NULL`),
     uniqueIndex("response_actions_one_created_idx")
       .on(t.integrationId, t.kind, t.targetType, t.targetValue)
       .where(
-        sql`${t.origin} = 'created' AND (${t.state} IN ('pending', 'active', 'removing') OR (${t.state} = 'failed' AND ${t.removalRequestedAt} IS NOT NULL))`,
+        // A Lift containment holds nothing in the tool, so any number may be taken.
+        sql`${t.kind} <> 'falcon_containment_lift' AND ${t.origin} = 'created' AND (${t.state} IN ('pending', 'active', 'removing') OR (${t.state} = 'failed' AND ${t.removalRequestedAt} IS NOT NULL))`,
       ),
     check("response_actions_one_target", sql`(${t.observableId} IS NULL) <> (${t.assetId} IS NULL)`),
     check("response_actions_falcon", sql`(${t.kind} = 'falcon_ioc') = (${t.falconAction} IS NOT NULL AND ${t.severity} IS NOT NULL)`),
-    // Containment is taken against a host; the other kinds against an Observable.
-    check("response_actions_containment_target", sql`(${t.kind} = 'falcon_containment') = (${t.assetId} IS NOT NULL)`),
+    // Containment, and lifting it, are taken against a host; the other kinds against an Observable.
+    check("response_actions_containment_target", sql`(${t.kind} IN ('falcon_containment', 'falcon_containment_lift')) = (${t.assetId} IS NOT NULL)`),
     check("response_actions_present_from", sql`(${t.origin} = 'already_present') = (${t.presentFromId} IS NOT NULL)`),
     check("response_actions_dismissed", sql`(${t.dismissedAt} IS NULL) = (${t.dismissedById} IS NULL)`),
     check("response_actions_removal_requested", sql`(${t.removalRequestedAt} IS NULL) = (${t.removalRequestedById} IS NULL)`),

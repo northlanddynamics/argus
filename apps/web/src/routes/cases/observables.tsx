@@ -144,6 +144,7 @@ export function CaseObservablesPage() {
               onUnlink={readOnly ? undefined : unlink}
               canMarkInternal={!readOnly && c.can.markInternal}
               containment={item.type === "host" ? containment : []}
+              canLiftContainment={c.can.liftForeignContainment}
             >
               {row}
             </AssetActions>

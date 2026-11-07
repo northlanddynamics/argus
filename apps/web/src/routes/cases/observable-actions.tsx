@@ -15,6 +15,7 @@ import {
   ShieldIcon,
   SlidersHorizontalIcon,
   Undo2Icon,
+  WifiIcon,
   WifiOffIcon,
   ZapIcon,
 } from "lucide-react";
@@ -507,12 +508,15 @@ export function AssetActions({
   onUnlink,
   canMarkInternal = false,
   containment = [],
+  canLiftContainment = false,
   children,
 }: {
   number: number;
   asset: { id: string; value: string; internal: boolean };
   /** For a host on a Case that can be worked: the Integrations it can be contained through (ADR 0009). */
   containment?: ContainmentIntegration[];
+  /** Offers lifting containment Argus didn't impose, through `containment`: Admins only. */
+  canLiftContainment?: boolean;
   /** Its type and identifier, naming the ⋯ button. */
   label: string;
   onUnlink?: () => void;
@@ -523,7 +527,7 @@ export function AssetActions({
   const navigate = useNavigate();
   const copy = () => void navigator.clipboard.writeText(asset.value).then(() => toast("Copied"));
   const mark = useMarkInternal(number);
-  const [containing, setContaining] = useState(false);
+  const [containing, setContaining] = useState<"contain" | "lift" | null>(null);
   const setInternal = (internal: boolean, undoable = true) =>
     mark.mutate(
       { item: { kind: "asset", id: asset.id }, internal },
@@ -561,10 +565,16 @@ export function AssetActions({
         <>
           <kit.Separator />
           <kit.Label>Take action</kit.Label>
-          <kit.Item onSelect={() => setContaining(true)}>
+          <kit.Item onSelect={() => setContaining("contain")}>
             <WifiOffIcon />
             Contain host…
           </kit.Item>
+          {canLiftContainment && (
+            <kit.Item onSelect={() => setContaining("lift")}>
+              <WifiIcon />
+              Lift containment…
+            </kit.Item>
+          )}
         </>
       )}
       {onUnlink && (
@@ -596,7 +606,9 @@ export function AssetActions({
         <ContextMenuTrigger asChild>{children(menuButton)}</ContextMenuTrigger>
         <ContextMenuContent className="w-56">{items(contextKit)}</ContextMenuContent>
       </ContextMenu>
-      {containing && <ContainHostDialog number={number} asset={asset} integrations={containment} onClose={() => setContaining(false)} />}
+      {containing && (
+        <ContainHostDialog number={number} asset={asset} integrations={containment} lift={containing === "lift"} onClose={() => setContaining(null)} />
+      )}
     </>
   );
 }

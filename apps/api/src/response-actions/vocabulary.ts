@@ -9,15 +9,21 @@ import type { ObservableType } from "../observables/vocabulary";
 
 /**
  * `falcon_ioc` and `mimecast_blocked_sender` are taken against an Observable; `falcon_containment`
- * against a host Asset, one Falcon device (`aid`) of it (ADR 0009).
+ * against a host Asset, one Falcon device (`aid`) of it (ADR 0009). So is `falcon_containment_lift`:
+ * an Admin lifting containment that Argus didn't impose, which is never removed or dismissed.
  */
-export const RESPONSE_ACTION_KINDS = ["falcon_ioc", "mimecast_blocked_sender", "falcon_containment"] as const;
+export const RESPONSE_ACTION_KINDS = ["falcon_ioc", "mimecast_blocked_sender", "falcon_containment", "falcon_containment_lift"] as const;
 export type ResponseActionKind = (typeof RESPONSE_ACTION_KINDS)[number];
 export const responseActionKindLabel: Record<ResponseActionKind, string> = {
   falcon_ioc: "Falcon custom IOC",
   mimecast_blocked_sender: "Mimecast blocked sender",
   falcon_containment: "Falcon host containment",
+  falcon_containment_lift: "Falcon containment lift",
 };
+
+/** The kinds taken against a host Asset, and through a CrowdStrike Integration's Host containment setting. */
+export const HOST_KINDS = ["falcon_containment", "falcon_containment_lift"] as const satisfies readonly ResponseActionKind[];
+export const isHostKind = (kind: ResponseActionKind) => (HOST_KINDS as readonly string[]).includes(kind);
 
 /** What a containment Response Action targets in Falcon: one device, by `aid`. */
 export const CONTAINMENT_TARGET_TYPE = "device";
@@ -38,7 +44,11 @@ export const providerKind: Record<Provider, ResponseActionKind> = { crowdstrike:
  * Failed   → Removing  (Retry, when removing failed)
  * Active   → Removed   (an "already present" record dismissed, or the one it relies on removed)
  * Active   → Removed   (containment only: Falcon shows the host released, "lifted in Falcon")
+ * Active   → Removed   (containment only: an Admin's Lift containment lifted it, from any Case)
  * ```
+ *
+ * A Lift containment goes Pending → Active (lifted, or found already released) or Failed, and Failed
+ * → Pending on Retry; it is never removed or dismissed.
  *
  * A Response Action recorded as already sent from another Case starts Active.
  */

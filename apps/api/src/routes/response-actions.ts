@@ -8,10 +8,12 @@ import { membersOnly, type ParticipantEnv, requireParticipant } from "../members
 import type { Modules } from "../modules";
 import { NotLinked } from "../observables/observables";
 import {
+  ContainmentImposedByArgus,
   HostNotContainable,
   IgnoredNotConfirmed,
   IntegrationNotEligible,
   NotDismissable,
+  NotImposedNotConfirmed,
   NotRemovable,
   NotRetryable,
   ObservableNotAccepted,
@@ -58,6 +60,10 @@ const containBody = z.object({
   /** Hidden from the Case's Guests. */
   internal: z.boolean().optional(),
 });
+const liftBody = containBody.extend({
+  /** The Admin was warned that Argus didn't contain the host, and lifts its containment anyway. */
+  confirmNotImposed: z.boolean().default(false),
+});
 const assetParam = numberParam.extend({ assetId: z.string().min(1) });
 
 const removeBody = z.object({
@@ -89,6 +95,8 @@ const unlessNotFound = <T>(work: Promise<T>) =>
  * Containing a host (ADR 0009) is confirmed first: `POST …/assets/:assetId/containment-check` asks
  * Falcon for the host afresh and `GET` reads what came back, which the confirmation shows; then
  * `POST …/response-actions/containment` contains the device picked. Lifting it is removing it.
+ * An Admin lifts containment Argus didn't impose with `POST …/response-actions/containment-lift`,
+ * confirmed the same way, and with `confirmNotImposed`.
  */
 export const responseActionRoutes = (deps: Deps, { responseActions }: Modules) =>
   new Hono<ParticipantEnv>()
@@ -139,6 +147,20 @@ export const responseActionRoutes = (deps: Deps, { responseActions }: Modules) =
         throw e;
       }
     })
+    .post("/:number/response-actions/containment-lift", membersOnly, zValidator("param", numberParam), zValidator("json", liftBody), async (c) => {
+      try {
+        const taken = await unlessNotFound(responseActions.liftContainment(c.get("membership"), c.req.valid("param").number, c.req.valid("json")));
+        if (!taken) return c.json(notFound, 404);
+        return c.json({ responseAction: taken }, 201);
+      } catch (e) {
+        if (e instanceof NotPermitted) return c.json({ error: e.message || "Only Admins can lift containment that Argus didn't impose" }, 403);
+        if (e instanceof NotLinked) return c.json({ error: e.message }, 404);
+        if (e instanceof IntegrationNotEligible || e instanceof HostNotContainable) return c.json({ error: e.message }, 400);
+        if (e instanceof ContainmentImposedByArgus) return c.json({ error: e.message, imposedFrom: e.case }, 409);
+        if (e instanceof NotImposedNotConfirmed || e instanceof CaseClosed) return c.json({ error: e.message }, 409);
+        throw e;
+      }
+    })
     .get("/:number/assets/:assetId/containment-check", membersOnly, zValidator("param", assetParam), async (c) => {
       const { number, assetId } = c.req.valid("param");
       try {
@@ -170,7 +192,7 @@ export const responseActionRoutes = (deps: Deps, { responseActions }: Modules) =
         if (!retried) return c.json(notFound, 404);
         return c.json({ responseAction: retried }, 200);
       } catch (e) {
-        if (e instanceof NotPermitted) return c.json(guestsRefused, 403);
+        if (e instanceof NotPermitted) return c.json(e.message ? { error: e.message } : guestsRefused, 403);
         if (e instanceof ResponseActionNotFound) return c.json({ error: e.message }, 404);
         if (e instanceof NotRetryable || e instanceof CaseClosed) return c.json({ error: e.message }, 409);
         throw e;

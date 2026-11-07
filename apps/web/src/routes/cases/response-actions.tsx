@@ -403,7 +403,7 @@ const dismissed = (r: ResponseAction) => r.state === "removed" && !!r.dismissedB
 const stateLabel = (r: ResponseAction) => (dismissed(r) ? "Dismissed" : responseActionStateLabel[r.state]);
 
 /** Where it stands, said as what Argus did: never that something is in force now. */
-function StateLine({ r }: { r: ResponseAction }) {
+function StateLine({ r, number }: { r: ResponseAction; number: number }) {
   if (r.state === "removed" && r.dismissedBy && r.dismissedAt) {
     return (
       <span>
@@ -414,7 +414,7 @@ function StateLine({ r }: { r: ResponseAction }) {
   if (r.state === "active" && r.sentAt) {
     return (
       <span>
-        Sent <At iso={r.sentAt} />
+        {r.kind === "falcon_containment_lift" ? "Lifted" : "Sent"} <At iso={r.sentAt} />
       </span>
     );
   }
@@ -424,6 +424,25 @@ function StateLine({ r }: { r: ResponseAction }) {
       <span>
         {r.kind === "falcon_containment" ? (r.lastError ? "Retrying the lift" : "Waiting to be lifted") : r.lastError ? "Retrying removal" : "Waiting to be removed"}
         {r.removalRequestedBy && `, asked for by ${r.removalRequestedBy.name}`}
+      </span>
+    );
+  }
+  if (r.state === "removed" && r.liftedBy) {
+    const from = r.liftedBy.case;
+    return (
+      <span>
+        Lifted by an Admin from{" "}
+        {from && from.number === number ? (
+          "this Case"
+        ) : from ? (
+          <Link to="/cases/$number" params={{ number: String(from.number) }} className="font-mono underline" title={from.title}>
+            {caseRef(from.number)}
+            <span className="sr-only"> {from.title}</span>
+          </Link>
+        ) : (
+          "another Case"
+        )}{" "}
+        <At iso={r.liftedBy.at} />
       </span>
     );
   }
@@ -471,7 +490,7 @@ function OriginLine({ r, number }: { r: ResponseAction; number: number }) {
       </span>
     );
   }
-  if (r.origin === "in_tool") return <span>Already present in {toolOf(r.kind)}</span>;
+  if (r.origin === "in_tool") return <span>{r.kind === "falcon_containment_lift" ? "Already released" : "Already present"} in {toolOf(r.kind)}</span>;
   return null;
 }
 
@@ -746,7 +765,7 @@ export function ResponseActionsCard({
                             {stateLabel(r)}
                           </Badge>
                           <span className="mt-1 block text-xs text-muted-foreground">
-                            <StateLine r={r} />
+                            <StateLine r={r} number={number} />
                           </span>
                           {r.origin !== "created" && (
                             <span className="mt-1 block text-xs text-muted-foreground">
@@ -787,7 +806,7 @@ export function ResponseActionsCard({
                               </Button>
                             )}
                             {/* A host has no Observable menu: an already present containment is dismissed here. */}
-                            {!r.observable && !readOnly && r.state === "active" && r.origin !== "created" && (
+                            {!r.observable && !readOnly && r.state === "active" && r.origin !== "created" && r.kind !== "falcon_containment_lift" && (
                               <Button variant="ghost" size="sm" aria-label={`Dismiss the Response Action on ${subject.value}`} onClick={() => setDismissing(r)}>
                                 Dismiss
                               </Button>

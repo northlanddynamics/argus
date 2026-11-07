@@ -14,8 +14,8 @@ import type { BlockedSenderType, MimecastConnector } from "../mimecast/mimecast"
 import { notify } from "../notifications/notifications";
 import type { AssetType, ObservableType } from "../observables/vocabulary";
 import { publish } from "../realtime/signals";
-import type { FalconIocType } from "./vocabulary";
-import { recordStateChange, type Subject } from "./response-actions";
+import { type FalconIocType, isHostKind } from "./vocabulary";
+import { containmentLiftedBy, recordStateChange, type Subject } from "./response-actions";
 
 /**
  * The worker's half of Response Actions (ADR 0007): sends what the outbox holds, to Falcon as custom
@@ -38,6 +38,11 @@ import { recordStateChange, type Subject } from "./response-actions";
  * Containment waits on the Integration's Host containment setting, not its Response Actions one.
  * Lifting it reads the device first too: one Falcon already reports released (or being released, or
  * no longer knows) is already gone, and nothing is sent. Either way its Enrichment is asked for again.
+ *
+ * A Lift containment (containment Argus didn't impose) reads the device first too: one Falcon already
+ * reports released (or being released, or no longer knows) is "already present in the tool", and
+ * nothing is sent; Enrichment then ends any containment records. Otherwise Falcon is asked to lift it,
+ * and every Active containment record for the device, on any Case, is Removed, noting the lift.
  */
 
 /** The most attempts made in one transaction. */
@@ -98,8 +103,17 @@ export function createResponseActionSender(
     const client = connect(found.connection);
     const tool: Tool = {
       holds: async (r) =>
-        r.kind === "falcon_containment" ? contained(client, r.targetValue) : !!(await client.findIoc(r.targetType as FalconIocType, r.targetValue)),
+        r.kind === "falcon_containment"
+          ? contained(client, r.targetValue)
+          : // Lifting: nothing to lift from a host already released.
+            r.kind === "falcon_containment_lift"
+            ? !(await contained(client, r.targetValue, { unknown: false }))
+            : !!(await client.findIoc(r.targetType as FalconIocType, r.targetValue)),
       create: async (r, c) => {
+        if (r.kind === "falcon_containment_lift") {
+          await client.liftContainment(r.targetValue);
+          return r.targetValue;
+        }
         if (r.kind === "falcon_containment") {
           await client.containHost(r.targetValue);
           // Falcon names the containment by the device it contains.
@@ -254,12 +268,12 @@ export function createResponseActionSender(
             ? { type: row.observable.type as ObservableType, value: row.observable.value }
             : { type: row.asset!.type as AssetType, value: row.asset!.value },
           case: { number: row.caseNumber, title: row.caseTitle, restricted: row.caseRestricted, assigneeId: row.caseAssigneeId },
-          takesIt: row.r.kind === "falcon_containment" ? row.hostContainment : row.responseActionsOn,
+          takesIt: isHostKind(row.r.kind) ? row.hostContainment : row.responseActionsOn,
           provider: row.provider,
         };
         const removing = due.attempt.operation === "remove";
         if (!due.takesIt || !providerCapabilities[due.provider].responseActions) {
-          const setting = due.r.kind === "falcon_containment" ? "Host containment was" : "Response Actions were";
+          const setting = isHostKind(due.r.kind) ? "Host containment was" : "Response Actions were";
           await giveUp(tx, due, `${setting} turned off for the Integration before this was ${removing ? "removed" : "sent"}`, now);
           continue;
         }
@@ -288,6 +302,8 @@ export function createResponseActionSender(
               .where(eq(responseActions.id, due.r.id))
               .returning();
             await recordStateChange(tx, { r: present!, subject: due.subject, change: "in_tool", actor: ARGUS, now });
+            // Enrichment then ends any containment records for the host Falcon reports released.
+            if (present!.kind === "falcon_containment_lift") await refetchHost(tx, present!);
             continue;
           }
           const externalId = await client.create(due.r, due.case);
@@ -301,8 +317,9 @@ export function createResponseActionSender(
             .where(eq(responseActions.id, due.r.id))
             .returning();
           await recordStateChange(tx, { r: sent!, subject: due.subject, change: "sent", actor: ARGUS, now });
-          // The Case shows the host being contained once its Enrichment is fetched again.
-          if (sent!.kind === "falcon_containment") await refetchHost(tx, sent!);
+          // The Case shows the host being contained, or released, once its Enrichment is fetched again.
+          if (isHostKind(sent!.kind)) await refetchHost(tx, sent!);
+          if (sent!.kind === "falcon_containment_lift") await containmentLiftedBy(tx, sent!, now);
         } catch (e) {
           const message = e instanceof Error ? e.message : String(e);
           const attempts = due.attempt.attempts + 1;
