@@ -10,8 +10,8 @@ import type { FalconIocAction, FalconIocType } from "../response-actions/vocabul
  * (`write-back.ts`), which writes nothing for an Integration whose `writeBack` is off. An Alert's
  * comments are read on demand (`comment-sync.ts`), whatever the write-back setting. Custom IOCs are
  * looked up, created and deleted for Response Actions (`response-actions/sender.ts`, ADR 0007),
- * which an Integration takes only when its Response Actions setting is on. Hosts are read for
- * Enrichment (`host-enrichment.ts`, ADR 0009), which needs only the Hosts: Read scope.
+ * which an Integration takes only when its Response Actions setting is on. Hosts are read, and
+ * found by hostname, for Enrichment (`host-enrichment.ts`, ADR 0009), which needs only the Hosts: Read scope.
  */
 
 export type FalconCredentials = { clientId: string; clientSecret: string };
@@ -94,6 +94,11 @@ export interface FalconClient {
    * left out. Rejects with `FalconScopeMissing` when the API client lacks Hosts: Read.
    */
   hosts(deviceIds: readonly string[]): Promise<FalconHost[]>;
+  /**
+   * The `aid`s, lower case, of every device Falcon knows by this hostname; none when it knows none.
+   * Rejects with `FalconScopeMissing` when the API client lacks Hosts: Read.
+   */
+  findHosts(hostname: string): Promise<string[]>;
 }
 
 /** Falcon refused a call because the API client lacks the scope it needs. */

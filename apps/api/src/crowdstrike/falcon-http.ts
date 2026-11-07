@@ -20,7 +20,7 @@ import {
 /**
  * The Falcon API over HTTP: OAuth2 client credentials, then the Event Streams discovery, refresh and
  * data feed endpoints, the Alerts update and read endpoints, the user lookup, the IOC Management
- * endpoints and the Hosts API. Unverified against a live tenant (see spec #1, "Further Notes").
+ * endpoints and the Hosts API (read by `aid`, and searched by hostname). Unverified against a live tenant (see spec #1, "Further Notes").
  */
 
 const BASE_URLS: Record<FalconCloud, string> = {
@@ -333,6 +333,26 @@ export function falconHttpClient({ cloud, credentials, appId }: FalconConnection
         }
       }
       return found.map((r) => readHost(r, groupNames)).filter((h): h is FalconHost => h !== null);
+    },
+
+    async findHosts(hostname) {
+      const found = new Set<string>();
+      for (let offset = 0; ; ) {
+        const query = new URLSearchParams({ filter: `hostname:${fqlString(hostname)}`, limit: String(HOSTS_PER_CALL), offset: String(offset) });
+        const res = await fetchImpl(`${base}/devices/queries/devices/v1?${query}`, {
+          headers: { authorization: `Bearer ${await accessToken()}`, accept: "application/json" },
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        });
+        if (res.status === 403) throw new FalconScopeMissing((await failure("Finding hosts in Falcon", res)).message);
+        if (!res.ok) throw await failure("Finding hosts in Falcon", res);
+        const body = (await res.json()) as { resources?: unknown[] | null; meta?: { pagination?: { total?: unknown } } };
+        const ids = texts(body.resources);
+        for (const id of ids) found.add(id.toLowerCase());
+        offset += ids.length;
+        const total = body.meta?.pagination?.total;
+        if (!ids.length || typeof total !== "number" || offset >= total) break;
+      }
+      return [...found];
     },
 
     async *consume(session, offset, signal) {
