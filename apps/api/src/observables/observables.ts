@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, ne, notExists, type SQL, sql } from "drizzle-orm";
+import { and, type AnyColumn, asc, desc, eq, inArray, isNull, ne, notExists, type SQL, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { casePolicy, isGuest, type MemberActor, NotPermitted, organizationPolicy, visibleAlerts, visibleCases, visibleItems } from "../access/policy";
 import { recordOrgAudit } from "../audit/org-audit-log";
@@ -17,6 +17,7 @@ import {
   alerts,
   alertFalconDevices,
   assetFalconDevices,
+  assetFalconIdentities,
   assets,
   caseAssets,
   caseObservables,
@@ -992,8 +993,9 @@ type SharedLink = { alertId: string; caseId: string; caseNumber: number; caseUpd
 /**
  * What Alerts share with Cases: each non-ignored Observable or Asset that an Alert matching
  * `alertsWhere` names and a Case `me` can see, in any Status, links, other than the Case the Alert
- * is on, and each such host shared by Falcon device (`sharedHostsByDevice`), each item once per
- * Alert and Case. In the order the Alerts first named them, Observables first.
+ * is on, each such host shared by Falcon device (`sharedHostsByDevice`) and each such account
+ * shared by Identity Protection identity (`sharedAccountsByIdentity`), each item once per Alert and
+ * Case. In the order the Alerts first named them, Observables first.
  */
 async function sharedLinks(db: Db | Tx, me: MemberActor, alertsWhere: SQL | undefined, casesWhere?: SQL): Promise<SharedLink[]> {
   const rows = await Promise.all(
@@ -1040,8 +1042,9 @@ async function sharedLinks(db: Db | Tx, me: MemberActor, alertsWhere: SQL | unde
     ),
   );
   const byDevice = await sharedHostsByDevice(db, me, alertsWhere, casesWhere);
+  const byIdentity = await sharedAccountsByIdentity(db, me, alertsWhere, casesWhere);
   const seen = new Set<string>();
-  return [...rows.flat(), ...byDevice].filter((l) => {
+  return [...rows.flat(), ...byDevice, ...byIdentity].filter((l) => {
     const key = `${l.alertId}\u0000${l.caseId}\u0000${l.item.id}`;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -1097,6 +1100,64 @@ async function sharedHostsByDevice(db: Db | Tx, me: MemberActor, alertsWhere: SQ
       ),
     )
     .orderBy(asc(assetFalconDevices.seq));
+  return rows.map(({ alertId, caseId, caseNumber, caseUpdatedAt, ...item }) => ({
+    alertId,
+    caseId,
+    caseNumber,
+    caseUpdatedAt,
+    item: { ...item, kind: "asset" } as SharedItem,
+  }));
+}
+
+/**
+ * The accounts Alerts share with Cases by Identity Protection identity (ADR 0009): each account a
+ * Case `me` can see links that has an identity (entity ID) recorded for an Alert's Integration which
+ * is also recorded there on an account the Alert, matching `alertsWhere`, names, whatever either
+ * account is called. Neither account may be on the Ignored list.
+ */
+async function sharedAccountsByIdentity(db: Db | Tx, me: MemberActor, alertsWhere: SQL | undefined, casesWhere?: SQL): Promise<SharedLink[]> {
+  const alertIdentity = alias(assetFalconIdentities, "alert_identity");
+  const caseIdentity = alias(assetFalconIdentities, "case_identity");
+  const caseAccount = alias(assets, "case_account");
+  const ignored = (assetId: AnyColumn) =>
+    notExists(
+      db
+        .select({ id: ignoredObservables.id })
+        .from(ignoredObservables)
+        .where(and(eq(ignoredObservables.assetId, assetId), isNull(ignoredObservables.endedAt))),
+    );
+  const rows = await db
+    .select({
+      alertId: alertAssets.alertId,
+      caseId: cases.id,
+      caseNumber: cases.number,
+      caseUpdatedAt: cases.updatedAt,
+      id: caseAccount.id,
+      type: caseAccount.type,
+      value: caseAccount.value,
+    })
+    .from(alertAssets)
+    .innerJoin(alerts, eq(alertAssets.alertId, alerts.id))
+    .innerJoin(alertIdentity, and(eq(alertIdentity.assetId, alertAssets.itemId), eq(alertIdentity.integrationId, alerts.integrationId)))
+    .innerJoin(caseIdentity, and(eq(caseIdentity.entityId, alertIdentity.entityId), eq(caseIdentity.integrationId, alertIdentity.integrationId)))
+    .innerJoin(
+      caseAccount,
+      and(eq(caseAccount.id, caseIdentity.assetId), eq(caseAccount.type, "account"), eq(caseAccount.organizationId, alerts.organizationId)),
+    )
+    .innerJoin(caseAssets, and(eq(caseAssets.itemId, caseAccount.id), isNull(caseAssets.unlinkedAt)))
+    .innerJoin(cases, eq(caseAssets.caseId, cases.id))
+    .where(
+      and(
+        eq(alerts.organizationId, me.organizationId),
+        alertsWhere,
+        casesWhere,
+        visibleCases(me),
+        sql`${alerts.caseId} is distinct from ${cases.id}`,
+        ignored(caseAccount.id),
+        ignored(alertAssets.itemId),
+      ),
+    )
+    .orderBy(asc(alertAssets.seq), asc(caseIdentity.seq));
   return rows.map(({ alertId, caseId, caseNumber, caseUpdatedAt, ...item }) => ({
     alertId,
     caseId,

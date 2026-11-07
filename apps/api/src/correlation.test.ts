@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { createIdentityEnricher } from "./crowdstrike/identity-enrichment";
 import { createStreamWorker } from "./crowdstrike/stream-worker";
 import epp from "./crowdstrike/fixtures/epp-detection.json";
-import { fakeFalcon } from "./test/fake-falcon";
+import { fakeFalcon, fakeIdentity } from "./test/fake-falcon";
 import { buildTestApp } from "./test/harness";
 
 const PASSWORD = "correct-horse-battery";
@@ -10,6 +11,9 @@ const COUNSEL = "k.patel@lawfirm.example";
 /** Devices other than the fixture's, for detections on other hosts. */
 const HR_0007 = "a0000000000000000000000000000007";
 const HR_0008 = "a0000000000000000000000000000008";
+/** Identity Protection identities: Dana Howe (d.howe, d.howe@acme.example) and Ravi Shah. */
+const DANA = "e3a1c9f0-dana";
+const RAVI = "5c7d02be-ravi";
 const param = (number: number) => ({ number: String(number) });
 
 /**
@@ -63,8 +67,8 @@ async function acme() {
     if (!("observable" in body)) throw new Error(`Could not link ${value}`);
     return body.observable.id;
   };
-  const hold = async (number: number, value: string) => {
-    const body = await (await owner.api.cases[":number"].assets.$post({ param: param(number), json: { type: "host", value } })).json();
+  const hold = async (number: number, value: string, type: "host" | "account" = "host") => {
+    const body = await (await owner.api.cases[":number"].assets.$post({ param: param(number), json: { type, value } })).json();
     if (!("asset" in body)) throw new Error(`Could not link ${value}`);
     return body.asset.id;
   };
@@ -106,7 +110,14 @@ async function acme() {
   const related = async (number: number, as: Session = ana) =>
     (await onCase(number, as)).alerts.map((c) => `${c.alert.id} ${c.sharedCount}: ${c.shared.map((s) => s.value).join(", ")}`);
 
-  return { t, owner, admin, ana, detect, alert, open, observe, hold, correlations, suggested, attach, close, caseStatus, marked, onCase, related };
+  const enricher = createIdentityEnricher(t.deps, { connect: falcon.connect });
+  /** Opens account `id`'s page and lets the worker look it up in Identity Protection. */
+  const resolve = async (id: string) => {
+    if ((await owner.api.assets[":id"].$get({ param: { id } })).status !== 200) throw new Error(`Could not open ${id}`);
+    await enricher.tick();
+  };
+
+  return { t, owner, admin, ana, stream, resolve, detect, alert, open, observe, hold, correlations, suggested, attach, close, caseStatus, marked, onCase, related };
 }
 
 describe("Correlation on the Alert page", () => {
@@ -486,5 +497,74 @@ describe("Correlation by Falcon device", () => {
     const indicators = (await a.alert(a.id)).indicators.assets.map((x) => x.value);
     expect(indicators).toContain("FIN-LT-0231-R");
     expect(indicators).not.toContain("FIN-LT-0231");
+  });
+});
+
+/**
+ * A Case holding account dana.howe@acme.example and an Alert naming account d.howe, both resolved to
+ * Dana Howe's identity.
+ */
+async function sameIdentity() {
+  const a = await acme();
+  a.stream.identities.set(DANA, fakeIdentity(DANA));
+  const number = await a.open("Suspicious sign-ins");
+  const account = await a.hold(number, "dana.howe@acme.example", "account");
+  await a.resolve(account);
+  const id = await a.detect();
+  const named = (await a.alert(id)).indicators.assets.find((x) => x.value === "d.howe");
+  if (!named) throw new Error("The Alert doesn't name d.howe");
+  return { ...a, number, account, named: named.id, id };
+}
+
+describe("Correlation by Falcon identity", () => {
+  test("an Alert naming an account with a linked account's identity correlates despite a different name", async () => {
+    const a = await sameIdentity();
+    expect(await a.suggested(a.id)).toEqual([]);
+
+    await a.resolve(a.named);
+    expect(await a.suggested(a.id)).toEqual([`C-${a.number} 1: dana.howe@acme.example`]);
+    expect(await a.marked([a.id])).toEqual([`C-${a.number} +0`]);
+    expect(await a.related(a.number)).toEqual([`${a.id} 1: dana.howe@acme.example`]);
+  });
+
+  test("an account matched by both name and identity counts once", async () => {
+    const a = await sameIdentity();
+    await a.resolve(a.named);
+    await a.hold(a.number, "d.howe", "account");
+    expect(await a.suggested(a.id)).toEqual([`C-${a.number} 2: d.howe, dana.howe@acme.example`]);
+  });
+
+  test("an account with another identity doesn't correlate", async () => {
+    const a = await acme();
+    a.stream.identities.set(DANA, fakeIdentity(DANA));
+    a.stream.identities.set(RAVI, fakeIdentity(RAVI, { displayName: "Ravi Shah", upn: "r.shah@acme.example", samAccountName: "r.shah", email: null }));
+    const number = await a.open("Suspicious sign-ins");
+    await a.resolve(await a.hold(number, "r.shah@acme.example", "account"));
+    const id = await a.detect();
+    const named = (await a.alert(id)).indicators.assets.find((x) => x.value === "d.howe")!;
+    await a.resolve(named.id);
+    expect(await a.suggested(id)).toEqual([]);
+  });
+
+  test("an Ignored account never produces a Correlation, on either side", async () => {
+    const a = await sameIdentity();
+    await a.resolve(a.named);
+    await a.admin.api.assets[":id"].ignored.$put({ param: { id: a.account } });
+    expect(await a.suggested(a.id)).toEqual([]);
+    expect(await a.marked([a.id])).toEqual([null]);
+    expect(await a.related(a.number)).toEqual([]);
+
+    await a.admin.api.assets[":id"].ignored.$delete({ param: { id: a.account } });
+    await a.admin.api.assets[":id"].ignored.$put({ param: { id: a.named } });
+    expect(await a.suggested(a.id)).toEqual([]);
+    expect(await a.related(a.number)).toEqual([]);
+  });
+
+  test("Assets are never merged", async () => {
+    const a = await sameIdentity();
+    await a.resolve(a.named);
+    const indicators = (await a.alert(a.id)).indicators.assets.map((x) => x.value);
+    expect(indicators).toContain("d.howe");
+    expect(indicators).not.toContain("dana.howe@acme.example");
   });
 });
