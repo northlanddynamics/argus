@@ -288,6 +288,13 @@
       "when": 1794026660256,
       "tag": "0040_host_lookups",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1794061564618,
+      "tag": "0041_asset_link_internal",
+      "breakpoints": true
     }
   ]
 }

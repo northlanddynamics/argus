@@ -166,7 +166,7 @@ export function searchStore({ db }: { db: Db }) {
           .select({ one: sql`1` })
           .from(links)
           .innerJoin(cases, eq(links.caseId, cases.id))
-          .where(and(eq(links.itemId, items.id), isNull(links.unlinkedAt), visibleCases(me))),
+          .where(and(eq(links.itemId, items.id), isNull(links.unlinkedAt), visibleCases(me), visibleItems(me, links.internal))),
       ),
       // Members see what the Alerts they can see name too.
       isGuest(me)
@@ -187,7 +187,7 @@ export function searchStore({ db }: { db: Db }) {
       .select({ itemId: links.itemId, number: cases.number, title: cases.title })
       .from(links)
       .innerJoin(cases, eq(links.caseId, cases.id))
-      .where(and(inArray(links.itemId, ids), isNull(links.unlinkedAt), visibleCases(me)))
+      .where(and(inArray(links.itemId, ids), isNull(links.unlinkedAt), visibleCases(me), visibleItems(me, links.internal)))
       .orderBy(desc(cases.number));
     const byItem = new Map<string, CaseRef[]>();
     for (const { itemId, number, title } of rows) byItem.set(itemId, [...(byItem.get(itemId) ?? []), { number, title }]);

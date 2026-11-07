@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { casePolicy, NotPermitted } from "../access/policy";
 import { alertLabel } from "../alerts/vocabulary";
 import { actorOf, lockCase } from "../cases/cases";
@@ -6,11 +6,11 @@ import { recordCaseAudit } from "../cases/case-audit-log";
 import { membersAmong } from "../cases/people";
 import type { Clock } from "../clock";
 import type { Db, Tx } from "../db/client";
-import { alerts, discussionMessages, evidence, observables, responseActions, tasks, timelineEntries, user } from "../db/schema";
+import { alerts, assets, caseAssets, discussionMessages, evidence, observables, responseActions, tasks, timelineEntries, user } from "../db/schema";
 import { mentionedIds } from "../discussion/mentions";
 import { falconAuthorName } from "../alerts/vocabulary";
 import type { Membership } from "../members/membership";
-import type { ObservableType } from "../observables/vocabulary";
+import { type AssetType, assetTypeLabel, type ObservableType } from "../observables/vocabulary";
 import { publish } from "../realtime/signals";
 import { responseActionLabel } from "../response-actions/response-actions";
 import { INTERNAL_ITEM_KINDS, type InternalItem } from "./vocabulary";
@@ -114,10 +114,20 @@ async function lockItem(tx: Tx, caseId: string, item: InternalItem): Promise<Mar
         ? { internal: row.internal, label: `Response Action: ${responseActionLabel({ type: row.type as ObservableType, value: row.value }, row.kind)}`, involves: [] }
         : missing();
     }
+    case "asset": {
+      // Its link to the Case, which is what is Internal: the Asset is the same on every Case.
+      const [row] = await tx
+        .select({ internal: caseAssets.internal, type: assets.type, value: assets.value })
+        .from(caseAssets)
+        .innerJoin(assets, eq(caseAssets.itemId, assets.id))
+        .where(and(eq(caseAssets.itemId, item.id), eq(caseAssets.caseId, caseId), isNull(caseAssets.unlinkedAt)))
+        .for("update", { of: caseAssets });
+      return row ? { internal: row.internal, label: `Asset: ${assetTypeLabel[row.type as AssetType]} ${row.value}`, involves: [] } : missing();
+    }
   }
 }
 
-async function store(tx: Tx, item: InternalItem, internal: boolean) {
+async function store(tx: Tx, caseId: string, item: InternalItem, internal: boolean) {
   switch (item.kind) {
     case "task":
       return tx.update(tasks).set({ internal }).where(eq(tasks.id, item.id));
@@ -133,6 +143,11 @@ async function store(tx: Tx, item: InternalItem, internal: boolean) {
       // Its Timeline Entries go with it.
       await tx.update(timelineEntries).set({ internal }).where(eq(timelineEntries.responseActionId, item.id));
       return tx.update(responseActions).set({ internal }).where(eq(responseActions.id, item.id));
+    case "asset":
+      return tx
+        .update(caseAssets)
+        .set({ internal })
+        .where(and(eq(caseAssets.itemId, item.id), eq(caseAssets.caseId, caseId), isNull(caseAssets.unlinkedAt)));
   }
 }
 
@@ -163,7 +178,7 @@ export function internalStore({ db, clock }: { db: Db; clock: Clock }) {
         const marked = await lockItem(tx, current.id, item);
         if (marked.internal === internal) return;
         if (internal) await refuseGuestsOnInternal(tx, me.organizationId, marked.involves);
-        await store(tx, item, internal);
+        await store(tx, current.id, item, internal);
         await recordCaseAudit(tx, {
           organizationId: me.organizationId,
           caseId: current.id,

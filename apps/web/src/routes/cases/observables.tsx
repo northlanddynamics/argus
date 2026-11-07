@@ -37,6 +37,8 @@ import { useCaseNumber } from "@/routes/cases/case-layout";
 import { actionOf, type ResponseAction } from "@/lib/response-actions";
 import { falconTakes, holdingOn, ResponseActionsCard } from "@/routes/cases/response-actions";
 import { AssetActions, BulkObservableActions, ObservableActions } from "@/routes/cases/observable-actions";
+import { type CaseAsset, HostFalcon } from "@/routes/cases/host-falcon";
+import { InternalBadge } from "@/components/visibility";
 import { exactTime, when } from "@/lib/when";
 
 /**
@@ -127,6 +129,11 @@ export function CaseObservablesPage() {
           readOnly={readOnly}
           add={(type, value) => api.cases[":number"].assets.$post({ param: { number: n }, json: { type, value } })}
           unlink={(id) => api.cases[":number"].assets[":id"].$delete({ param: { number: n, id } })}
+          status={
+            (assets.data ?? []).some((a) => a.type === "host")
+              ? { heading: "Falcon", render: (item) => <HostFalcon falcon={item.falcon} />, width: "min-w-60 max-w-72" }
+              : undefined
+          }
           renderRow={(item, row, unlink) => (
             <AssetActions
               key={item.id}
@@ -134,6 +141,7 @@ export function CaseObservablesPage() {
               asset={item}
               label={`${assetTypeLabel[item.type]} ${item.value}`}
               onUnlink={readOnly ? undefined : unlink}
+              canMarkInternal={!readOnly && c.can.markInternal}
             >
               {row}
             </AssetActions>
@@ -159,6 +167,10 @@ type Item<Type extends string> = {
   seenIn: { number: number; title: string }[];
   fromAlert: { alert: { id: string; externalId: string; title: string } | null } | null;
   ignored: boolean;
+  /** Its link to this Case is hidden from Guests. Members only ever see it set. */
+  internal: boolean;
+  /** A host's Enrichment; empty for everything else. */
+  falcon: CaseAsset["falcon"];
 };
 
 /**
@@ -195,7 +207,7 @@ function LinkedCard<Type extends string>(props: {
   add: (type: Type, value: string) => Promise<Response>;
   unlink: (id: string) => Promise<Response>;
   /** A column saying where each item stands, such as what was sent from it. */
-  status?: { heading: string; render: (item: Item<Type>) => ReactNode };
+  status?: { heading: string; render: (item: Item<Type>) => ReactNode; /** The column's width; `max-w-48` unless given. */ width?: string };
   /** The icon for each type, standing in for its name. */
   typeIcon: (type: Type) => LucideIcon;
   /**
@@ -379,6 +391,7 @@ function LinkedCard<Type extends string>(props: {
                           Ignored
                         </Badge>
                       )}
+                      {item.internal && <InternalBadge />}
                     </span>
                   </TableCell>
                   <TableCell className="hidden max-w-48 truncate text-muted-foreground md:table-cell">
@@ -405,7 +418,7 @@ function LinkedCard<Type extends string>(props: {
                   <TableCell className="hidden md:table-cell">
                     {item.seenIn.length === 0 ? <span className="text-muted-foreground">—</span> : <SeenIn seenIn={item.seenIn} />}
                   </TableCell>
-                  {props.status && <TableCell className="hidden max-w-48 lg:table-cell">{props.status.render(item)}</TableCell>}
+                  {props.status && <TableCell className={`hidden whitespace-normal lg:table-cell ${props.status.width ?? "max-w-48"}`}>{props.status.render(item)}</TableCell>}
                   <TableCell className="hidden text-right text-muted-foreground tabular-nums lg:table-cell" title={exactTime(item.linkedAt)}>
                     {when(item.linkedAt)}
                   </TableCell>

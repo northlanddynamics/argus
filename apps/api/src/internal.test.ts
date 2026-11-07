@@ -171,12 +171,22 @@ async function acme() {
       // The worker sends it.
       change: () => responseActions.tick(),
     },
+    asset: {
+      add: async (internal) => {
+        const res = await owner.api.cases[":number"].assets.$post({ param: param(number), json: { type: "host", value: `FIN-LT-${++n}` } });
+        const { asset } = (await res.json()) as { asset: { id: string } };
+        if (internal) await mark(owner, "asset", asset.id, true);
+        return asset.id;
+      },
+      seen: async (as) => ids(await (await as.api.cases[":number"].assets.$get({ param: param(number) })).json(), "assets"),
+      change: (id) => owner.api.cases[":number"].assets[":id"].$delete({ param: { ...param(number), id } }),
+    },
   };
 
   return { t, owner, ana, guest, guestId, userId, number, kinds, mark, upload, auditLog, attach, newAlert, queued };
 }
 
-const KINDS: InternalItemKind[] = ["task", "discussion_message", "timeline_entry", "evidence", "alert", "response_action"];
+const KINDS: InternalItemKind[] = ["task", "discussion_message", "timeline_entry", "evidence", "alert", "response_action", "asset"];
 const LABELS: Record<InternalItemKind, RegExp> = {
   task: /^Task: Task \d+$/,
   discussion_message: /^Message from Olive Owner$/,
@@ -184,6 +194,7 @@ const LABELS: Record<InternalItemKind, RegExp> = {
   evidence: /^Evidence: file-\d+\.txt$/,
   alert: /^Alert: Detection \d+ \(ldt:acme:\d+\)$/,
   response_action: /^Response Action: Falcon custom IOC: Domain c2-\d+\[\.\]evil\[\.\]example$/,
+  asset: /^Asset: Host FIN-LT-\d+$/,
 };
 
 describe("Guests × Internal, for every kind of item", () => {

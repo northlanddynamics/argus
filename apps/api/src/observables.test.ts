@@ -129,6 +129,8 @@ describe("Adding Observables", () => {
         linkedAt: t.clock.now().toISOString(),
         seenIn: [],
         ignored: false,
+        internal: false,
+        falcon: [],
         fromAlert: null,
       },
     });

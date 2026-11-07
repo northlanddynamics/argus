@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNull, lt, notExists, or, sql } from "drizzle-orm";
 import type { Db, Tx } from "../db/client";
-import { assetFalconDevices, assets, falconHostLookups, falconHostSnapshots, integrations, organization } from "../db/schema";
+import { assetFalconDevices, assets, caseAssets, falconHostLookups, falconHostSnapshots, integrations, organization } from "../db/schema";
 import type { Deps } from "../deps";
 import { secureId } from "../ids";
 import { publish } from "../realtime/signals";
@@ -206,6 +206,36 @@ async function recordHealth(tx: Tx, integrationId: string, outcome: object) {
   }
 }
 
+/**
+ * Signals the Organization's Alerts and Integrations (host pages and Integration health follow
+ * them), and every Case these hosts are linked to, whose Assets show their Enrichment. A Case whose
+ * link to the host is Internal signals Members only, as Guests can't see the host there.
+ */
+async function announce(tx: Tx, organizationId: string, hosts: { assetIds?: readonly string[]; devices?: readonly Claimed[] }) {
+  await publish(tx, { kind: "alerts", organizationId });
+  const ids = new Set(hosts.assetIds ?? []);
+  if (hosts.devices?.length) {
+    const recorded = await tx
+      .selectDistinct({ assetId: assetFalconDevices.assetId })
+      .from(assetFalconDevices)
+      .where(
+        and(
+          inArray(assetFalconDevices.integrationId, [...new Set(hosts.devices.map((d) => d.integrationId))]),
+          inArray(assetFalconDevices.deviceId, hosts.devices.map((d) => d.deviceId)),
+        ),
+      );
+    for (const r of recorded) ids.add(r.assetId);
+  }
+  if (!ids.size) return;
+  const linked = await tx
+    .select({ caseId: caseAssets.caseId, internal: caseAssets.internal })
+    .from(caseAssets)
+    .where(and(inArray(caseAssets.itemId, [...ids]), isNull(caseAssets.unlinkedAt)));
+  const membersOnly = new Map<string, boolean>();
+  for (const l of linked) membersOnly.set(l.caseId, (membersOnly.get(l.caseId) ?? true) && l.internal);
+  for (const [caseId, internal] of membersOnly) await publish(tx, { kind: "case", organizationId, caseId, ...(internal ? { membersOnly: true } : {}) });
+}
+
 /** Why a call to Falcon failed, as a fetch or lookup records it. */
 const failureOf = (e: unknown) =>
   e instanceof FalconScopeMissing
@@ -268,8 +298,7 @@ export function createHostEnricher({ db, clock, credentials }: Pick<Deps, "db" |
       }
       await db.transaction(async (tx) => {
         await storeFetched(tx, integrationId, claimed, fetched, clock.now());
-        // Host pages and Integration health follow the Organization's Alerts and Integrations.
-        await publish(tx, { kind: "alerts", organizationId: claimed[0]!.organizationId });
+        await announce(tx, claimed[0]!.organizationId, { devices: claimed });
       });
     }
     return due.length;
@@ -339,7 +368,7 @@ export function createHostEnricher({ db, clock, credentials }: Pick<Deps, "db" |
           .set({ checkedAt: now, error: "error" in outcome ? outcome.error : null })
           .where(eq(l.id, d.id));
         await recordHealth(tx, d.integrationId, outcome);
-        await publish(tx, { kind: "alerts", organizationId: d.organizationId });
+        await announce(tx, d.organizationId, { assetIds: [d.assetId] });
       });
     }
     return due.length;

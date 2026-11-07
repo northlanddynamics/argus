@@ -1,12 +1,13 @@
 import { and, asc, desc, eq, inArray, isNull, ne, notExists, type SQL, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { casePolicy, isGuest, type MemberActor, NotPermitted, organizationPolicy, visibleAlerts, visibleCases } from "../access/policy";
+import { casePolicy, isGuest, type MemberActor, NotPermitted, organizationPolicy, visibleAlerts, visibleCases, visibleItems } from "../access/policy";
 import { recordOrgAudit } from "../audit/org-audit-log";
 import { type AlertStatus, falconDeviceUrl } from "../alerts/vocabulary";
 import { actorOf, CaseNotFound, lockCase } from "../cases/cases";
 import { recordCaseAudit } from "../cases/case-audit-log";
 import { enrichmentKey, hostEnrichmentOf, type HostEnrichmentView, hostLookupsOf, type HostLookupView, requestHostEnrichment } from "../crowdstrike/host-enrichment";
 import type { CaseAuditAction, Severity, Status } from "../cases/vocabulary";
+import type { FalconContainment } from "../crowdstrike/falcon";
 import type { Clock } from "../clock";
 import type { Db, Tx } from "../db/client";
 import {
@@ -84,6 +85,43 @@ export type LinkedView<Type extends string> = {
   seenIn: SeenIn[];
   /** Whether it is on the Organization's Ignored list. Always false for Guests, who aren't told. */
   ignored: boolean;
+  /**
+   * Whether its link to this Case is Internal, hidden from the Case's Guests with everything Argus
+   * knows about it. Only Assets are marked so; Guests only ever see links that aren't.
+   */
+  internal: boolean;
+  /**
+   * A host's Enrichment, by CrowdStrike Integration (ADR 0009): the key facts of each Falcon device
+   * recorded on it. Always empty for Observables and accounts.
+   */
+  falcon: CaseFalconHost[];
+};
+
+/**
+ * What a Case shows of one CrowdStrike Integration's view of a linked host: as `FalconDevices` gives
+ * it on the host's page, cut down to OS, last seen and containment. Guests get no Integration, no
+ * console link and no errors: `integration` and `consoleUrl` are null and `error` never set.
+ */
+export type CaseFalconHost = {
+  integration: { id: string; name: string; enrichmentUnavailable: string | null } | null;
+  ambiguous: boolean;
+  devices: {
+    deviceId: string;
+    consoleUrl: string | null;
+    /** A fetch is wanted and the worker hasn't done it yet. */
+    refreshing: boolean;
+    /** When the facts shown were fetched; null before the first fetch succeeds. */
+    fetchedAt: string | null;
+    /** Falcon said, when last asked, that it doesn't know the device. */
+    notFound: boolean;
+    error: string | null;
+    platform: string | null;
+    osVersion: string | null;
+    lastSeen: string | null;
+    containment: FalconContainment | null;
+  }[];
+  /** How looking the host up by hostname went, while no device is recorded for the Integration. */
+  lookup: { refreshing: boolean; checkedAt: string | null; notFound: boolean; error: string | null } | null;
 };
 
 /** A Case an Observable or Asset is linked to, on its page. */
@@ -188,15 +226,20 @@ type Kind<Type extends string> = {
 /** The Response Actions taken on an item, as `me` may see them, read from the Response Actions module. */
 type ResponseActionsOn = (me: Participant, itemId: string) => Promise<ObservableResponseActionView[]>;
 
-/** Signals every Case `itemId` is linked to, so each one's "seen in" refreshes. */
-async function announceLinks<Type extends string>(tx: Tx, kind: Kind<Type>, me: Membership, itemId: string, caseId: string) {
+/**
+ * Signals every Case `itemId` is linked to, so each one's "seen in" refreshes. With `internal`, the
+ * change was to a link Guests can't see, so they don't hear of it; nor do they of the other Cases,
+ * since Guests are never told which other Cases an item is on.
+ */
+async function announceLinks<Type extends string>(tx: Tx, kind: Kind<Type>, me: Membership, itemId: string, caseId: string, internal = false) {
   const { links } = kind;
   const others = await tx
     .select({ caseId: links.caseId })
     .from(links)
     .where(and(eq(links.itemId, itemId), isNull(links.unlinkedAt), ne(links.caseId, caseId)));
-  for (const id of new Set([caseId, ...others.map((o) => o.caseId)])) {
-    await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: id });
+  await publish(tx, { kind: "case", organizationId: me.organizationId, caseId, ...(internal ? { membersOnly: true } : {}) });
+  for (const id of new Set(others.map((o) => o.caseId))) {
+    await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: id, membersOnly: true });
   }
 }
 
@@ -223,11 +266,11 @@ async function linkItem<Type extends string>(tx: Tx, kind: Kind<Type>, me: Membe
     .where(and(eq(items.organizationId, me.organizationId), eq(items.type, type), eq(items.matchKey, normalised.key)));
   if (!item) throw new Error(`The ${kind.noun} was neither added nor found`);
   const [already] = await tx
-    .select({ id: links.id, alertId: links.alertId })
+    .select({ id: links.id, alertId: links.alertId, internal: links.internal })
     .from(links)
     .where(and(eq(links.caseId, current.id), eq(links.itemId, item.id), isNull(links.unlinkedAt)));
   if (already && !already.alertId) return { itemId: item.id, linked: false };
-  // Linked by an Alert: it becomes a hand-added link, which detaching the Alert leaves.
+  // Linked by an Alert: it becomes a hand-added link, which detaching the Alert leaves, as Internal as it was.
   if (already) await tx.update(links).set({ unlinkedById: me.userId, unlinkedAt: now }).where(eq(links.id, already.id));
   await tx.insert(links).values({
     id: secureId(),
@@ -236,6 +279,7 @@ async function linkItem<Type extends string>(tx: Tx, kind: Kind<Type>, me: Membe
     itemId: item.id,
     linkedById: me.userId,
     linkedAt: now,
+    internal: already?.internal ?? false,
   });
   await recordCaseAudit(tx, {
     organizationId: me.organizationId,
@@ -245,7 +289,7 @@ async function linkItem<Type extends string>(tx: Tx, kind: Kind<Type>, me: Membe
     action: kind.linked,
     target: `${kind.label(type)} ${item.value}`,
   });
-  await announceLinks(tx, kind, me, item.id, current.id);
+  await announceLinks(tx, kind, me, item.id, current.id, already?.internal);
   return { itemId: item.id, linked: true };
 }
 
@@ -256,7 +300,6 @@ function heldOnceStore<Type extends string>(
 ) {
   const { items, links } = kind;
 
-  const announce = (tx: Tx, me: Membership, itemId: string, caseId: string) => announceLinks(tx, kind, me, itemId, caseId);
 
   const describe = (type: Type, value: string) => `${kind.label(type)} ${value}`;
 
@@ -270,8 +313,13 @@ function heldOnceStore<Type extends string>(
     return found.id;
   }
 
-  /** What is linked to Case `number`, in the order it was linked. Throws `CaseNotFound` if `me` can't see it. */
-  async function list(me: Participant, number: number): Promise<LinkedView<Type>[]> {
+  /**
+   * What is linked to Case `number` that `me` can see, in the order it was linked. Throws
+   * `CaseNotFound` if `me` can't see the Case. With `opening`, as when someone opens the Case, the
+   * Enrichment of each linked host is first asked for again where it is older than 15 minutes, as
+   * opening the host's page does (ADR 0009); the worker fetches it and a signal brings the result.
+   */
+  async function list(me: Participant, number: number, { opening = false } = {}): Promise<LinkedView<Type>[]> {
       const id = await visibleCaseId(me, number);
       const rows = await db
         .select({
@@ -284,13 +332,18 @@ function heldOnceStore<Type extends string>(
           alertId: alerts.id,
           alertExternalId: alerts.externalId,
           alertTitle: alerts.title,
+          internal: links.internal,
         })
         .from(links)
         .innerJoin(items, eq(links.itemId, items.id))
         .innerJoin(user, eq(links.linkedById, user.id))
         .leftJoin(alerts, eq(links.alertId, alerts.id))
-        .where(and(eq(links.caseId, id), isNull(links.unlinkedAt)))
+        .where(and(eq(links.caseId, id), isNull(links.unlinkedAt), visibleItems(me, links.internal)))
         .orderBy(asc(links.linkedAt), asc(links.seq));
+      const hosts = kind.name === "asset" ? rows.filter((r) => r.type === "host").map((r) => r.id) : [];
+      if (opening) for (const host of hosts) await requestHostEnrichment(db, host, clock.now(), { ifStale: true });
+      const falcon = new Map<string, CaseFalconHost[]>();
+      for (const host of hosts) falcon.set(host, caseFalconHost(me, await falconDevicesOf(db, host)));
       // Guests never learn which other Cases an item is on.
       const seen = rows.length && casePolicy.canSeeCorrelation(me)
         ? await db
@@ -316,6 +369,8 @@ function heldOnceStore<Type extends string>(
         type: r.type as Type,
         value: r.value,
         ignored: ignored.has(r.id),
+        internal: r.internal,
+        falcon: falcon.get(r.id) ?? [],
         linkedBy: { id: r.linkedById, name: r.linkedByName },
         linkedAt: r.linkedAt.toISOString(),
         seenIn: seen.filter((s) => s.itemId === r.id).map((s) => ({ number: s.number, title: s.title })),
@@ -353,7 +408,7 @@ function heldOnceStore<Type extends string>(
       .from(links)
       .innerJoin(cases, eq(links.caseId, cases.id))
       .leftJoin(assignee, eq(cases.assigneeId, assignee.id))
-      .where(and(eq(links.itemId, itemId), isNull(links.unlinkedAt), visibleCases(me)))
+      .where(and(eq(links.itemId, itemId), isNull(links.unlinkedAt), visibleCases(me), visibleItems(me, links.internal)))
       .orderBy(desc(links.linkedAt), desc(cases.number));
     const seenAt = sql<Date>`coalesce(${alerts.detectedAt}, ${alerts.receivedAt})`.mapWith(alerts.receivedAt);
     const alertRows = isGuest(me) || !casePolicy.canSeeAlerts(me)
@@ -515,7 +570,7 @@ function heldOnceStore<Type extends string>(
       await db.transaction(async (tx) => {
         const current = await lockCase(tx, me, number);
         const [link] = await tx
-          .select({ id: links.id, type: items.type, value: items.value })
+          .select({ id: links.id, type: items.type, value: items.value, internal: links.internal })
           .from(links)
           .innerJoin(items, eq(links.itemId, items.id))
           .where(and(eq(links.caseId, current.id), eq(links.itemId, itemId), isNull(links.unlinkedAt)));
@@ -529,7 +584,7 @@ function heldOnceStore<Type extends string>(
           action: kind.unlinked,
           target: describe(link.type as Type, link.value),
         });
-        await announce(tx, me, itemId, current.id);
+        await announceLinks(tx, kind, me, itemId, current.id, link.internal);
       });
       return list(me, number);
     },
@@ -758,6 +813,28 @@ async function falconDevicesOf(db: Db, assetId: string): Promise<FalconDevices[]
     }
   }
   return [...byIntegration.values()];
+}
+
+/** A host's Falcon devices as a Case shows them to `me` (`CaseFalconHost`). */
+function caseFalconHost(me: Participant, groups: FalconDevices[]): CaseFalconHost[] {
+  const guest = isGuest(me);
+  return groups.map((g) => ({
+    integration: guest ? null : g.integration,
+    ambiguous: g.ambiguous,
+    devices: g.devices.map(({ deviceId, consoleUrl, enrichment: e }) => ({
+      deviceId,
+      consoleUrl: guest ? null : consoleUrl,
+      refreshing: e.refreshing,
+      fetchedAt: e.fetchedAt,
+      notFound: e.notFound,
+      error: guest ? null : e.error,
+      platform: e.host?.platform ?? null,
+      osVersion: e.host?.osVersion ?? null,
+      lastSeen: e.host?.lastSeen ?? null,
+      containment: e.host?.containment ?? null,
+    })),
+    lookup: g.lookup && { ...g.lookup, error: guest ? null : g.lookup.error },
+  }));
 }
 
 /** What Alert `alertId` names, in the order its detection first named them. */

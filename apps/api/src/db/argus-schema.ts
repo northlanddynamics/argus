@@ -538,6 +538,8 @@ function heldOncePerOrganization(
       unlinkedAt: timestamp("unlinked_at", { withTimezone: true }),
       /** The Alert whose attachment linked it; null when linked by hand. */
       alertId: text("alert_id").references((): AnyPgColumn => alerts.id, { onDelete: "restrict" }),
+      /** Hidden from the Case's Guests, with what Argus knows about the item. Only Assets are marked so far. */
+      internal: boolean("internal").notNull().default(false),
     },
     (t) => [
       uniqueIndex(`${names.links}_active_idx`)
