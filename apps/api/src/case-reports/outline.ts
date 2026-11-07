@@ -156,7 +156,7 @@ export function outline(report: CaseReport): Block[] {
   const observables = report.observables.map(
     (o): Item => ({ title: [label(`${observableTypeLabel[o.type]}: `), mono(defang(o.type, o.value))], details: linked(o) }),
   );
-  const assets = report.assets.map((a): Item => ({ title: [label(`${assetTypeLabel[a.type]}: `), mono(a.value)], details: linked(a) }));
+  const assets = report.assets.map((a): Item => ({ title: [label(`${assetTypeLabel[a.type]}: `), mono(a.value)], details: withInternal(a, linked(a)) }));
 
   const evidence = report.evidence.map(
     (e): Item => ({

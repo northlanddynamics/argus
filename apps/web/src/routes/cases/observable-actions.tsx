@@ -3,6 +3,8 @@ import { useNavigate } from "@tanstack/react-router";
 import {
   CopyIcon,
   EllipsisIcon,
+  EyeIcon,
+  EyeOffIcon,
   UnlinkIcon,
   ExternalLinkIcon,
   GlobeLockIcon,
@@ -51,6 +53,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { caseQuery, isReadOnly, type Severity } from "@/lib/cases";
+import { useMarkInternal } from "@/lib/internal";
 import { defang, type ObservableType, observableTypeLabel, shownObservable } from "@/lib/observables";
 import {
   describeDefaults,
@@ -499,17 +502,34 @@ export function AssetActions({
   asset,
   label,
   onUnlink,
+  canMarkInternal = false,
   children,
 }: {
   number: number;
-  asset: { id: string; value: string };
+  asset: { id: string; value: string; internal: boolean };
   /** Its type and identifier, naming the ⋯ button. */
   label: string;
   onUnlink?: () => void;
+  /** Offers marking its link to the Case Internal (hidden from Guests, with its Enrichment), or showing it again. */
+  canMarkInternal?: boolean;
   children: (menuButton: ReactNode) => ReactElement;
 }) {
   const navigate = useNavigate();
   const copy = () => void navigator.clipboard.writeText(asset.value).then(() => toast("Copied"));
+  const mark = useMarkInternal(number);
+  const setInternal = (internal: boolean, undoable = true) =>
+    mark.mutate(
+      { item: { kind: "asset", id: asset.id }, internal },
+      {
+        onSuccess: () => {
+          if (!undoable) return;
+          toast(internal ? `Marked Internal: ${label}` : `Shown to Guests: ${label}`, {
+            action: { label: "Undo", onClick: () => setInternal(!internal, false) },
+          });
+        },
+        onError: (e) => toast.error(e.message),
+      },
+    );
   const items = (kit: MenuKit) => (
     <>
       <kit.Item onSelect={() => void navigate({ to: "/assets/$id", params: { id: asset.id }, search: { from: number } })}>
@@ -524,6 +544,12 @@ export function AssetActions({
         <CopyIcon />
         Copy value
       </kit.Item>
+      {canMarkInternal && (
+        <kit.Item disabled={mark.isPending} onSelect={() => setInternal(!asset.internal)}>
+          {asset.internal ? <EyeIcon /> : <EyeOffIcon />}
+          {asset.internal ? "Show to Guests" : "Mark Internal"}
+        </kit.Item>
+      )}
       {onUnlink && (
         <>
           <kit.Separator />

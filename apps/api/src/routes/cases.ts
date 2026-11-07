@@ -538,7 +538,7 @@ export const caseRoutes = (
       }
     })
     .get("/:number/assets", zValidator("param", numberParam), async (c) => {
-      const linked = await unlessNotFound(assets.list(c.get("participant"), c.req.valid("param").number));
+      const linked = await unlessNotFound(assets.list(c.get("participant"), c.req.valid("param").number, { opening: true }));
       if (!linked) return c.json(notFound, 404);
       return c.json({ assets: linked }, 200);
     })
