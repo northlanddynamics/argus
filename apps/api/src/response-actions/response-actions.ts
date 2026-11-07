@@ -7,6 +7,9 @@ import { type CaseAuditAction, type Severity, severityLabel } from "../cases/voc
 import type { Clock } from "../clock";
 import type { Db, Tx } from "../db/client";
 import {
+  assetFalconDevices,
+  assets,
+  caseAssets,
   caseObservables,
   cases,
   ignoredObservables,
@@ -17,13 +20,16 @@ import {
   timelineEntries,
   user,
 } from "../db/schema";
+import type { FalconContainment } from "../crowdstrike/falcon";
+import { requestHostEnrichment } from "../crowdstrike/host-enrichment";
 import { secureId } from "../ids";
 import { type Provider, providerCapabilities, providerLabel } from "../integrations/vocabulary";
 import type { Membership, Participant } from "../members/membership";
-import { linkObservable, NotLinked } from "../observables/observables";
-import { defang, normaliseObservable, type ObservableType, observableTypeLabel } from "../observables/vocabulary";
+import { falconDevicesOf, linkObservable, NotLinked } from "../observables/observables";
+import { ASSET_TYPES, type AssetType, assetTypeLabel, defang, normaliseObservable, type ObservableType, observableTypeLabel } from "../observables/vocabulary";
 import { publish } from "../realtime/signals";
 import {
+  CONTAINMENT_TARGET_TYPE,
   type FalconIocAction,
   falconAllowsPrevent,
   falconIocActionLabel,
@@ -77,6 +83,13 @@ import {
  * removal queued for the worker, and Removed once the tool has deleted it or says it is already
  * gone. Other Cases' "already present" records relying on it are then Removed too, and removing it
  * while they rely on it needs the request to confirm it. On a Closed Case only Admins remove.
+ *
+ * Containment (ADR 0009) is a Response Action against a host Asset linked to the Case: one Falcon
+ * device (`aid`) recorded on it, through a CrowdStrike Integration whose Host containment setting is
+ * on (independent of its Response Actions setting). It is never one click: `containmentCheck` asks
+ * the worker to refetch the host from Falcon, and the confirmation shows what came back before the
+ * Member picks the device and contains it. A host with no device recorded can't be contained. One
+ * Falcon already reports contained is recorded "already present in the tool", and nothing is sent.
  */
 
 /** The Observable isn't of a type the Integration's Provider takes. */
@@ -121,6 +134,9 @@ export class NotDismissable extends Error {
   }
 }
 
+/** The host can't be contained as asked: no device is recorded on it, or not the one asked for. */
+export class HostNotContainable extends Error {}
+
 /** Some of the Observables are on the Ignored list, and the request didn't confirm sending them. */
 export class IgnoredNotConfirmed extends Error {
   readonly observables: { id: string; type: ObservableType; value: string }[];
@@ -164,6 +180,18 @@ export type NewResponseActions = {
   confirmIgnored?: boolean;
 };
 
+/**
+ * A host to contain: one Falcon device `deviceId` recorded on host Asset `assetId` for CrowdStrike
+ * Integration `integrationId`.
+ */
+export type NewContainment = {
+  assetId: string;
+  integrationId: string;
+  deviceId: string;
+  /** Hidden from the Case's Guests; the Integration's default if left out. */
+  internal?: boolean;
+};
+
 /** An Observable left out of a send because a Provider doesn't take it, and why. */
 export type Skipped = {
   observable: { id: string; type: ObservableType; value: string };
@@ -177,8 +205,10 @@ export type ResponseActionView = {
   id: string;
   kind: ResponseActionKind;
   state: ResponseActionState;
-  observable: { id: string; type: ObservableType; value: string };
-  /** What the tool was sent. */
+  /** What it was taken against: an Observable, or for containment a host Asset. Exactly one is set. */
+  observable: { id: string; type: ObservableType; value: string } | null;
+  asset: { id: string; type: AssetType; value: string } | null;
+  /** What the tool was sent: for containment, the device (`aid`). */
   target: { type: string; value: string };
   /** What the IOC was sent with; `platforms` null for one taken before they were configurable, meaning all. */
   falcon: { action: FalconIocAction; severity: Severity; platforms: FalconIocPlatform[] | null } | null;
@@ -232,17 +262,61 @@ export type ObservableResponseActionView = {
 /** The Integrations a Response Action can be sent to, as the Case offers them, with what they send it with. */
 export type EligibleIntegration = { id: string; name: string; provider: Provider; defaults: FalconIocDefaults };
 
+/** A CrowdStrike Integration a Member can contain hosts through, as the Case offers it. */
+export type ContainmentIntegration = { id: string; name: string; internal: boolean };
+
+/**
+ * One Falcon device of a host, as the containment confirmation shows it: as of when it was last
+ * fetched, and whether a fetch asked for is still to come.
+ */
+export type ContainmentDevice = {
+  deviceId: string;
+  consoleUrl: string;
+  refreshing: boolean;
+  fetchedAt: string | null;
+  notFound: boolean;
+  error: string | null;
+  hostname: string | null;
+  platform: string | null;
+  osVersion: string | null;
+  hostGroups: string[];
+  lastSeen: string | null;
+  containment: FalconContainment | null;
+};
+
+/** What the containment confirmation shows of a host: its devices through each Integration that contains hosts. */
+export type ContainmentCheck = {
+  asset: { id: string; value: string };
+  integrations: {
+    integration: ContainmentIntegration;
+    /** Several devices are recorded: the Member picks one. */
+    ambiguous: boolean;
+    devices: ContainmentDevice[];
+    /** Looking the host up by hostname, while no device is recorded. */
+    lookup: { refreshing: boolean; checkedAt: string | null; notFound: boolean; error: string | null } | null;
+  }[];
+};
+
 type Row = typeof responseActions.$inferSelect;
 
-/** "SHA-256 e3b0…" in full, defanged where it could be clicked. */
-const described = (o: { type: ObservableType; value: string }) => `${observableTypeLabel[o.type]} ${defang(o.type, o.value)}`;
+/** What a Response Action was taken against, as its records name it: an Observable, or a host Asset. */
+export type Subject = { type: ObservableType | AssetType; value: string };
+
+const isAssetType = (type: string): type is AssetType => (ASSET_TYPES as readonly string[]).includes(type);
+
+/** "SHA-256 e3b0…" in full, defanged where it could be clicked; "Host FIN-LT-0231". */
+const described = (o: Subject) => (isAssetType(o.type) ? `${assetTypeLabel[o.type]} ${o.value}` : `${observableTypeLabel[o.type]} ${defang(o.type, o.value)}`);
 
 /** How the Case Audit Log names a Response Action: "Falcon custom IOC: SHA-256 e3b0…". */
-export const responseActionLabel = (o: { type: ObservableType; value: string }, kind: ResponseActionKind = "falcon_ioc") =>
-  `${responseActionKindLabel[kind]}: ${described(o)}`;
+export const responseActionLabel = (o: Subject, kind: ResponseActionKind = "falcon_ioc") => `${responseActionKindLabel[kind]}: ${described(o)}`;
 
-/** What it was sent with: "Detect, severity High", or "Block domain, everyone". */
-const paramsOf = (r: Pick<Row, "kind" | "targetType" | "falconAction" | "severity" | "falconPlatforms">) =>
+/** The Observable or Asset a Response Action row was selected with, whichever it has. */
+const subjectOf = (o: { type: string; value: string } | null, a: { type: string; value: string } | null): Subject =>
+  o ? { type: o.type as ObservableType, value: o.value } : { type: a!.type as AssetType, value: a!.value };
+
+/** What it was sent with: "Detect, severity High", "Block domain, everyone", or "device 8f1c…". */
+const paramsOf = (r: Pick<Row, "kind" | "targetType" | "targetValue" | "falconAction" | "severity" | "falconPlatforms">) =>
+  r.kind === "falcon_containment" ? `device ${r.targetValue}` :
   r.kind === "mimecast_blocked_sender" ? `${r.targetType === "domain" ? "Block domain" : "Block sender"}, everyone` : [
     falconIocActionLabel[r.falconAction!],
     `severity ${severityLabel[r.severity!]}`,
@@ -285,8 +359,21 @@ const auditAction: Record<StateChange, CaseAuditAction> = {
 };
 
 /** How a Response Action's Timeline Entries and Audit Log entries put it, by kind. */
-function phrasing(r: Row, o: { type: ObservableType; value: string }) {
+function phrasing(r: Row, o: Subject) {
   const what = described(o);
+  if (r.kind === "falcon_containment") {
+    const tool = `${providerLabel.crowdstrike} Falcon`;
+    return {
+      tool,
+      send: `contain ${what} in ${tool} (${paramsOf(r)})`,
+      sent: `Argus contained ${what} in ${tool} (${paramsOf(r)})`,
+      notSent: `Argus could not contain ${what} in ${tool}`,
+      alreadySent: `${what} was already contained in ${tool} by Argus, so nothing was sent again`,
+      inTool: `${what} was already contained in ${tool}, so Argus sent nothing`,
+      dismissed: `this Case no longer records ${what} as already contained in ${tool}`,
+      entry: `the containment of ${what}`,
+    };
+  }
   if (r.kind === "mimecast_blocked_sender") {
     const tool = providerLabel.mimecast;
     return {
@@ -314,7 +401,7 @@ function phrasing(r: Row, o: { type: ObservableType; value: string }) {
 }
 
 /** The Timeline Entry's text: the Provider, never the Integration's name, and never an error. */
-function timelineBody(change: StateChange, r: Row, o: { type: ObservableType; value: string }, by: string) {
+function timelineBody(change: StateChange, r: Row, o: Subject, by: string) {
   const p = phrasing(r, o);
   switch (change) {
     case "requested":
@@ -353,7 +440,7 @@ function auditDetail(change: StateChange, r: Row) {
     case "already_present":
       return "Already present: sent by Argus before; nothing was sent";
     case "in_tool":
-      return `Already present in ${tool}; nothing was written`;
+      return r.kind === "falcon_containment" ? `Already contained in ${tool}; nothing was sent` : `Already present in ${tool}; nothing was written`;
     case "dismissed":
       return `Dismissed; ${tool} left unchanged`;
     case "removed":
@@ -377,9 +464,9 @@ function auditDetail(change: StateChange, r: Row) {
  */
 export async function recordStateChange(
   tx: Tx,
-  { r, observable, change, actor, now, detail, by }: {
+  { r, subject, change, actor, now, detail, by }: {
     r: Row;
-    observable: { type: ObservableType; value: string };
+    subject: Subject;
     change: StateChange;
     actor: CaseActor;
     now: Date;
@@ -397,7 +484,7 @@ export async function recordStateChange(
     occurredStart: now,
     occurredEnd: null,
     occurredPrecisionMinutes: null,
-    body: timelineBody(change, r, observable, taker?.name ?? "unknown"),
+    body: timelineBody(change, r, subject, taker?.name ?? "unknown"),
     citations: [],
     internal: r.internal,
     responseActionId: r.id,
@@ -411,7 +498,7 @@ export async function recordStateChange(
     occurredAt: now,
     actor,
     action: auditAction[change],
-    target: responseActionLabel(observable, r.kind),
+    target: responseActionLabel(subject, r.kind),
     after: detail ?? auditDetail(change, r),
   });
   await publish(tx, { kind: "case", organizationId: r.organizationId, caseId: r.caseId, membersOnly: r.internal });
@@ -488,16 +575,27 @@ async function relyingCaseIds(tx: Tx, id: string, caseId: string) {
   return rows.map((x) => x.caseId);
 }
 
-/** Response Action `id` on the locked Case `caseId`, locked, with its Observable; else `ResponseActionNotFound`. */
+/** Response Action `id` on the locked Case `caseId`, locked, with its Observable or Asset; else `ResponseActionNotFound`. */
 async function lock(tx: Tx, caseId: string, id: string) {
   const [found] = await tx
-    .select({ row: responseActions, type: observables.type, value: observables.value })
+    .select({ row: responseActions, observable: { type: observables.type, value: observables.value }, asset: { type: assets.type, value: assets.value } })
     .from(responseActions)
-    .innerJoin(observables, eq(responseActions.observableId, observables.id))
+    .leftJoin(observables, eq(responseActions.observableId, observables.id))
+    .leftJoin(assets, eq(responseActions.assetId, assets.id))
     .where(and(eq(responseActions.id, id), eq(responseActions.caseId, caseId)))
     .for("update", { of: responseActions });
   if (!found) throw new ResponseActionNotFound();
-  return { r: found.row, observable: { type: found.type as ObservableType, value: found.value } };
+  return { r: found.row, subject: subjectOf(found.observable, found.asset) };
+}
+
+/** The CrowdStrike Integrations in the Organization that contain hosts now, oldest first. */
+async function containing(db: Db | Tx, organizationId: string): Promise<ContainmentIntegration[]> {
+  const rows = await db
+    .select({ id: integrations.id, name: integrations.name, defaults: integrations.responseActionDefaults })
+    .from(integrations)
+    .where(and(eq(integrations.organizationId, organizationId), eq(integrations.provider, "crowdstrike"), eq(integrations.hostContainment, true)))
+    .orderBy(asc(integrations.createdAt), asc(integrations.id));
+  return rows.map((r) => ({ id: r.id, name: r.name, internal: r.defaults.internal }));
 }
 
 export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
@@ -521,9 +619,8 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
     const rows = await db
       .select({
         row: r,
-        observableId: observables.id,
-        observableType: observables.type,
-        observableValue: observables.value,
+        observable: { id: observables.id, type: observables.type, value: observables.value },
+        asset: { id: assets.id, type: assets.type, value: assets.value },
         integrationName: integrations.name,
         requestedByName: user.name,
         dismissedByName: dismisser.name,
@@ -532,7 +629,8 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
         originalCase: { number: originalCaseRow.number, title: originalCaseRow.title },
       })
       .from(r)
-      .innerJoin(observables, eq(r.observableId, observables.id))
+      .leftJoin(observables, eq(r.observableId, observables.id))
+      .leftJoin(assets, eq(r.assetId, assets.id))
       .innerJoin(integrations, eq(r.integrationId, integrations.id))
       .innerJoin(user, eq(r.createdById, user.id))
       .leftJoin(dismisser, eq(r.dismissedById, dismisser.id))
@@ -549,11 +647,12 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
         ? (await db.select({ id: cases.id }).from(cases).where(and(visibleCases(me), inArray(cases.id, originalCaseIds)))).map((c) => c.id)
         : [],
     );
-    return rows.map(({ row, observableId, observableType, observableValue, integrationName, requestedByName, dismissedByName, removerName, original, originalCase }) => ({
+    return rows.map(({ row, observable, asset, integrationName, requestedByName, dismissedByName, removerName, original, originalCase }) => ({
       id: row.id,
       kind: row.kind,
       state: row.state,
-      observable: { id: observableId, type: observableType as ObservableType, value: observableValue },
+      observable: observable ? { id: observable.id, type: observable.type as ObservableType, value: observable.value } : null,
+      asset: asset ? { id: asset.id, type: asset.type as AssetType, value: asset.value } : null,
       target: { type: row.targetType, value: row.targetValue },
       falcon: row.falconAction && row.severity ? { action: row.falconAction, severity: row.severity, platforms: row.falconPlatforms } : null,
       integration: insider ? { id: row.integrationId, name: integrationName } : null,
@@ -578,14 +677,131 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
   const store = {
     /**
      * The Response Actions on Case `number` that `me` may see, and, for Members, the Integrations they
-     * can send to. Throws `CaseNotFound` when `me` can't see the Case.
+     * can send to and those they can contain hosts through. Throws `CaseNotFound` when `me` can't see the Case.
      */
     async list(me: Participant, number: number) {
       const caseId = await visibleCaseId(me, number);
+      const member = casePolicy.canWork(me);
       return {
         responseActions: await select(me, caseId),
-        integrations: casePolicy.canWork(me) ? await eligible(db, me.organizationId) : [],
+        integrations: member ? await eligible(db, me.organizationId) : [],
+        containment: member ? await containing(db, me.organizationId) : [],
       };
+    },
+
+    /**
+     * What the containment confirmation shows of host `assetId`, linked to Case `number`: its Falcon
+     * devices through each Integration that contains hosts, as last fetched. With `refresh`, as when
+     * the confirmation opens, every device of the host is first asked for afresh (and the host looked
+     * up by hostname where no device is recorded); the worker fetches them and `refreshing` clears.
+     * Members only. Throws `CaseNotFound` and `NotLinked`.
+     */
+    async containmentCheck(me: Membership, number: number, assetId: string, { refresh = false } = {}): Promise<ContainmentCheck> {
+      if (!casePolicy.canWork(me)) throw new NotPermitted();
+      const caseId = await visibleCaseId(me, number);
+      const [host] = await db
+        .select({ id: assets.id, value: assets.value })
+        .from(caseAssets)
+        .innerJoin(assets, eq(caseAssets.itemId, assets.id))
+        .where(and(eq(caseAssets.caseId, caseId), eq(caseAssets.itemId, assetId), isNull(caseAssets.unlinkedAt), eq(assets.type, "host")))
+        .limit(1);
+      if (!host) throw new NotLinked("That host isn't linked to this Case");
+      if (refresh) await requestHostEnrichment(db, host.id, clock.now());
+      const offered = await containing(db, me.organizationId);
+      const groups = new Map((await falconDevicesOf(db, host.id)).map((g) => [g.integration.id, g]));
+      return {
+        asset: host,
+        integrations: offered.map((integration) => {
+          const g = groups.get(integration.id);
+          return {
+            integration,
+            ambiguous: g?.ambiguous ?? false,
+            devices: (g?.devices ?? []).map(({ deviceId, consoleUrl, enrichment: e }) => ({
+              deviceId,
+              consoleUrl,
+              refreshing: e.refreshing,
+              fetchedAt: e.fetchedAt,
+              notFound: e.notFound,
+              error: e.error,
+              hostname: e.host?.hostname ?? null,
+              platform: e.host?.platform ?? null,
+              osVersion: e.host?.osVersion ?? null,
+              hostGroups: e.host?.hostGroups ?? [],
+              lastSeen: e.host?.lastSeen ?? null,
+              containment: e.host?.containment ?? null,
+            })),
+            lookup: g?.lookup ?? (g ? null : { refreshing: refresh, checkedAt: null, notFound: false, error: null }),
+          };
+        }),
+      };
+    },
+
+    /**
+     * Contains a host: device `deviceId` of host `assetId`, linked to Case `number`, through
+     * CrowdStrike Integration `integrationId`. Stored Pending and queued for the worker, or recorded
+     * already present when Argus has already contained that device. Throws `NotLinked` when the host
+     * isn't linked to the Case, `IntegrationNotEligible` when the Integration doesn't contain hosts,
+     * and `HostNotContainable` when the device isn't recorded on the host. Not on a Closed Case.
+     */
+    async contain(me: Membership, number: number, input: NewContainment): Promise<ResponseActionView> {
+      if (!casePolicy.canWork(me)) throw new NotPermitted();
+      const now = clock.now();
+      const outcome = await db.transaction(async (tx) => {
+        const current = await lockCase(tx, me, number);
+        const [host] = await tx
+          .select({ id: assets.id, type: assets.type, value: assets.value })
+          .from(caseAssets)
+          .innerJoin(assets, eq(caseAssets.itemId, assets.id))
+          .where(and(eq(caseAssets.caseId, current.id), eq(caseAssets.itemId, input.assetId), isNull(caseAssets.unlinkedAt)))
+          .limit(1);
+        if (!host || host.type !== "host") throw new NotLinked("That host isn't linked to this Case");
+        const [integration] = await tx
+          .select({ id: integrations.id, provider: integrations.provider, hostContainment: integrations.hostContainment, defaults: integrations.responseActionDefaults })
+          .from(integrations)
+          .where(and(eq(integrations.id, input.integrationId), eq(integrations.organizationId, me.organizationId)))
+          .for("share");
+        if (!integration || integration.provider !== "crowdstrike" || !integration.hostContainment) {
+          throw new IntegrationNotEligible("That Integration doesn't contain hosts; an Admin can turn Host containment on in its settings");
+        }
+        const recorded = await tx
+          .select({ deviceId: assetFalconDevices.deviceId })
+          .from(assetFalconDevices)
+          .where(and(eq(assetFalconDevices.assetId, host.id), eq(assetFalconDevices.integrationId, integration.id)));
+        if (!recorded.length) throw new HostNotContainable("Falcon has no device recorded for this host, so it can't be contained");
+        if (!recorded.some((d) => d.deviceId === input.deviceId)) throw new HostNotContainable("That device isn't recorded on this host");
+
+        const target = { integrationId: integration.id, kind: "falcon_containment" as const, targetType: CONTAINMENT_TARGET_TYPE, targetValue: input.deviceId };
+        await lockTarget(tx, target);
+        // Already contained by Argus, from this Case or another: recorded, and nothing is sent again.
+        const presentFromId = (await liveCreated(tx, target))?.id ?? null;
+        const id = secureId();
+        const [r] = await tx
+          .insert(responseActions)
+          .values({
+            id,
+            organizationId: me.organizationId,
+            caseId: current.id,
+            assetId: host.id,
+            ...target,
+            state: presentFromId ? "active" : "pending",
+            origin: presentFromId ? "already_present" : "created",
+            presentFromId,
+            internal: input.internal ?? integration.defaults.internal,
+            createdById: me.userId,
+            createdAt: now,
+            stateChangedAt: now,
+          })
+          .returning();
+        const subject = { type: "host" as const, value: host.value };
+        if (presentFromId) {
+          await recordStateChange(tx, { r: r!, subject, change: "already_present", actor: actorOf(me), now });
+        } else {
+          await queue(tx, me.organizationId, id, now);
+          await recordStateChange(tx, { r: r!, subject, change: "requested", actor: actorOf(me), now });
+        }
+        return { caseId: current.id, id };
+      });
+      return (await select(me, outcome.caseId, [outcome.id]))[0]!;
     },
 
     /**
@@ -725,10 +941,10 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
             })
             .returning();
           if (presentFromId) {
-            await recordStateChange(tx, { r: r!, observable, change: "already_present", actor: actorOf(me), now });
+            await recordStateChange(tx, { r: r!, subject: observable, change: "already_present", actor: actorOf(me), now });
           } else {
             await queue(tx, me.organizationId, id, now);
-            await recordStateChange(tx, { r: r!, observable, change: "requested", actor: actorOf(me), now });
+            await recordStateChange(tx, { r: r!, subject: observable, change: "requested", actor: actorOf(me), now });
           }
           ids.push(id);
         }
@@ -794,7 +1010,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
       const now = clock.now();
       const caseId = await db.transaction(async (tx) => {
         const current = await lockCase(tx, me, number, "allow");
-        const { r, observable } = await lock(tx, current.id, id);
+        const { r, subject } = await lock(tx, current.id, id);
         if (r.state !== "failed") throw new NotRetryable();
         if (r.removalRequestedAt) {
           if (current.status === "closed" && !casePolicy.canReopen(me)) throw new CaseClosed();
@@ -804,7 +1020,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
             .where(eq(responseActions.id, id))
             .returning();
           await queue(tx, r.organizationId, id, now, "remove");
-          await recordStateChange(tx, { r: removing!, observable, change: "removal_retried", actor: actorOf(me), now, by: { id: me.userId, name: me.name } });
+          await recordStateChange(tx, { r: removing!, subject, change: "removal_retried", actor: actorOf(me), now, by: { id: me.userId, name: me.name } });
           return current.id;
         }
         if (current.status === "closed") throw new CaseClosed();
@@ -824,7 +1040,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
             })
             .where(eq(responseActions.id, id))
             .returning();
-          await recordStateChange(tx, { r: present!, observable, change: "already_present", actor: actorOf(me), now, by: { id: me.userId, name: me.name } });
+          await recordStateChange(tx, { r: present!, subject, change: "already_present", actor: actorOf(me), now, by: { id: me.userId, name: me.name } });
           return current.id;
         }
         const [pending] = await tx
@@ -833,7 +1049,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
           .where(eq(responseActions.id, id))
           .returning();
         await queue(tx, r.organizationId, id, now);
-        await recordStateChange(tx, { r: pending!, observable, change: "retried", actor: actorOf(me), now });
+        await recordStateChange(tx, { r: pending!, subject, change: "retried", actor: actorOf(me), now });
         return current.id;
       });
       return (await select(me, caseId, [id]))[0]!;
@@ -851,8 +1067,9 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
       const caseId = await db.transaction(async (tx) => {
         const current = await lockCase(tx, me, number, "allow");
         if (current.status === "closed" && !casePolicy.canReopen(me)) throw new CaseClosed();
-        const { r, observable } = await lock(tx, current.id, id);
+        const { r, subject } = await lock(tx, current.id, id);
         if (r.origin !== "created") throw new NotRemovable("Argus didn't create this Response Action, so it can't remove it; dismiss it instead");
+        if (r.kind === "falcon_containment") throw new NotRemovable("Lifting containment from a Case isn't available yet");
         if (r.state !== "active") throw new NotRemovable("Only an Active Response Action can be removed");
         if (!confirmRelying) {
           const relying = await relyingCaseIds(tx, r.id, current.id);
@@ -871,7 +1088,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
           .where(eq(responseActions.id, id))
           .returning();
         await queue(tx, r.organizationId, id, now, "remove");
-        await recordStateChange(tx, { r: removing!, observable, change: "removal_requested", actor: actorOf(me), now, by: { id: me.userId, name: me.name } });
+        await recordStateChange(tx, { r: removing!, subject, change: "removal_requested", actor: actorOf(me), now, by: { id: me.userId, name: me.name } });
         return current.id;
       });
       return (await select(me, caseId, [id]))[0]!;
@@ -886,14 +1103,14 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
       const now = clock.now();
       const caseId = await db.transaction(async (tx) => {
         const current = await lockCase(tx, me, number);
-        const { r, observable } = await lock(tx, current.id, id);
+        const { r, subject } = await lock(tx, current.id, id);
         if (r.state !== "active" || r.origin === "created") throw new NotDismissable();
         const [dismissed] = await tx
           .update(responseActions)
           .set({ state: "removed", stateChangedAt: now, dismissedById: me.userId, dismissedAt: now })
           .where(eq(responseActions.id, id))
           .returning();
-        await recordStateChange(tx, { r: dismissed!, observable, change: "dismissed", actor: actorOf(me), now, by: { id: me.userId, name: me.name } });
+        await recordStateChange(tx, { r: dismissed!, subject, change: "dismissed", actor: actorOf(me), now, by: { id: me.userId, name: me.name } });
         return current.id;
       });
       return (await select(me, caseId, [id]))[0]!;

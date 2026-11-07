@@ -12,6 +12,8 @@ import type { FalconIocAction, FalconIocType } from "../response-actions/vocabul
  * looked up, created and deleted for Response Actions (`response-actions/sender.ts`, ADR 0007),
  * which an Integration takes only when its Response Actions setting is on. Hosts are read, and
  * found by hostname, for Enrichment (`host-enrichment.ts`, ADR 0009), which needs only the Hosts: Read scope.
+ * A host is contained for a containment Response Action (ADR 0009), which an Integration takes only
+ * when its Host containment setting is on, and which needs Hosts: Write.
  * Identity Protection identities are read, and found by account name, for identity Enrichment
  * (`identity-enrichment.ts`, ADR 0009), which needs Identity Protection Entities: Read and an
  * Identity Protection subscription.
@@ -102,6 +104,12 @@ export interface FalconClient {
    * Rejects with `FalconScopeMissing` when the API client lacks Hosts: Read.
    */
   findHosts(hostname: string): Promise<string[]>;
+  /**
+   * Asks Falcon to contain the device with this `aid`, cutting it off from the network but for
+   * Falcon itself. Rejects with `FalconScopeMissing` when the API client lacks Hosts: Write, and
+   * otherwise when Falcon refuses or fails.
+   */
+  containHost(deviceId: string): Promise<void>;
   /**
    * What Identity Protection reports now about each of these identities (entity IDs). An identity
    * Falcon doesn't know is left out. Rejects with `FalconScopeMissing` when the API client lacks

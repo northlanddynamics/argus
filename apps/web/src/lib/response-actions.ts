@@ -61,7 +61,7 @@ export const toolOf = (kind: ResponseActionKind) => (kind === "mimecast_blocked_
 
 /** What it does, as a row names it: "Detect", "Prevent", "Block sender" or "Block domain". */
 export const actionOf = (r: Pick<ResponseAction, "kind" | "falcon" | "target">) =>
-  r.falcon ? falconIocActionLabel[r.falcon.action] : r.kind === "mimecast_blocked_sender" ? (r.target.type === "domain" ? "Block domain" : "Block sender") : "Sent";
+  r.kind === "falcon_containment" ? "Contain" : r.falcon ? falconIocActionLabel[r.falcon.action] : r.kind === "mimecast_blocked_sender" ? (r.target.type === "domain" ? "Block domain" : "Block sender") : "Sent";
 
 /**
  * "Severity High (from the Case) · every platform", as a menu or dialog says what an IOC goes with;
@@ -132,3 +132,43 @@ export async function removeResponseAction(number: number, id: string, confirmRe
   if (!res.ok) throw new Error(await errorMessage(res, "Could not remove the Response Action"));
   return { removing: true };
 }
+
+/** A CrowdStrike Integration a Member can contain hosts through from the Case. */
+export type ContainmentIntegration = ResponseActionsOnCase["containment"][number];
+
+/** Under the Case's key, so its live signal (Enrichment arriving) refreshes it. */
+export const containmentCheckKey = (number: number, assetId: string) => ["cases", number, "containment-check", assetId] as const;
+
+/** What the containment confirmation shows of host `assetId` now, as last fetched from Falcon. */
+export const containmentCheckQuery = (number: number, assetId: string) =>
+  queryOptions({
+    queryKey: containmentCheckKey(number, assetId),
+    queryFn: async () => {
+      const res = await api.cases[":number"].assets[":assetId"]["containment-check"].$get({ param: { number: String(number), assetId } });
+      if (!res.ok) throw new Error(await errorMessage(res, "Could not read the host from Falcon"));
+      const body = await res.json();
+      if (!("integrations" in body)) throw new Error("Unexpected response");
+      return body;
+    },
+  });
+
+export type ContainmentCheck = Awaited<ReturnType<ReturnType<typeof containmentCheckQuery>["queryFn"] & {}>>;
+export type ContainmentDevice = ContainmentCheck["integrations"][number]["devices"][number];
+
+/** Asks Falcon for host `assetId` afresh, as the containment confirmation opens; the worker fetches it. */
+export async function requestContainmentCheck(number: number, assetId: string) {
+  const res = await api.cases[":number"].assets[":assetId"]["containment-check"].$post({ param: { number: String(number), assetId } });
+  if (!res.ok) throw new Error(await errorMessage(res, "Could not ask Falcon for the host"));
+  const body = await res.json();
+  if (!("integrations" in body)) throw new Error("Unexpected response");
+  return body;
+}
+
+/** Contains device `deviceId` of host `assetId` on Case `number`, through Integration `integrationId`. */
+export async function containHost(number: number, input: { assetId: string; integrationId: string; deviceId: string }) {
+  const res = await api.cases[":number"]["response-actions"].containment.$post({ param: { number: String(number) }, json: input });
+  if (!res.ok) throw new Error(await errorMessage(res, "Could not contain the host"));
+}
+
+/** What a Response Action was taken against, whichever it is: its Observable, or its host. */
+export const subjectOf = (r: Pick<ResponseAction, "observable" | "asset">) => (r.observable ?? r.asset)!;

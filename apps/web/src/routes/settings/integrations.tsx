@@ -236,6 +236,11 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
       ok(await api.integrations[":id"]["response-actions"].$put({ param: { id: i.id }, json: { enabled } }), "Could not change Response Actions"),
     onSettled: () => queryClient.invalidateQueries({ queryKey: integrationsKey }),
   });
+  const setHostContainment = useMutation({
+    mutationFn: async (enabled: boolean) =>
+      ok(await api.integrations[":id"]["host-containment"].$put({ param: { id: i.id }, json: { enabled } }), "Could not change Host containment"),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: integrationsKey }),
+  });
   const { receivesAlerts, writesBack, responseActions } = i.capabilities;
   const word = healthWord(i);
   return (
@@ -348,6 +353,35 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
         {setResponseActions.error && (
           <Alert variant="destructive">
             <AlertDescription>{setResponseActions.error.message}</AlertDescription>
+          </Alert>
+        )}
+        {i.provider === "crowdstrike" && (
+          <ConfirmOn
+            title={`Allow containing hosts through ${i.name}?`}
+            body={
+              <>
+                Any Member who can work a Case can then contain a host linked to it, cutting it off from the network except for Falcon. Each
+                containment is confirmed with the host's details first. The API client needs Hosts: Write; without it, containment fails on
+                the Case.
+              </>
+            }
+            confirm="Allow Host containment"
+            onConfirm={() => setHostContainment.mutate(true)}
+          >
+            {(ask) => (
+              <HostContainmentSetting
+                id={`host-containment-${i.id}`}
+                checked={setHostContainment.isPending ? setHostContainment.variables : i.hostContainment}
+                disabled={!i.credentials || setHostContainment.isPending}
+                lockedReason={!i.credentials ? "Only Admins can change this." : undefined}
+                onCheckedChange={(enabled) => (enabled ? ask() : setHostContainment.mutate(false))}
+              />
+            )}
+          </ConfirmOn>
+        )}
+        {setHostContainment.error && (
+          <Alert variant="destructive">
+            <AlertDescription>{setHostContainment.error.message}</AlertDescription>
           </Alert>
         )}
         {responseActions && (
@@ -508,6 +542,30 @@ function WriteBackSetting(props: {
         <Label htmlFor={id}>Write back to Falcon</Label>
         <p className="text-sm text-muted-foreground">
           Send Alert Status, Assignee, comments and Case closure to CrowdStrike.
+          {lockedReason && ` ${lockedReason}`}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/** The Host containment switch: on, Members may contain hosts through the CrowdStrike Integration from a Case (ADR 0009). */
+function HostContainmentSetting(props: {
+  id: string;
+  checked?: boolean;
+  disabled?: boolean;
+  /** Why it can't be changed, said under it. */
+  lockedReason?: string;
+  onCheckedChange?: (checked: boolean) => void;
+}) {
+  const { id, lockedReason, ...rest } = props;
+  return (
+    <div className="flex items-start gap-3">
+      <Switch id={id} className="mt-0.5" {...rest} />
+      <div className="grid gap-1">
+        <Label htmlFor={id}>Host containment</Label>
+        <p className="text-sm text-muted-foreground">
+          Contain hosts in Falcon from a Case. Separate from Response Actions; the API client needs Hosts: Write.
           {lockedReason && ` ${lockedReason}`}
         </p>
       </div>

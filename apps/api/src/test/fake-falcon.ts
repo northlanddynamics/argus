@@ -23,7 +23,8 @@ import { FalconScopeMissing } from "../crowdstrike/falcon";
  * And it has IOC Management: the custom IOCs it holds, every one it was asked to create or delete,
  * and the means to refuse or fail those calls. And the Hosts API: the devices it knows, every read
  * of them and every search of them by hostname, and the means to refuse it for want of Hosts: Read
- * or to fail it. And Identity Protection: the identities it knows, every read of them and every
+ * or to fail it, and containing a device, with the means to refuse that for want of Hosts: Write or
+ * to fail it. And Identity Protection: the identities it knows, every read of them and every
  * search of them by account name, and the means to refuse it (no scope or subscription) or fail it.
  */
 
@@ -162,6 +163,13 @@ function fakeTenant() {
     failNextHostReads: 0,
     /** Every hostname the Hosts API was searched for, in order. */
     hostSearches: [] as string[],
+
+    /** The `aid` of every device it was asked to contain, in order. */
+    containments: [] as string[],
+    /** Set to make every containment fail for want of Hosts: Write, with this message. */
+    refuseContainment: null as string | null,
+    /** How many more containment calls fail before they succeed again. */
+    failNextContainments: 0,
 
     /** The user identities Identity Protection knows, by entity ID. */
     identities: new Map<string, FalconIdentity>(),
@@ -375,6 +383,18 @@ export function fakeFalcon() {
         t.hostSearches.push(hostname);
         // Falcon matches hostnames whatever their case.
         return [...t.hosts.values()].filter((h) => h.hostname?.toLowerCase() === hostname.toLowerCase()).map((h) => h.deviceId);
+      },
+      async containHost(deviceId) {
+        if (t.refuseContainment) throw new FalconScopeMissing(t.refuseContainment);
+        if (t.failNextContainments > 0) {
+          t.failNextContainments--;
+          throw new Error("Containing a host in Falcon failed: 503");
+        }
+        const host = t.hosts.get(deviceId);
+        if (!host) throw new Error("Containing a host in Falcon failed: 404 device not found");
+        t.containments.push(deviceId);
+        // Falcon takes a moment: the host is pending until its sensor confirms.
+        t.hosts.set(deviceId, { ...host, containment: "containment_pending" });
       },
       async identities(entityIds) {
         identityCall("Reading identities from Falcon");

@@ -785,6 +785,11 @@ export const integrations = pgTable(
     responseActions: boolean("response_actions").notNull().default(false),
     /** What a Falcon custom IOC taken through it is sent with besides its action (ADR 0008). */
     responseActionDefaults: jsonb("response_action_defaults").$type<FalconIocDefaults>().notNull().default(DEFAULT_FALCON_IOC_DEFAULTS),
+    /**
+     * Whether a Member may contain a host through it (ADR 0009): CrowdStrike only, separate from
+     * Response Actions, off until an Admin turns it on. Needs Hosts: Write.
+     */
+    hostContainment: boolean("host_containment").notNull().default(false),
     health: text("health", { enum: INTEGRATION_HEALTH }).notNull(),
     healthDetail: text("health_detail"),
     healthChangedAt: timestamp("health_changed_at", { withTimezone: true }).notNull(),
@@ -1340,6 +1345,8 @@ export const responseActions = pgTable(
       ),
     check("response_actions_one_target", sql`(${t.observableId} IS NULL) <> (${t.assetId} IS NULL)`),
     check("response_actions_falcon", sql`(${t.kind} = 'falcon_ioc') = (${t.falconAction} IS NOT NULL AND ${t.severity} IS NOT NULL)`),
+    // Containment is taken against a host; the other kinds against an Observable.
+    check("response_actions_containment_target", sql`(${t.kind} = 'falcon_containment') = (${t.assetId} IS NOT NULL)`),
     check("response_actions_present_from", sql`(${t.origin} = 'already_present') = (${t.presentFromId} IS NOT NULL)`),
     check("response_actions_dismissed", sql`(${t.dismissedAt} IS NULL) = (${t.dismissedById} IS NULL)`),
     check("response_actions_removal_requested", sql`(${t.removalRequestedAt} IS NULL) = (${t.removalRequestedById} IS NULL)`),

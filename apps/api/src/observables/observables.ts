@@ -782,7 +782,7 @@ async function recordFalconDevices(
  * makes the host ambiguous there. After them come the Integrations that have recorded no device on
  * the host but have looked it up by hostname, by name.
  */
-async function falconDevicesOf(db: Db, assetId: string): Promise<FalconDevices[]> {
+export async function falconDevicesOf(db: Db, assetId: string): Promise<FalconDevices[]> {
   const rows = await db
     .select({
       integrationId: integrations.id,

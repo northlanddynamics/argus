@@ -57,6 +57,7 @@ export function CaseObservablesPage() {
   const n = String(number);
   const eligible = responseActions.data?.integrations ?? [];
   const canSend = !readOnly && eligible.length > 0;
+  const containment = readOnly ? [] : (responseActions.data?.containment ?? []);
   const held = responseActions.data?.responseActions ?? [];
   // Only what is still linked, and a tool takes, counts as selected.
   const takes = (o: { type: ObservableType; value: string }) => falconTakes(o.type, o.value) || (o.type === "email" && eligible.some((i) => i.provider === "mimecast"));
@@ -142,6 +143,7 @@ export function CaseObservablesPage() {
               label={`${assetTypeLabel[item.type]} ${item.value}`}
               onUnlink={readOnly ? undefined : unlink}
               canMarkInternal={!readOnly && c.can.markInternal}
+              containment={item.type === "host" ? containment : []}
             >
               {row}
             </AssetActions>

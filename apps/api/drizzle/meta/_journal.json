@@ -309,6 +309,13 @@
       "when": 1794064438984,
       "tag": "0043_identity_enrichment",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1794075521816,
+      "tag": "0044_host_containment",
+      "breakpoints": true
     }
   ]
 }

@@ -33,6 +33,8 @@ const actionLabels: Record<string, string> = {
   "integration.response_actions_enabled": "Turned on Response Actions for",
   "integration.response_actions_disabled": "Turned off Response Actions for",
   "integration.response_action_defaults_changed": "Changed Response Action defaults for",
+  "integration.host_containment_enabled": "Turned on Host containment for",
+  "integration.host_containment_disabled": "Turned off Host containment for",
   "integration.stream_gap": "Gap in the stream of",
   "sso.enabled": "Enabled single sign-on",
   "sso.changed": "Changed single sign-on",

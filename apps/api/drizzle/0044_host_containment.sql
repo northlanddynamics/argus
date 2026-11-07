@@ -1,0 +1,2 @@
+ALTER TABLE "integrations" ADD COLUMN "host_containment" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "response_actions" ADD CONSTRAINT "response_actions_containment_target" CHECK (("response_actions"."kind" = 'falcon_containment') = ("response_actions"."asset_id" IS NOT NULL));
