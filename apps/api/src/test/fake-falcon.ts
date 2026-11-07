@@ -23,8 +23,8 @@ import { FalconScopeMissing } from "../crowdstrike/falcon";
  * And it has IOC Management: the custom IOCs it holds, every one it was asked to create or delete,
  * and the means to refuse or fail those calls. And the Hosts API: the devices it knows, every read
  * of them and every search of them by hostname, and the means to refuse it for want of Hosts: Read
- * or to fail it, and containing a device, with the means to refuse that for want of Hosts: Write or
- * to fail it. And Identity Protection: the identities it knows, every read of them and every
+ * or to fail it, and containing a device or lifting its containment, with the means to refuse those
+ * for want of Hosts: Write or to fail them. And Identity Protection: the identities it knows, every read of them and every
  * search of them by account name, and the means to refuse it (no scope or subscription) or fail it.
  */
 
@@ -170,6 +170,12 @@ function fakeTenant() {
     refuseContainment: null as string | null,
     /** How many more containment calls fail before they succeed again. */
     failNextContainments: 0,
+    /** The `aid` of every device it was asked to lift containment from, in order. */
+    lifts: [] as string[],
+    /** Set to make every lift fail for want of Hosts: Write, with this message. */
+    refuseLifts: null as string | null,
+    /** How many more lift calls fail before they succeed again. */
+    failNextLifts: 0,
 
     /** The user identities Identity Protection knows, by entity ID. */
     identities: new Map<string, FalconIdentity>(),
@@ -395,6 +401,17 @@ export function fakeFalcon() {
         t.containments.push(deviceId);
         // Falcon takes a moment: the host is pending until its sensor confirms.
         t.hosts.set(deviceId, { ...host, containment: "containment_pending" });
+      },
+      async liftContainment(deviceId) {
+        if (t.refuseLifts) throw new FalconScopeMissing(t.refuseLifts);
+        if (t.failNextLifts > 0) {
+          t.failNextLifts--;
+          throw new Error("Lifting containment in Falcon failed: 503");
+        }
+        const host = t.hosts.get(deviceId);
+        if (!host) throw new Error("Lifting containment in Falcon failed: 404 device not found");
+        t.lifts.push(deviceId);
+        t.hosts.set(deviceId, { ...host, containment: "lift_containment_pending" });
       },
       async identities(entityIds) {
         identityCall("Reading identities from Falcon");

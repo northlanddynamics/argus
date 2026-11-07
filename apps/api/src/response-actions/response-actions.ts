@@ -90,6 +90,8 @@ import {
  * the worker to refetch the host from Falcon, and the confirmation shows what came back before the
  * Member picks the device and contains it. A host with no device recorded can't be contained. One
  * Falcon already reports contained is recorded "already present in the tool", and nothing is sent.
+ * Lifting containment Argus imposed is its removal, as for an IOC: Removing, then Removed once Falcon
+ * has lifted it or reports the host already released.
  */
 
 /** The Observable isn't of a type the Integration's Provider takes. */
@@ -120,9 +122,9 @@ export class NotRemovable extends Error {}
 export class RelyingCasesNotConfirmed extends Error {
   readonly cases: { number: number; title: string }[];
   readonly otherCases: number;
-  constructor(named: { number: number; title: string }[], otherCases: number) {
+  constructor(named: { number: number; title: string }[], otherCases: number, verb = "remove") {
     const total = named.length + otherCases;
-    super(`${total === 1 ? "Another Case relies" : `${total} other Cases rely`} on this Response Action; confirm to remove it anyway`);
+    super(`${total === 1 ? "Another Case relies" : `${total} other Cases rely`} on this Response Action; confirm to ${verb} it anyway`);
     this.cases = named;
     this.otherCases = otherCases;
   }
@@ -358,6 +360,15 @@ const auditAction: Record<StateChange, CaseAuditAction> = {
   relied_on_removed: "response_action.removed",
 };
 
+/** How removing `entry` from `tool` is put. */
+const removal = (entry: string, tool: string) => ({
+  remove: `remove ${entry} from ${tool}`,
+  notRemoved: `Argus could not remove ${entry} from ${tool}`,
+  removed: `Argus removed ${entry} from ${tool}`,
+  alreadyGone: `${entry} was already gone from ${tool}`,
+  reliedOnRemoved: `Argus removed ${entry} from ${tool} at the request of the Case that sent it, so this Case no longer records it as present`,
+});
+
 /** How a Response Action's Timeline Entries and Audit Log entries put it, by kind. */
 function phrasing(r: Row, o: Subject) {
   const what = described(o);
@@ -371,7 +382,11 @@ function phrasing(r: Row, o: Subject) {
       alreadySent: `${what} was already contained in ${tool} by Argus, so nothing was sent again`,
       inTool: `${what} was already contained in ${tool}, so Argus sent nothing`,
       dismissed: `this Case no longer records ${what} as already contained in ${tool}`,
-      entry: `the containment of ${what}`,
+      remove: `lift the containment of ${what} in ${tool}`,
+      notRemoved: `Argus could not lift the containment of ${what} in ${tool}`,
+      removed: `Argus lifted the containment of ${what} in ${tool}`,
+      alreadyGone: `${what} was already released in ${tool}`,
+      reliedOnRemoved: `Argus lifted the containment of ${what} in ${tool} at the request of the Case that contained it, so this Case no longer records it as contained`,
     };
   }
   if (r.kind === "mimecast_blocked_sender") {
@@ -384,7 +399,7 @@ function phrasing(r: Row, o: Subject) {
       alreadySent: `${what} was already blocked in ${tool} by Argus, so nothing was sent again`,
       inTool: `${what} was already a blocked sender in ${tool}, so Argus left it unchanged`,
       dismissed: `this Case no longer records ${what} as already blocked in ${tool}`,
-      entry: `the blocked sender entry for ${what}`,
+      ...removal(`the blocked sender entry for ${what}`, tool),
     };
   }
   const tool = `${providerLabel.crowdstrike} Falcon`;
@@ -396,7 +411,7 @@ function phrasing(r: Row, o: Subject) {
     alreadySent: `${what} was already sent to ${tool} as a custom IOC by Argus, so nothing was sent again`,
     inTool: `${what} was already in ${tool} as a custom IOC, so Argus left it unchanged`,
     dismissed: `this Case no longer records ${what} as already in ${tool}`,
-    entry: `the custom IOC for ${what}`,
+    ...removal(`the custom IOC for ${what}`, tool),
   };
 }
 
@@ -419,23 +434,36 @@ function timelineBody(change: StateChange, r: Row, o: Subject, by: string) {
     case "dismissed":
       return `Response Action dismissed by ${by}: ${p.dismissed}; ${p.tool} was left unchanged.`;
     case "removal_requested":
-      return `Response Action removal asked for by ${by}: remove ${p.entry} from ${p.tool}.`;
+      return `Response Action removal asked for by ${by}: ${p.remove}.`;
     case "removal_retried":
-      return `Response Action removal retried by ${by}: remove ${p.entry} from ${p.tool}.`;
+      return `Response Action removal retried by ${by}: ${p.remove}.`;
     case "removal_failed":
-      return `Response Action removal failed: Argus could not remove ${p.entry} from ${p.tool}.`;
+      return `Response Action removal failed: ${p.notRemoved}.`;
     case "removed":
-      return `Response Action removed: Argus removed ${p.entry} from ${p.tool}.`;
+      return `Response Action removed: ${p.removed}.`;
     case "already_gone":
-      return `Response Action removed: ${p.entry} was already gone from ${p.tool}.`;
+      return `Response Action removed: ${p.alreadyGone}.`;
     case "relied_on_removed":
-      return `Response Action removed: Argus removed ${p.entry} from ${p.tool} at the request of the Case that sent it, so this Case no longer records it as present.`;
+      return `Response Action removed: ${p.reliedOnRemoved}.`;
   }
 }
 
 /** What the Case Audit Log says of a change, unless an error says it instead. */
 function auditDetail(change: StateChange, r: Row) {
   const tool = r.kind === "mimecast_blocked_sender" ? providerLabel.mimecast : `${providerLabel.crowdstrike} Falcon`;
+  if (r.kind === "falcon_containment") {
+    switch (change) {
+      case "removed":
+        return `Containment lifted in ${tool}`;
+      case "already_gone":
+        return `Already released in ${tool}; nothing to lift`;
+      case "relied_on_removed":
+        return `Containment lifted in ${tool} by the Case that contained it`;
+      case "removal_requested":
+      case "removal_retried":
+        return `Lift containment in ${tool}`;
+    }
+  }
   switch (change) {
     case "already_present":
       return "Already present: sent by Argus before; nothing was sent";
@@ -1057,7 +1085,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
 
     /**
      * Removes an Active Response Action that Case `number` created: it is Removing, and its removal is
-     * queued for the worker, which deletes it in the tool. When other Cases have "already present"
+     * queued for the worker, which deletes it in the tool (for containment, lifts it). When other Cases have "already present"
      * records relying on it, throws `RelyingCasesNotConfirmed` unless `confirmRelying`. On a Closed
      * Case only an Admin may, without reopening it; others get `CaseClosed`.
      */
@@ -1069,7 +1097,6 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
         if (current.status === "closed" && !casePolicy.canReopen(me)) throw new CaseClosed();
         const { r, subject } = await lock(tx, current.id, id);
         if (r.origin !== "created") throw new NotRemovable("Argus didn't create this Response Action, so it can't remove it; dismiss it instead");
-        if (r.kind === "falcon_containment") throw new NotRemovable("Lifting containment from a Case isn't available yet");
         if (r.state !== "active") throw new NotRemovable("Only an Active Response Action can be removed");
         if (!confirmRelying) {
           const relying = await relyingCaseIds(tx, r.id, current.id);
@@ -1079,7 +1106,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
               .from(cases)
               .where(and(visibleCases(me), inArray(cases.id, relying)))
               .orderBy(asc(cases.number));
-            throw new RelyingCasesNotConfirmed(named, relying.length - named.length);
+            throw new RelyingCasesNotConfirmed(named, relying.length - named.length, r.kind === "falcon_containment" ? "lift" : "remove");
           }
         }
         const [removing] = await tx

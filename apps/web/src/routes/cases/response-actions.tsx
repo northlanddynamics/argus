@@ -422,7 +422,7 @@ function StateLine({ r }: { r: ResponseAction }) {
   if (r.state === "removing") {
     return (
       <span>
-        {r.lastError ? "Retrying removal" : "Waiting to be removed"}
+        {r.kind === "falcon_containment" ? (r.lastError ? "Retrying the lift" : "Waiting to be lifted") : r.lastError ? "Retrying removal" : "Waiting to be removed"}
         {r.removalRequestedBy && `, asked for by ${r.removalRequestedBy.name}`}
       </span>
     );
@@ -430,7 +430,7 @@ function StateLine({ r }: { r: ResponseAction }) {
   if (r.state === "removed") {
     return (
       <span>
-        Removed <At iso={r.stateChangedAt} />
+        {r.kind === "falcon_containment" && r.origin === "created" && r.removalRequestedBy ? "Lifted" : "Removed"} <At iso={r.stateChangedAt} />
         {r.origin === "created" && r.removalRequestedBy && `, asked for by ${r.removalRequestedBy.name}`}
       </span>
     );
@@ -438,7 +438,7 @@ function StateLine({ r }: { r: ResponseAction }) {
   if (r.state === "active") return null;
   return (
     <span>
-      {r.removalRequestedAt ? "Removal failed" : "Failed"} <At iso={r.stateChangedAt} />
+      {r.removalRequestedAt ? (r.kind === "falcon_containment" ? "Lift failed" : "Removal failed") : "Failed"} <At iso={r.stateChangedAt} />
     </span>
   );
 }
@@ -489,13 +489,15 @@ export function RemoveDialog({ number, r, onClose }: { number: number; r: Respon
     onSettled: () => void queryClient.invalidateQueries({ queryKey: responseActionsKey(number) }),
   });
   const count = relying ? relying.cases.length + relying.otherCases : 0;
+  const lifting = r.kind === "falcon_containment";
   const mimecast = r.kind === "mimecast_blocked_sender";
   const stops = mimecast
     ? "Mimecast stops blocking it."
     : r.falcon?.action === "prevent"
       ? "Falcon stops blocking and detecting it."
       : "Falcon stops detecting it.";
-  const entry = mimecast ? "blocked sender entry" : "custom IOC";
+  const entry = lifting ? "containment" : mimecast ? "blocked sender entry" : "custom IOC";
+  const verb = lifting ? "Lift containment" : "Remove";
   return (
     <Dialog
       open={isOpen}
@@ -509,18 +511,27 @@ export function RemoveDialog({ number, r, onClose }: { number: number; r: Respon
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Remove from {toolOf(r.kind)}</DialogTitle>
+          <DialogTitle>{lifting ? "Lift containment in Falcon" : `Remove from ${toolOf(r.kind)}`}</DialogTitle>
           <DialogDescription>
-            Argus deletes the {entry} for <SubjectText r={r} />
-            {r.integration && ` from ${r.integration.name}`}. {stops}
+            {lifting ? (
+              <>
+                Argus asks Falcon to lift the containment of <SubjectText r={r} />
+                {r.integration && ` through ${r.integration.name}`}. The host goes back on the network.
+              </>
+            ) : (
+              <>
+                Argus deletes the {entry} for <SubjectText r={r} />
+                {r.integration && ` from ${r.integration.name}`}. {stops}
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
         {relying && (
           <Alert className={notice}>
             <AlertDescription className="grid gap-2">
               <span>
-                {count === 1 ? "Another Case relies" : `${count} other Cases rely`} on this {entry}. Removing it marks their Response Actions
-                Removed too:
+                {count === 1 ? "Another Case relies" : `${count} other Cases rely`} on this {entry}. {lifting ? "Lifting" : "Removing"} it marks their
+                Response Actions Removed too:
               </span>
               <ul className="grid gap-0.5">
                 {relying.cases.map((c) => (
@@ -550,7 +561,7 @@ export function RemoveDialog({ number, r, onClose }: { number: number; r: Respon
             Cancel
           </Button>
           <Button type="button" variant="destructive" disabled={remove.isPending} onClick={() => remove.mutate()}>
-            {relying ? "Remove anyway" : "Remove"}
+            {relying ? `${verb} anyway` : verb}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -640,6 +651,7 @@ export function ResponseActionsCard({
     onSettled: () => void queryClient.invalidateQueries({ queryKey: responseActionsKey(number) }),
   });
   const [dismissing, setDismissing] = useState<ResponseAction | null>(null);
+  const [lifting, setLifting] = useState<ResponseAction | null>(null);
   const all = query.data?.responseActions ?? [];
   const eligible = query.data?.integrations ?? [];
   const { failed, open, closed } = arrange(all);
@@ -773,6 +785,11 @@ export function ResponseActionsCard({
                                 Dismiss
                               </Button>
                             )}
+                            {r.kind === "falcon_containment" && canRemove && r.state === "active" && r.origin === "created" && (
+                              <Button variant="ghost" size="sm" aria-label={`Lift containment of ${subject.value}`} onClick={() => setLifting(r)}>
+                                Lift containment
+                              </Button>
+                            )}
                             {menuButton}
                           </div>
                           {error && (
@@ -802,6 +819,7 @@ export function ResponseActionsCard({
             </TableBody>
           </Table>
         )}
+        {lifting && <RemoveDialog number={number} r={lifting} onClose={() => setLifting(null)} />}
         {dismissing && (
           <DismissDialog
             r={dismissing}

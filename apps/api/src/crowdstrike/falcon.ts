@@ -111,6 +111,12 @@ export interface FalconClient {
    */
   containHost(deviceId: string): Promise<void>;
   /**
+   * Asks Falcon to lift containment from the device with this `aid`, putting it back on the network.
+   * Rejects with `FalconScopeMissing` when the API client lacks Hosts: Write, and otherwise when
+   * Falcon refuses or fails.
+   */
+  liftContainment(deviceId: string): Promise<void>;
+  /**
    * What Identity Protection reports now about each of these identities (entity IDs). An identity
    * Falcon doesn't know is left out. Rejects with `FalconScopeMissing` when the API client lacks
    * Identity Protection Entities: Read, or the subscription lacks Identity Protection.
