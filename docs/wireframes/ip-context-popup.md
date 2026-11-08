@@ -7,7 +7,7 @@ What an Analyst sees on hovering (or focusing) any IP address in Argus: the IP O
 - Opens 400 ms after the pointer rests on the IP, or at once when the IP gets keyboard focus; closes 150 ms after the pointer leaves both the IP and the popup, or on Esc. The popup can be pointed into, so its buttons work.
 - 320 px wide, placed below the IP and flipped above when there is no room. Never covers the IP itself.
 - The IP keeps doing what it did: a link still opens the Observable's page; the popup only adds to it.
-- The header always shows the address **defanged**, as everywhere else in Argus, and Copy copies it defanged.
+- The header shows the address as Argus shows IPs everywhere else (IPs aren't defanged), and Copy copies it.
 - The lookup starts when the popup opens, not when the IP renders, so a table of 200 IPs costs nothing until someone hovers one.
 - Guests get no popup: Argus never spends the Organization's IPinfo quota on their behalf.
 
@@ -15,7 +15,7 @@ What an Analyst sees on hovering (or focusing) any IP address in Argus: the IP O
 
 ```
 ┌──────────────────────────────────────────────┐
-│ 185.220.101[.]4                    [⧉] [↗]  │  ← mono; Copy (defanged); open on ipinfo.io
+│ 185.220.101.4                    [⧉] [↗]  │  ← mono; Copy; open on ipinfo.io
 │ tor-exit-04.example-relay.net                │  ← reverse DNS hostname, muted; omitted if none
 ├──────────────────────────────────────────────┤
 │ [Anonymous] [Hosting]                        │  ← only the flags that are true; Anonymous in
@@ -38,7 +38,7 @@ Flags, in this order and only when true: **Anonymous** (VPN, proxy, Tor or relay
 
 ```
 ┌──────────────────────────────────────────────┐
-│ 185.220.101[.]4                    [⧉] [↗]  │
+│ 185.220.101.4                    [⧉] [↗]  │
 ├──────────────────────────────────────────────┤
 │ ▒▒▒▒▒▒▒▒▒▒▒▒                                 │  ← skeleton rows in the shape of A
 │ ▒▒▒▒▒▒▒   ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒                 │
@@ -55,7 +55,7 @@ A cached answer (even a stale one) shows at once as in A; a Refresh shows A with
 
 ```
 ┌──────────────────────────────────────────────┐
-│ 10.20.4[.]17                       [⧉]      │  ← no ipinfo.io link
+│ 10.20.4.17                       [⧉]      │  ← no ipinfo.io link
 ├──────────────────────────────────────────────┤
 │ Private address (10.0.0.0/8)                 │
 │ Not looked up: it means nothing outside the  │
@@ -71,7 +71,7 @@ The same for loopback, link-local, CGNAT, documentation, multicast and other res
 ```
 Analyst                                          Admin
 ┌──────────────────────────────────────────┐     ┌──────────────────────────────────────────┐
-│ 185.220.101[.]4                [⧉] [↗]  │     │ 185.220.101[.]4                [⧉] [↗]  │
+│ 185.220.101.4                [⧉] [↗]  │     │ 185.220.101.4                [⧉] [↗]  │
 ├──────────────────────────────────────────┤     ├──────────────────────────────────────────┤
 │ No IP details: your Organization hasn't  │     │ No IP details yet.                       │
 │ connected IPinfo. An Admin can add it in │     │ [Add IPinfo in Settings · Integrations]  │
@@ -85,7 +85,7 @@ A paused IPinfo Integration reads "IPinfo is paused" with the same pointer to Se
 
 ```
 ┌──────────────────────────────────────────────┐
-│ 185.220.101[.]4                    [⧉] [↗]  │
+│ 185.220.101.4                    [⧉] [↗]  │
 ├──────────────────────────────────────────────┤
 │ ⚠ IPinfo refused the API token.              │  ← IPinfo's reason, in the notice tone:
 │                                              │    "refused the API token", "monthly lookup
@@ -98,10 +98,10 @@ A paused IPinfo Integration reads "IPinfo is paused" with the same pointer to Se
 
 ## F. On an IP Observable's own page
 
-The same details as A, as a card in the page's side column under "IP details", with Refresh. No hover needed there: the page is about that IP.
+The same details as A, as an "IP details" card on the page above its Cases, with Refresh. No hover needed there: the page is about that IP.
 
 ```
-┌ IP details ──────────────────────── [Refresh] ┐
+┌ IP details ────────────────────────────────────┐
 │ [Anonymous] [Hosting]                          │
 │ Hostname   tor-exit-04.example-relay.net       │
 │ Location   Frankfurt am Main, Hesse            │
@@ -110,6 +110,6 @@ The same details as A, as a card in the page's side column under "IP details", w
 │            Freiheit                            │
 │ Type       Hosting                             │
 │ Time zone  Europe/Berlin                       │
-│ IPinfo · as of 3 h ago                         │
+│ IPinfo · as of 3 h ago               [Refresh] │
 └────────────────────────────────────────────────┘
 ```

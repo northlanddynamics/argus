@@ -4,10 +4,10 @@
  * Provider's capabilities instead.
  */
 
-export const PROVIDERS = ["crowdstrike", "mimecast"] as const;
+export const PROVIDERS = ["crowdstrike", "mimecast", "ipinfo"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
-export const providerLabel: Record<Provider, string> = { crowdstrike: "CrowdStrike", mimecast: "Mimecast" };
+export const providerLabel: Record<Provider, string> = { crowdstrike: "CrowdStrike", mimecast: "Mimecast", ipinfo: "IPinfo" };
 
 export type ProviderCapabilities = {
   /** Receives Alerts from the tool's event stream. */
@@ -16,12 +16,18 @@ export type ProviderCapabilities = {
   writesBack: boolean;
   /** Takes Response Actions in the tool from a Case. */
   responseActions: boolean;
+  /** Looks up what is known about an IP address (ADR 0010); at most one such Integration per Organization. */
+  looksUpIps: boolean;
 };
 
 export const providerCapabilities: Record<Provider, ProviderCapabilities> = {
-  crowdstrike: { receivesAlerts: true, writesBack: true, responseActions: true },
-  mimecast: { receivesAlerts: false, writesBack: false, responseActions: true },
+  crowdstrike: { receivesAlerts: true, writesBack: true, responseActions: true, looksUpIps: false },
+  mimecast: { receivesAlerts: false, writesBack: false, responseActions: true, looksUpIps: false },
+  ipinfo: { receivesAlerts: false, writesBack: false, responseActions: false, looksUpIps: true },
 };
 
 /** The Providers that can do `capability`. */
 export const providersThat = (capability: keyof ProviderCapabilities) => PROVIDERS.filter((p) => providerCapabilities[p][capability]);
+
+/** The Providers whose Integrations take Response Actions. */
+export type ActionProvider = Exclude<Provider, "ipinfo">;

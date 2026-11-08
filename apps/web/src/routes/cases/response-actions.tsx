@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { IpHoverCard } from "@/components/ip-details";
 import { type FormEvent, Fragment, type ReactNode, useState } from "react";
 import { toast } from "sonner";
 import { CaseRef } from "@/components/case-ref";
@@ -736,9 +737,11 @@ export function ResponseActionsCard({
                         <TableCell className="min-w-52 whitespace-normal">
                           {r.observable ? (
                             <>
-                              <ItemLink kind="observable" id={r.observable.id} className="block font-mono text-xs break-all hover:underline" title={r.observable.value}>
-                                {shownObservable(r.observable.type, r.observable.value)}
-                              </ItemLink>
+                              <IpHoverCard ip={r.observable.value} enabled={r.observable.type === "ip"}>
+                                <ItemLink kind="observable" id={r.observable.id} className="block font-mono text-xs break-all hover:underline" title={r.observable.value}>
+                                  {shownObservable(r.observable.type, r.observable.value)}
+                                </ItemLink>
+                              </IpHoverCard>
                               <span className="text-xs text-muted-foreground">{observableTypeLabel[r.observable.type]}</span>
                             </>
                           ) : (

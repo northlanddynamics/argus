@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { IpDetailsCard, IpText } from "@/components/ip-details";
 import { Link, useParams, useRouteContext } from "@tanstack/react-router";
 import { BellOffIcon, CheckIcon, CopyIcon, ExternalLinkIcon, FingerprintIcon, LockIcon, MonitorIcon, RefreshCwIcon, SearchIcon, UserIcon } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
@@ -172,6 +173,7 @@ function ItemPageView({ kind, id }: { kind: ItemKind; id: string }) {
         </dl>
       </section>
 
+      {kind === "observable" && item.type === "ip" && !guest && <IpDetailsCard ip={item.value} admin={canManage(me.organization?.role)} />}
       {kind === "asset" && item.type === "host" && !guest && <FalconDevicesCard item={item} />}
       {kind === "asset" && item.type === "account" && !guest && <FalconIdentitiesCard item={item} />}
       <CasesCard item={item} actions={kind === "observable" && !guest} />
@@ -429,8 +431,8 @@ function HostEnrichment({ enrichment }: { enrichment: FalconDevice["enrichment"]
     { label: "Sensor", value: joined([host.sensorVersion, host.sensorStatus], " · ") },
     { label: "First seen", value: host.firstSeen && <Time iso={host.firstSeen} /> },
     { label: "Last seen", value: host.lastSeen && <Time iso={host.lastSeen} /> },
-    { label: "Local IP", value: host.localIp },
-    { label: "External IP", value: host.externalIp },
+    { label: "Local IP", value: host.localIp && <IpText ip={host.localIp} /> },
+    { label: "External IP", value: host.externalIp && <IpText ip={host.externalIp} /> },
     { label: "MAC", value: host.macAddress },
     { label: "Domain", value: host.domain },
     { label: "OU", value: joined(host.ou, ", ") },

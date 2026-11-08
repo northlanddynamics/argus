@@ -7,6 +7,7 @@ import { createIdentityEnricher } from "./crowdstrike/identity-enrichment";
 import { createStreamWorker, STREAM_TICK_MS } from "./crowdstrike/stream-worker";
 import { createWriteBackSender } from "./crowdstrike/write-back";
 import { runMigrations } from "./db/migrate";
+import { createIpinfoHealthChecker } from "./ipinfo/health";
 import { createMimecastHealthChecker } from "./mimecast/health";
 import { mimecastHttpClient } from "./mimecast/mimecast-http";
 import { createNotificationWorker } from "./notifications/notifications";
@@ -16,7 +17,7 @@ import { createTeamsSender } from "./teams/teams";
 /**
  * The `worker` process (ADR 0001): same image as `web`, started with `bun apps/api/src/worker.ts`.
  * Holds the CrowdStrike Event Streams connections, sends write-backs and Response Actions to Falcon,
- * sends Response Actions to Mimecast and checks Mimecast Integrations' credentials, fetches Alerts' comments and hosts' and accounts' Enrichment from Falcon, notifies owners of overdue Tasks and retries Teams channel posts;
+ * sends Response Actions to Mimecast and checks Mimecast and IPinfo Integrations' credentials, fetches Alerts' comments and hosts' and accounts' Enrichment from Falcon, notifies owners of overdue Tasks and retries Teams channel posts;
  * run as many as you like, each stream is owned by one, and each write-back, Response Action,
  * comment fetch, Enrichment fetch, notification and Teams post is made by one.
  */
@@ -32,6 +33,7 @@ const identities = createIdentityEnricher(deps, { connect });
 const mimecast = (credentials: Parameters<typeof mimecastHttpClient>[0]) => mimecastHttpClient(credentials);
 const responseActions = createResponseActionSender(deps, { connect, mimecast });
 const mimecastHealth = createMimecastHealthChecker(deps, { connect: mimecast });
+const ipinfoHealth = createIpinfoHealthChecker(deps, { connect: deps.ipinfo });
 const notifications = createNotificationWorker(deps);
 const teams = createTeamsSender(deps);
 
@@ -44,6 +46,7 @@ const tick = () =>
     identities.tick().catch((e: unknown) => console.error("worker: identity enrichment:", e)),
     responseActions.tick().catch((e: unknown) => console.error("worker: response actions:", e)),
     mimecastHealth.tick().catch((e: unknown) => console.error("worker: mimecast health:", e)),
+    ipinfoHealth.tick().catch((e: unknown) => console.error("worker: ipinfo health:", e)),
     notifications.tick().catch((e: unknown) => console.error("worker: notifications:", e)),
     teams.tick().catch((e: unknown) => console.error("worker: teams:", e)),
   ]);

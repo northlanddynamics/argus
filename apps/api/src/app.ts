@@ -9,6 +9,7 @@ import { bulkLookupRoutes } from "./routes/bulk-lookup";
 import { caseRoutes } from "./routes/cases";
 import { integrationRoutes } from "./routes/integrations";
 import { invitationRoutes } from "./routes/invitations";
+import { ipLookupRoutes } from "./routes/ip-lookups";
 import { liveRoutes } from "./routes/live";
 import { meRoutes } from "./routes/me";
 import { metricsRoutes } from "./routes/metrics";
@@ -59,6 +60,7 @@ export function createApi(deps: Deps, live: Live = createLive(deps)) {
     .route("/ignored-observables", ignoredObservableRoutes(deps, modules))
     .route("/bulk-lookup", bulkLookupRoutes(deps, modules))
     .route("/integrations", integrationRoutes(deps, modules))
+    .route("/ip-lookups", ipLookupRoutes(deps, modules))
     .route("/notifications", notificationRoutes(deps, modules))
     .route("/teams-channel", teamsChannelRoutes(deps, modules))
     .route("/sso", ssoRoutes(deps, modules))

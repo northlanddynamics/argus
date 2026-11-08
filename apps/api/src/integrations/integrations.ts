@@ -69,10 +69,34 @@ export class IntegrationNameTaken extends Error {
   }
 }
 
-const isUniqueViolation = (e: unknown) => (e as { cause?: { code?: string } }).cause?.code === "23505";
+/** The Organization already has an IPinfo Integration: IPs are looked up through one (ADR 0010). */
+export class OneIpinfoIntegration extends Error {
+  constructor() {
+    super("Your Organization already has an IPinfo Integration; rotate its token instead");
+  }
+}
 
-/** The last four characters of a client id, as shown to Admins: "…a1b2". */
+/** The credentials given aren't the kind the Integration's Provider takes. */
+export class WrongCredentials extends Error {
+  constructor(provider: Provider) {
+    super(provider === "ipinfo" ? "IPinfo takes an API token" : `${providerLabel[provider]} takes a client ID and secret`);
+  }
+}
+
+const uniqueViolationOf = (e: unknown) => {
+  const cause = (e as { cause?: { code?: string; constraint_name?: string } }).cause;
+  return cause?.code === "23505" ? (cause.constraint_name ?? "") : null;
+};
+
+/** The last four characters of a client id, or of an API token, as shown to Admins: "…a1b2". */
 const hintOf = (clientId: string) => `…${clientId.slice(-4)}`;
+
+/** What identifies the credentials to Admins: the client id's last four, or the token's. */
+const credentialsHint = (c: ProviderCredentials[Provider]) => hintOf("token" in c ? c.token : c.clientId);
+/** "client …a1b2" or "token …a1b2", as the Org Audit Log says it. */
+const credentialsLabel = (provider: Provider, hint: string) => `${provider === "ipinfo" ? "token" : "client"} ${hint}`;
+/** Whether `c` is the kind of credentials `provider` takes. */
+const fits = (provider: Provider, c: ProviderCredentials[Provider]) => (provider === "ipinfo") === "token" in c;
 
 const actorOf = (me: Membership) => ({ type: "member" as const, id: me.userId, name: me.name });
 
@@ -112,6 +136,12 @@ export type NewIntegration =
       responseActions: boolean;
       /** Only whether its Response Actions start Internal applies. */
       responseActionDefaults?: FalconIocDefaults;
+    }
+  | {
+      /** Only looks IPs up (ADR 0010): no Alerts, write-back or Response Actions. One per Organization. */
+      provider: "ipinfo";
+      name: string;
+      credentials: ProviderCredentials["ipinfo"];
     };
 
 const writeBackLabel = (on: boolean) => (on ? "write-back on" : "read only");
@@ -212,12 +242,12 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
             name: input.name,
             cloud: input.provider === "crowdstrike" ? input.cloud : null,
             credentials: sealed,
-            clientIdHint: hintOf(input.credentials.clientId),
+            clientIdHint: credentialsHint(input.credentials),
             credentialsRevision: 1,
             credentialsUpdatedAt: now,
             writeBack: input.provider === "crowdstrike" && input.writeBack,
-            responseActions: input.responseActions,
-            responseActionDefaults: normalized(input.responseActionDefaults ?? DEFAULT_FALCON_IOC_DEFAULTS),
+            responseActions: input.provider !== "ipinfo" && input.responseActions,
+            responseActionDefaults: normalized((input.provider !== "ipinfo" && input.responseActionDefaults) || DEFAULT_FALCON_IOC_DEFAULTS),
             health: "connecting",
             healthChangedAt: now,
             createdById: me.userId,
@@ -232,15 +262,17 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
             target: input.name,
             after: [
               input.provider === "crowdstrike" ? `${providerLabel[input.provider]} ${falconCloudLabel[input.cloud]}` : providerLabel[input.provider],
-              `client ${hintOf(input.credentials.clientId)}`,
+              credentialsLabel(input.provider, credentialsHint(input.credentials)),
               ...(input.provider === "crowdstrike" ? [writeBackLabel(input.writeBack)] : []),
-              ...(input.responseActions ? [responseActionsLabel(true)] : []),
+              ...(input.provider !== "ipinfo" && input.responseActions ? [responseActionsLabel(true)] : []),
             ].join(" · "),
           });
           await publish(tx, { kind: "alerts", organizationId: me.organizationId });
         });
       } catch (e) {
-        if (isUniqueViolation(e)) throw new IntegrationNameTaken(input.name);
+        const violated = uniqueViolationOf(e);
+        if (violated === "integrations_one_ipinfo_idx") throw new OneIpinfoIntegration();
+        if (violated !== null) throw new IntegrationNameTaken(input.name);
         throw e;
       }
       return { id, name: input.name };
@@ -251,13 +283,14 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
       if (!organizationPolicy.canManageIntegrations(me)) throw new NotPermitted();
       await db.transaction(async (tx) => {
         const row = await find(tx, me, id);
+        if (!fits(row.provider, credentials)) throw new WrongCredentials(row.provider);
         const sealed = await seal(row.provider, credentials);
         const now = clock.now();
         await tx
           .update(integrations)
           .set({
             credentials: sealed,
-            clientIdHint: hintOf(credentials.clientId),
+            clientIdHint: credentialsHint(credentials),
             credentialsRevision: row.credentialsRevision + 1,
             credentialsUpdatedAt: now,
             // With no stream to reconnect, the new credentials are checked afresh (`mimecast/health.ts`).
@@ -271,8 +304,8 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
           category: "integrations",
           action: "integration.credentials_rotated",
           target: row.name,
-          before: `client ${row.clientIdHint}`,
-          after: `client ${hintOf(credentials.clientId)}`,
+          before: credentialsLabel(row.provider, row.clientIdHint),
+          after: credentialsLabel(row.provider, credentialsHint(credentials)),
         });
         await publish(tx, { kind: "alerts", organizationId: me.organizationId });
       });

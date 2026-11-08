@@ -18,6 +18,7 @@ import {
 } from "drizzle-orm/pg-core";
 import type { FalconHost, FalconIdentity } from "../crowdstrike/falcon";
 import type { CaseSummary } from "../cases/case-summary";
+import type { IpDetails } from "../ipinfo/ipinfo";
 import { CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabulary";
 import { STORED_LINK_TYPES } from "../case-links/vocabulary";
 import { ASSET_TYPES, OBSERVABLE_TYPES } from "../observables/vocabulary";
@@ -822,11 +823,41 @@ export const integrations = pgTable(
   (t) => [
     check("integrations_cloud", sql`(${t.provider} = 'crowdstrike') = (${t.cloud} IS NOT NULL)`),
     uniqueIndex("integrations_org_name_idx").on(t.organizationId, sql`lower(${t.name})`),
+    // An Organization looks IPs up through one IPinfo Integration (ADR 0010).
+    uniqueIndex("integrations_one_ipinfo_idx").on(t.organizationId).where(sql`${t.provider} = 'ipinfo'`),
     check(
       "integrations_gap",
       sql`(${t.lastGapAt} IS NULL) = (${t.lastGapFromOffset} IS NULL) AND (${t.lastGapAt} IS NULL) = (${t.lastGapToOffset} IS NULL)`,
     ),
   ],
+);
+
+/**
+ * What an IPinfo Integration last reported about an IP address (ADR 0010): the cache that hovering an
+ * IP reads, so the same address costs one lookup however often it is looked at. One row per
+ * Integration and address (canonical form), replaced on every fetch. `details` is null until a fetch
+ * succeeds, and stays null for an address IPinfo calls a bogon (`bogon`). `fetched_at` is when
+ * `details` were fetched; `checked_at` when IPinfo was last asked, and `error` why that failed, if it
+ * did, leaving the details before it. Reserved addresses are never looked up, so never stored.
+ */
+export const ipLookups = pgTable(
+  "ip_lookups",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    integrationId: text("integration_id")
+      .notNull()
+      .references(() => integrations.id, { onDelete: "restrict" }),
+    ip: text("ip").notNull(),
+    details: jsonb("details").$type<IpDetails>(),
+    bogon: boolean("bogon").notNull().default(false),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }),
+    checkedAt: timestamp("checked_at", { withTimezone: true }).notNull(),
+    error: text("error"),
+  },
+  (t) => [uniqueIndex("ip_lookups_ip_idx").on(t.integrationId, t.ip)],
 );
 
 /**

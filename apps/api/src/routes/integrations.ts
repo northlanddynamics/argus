@@ -4,7 +4,7 @@ import { z } from "zod";
 import { NotPermitted } from "../access/policy";
 import { FALCON_CLOUDS } from "../alerts/vocabulary";
 import type { Deps } from "../deps";
-import { IntegrationNameTaken, IntegrationNotFound, InvalidDefaults, NotSupportedByProvider } from "../integrations/integrations";
+import { IntegrationNameTaken, type NewIntegration, IntegrationNotFound, InvalidDefaults, NotSupportedByProvider, OneIpinfoIntegration, WrongCredentials } from "../integrations/integrations";
 import { SEVERITIES } from "../cases/vocabulary";
 import { FALCON_IOC_PLATFORMS } from "../response-actions/vocabulary";
 import { type MemberEnv, requireMember } from "../members/membership";
@@ -39,35 +39,53 @@ const mimecastBody = z.strictObject({
   responseActions: z.boolean().default(false),
   responseActionDefaults: defaultsBody.optional(),
 });
-const createBody = z.union([crowdstrikeBody, mimecastBody]);
+/** An IPinfo API token (ADR 0010): it only looks IPs up, so there is nothing else to choose. */
+const tokenBody = z.strictObject({ token: z.string().trim().min(8).max(200) });
+const ipinfoBody = z.strictObject({
+  ...tokenBody.shape,
+  provider: z.literal("ipinfo"),
+  name: z.string().trim().min(1).max(80),
+});
+const createBody = z.union([crowdstrikeBody, mimecastBody, ipinfoBody]);
+const rotateBody = z.union([credentialsBody, tokenBody]);
 const enabledBody = z.object({ enabled: z.boolean() });
 
 
 const notPermitted = { error: "Not permitted" } as const;
 
-/** Integrations (CrowdStrike or Mimecast): every Member sees them and their health; Admins add, rotate, pause, resume them and set their write-back, Response Actions, Response Action defaults and Host containment. */
+/** Integrations (CrowdStrike, Mimecast or IPinfo): every Member sees them and their health; Admins add, rotate, pause, resume them and set their write-back, Response Actions, Response Action defaults and Host containment. */
 export const integrationRoutes = (deps: Deps, { integrations }: Modules) =>
   new Hono<MemberEnv>()
     .use(requireMember(deps.db))
     .get("/", async (c) => c.json({ integrations: await integrations.list(c.get("membership")) }, 200))
     .post("/", zValidator("json", createBody), async (c) => {
-      const { clientId, clientSecret, ...rest } = c.req.valid("json");
+      const body = c.req.valid("json");
       try {
-        const created = await integrations.create(c.get("membership"), { ...rest, credentials: { clientId, clientSecret } });
+        let input: NewIntegration;
+        if (body.provider === "ipinfo") {
+          const { token, ...rest } = body;
+          input = { ...rest, credentials: { token } };
+        } else {
+          const { clientId, clientSecret, ...rest } = body;
+          input = { ...rest, credentials: { clientId, clientSecret } };
+        }
+        const created = await integrations.create(c.get("membership"), input);
         return c.json({ integration: created }, 201);
       } catch (e) {
         if (e instanceof NotPermitted) return c.json(notPermitted, 403);
         if (e instanceof IntegrationNameTaken) return c.json({ error: e.message }, 409);
+        if (e instanceof OneIpinfoIntegration) return c.json({ error: e.message }, 409);
         throw e;
       }
     })
-    .put("/:id/credentials", zValidator("json", credentialsBody), async (c) => {
+    .put("/:id/credentials", zValidator("json", rotateBody), async (c) => {
       try {
         await integrations.rotateCredentials(c.get("membership"), c.req.param("id"), c.req.valid("json"));
         return c.json({ ok: true }, 200);
       } catch (e) {
         if (e instanceof NotPermitted) return c.json(notPermitted, 403);
         if (e instanceof IntegrationNotFound) return c.json({ error: e.message }, 404);
+        if (e instanceof WrongCredentials) return c.json({ error: e.message }, 422);
         throw e;
       }
     })
