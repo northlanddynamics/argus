@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { HashHoverCard } from "@/components/hash-details";
 import { CheckIcon, CopyIcon, DownloadIcon, ExternalLinkIcon, FileIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import { Time } from "@/components/time";
@@ -178,9 +179,12 @@ export function CaseEvidencePage() {
                 </TableCell>
                 <TableCell>
                   <span className="flex items-center gap-1">
-                    <code className="font-mono text-xs" title={e.sha256}>
-                      {shortHash(e.sha256)}
-                    </code>
+                    {/* Members see what VirusTotal knows about the file on hover; Guests see the fingerprint alone. */}
+                    <HashHoverCard hash={e.sha256}>
+                      <code tabIndex={0} className="font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/50" aria-label={`SHA-256 ${e.sha256}`}>
+                        {shortHash(e.sha256)}
+                      </code>
+                    </HashHoverCard>
                     <RowIconButton label={copied === e.sha256 ? "Copied" : "Copy SHA-256"} aria-label={`Copy SHA-256 of ${e.name}`} onClick={() => void copy(e.sha256)}>
                       {copied === e.sha256 ? <CheckIcon /> : <CopyIcon />}
                     </RowIconButton>

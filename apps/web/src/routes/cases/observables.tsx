@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { IpHoverCard } from "@/components/ip-details";
+import { hasContextPopup, ObservableHoverCard } from "@/components/observable-details";
 import { Link } from "@tanstack/react-router";
 import { BellOffIcon, type LucideIcon, MonitorIcon, PlusIcon, SirenIcon, UserIcon } from "lucide-react";
 import { type ReactElement, type ReactNode, useId, useState } from "react";
@@ -407,18 +407,18 @@ function LinkedCard<Type extends string>(props: {
                     {/* The value takes the room that is left, cut short with … when it doesn't fit; its page shows it whole. */}
                     <TableCell>
                       <span className="flex min-w-0 items-center gap-2">
-                        <IpHoverCard ip={item.value} enabled={props.kind === "observable" && item.type === "ip"}>
+                        <ObservableHoverCard type={item.type} value={item.value} enabled={props.kind === "observable"}>
                           <ItemLink
                             kind={props.kind}
                             id={item.id}
                             fromCase={props.caseNumber}
                             className="min-w-0 truncate font-mono text-xs hover:underline"
-                            title={props.kind === "observable" && item.type === "ip" ? undefined : props.fullValue(item.type, item.value)}
+                            title={props.kind === "observable" && hasContextPopup(item.type) ? undefined : props.fullValue(item.type, item.value)}
                             aria-label={`${typeLabel[item.type]} ${props.fullValue(item.type, item.value)}`}
                           >
                             {shown(item.type, item.value)}
                           </ItemLink>
-                        </IpHoverCard>
+                        </ObservableHoverCard>
                         {item.ignored && (
                           <Badge variant="outline" className="shrink-0" title="On the Ignored list: it never suggests which Case an Alert belongs with">
                             <BellOffIcon aria-hidden />

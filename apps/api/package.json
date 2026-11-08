@@ -15,6 +15,7 @@
     "./alerts/vocabulary": "./src/alerts/vocabulary.ts",
     "./integrations/vocabulary": "./src/integrations/vocabulary.ts",
     "./ipinfo/ipinfo": "./src/ipinfo/ipinfo.ts",
+    "./virustotal/virustotal": "./src/virustotal/virustotal.ts",
     "./internal/vocabulary": "./src/internal/vocabulary.ts",
     "./case-reports/vocabulary": "./src/case-reports/vocabulary.ts",
     "./search/vocabulary": "./src/search/vocabulary.ts",

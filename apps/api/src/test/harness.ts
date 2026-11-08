@@ -17,6 +17,7 @@ import { type ClientMessage, LIVE_PATH, type ServerMessage } from "../realtime/m
 import { postgresSignals } from "../realtime/signals";
 import { captureTeams } from "../teams/teams-webhook";
 import { fakeIpinfo } from "./fake-ipinfo";
+import { fakeVirustotal } from "./fake-virustotal";
 import { createTestDb } from "./db";
 
 /**
@@ -58,6 +59,7 @@ export async function buildTestApp({
   const auth = createAuth({ db, baseUrl: BASE_URL, secret: authSecret, mailer: outbox.mailer, clock });
   const evidence = memoryEvidenceStorage();
   const ipinfo = fakeIpinfo();
+  const virustotal = fakeVirustotal();
   const deps: Deps = {
     db,
     auth,
@@ -69,6 +71,7 @@ export async function buildTestApp({
     evidence: { storage: evidence.storage, maxBytes: evidenceMaxBytes },
     credentials: credentialSealer("test-credentials-secret"),
     ipinfo: ipinfo.connect,
+    virustotal: virustotal.connect,
   };
 
   /**
@@ -276,6 +279,8 @@ export async function buildTestApp({
     teams,
     /** The IPinfo every Integration's lookups go to (`test/fake-ipinfo.ts`). */
     ipinfo,
+    /** The VirusTotal every Member's hash lookups go to (`test/fake-virustotal.ts`). */
+    virustotal,
     /** Evidence files as stored, by storage key. */
     evidenceObjects: evidence.objects,
     live,
