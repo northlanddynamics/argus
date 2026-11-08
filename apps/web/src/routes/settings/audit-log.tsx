@@ -148,7 +148,7 @@ export function OrgAuditLogPage() {
                 <TableCell>
                   <Badge variant="outline">{categories[e.category] ?? e.category}</Badge>
                 </TableCell>
-                <TableCell className="whitespace-normal [overflow-wrap:anywhere]">{describe(e.action, e.target)}</TableCell>
+                <TableCell className="min-w-48 whitespace-normal [overflow-wrap:anywhere]">{describe(e.action, e.target)}</TableCell>
                 <TableCell className="pr-4 font-mono text-xs whitespace-normal [overflow-wrap:anywhere]">
                   {e.before !== null && <span className="text-muted-foreground line-through">{word(e.before)}</span>}
                   {e.before !== null && " "}→ {word(e.after)}

@@ -227,11 +227,11 @@ export function CaseAuditLogPage() {
                 <TableCell className="pl-4 font-mono text-xs tabular-nums">{instant(e.occurredAt)}</TableCell>
                 <TableCell className="truncate" title={e.actor.name}>{e.actor.name}</TableCell>
                 {/* Hashes and URLs wrap anywhere, so the full value stays on the record without widening the table. */}
-                <TableCell className="whitespace-normal [overflow-wrap:anywhere]">
+                <TableCell className="min-w-48 whitespace-normal [overflow-wrap:anywhere]">
                   {actionLabel[e.action] ?? e.action}
                   {e.target !== null && <span className="font-medium"> {shownTarget(e.action, e.target)}</span>}
                 </TableCell>
-                <TableCell className="font-mono text-xs whitespace-normal [overflow-wrap:anywhere]">
+                <TableCell className="min-w-48 font-mono text-xs whitespace-normal [overflow-wrap:anywhere]">
                   {/* An addition or removal has no before and after to show. */}
                   {(e.before !== null || e.after !== null) && (
                     <>

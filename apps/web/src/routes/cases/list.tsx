@@ -267,7 +267,8 @@ export function CasesPage() {
                   <TableCell>
                     <SeverityBadge severity={c.severity} />
                   </TableCell>
-                  <TableCell className="whitespace-normal">
+                  {/* The minimum holds in a narrow list, where the columns size to their content. */}
+                  <TableCell className="min-w-56 whitespace-normal">
                     <Link
                       to="/cases/$number"
                       params={{ number: String(c.number) }}

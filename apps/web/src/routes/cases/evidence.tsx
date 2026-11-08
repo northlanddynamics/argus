@@ -161,7 +161,7 @@ export function CaseEvidencePage() {
             )}
             {list.map((e) => (
               <TableRow key={e.id} data-testid={`evidence-${e.name}`} className="group/row">
-                <TableCell className="whitespace-normal">
+                <TableCell className="min-w-48 whitespace-normal">
                   <span className="flex items-start gap-2">
                     <FileIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
                     <span className="font-medium [overflow-wrap:anywhere]">{e.name}</span>
