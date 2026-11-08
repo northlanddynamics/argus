@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { IpHoverCard } from "@/components/ip-details";
+import { ObservableMenu } from "@/components/observable-menu";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { XIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -34,7 +35,7 @@ import {
 } from "@/lib/alerts";
 import { api } from "@/lib/api";
 import { type CaseType, caseRef, SEVERITIES, type Severity, severityLabel } from "@/lib/cases";
-import { assetTypeLabel, type ItemKind, observableTypeLabel, shownObservable } from "@/lib/observables";
+import { assetTypeLabel, type ItemKind, type ObservableType, observableTypeLabel, shownObservable } from "@/lib/observables";
 import { cn } from "@/lib/utils";
 import { exactTime } from "@/lib/when";
 import {
@@ -656,7 +657,15 @@ function FalconComments({ comments: c }: { comments: AlertDetail["falconComments
 }
 
 /** Observables or Assets an Alert names, as badges. */
-function Extracted({ label, kind, items }: { label: string; kind: ItemKind; items: { id: string; text: string; title: string; ip?: boolean }[] }) {
+function Extracted({
+  label,
+  kind,
+  items,
+}: {
+  label: string;
+  kind: ItemKind;
+  items: { id: string; text: string; title: string; ip?: boolean; observable?: { type: ObservableType; value: string } }[];
+}) {
   return (
     <section aria-label={label} className="grid gap-1">
       <h3 className="text-xs font-medium text-muted-foreground">{label}</h3>
@@ -664,11 +673,13 @@ function Extracted({ label, kind, items }: { label: string; kind: ItemKind; item
         <div className="flex flex-wrap gap-1">
           {items.map((item) => (
             <IpHoverCard key={item.id} ip={item.title} enabled={!!item.ip}>
-              <Badge variant="outline" className="max-w-full truncate font-mono hover:bg-muted" title={item.ip ? undefined : item.title} asChild>
-                <ItemLink kind={kind} id={item.id}>
-                  {item.text}
-                </ItemLink>
-              </Badge>
+              <ObservableMenu observable={item.observable}>
+                <Badge variant="outline" className="max-w-full truncate font-mono hover:bg-muted" title={item.ip ? undefined : item.title} asChild>
+                  <ItemLink kind={kind} id={item.id}>
+                    {item.text}
+                  </ItemLink>
+                </Badge>
+              </ObservableMenu>
             </IpHoverCard>
           ))}
         </div>
@@ -727,13 +738,15 @@ function RelatedCases({ alert }: { alert: AlertDetail }) {
               </div>
               <div className="flex flex-wrap gap-1">
                 {c.shared.map((s) => (
-                  <Badge key={`${s.kind}-${s.id}`} variant="outline" className="max-w-full truncate font-mono hover:bg-muted" title={s.value} asChild>
-                    <ItemLink kind={s.kind} id={s.id}>
-                      {s.kind === "observable"
-                        ? `${observableTypeLabel[s.type]} ${shownObservable(s.type, s.value)}`
-                        : `${assetTypeLabel[s.type]} ${s.value}`}
-                    </ItemLink>
-                  </Badge>
+                  <ObservableMenu key={`${s.kind}-${s.id}`} observable={s.kind === "observable" ? s : null}>
+                    <Badge variant="outline" className="max-w-full truncate font-mono hover:bg-muted" title={s.value} asChild>
+                      <ItemLink kind={s.kind} id={s.id}>
+                        {s.kind === "observable"
+                          ? `${observableTypeLabel[s.type]} ${shownObservable(s.type, s.value)}`
+                          : `${assetTypeLabel[s.type]} ${s.value}`}
+                      </ItemLink>
+                    </Badge>
+                  </ObservableMenu>
                 ))}
               </div>
               {c.attach ? (
@@ -893,7 +906,7 @@ function AlertPanel({ id, onClose, onAct }: { id: string; onClose: () => void; o
         <Extracted
           label="Extracted Observables"
           kind="observable"
-          items={a.indicators.observables.map((o) => ({ id: o.id, text: `${observableTypeLabel[o.type]} ${shownObservable(o.type, o.value)}`, title: o.value, ip: o.type === "ip" }))}
+          items={a.indicators.observables.map((o) => ({ id: o.id, text: `${observableTypeLabel[o.type]} ${shownObservable(o.type, o.value)}`, title: o.value, ip: o.type === "ip", observable: o }))}
         />
         <Extracted
           label="Extracted Assets"

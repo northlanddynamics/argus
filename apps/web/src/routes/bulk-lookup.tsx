@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { IpHoverCard, IpText } from "@/components/ip-details";
+import { ObservableMenu } from "@/components/observable-menu";
 import { Link } from "@tanstack/react-router";
 import { useDeferredValue, useMemo, useState } from "react";
 import { CaseRef } from "@/components/case-ref";
@@ -186,14 +187,18 @@ function ResultRow({ result: r, selected, onSelect }: { result: LookupResult; se
       <TableCell className="max-w-0 min-w-48 font-mono text-xs break-all whitespace-normal" title={r.value}>
         {r.known ? (
           <IpHoverCard ip={r.value} enabled={r.type === "ip"}>
-            <ItemLink kind="observable" id={r.known.id} className="hover:underline">
-              {shown}
-            </ItemLink>
+            <ObservableMenu observable={r}>
+              <ItemLink kind="observable" id={r.known.id} className="hover:underline">
+                {shown}
+              </ItemLink>
+            </ObservableMenu>
           </IpHoverCard>
         ) : r.type === "ip" ? (
           <IpText ip={r.value} className="no-underline" />
         ) : (
-          shown
+          <ObservableMenu observable={r}>
+            <span>{shown}</span>
+          </ObservableMenu>
         )}
       </TableCell>
       <TableCell className="text-muted-foreground">{observableTypeLabel[r.type]}</TableCell>

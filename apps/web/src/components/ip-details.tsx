@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { CopyIcon, ExternalLinkIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
 import { toast } from "sonner";
+import { ObservableMenu } from "@/components/observable-menu";
 import { Time } from "@/components/time";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -275,13 +276,15 @@ export function IpHoverCard({ ip, enabled = true, children }: { ip: string; enab
   );
 }
 
-/** Plain IP text, focusable, with the IP context popup. */
+/** Plain IP text, focusable, with the IP context popup and the Observable right-click menu. */
 export function IpText({ ip, className }: { ip: string; className?: string }) {
   return (
     <IpHoverCard ip={ip}>
-      <span tabIndex={0} className={cn("font-mono text-xs underline decoration-dotted underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-ring/50", className)}>
-        {ip}
-      </span>
+      <ObservableMenu observable={{ type: "ip", value: ip }}>
+        <span tabIndex={0} className={cn("font-mono text-xs underline decoration-dotted underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-ring/50", className)}>
+          {ip}
+        </span>
+      </ObservableMenu>
     </IpHoverCard>
   );
 }

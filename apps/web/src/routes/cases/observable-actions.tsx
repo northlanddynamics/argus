@@ -31,6 +31,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { ObservableCopyItems, ObservableLookupItems } from "@/components/observable-menu";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
@@ -282,8 +283,6 @@ export function ObservableActions({
   // Until the menu has loaded, offer it to anyone who might work the Case; once loaded, only if there is something to do.
   const showTakeAction = !c || (c.can.work && (!readOnly || actionable.length > 0));
 
-  const copy = () => void navigator.clipboard.writeText(defang(observable.type, observable.value)).then(() => toast("Copied (defanged)"));
-
   const takeActionItems = (kit: MenuKit) => {
     if (caseView.isPending || actions.isPending) return <kit.Item disabled>Loading…</kit.Item>;
     if (actions.isError || caseView.isError) return <kit.Item disabled>Couldn't load the Response Actions</kit.Item>;
@@ -442,10 +441,8 @@ export function ObservableActions({
         <SearchIcon />
         Search for this
       </kit.Item>
-      <kit.Item onSelect={copy}>
-        <CopyIcon />
-        Copy value
-      </kit.Item>
+      <ObservableCopyItems Item={kit.Item} type={observable.type} value={observable.value} />
+      <ObservableLookupItems Item={kit.Item} type={observable.type} value={observable.value} />
       {onUnlink && (
         <>
           <kit.Separator />

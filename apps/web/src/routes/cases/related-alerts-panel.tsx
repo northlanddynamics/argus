@@ -1,3 +1,4 @@
+import { ObservableMenu } from "@/components/observable-menu";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { SeverityBadge } from "@/components/case-badges";
@@ -61,11 +62,13 @@ export function RelatedAlertsPanel({ c }: { c: CaseView }) {
                 <span className="font-mono text-xs text-muted-foreground">{a.alert.externalId}</span>
                 <div className="flex flex-wrap gap-1">
                   {a.shared.map((s) => (
-                    <Badge key={`${s.kind}-${s.id}`} variant="outline" className="max-w-full truncate font-mono hover:bg-muted" title={s.value} asChild>
-                      <ItemLink kind={s.kind} id={s.id}>
-                        {s.kind === "observable" ? `${observableTypeLabel[s.type]} ${shownObservable(s.type, s.value)}` : `${assetTypeLabel[s.type]} ${s.value}`}
-                      </ItemLink>
-                    </Badge>
+                    <ObservableMenu key={`${s.kind}-${s.id}`} observable={s.kind === "observable" ? s : null}>
+                      <Badge variant="outline" className="max-w-full truncate font-mono hover:bg-muted" title={s.value} asChild>
+                        <ItemLink kind={s.kind} id={s.id}>
+                          {s.kind === "observable" ? `${observableTypeLabel[s.type]} ${shownObservable(s.type, s.value)}` : `${assetTypeLabel[s.type]} ${s.value}`}
+                        </ItemLink>
+                      </Badge>
+                    </ObservableMenu>
                   ))}
                 </div>
                 {mode && (
