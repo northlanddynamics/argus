@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { PageHeader } from "@/components/page-header";
 import { Link, useNavigate, useRouteContext, useSearch } from "@tanstack/react-router";
 import { ChevronLeftIcon, ChevronRightIcon, SearchIcon } from "lucide-react";
 import { useState } from "react";
@@ -46,7 +47,7 @@ export function SearchPage() {
   return (
     // Results read best first, top to bottom, so the page stays a reading column rather than filling a wide screen.
     <div className="grid w-full max-w-5xl grid-cols-1 gap-4">
-      <h1 className="text-2xl font-semibold tracking-tight">Search</h1>
+      <PageHeader title="Search" />
       <SearchForm key={q} initial={q} guest={guest} onSearch={(next) => void setSearch({ q: next })} />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <KindFilter kinds={kinds} onChange={(next) => void setSearch({ kinds: next })} counts={q ? counts : undefined} className="flex-wrap" />

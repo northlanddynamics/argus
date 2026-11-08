@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { PageHeader } from "@/components/page-header";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { type KeyboardEvent, type ReactNode, useEffect, useState } from "react";
 import { SeverityBadge } from "@/components/case-badges";
@@ -48,33 +49,35 @@ export function DashboardPage() {
 
   return (
     <div className="grid w-full max-w-page grid-cols-1 gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">
+      <PageHeader
+        title="Dashboard"
+        description={
+          <>
             Refreshes live · counts only the Cases you can see · days in UTC
             {data && !switching && <> · updated {clock(metrics.dataUpdatedAt)}</>}
-          </p>
-        </div>
-        <ToggleGroup
-          type="single"
-          variant="outline"
-          aria-label="Period"
-          value={String(days)}
-          // Choosing the current period again would clear it; there is always one.
-          onValueChange={(value) => {
-            if (!value) return;
-            const next = Number(value) as DashboardPeriod;
-            void navigate({ search: { days: next === DEFAULT_DASHBOARD_PERIOD ? undefined : next }, replace: true });
-          }}
-        >
-          {DASHBOARD_PERIODS.map((d) => (
-            <ToggleGroupItem key={d} value={String(d)} className="px-3">
-              {d} days
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-      </div>
+          </>
+        }
+        actions={
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            aria-label="Period"
+            value={String(days)}
+            // Choosing the current period again would clear it; there is always one.
+            onValueChange={(value) => {
+              if (!value) return;
+              const next = Number(value) as DashboardPeriod;
+              void navigate({ search: { days: next === DEFAULT_DASHBOARD_PERIOD ? undefined : next }, replace: true });
+            }}
+          >
+            {DASHBOARD_PERIODS.map((d) => (
+              <ToggleGroupItem key={d} value={String(d)} className="px-3">
+                {d} days
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+        }
+      />
 
       {metrics.isError && (
         <Alert variant="destructive">

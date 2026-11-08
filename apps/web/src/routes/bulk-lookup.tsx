@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { PageHeader } from "@/components/page-header";
 import { HashText } from "@/components/hash-details";
 import { IpText } from "@/components/ip-details";
 import { hasContextPopup, ObservableHoverCard } from "@/components/observable-details";
@@ -56,13 +57,10 @@ export function BulkLookupPage() {
 
   return (
     <div className="grid w-full max-w-page grid-cols-1 gap-4">
-      <div className="grid gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Bulk Lookup</h1>
-        <p className="max-w-prose text-sm text-muted-foreground">
-          Paste an email, a threat report or a list. Argus finds every IP, domain, URL, email address and hash in it, defanged or not, and shows which
-          ones your team has already seen.
-        </p>
-      </div>
+      <PageHeader
+        title="Bulk Lookup"
+        description="Paste an email, a threat report or a list. Argus finds every IP, domain, URL, email address and hash in it, defanged or not, and shows which ones your team has already seen."
+      />
       {/* The form keeps a form's width; only the results table uses a wide page. */}
       <form
         className="grid max-w-5xl gap-2"

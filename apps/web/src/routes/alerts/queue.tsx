@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { PageHeader } from "@/components/page-header";
 import { ObservableMenu } from "@/components/observable-menu";
 import { hasContextPopup, ObservableHoverCard } from "@/components/observable-details";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
@@ -239,25 +240,27 @@ export function AlertQueuePage() {
 
   return (
     <div className="grid w-full grid-cols-1 max-w-page gap-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Alerts</h1>
-        <ul className="text-sm text-muted-foreground" aria-label="Integrations">
-          {streams?.map((i) => (
-            <li key={i.id}>
-              {i.name}: {healthWord(i)}, {i.lastEventAt ? `last event ${ago(i.lastEventAt)}` : "no events yet"}
-            </li>
-          ))}
-          {streams?.length === 0 && (
-            <li>
-              No Integrations yet: an Admin adds one in{" "}
-              <Link to="/settings/integrations" className="underline underline-offset-4 hover:text-foreground">
-                Settings
-              </Link>
-              .
-            </li>
-          )}
-        </ul>
-      </div>
+      <PageHeader
+        title="Alerts"
+        description={
+          <ul aria-label="Integrations">
+            {streams?.map((i) => (
+              <li key={i.id}>
+                {i.name}: {healthWord(i)}, {i.lastEventAt ? `last event ${ago(i.lastEventAt)}` : "no events yet"}
+              </li>
+            ))}
+            {streams?.length === 0 && (
+              <li>
+                No Integrations yet: an Admin adds one in{" "}
+                <Link to="/settings/integrations" className="underline underline-offset-4 hover:text-foreground">
+                  Settings
+                </Link>
+                .
+              </li>
+            )}
+          </ul>
+        }
+      />
       {unhealthy.length > 0 && (
         <Alert className="border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80">
           <AlertTitle>

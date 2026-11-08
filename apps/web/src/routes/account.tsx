@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { PageHeader } from "@/components/page-header";
 import { type FormEvent, useState } from "react";
 import { Time } from "@/components/time";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -12,7 +13,7 @@ import { useRemoveVirustotalKey, useSetVirustotalKey, virustotalKeyQuery } from 
 export function AccountPage() {
   return (
     <div className="grid w-full max-w-3xl content-start gap-4">
-      <h1 className="text-2xl font-semibold">Your settings</h1>
+      <PageHeader title="Your settings" />
       <VirustotalKeyCard />
     </div>
   );

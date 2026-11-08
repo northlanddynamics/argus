@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { PageHeader, PageTitle } from "@/components/page-header";
 import { HashDetailsCard } from "@/components/hash-details";
 import { IpDetailsCard, IpText } from "@/components/ip-details";
 import { hasContextPopup } from "@/components/observable-details";
@@ -113,9 +114,8 @@ function ItemPageView({ kind, id }: { kind: ItemKind; id: string }) {
   if (page.isError) return <p className="py-8 text-center text-sm text-destructive">{page.error.message}. Try again.</p>;
   if (!item) {
     return (
-      <div className="grid w-full max-w-page gap-2 py-8 text-center">
-        <h1 className="text-lg font-semibold">{noun[kind]} not found</h1>
-        <p className="text-sm text-muted-foreground">It doesn't exist, or it isn't on any Case you can see.</p>
+      <div className="grid w-full max-w-page grid-cols-1 gap-4">
+        <PageHeader title={`${noun[kind]} not found`} description="It doesn't exist, or it isn't on any Case you can see." />
       </div>
     );
   }
@@ -123,27 +123,33 @@ function ItemPageView({ kind, id }: { kind: ItemKind; id: string }) {
   return (
     <div className="grid w-full max-w-page grid-cols-1 gap-4">
       <section aria-label={noun[kind]} className="grid gap-1">
-        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <TypeIcon kind={kind} item={item} />
-          {noun[kind]} · {typeLabel(kind, item)}
-        </p>
-        <div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-2">
-          <ObservableMenu observable={kind === "observable" ? { type: item.type as ObservableType, value: item.value } : null}>
-            <h1 className="min-w-0 flex-1 basis-80 font-mono text-2xl font-semibold tracking-tight [overflow-wrap:anywhere]" title={item.value}>
-              <Breakable text={shown(kind, item)} />
-            </h1>
-          </ObservableMenu>
-          <div className="flex shrink-0 items-center gap-1">
-            <CopyButton text={shown(kind, item)} />
-            <Button variant="outline" size="sm" asChild>
-              <Link to="/search" search={{ q: item.value }}>
-                <SearchIcon />
-                Search for this
-              </Link>
-            </Button>
-            {canManage(me.organization?.role) && <IgnoreButton kind={kind} item={item} />}
-          </div>
-        </div>
+        <PageHeader
+          heading={
+            <ObservableMenu observable={kind === "observable" ? { type: item.type as ObservableType, value: item.value } : null}>
+              <PageTitle className="font-mono [overflow-wrap:anywhere]" title={item.value}>
+                <Breakable text={shown(kind, item)} />
+              </PageTitle>
+            </ObservableMenu>
+          }
+          description={
+            <p className="flex items-center gap-1.5 text-xs">
+              <TypeIcon kind={kind} item={item} />
+              {noun[kind]} · {typeLabel(kind, item)}
+            </p>
+          }
+          actions={
+            <>
+              <CopyButton text={shown(kind, item)} />
+              <Button variant="outline" size="sm" asChild>
+                <Link to="/search" search={{ q: item.value }}>
+                  <SearchIcon />
+                  Search for this
+                </Link>
+              </Button>
+              {canManage(me.organization?.role) && <IgnoreButton kind={kind} item={item} />}
+            </>
+          }
+        />
         {item.ignored && (
           <p className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
             <Badge variant="outline">

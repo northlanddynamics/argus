@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { PageHeader } from "@/components/page-header";
 import { useState } from "react";
 import { Time } from "@/components/time";
 import { Badge } from "@/components/ui/badge";
@@ -94,7 +95,7 @@ export function OrgAuditLogPage() {
 
   return (
     <>
-      <h1 className="text-2xl font-semibold tracking-tight">Organization Audit Log</h1>
+      <PageHeader title="Organization Audit Log" />
       <FilterBar onClear={filtered ? clear : undefined}>
         <FilterSelect
           label="Category"

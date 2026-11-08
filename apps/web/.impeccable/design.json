@@ -156,6 +156,54 @@
         "role": "neutral",
         "displayName": "Operator Slate",
         "canonical": "oklch(0.208 0.042 265.755)"
+      },
+      "severity-critical": {
+        "role": "signal",
+        "displayName": "Severity Critical (fill)",
+        "canonical": "oklch(0.55 0.21 25)",
+        "dark": "oklch(0.55 0.2 25)"
+      },
+      "severity-high-surface": {
+        "role": "signal",
+        "displayName": "Severity High (tint)",
+        "canonical": "oklch(0.965 0.04 60)",
+        "dark": "oklch(0.3 0.07 50)"
+      },
+      "severity-high-border": {
+        "role": "signal",
+        "displayName": "Severity High (outline)",
+        "canonical": "oklch(0.66 0.17 48)",
+        "dark": "oklch(0.68 0.16 52)"
+      },
+      "severity-high-ink": {
+        "role": "signal",
+        "displayName": "Severity High (text)",
+        "canonical": "oklch(0.47 0.14 45)",
+        "dark": "oklch(0.86 0.1 60)"
+      },
+      "severity-medium-border": {
+        "role": "signal",
+        "displayName": "Severity Medium (outline)",
+        "canonical": "oklch(0.8 0.15 88)",
+        "dark": "oklch(0.62 0.12 88)"
+      },
+      "severity-medium-ink": {
+        "role": "signal",
+        "displayName": "Severity Medium (text)",
+        "canonical": "oklch(0.5 0.11 75)",
+        "dark": "oklch(0.87 0.12 92)"
+      },
+      "severity-low-border": {
+        "role": "signal",
+        "displayName": "Severity Low (outline)",
+        "canonical": "oklch(0.75 0.1 250)",
+        "dark": "oklch(0.58 0.11 250)"
+      },
+      "severity-low-ink": {
+        "role": "signal",
+        "displayName": "Severity Low (text)",
+        "canonical": "oklch(0.5 0.13 255)",
+        "dark": "oklch(0.82 0.08 245)"
       }
     },
     "typographyMeta": {
@@ -253,9 +301,9 @@
       "name": "Severity Badges",
       "kind": "chip",
       "refersTo": "badge-solid",
-      "description": "Severity by weight: Critical solid, High heavy outline, the rest thin outline.",
-      "html": "<span class=\"ds-badge ds-badge-critical\">Critical</span> <span class=\"ds-badge ds-badge-high\">High</span> <span class=\"ds-badge ds-badge-outline\">Medium</span>",
-      "css": ".ds-badge { display: inline-flex; align-items: center; height: 20px; padding: 2px 8px; border-radius: 26px; border: 1px solid transparent; font: 500 0.75rem/1rem 'Geist Variable', sans-serif; white-space: nowrap; box-sizing: border-box; } .ds-badge-critical { background: oklch(0.205 0 0); color: oklch(0.985 0 0); } .ds-badge-high { border: 2px solid oklch(0.145 0 0); color: oklch(0.145 0 0); font-weight: 600; } .ds-badge-outline { border-color: oklch(0.922 0 0); color: oklch(0.145 0 0); }"
+      "description": "Severity by colour and weight together: Critical solid red, High orange tint with a heavy outline, Medium and Low a yellow and blue outline, Informational neutral.",
+      "html": "<span class=\"ds-badge ds-badge-critical\">Critical</span> <span class=\"ds-badge ds-badge-high\">High</span> <span class=\"ds-badge ds-badge-medium\">Medium</span> <span class=\"ds-badge ds-badge-low\">Low</span> <span class=\"ds-badge ds-badge-info\">Informational</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; height: 20px; padding: 2px 8px; border-radius: 26px; border: 1px solid transparent; font: 500 0.75rem/1rem 'Geist Variable', sans-serif; white-space: nowrap; box-sizing: border-box; } .ds-badge-critical { background: oklch(0.55 0.21 25); color: oklch(0.985 0 0); font-weight: 600; } .ds-badge-high { background: oklch(0.965 0.04 60); border: 2px solid oklch(0.66 0.17 48); color: oklch(0.47 0.14 45); font-weight: 600; } .ds-badge-medium { border-color: oklch(0.8 0.15 88); color: oklch(0.5 0.11 75); } .ds-badge-low { border-color: oklch(0.75 0.1 250); color: oklch(0.5 0.13 255); } .ds-badge-info { border-color: oklch(0.922 0 0); color: oklch(0.556 0 0); }"
     },
     {
       "name": "Internal Badge",

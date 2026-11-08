@@ -21,6 +21,14 @@ colors:
   overdue-border: "oklch(0.808 0.114 19.571)"
   mention-surface: "oklch(0.951 0.026 236.824)"
   mention-ink: "oklch(0.391 0.09 240.876)"
+  severity-critical: "oklch(0.55 0.21 25)"
+  severity-high-surface: "oklch(0.965 0.04 60)"
+  severity-high-border: "oklch(0.66 0.17 48)"
+  severity-high-ink: "oklch(0.47 0.14 45)"
+  severity-medium-border: "oklch(0.8 0.15 88)"
+  severity-medium-ink: "oklch(0.5 0.11 75)"
+  severity-low-border: "oklch(0.75 0.1 250)"
+  severity-low-ink: "oklch(0.5 0.13 255)"
   operator-chrome: "oklch(0.208 0.042 265.755)"
 typography:
   headline:
@@ -119,7 +127,7 @@ components:
 
 Argus is a working tool that Analysts keep open all day, and the design stays out of their way. Surfaces are neutral (white in light mode, near-black in dark mode), and the things that stand out most are those that need attention: a warning, an error, an overdue Task, the live connection, and the people on the Case with you. Colour may also be used decoratively, sparingly and with taste, where it makes the tool more pleasant without competing with those signals. Density is high. Body text is 14px, controls are 32px tall, and the standard gap is 8px, so a Case, its Tasks and its Alerts fit on one desktop screen without scrolling around.
 
-The system is shadcn/ui ("radix-nova" style, neutral base colour) kept close to stock on purpose. Buttons, inputs, menus, dialogs, tables and the sidebar behave the way people expect from any modern web app, and no part of the interface needs learning. Argus's own character shows in a few domain markers: Severity shown by badge weight, the dashed "Internal" badge, monospace Case references, the live-status dot and tinted presence avatars.
+The system is shadcn/ui ("radix-nova" style, neutral base colour) kept close to stock on purpose. Buttons, inputs, menus, dialogs, tables and the sidebar behave the way people expect from any modern web app, and no part of the interface needs learning. Argus's own character shows in a few domain markers: Severity shown by a colour ramp and badge weight, the dashed "Internal" badge, monospace Case references, the live-status dot and tinted presence avatars.
 
 The app supports light and dark mode. By default it follows the device's setting; anyone can choose System, Light or Dark under Theme in the account menu (remembered per browser, via `next-themes` with the `.dark` class). Both themes come from the same tokens in `src/index.css`, so every surface and signal colour has a light and a dark value.
 
@@ -137,7 +145,7 @@ A neutral greyscale working surface in both themes, a small set of signal colour
 The frontmatter lists the light-mode values. Every token also has a dark-mode value under `.dark` in `src/index.css`; signal colours are tokens (`bg-notice`, `text-overdue`, `bg-mention` and so on), never raw Tailwind palette classes, so they switch with the theme.
 
 ### Primary
-- **Ink Black** (primary): primary buttons, Critical Severity badges, active selections. A near-black neutral, not a brand hue; the strongest emphasis the UI has.
+- **Ink Black** (primary): primary buttons and active selections. A near-black neutral, not a brand hue; the strongest emphasis the UI has.
 
 ### Neutral
 - **Paper White** (background): the page, cards and popovers.
@@ -154,6 +162,7 @@ The frontmatter lists the light-mode values. Every token also has a dark-mode va
 - **Live Green** (live) and **Reconnecting Amber** (reconnecting): the status dot beside the live-connection label.
 - **Overdue Red** (overdue-ink, overdue-border): the overdue Task badge.
 - **Mention Blue** (mention-surface, mention-ink): @mentions highlighted inside Discussion messages.
+- **Severity ramp** (severity-*): the Severity badge only, in the red, orange, yellow, blue, grey order analysts know from Falcon and SIEMs. Strength fades with the Severity: Critical a solid red fill, High an orange tint with a heavy orange outline, Medium a yellow outline with ochre text, Low a blue outline with blue text, Informational a neutral outline with muted text. Its hues stay out of other signals' shapes: Critical is always a filled pill, which Overdue Red (an outline) and Alarm Red (a tint) never are, and Medium is a pill, never an Amber Notice box.
 - **Presence tints** (sky, amber, emerald, rose, violet and lime at Tailwind's 200 step): avatar backgrounds, chosen from each person's id so the same person always gets the same tint. They keep the same pastel and dark initials in both themes.
 
 ### Decorative colour
@@ -211,7 +220,7 @@ Flat. In dark mode, cards and popovers sit one step lighter than the page (`card
 
 ## Shapes
 
-Gently rounded throughout from one base radius of 10px (`--radius: 0.625rem`): buttons, inputs and notices at 10px, small buttons at 8px, cards at 14px, and badges fully pill-shaped. Avatars and status dots are circles. Borders are 1px, except the High Severity badge's 2px outline and the Internal badge's dashed one, where the border itself carries meaning.
+Gently rounded throughout from one base radius of 10px (`--radius: 0.625rem`): buttons, inputs and notices at 10px, small buttons at 8px, cards at 14px, and badges fully pill-shaped. Avatars and status dots are circles. Borders are 1px, except the High Severity badge's 2px orange outline and the Internal badge's dashed one, where the border itself carries meaning.
 
 ## Components
 
@@ -226,7 +235,7 @@ Familiar and unremarkable: stock shadcn/ui, added with `bunx shadcn@latest add` 
 
 ### Chips (badges)
 - **Style:** pill-shaped, 20px tall, 12px medium text.
-- **Severity:** Critical is a solid Ink Black badge, High a 2px foreground outline in semibold, and Medium, Low and Informational a thin outline. Severity is shown in greyscale by weight, not by colour.
+- **Severity:** colour and weight fall together, so it never rests on colour alone: Critical is a solid red pill in semibold, High an orange-tinted pill with a 2px orange outline in semibold, Medium and Low a thin yellow and blue outline with matching text, and Informational a thin neutral outline with muted text (`SeverityBadge` in `src/components/case-badges.tsx`).
 - **Status:** a thin outline; a Closed Case reads "Closed · Benign".
 - **Internal:** a dashed outline at 50% foreground, the marker for anything hidden from Guests.
 - **Overdue:** a thin outline in Overdue Red.

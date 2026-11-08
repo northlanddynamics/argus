@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { PageHeader } from "@/components/page-header";
 import { useRouteContext } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
 import { Time } from "@/components/time";
@@ -49,6 +50,7 @@ export function OperatorConsolePage() {
     <div className="min-h-svh bg-muted">
       <AppHeader email={me.user.email} badge={<Badge variant="outline" className="text-slate-50">Operator console</Badge>} />
       <main className="grid gap-4 p-6">
+        <PageHeader title="Operator console" description="Every Organization on this Argus, and creating new ones." />
         <div className="grid items-start gap-4 lg:grid-cols-[1fr_320px]">
           <Card>
             <CardHeader>
