@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouteContext } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
+import { Time } from "@/components/time";
 import { AppHeader } from "@/components/app-header";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -74,7 +75,9 @@ export function OperatorConsolePage() {
                         </div>
                       </TableCell>
                       <TableCell>{org.members}</TableCell>
-                      <TableCell className="text-muted-foreground">{org.createdAt.slice(0, 10)}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        <Time iso={org.createdAt} />
+                      </TableCell>
                     </TableRow>
                   ))}
                   {organizations.data?.organizations.length === 0 && (

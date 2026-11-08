@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Time } from "@/components/time";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
@@ -25,7 +26,6 @@ import {
 } from "@/lib/cases";
 import { defang, observableTypeLabel } from "@/lib/observables";
 import { promotedSources, timelineQuery } from "@/lib/timeline";
-import { instant } from "@/lib/when";
 import { useCaseNumber } from "@/routes/cases/case-layout";
 import { QUIET_ACTION } from "@/routes/cases/rail";
 import { PromoteDialog } from "@/routes/cases/timeline-entry-form";
@@ -194,7 +194,7 @@ export function CaseAuditLogPage() {
         <Table className="@4xl:table-fixed" aria-label="Case Audit Log">
           {/* Set widths, so the columns hold still as filters change what's listed; Action takes the rest. */}
           <colgroup>
-            <col className="@4xl:w-44" />
+            <col className="@4xl:w-36" />
             <col className="@4xl:w-36" />
             <col />
             <col className="@4xl:w-[28%]" />
@@ -215,7 +215,7 @@ export function CaseAuditLogPage() {
             {entries.isPending &&
               Array.from({ length: 6 }, (_, i) => (
                 <TableRow key={i} className="hover:bg-transparent" aria-hidden>
-                  <TableCell className="pl-4"><Skeleton className="h-4 w-36" /></TableCell>
+                  <TableCell className="pl-4"><Skeleton className="h-4 w-24" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-3/5" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-2/5" /></TableCell>
@@ -224,7 +224,9 @@ export function CaseAuditLogPage() {
               ))}
             {entries.data?.map((e) => (
               <TableRow key={e.id} className="group/row">
-                <TableCell className="pl-4 font-mono text-xs tabular-nums">{instant(e.occurredAt)}</TableCell>
+                <TableCell className="truncate pl-4 text-muted-foreground">
+                  <Time iso={e.occurredAt} />
+                </TableCell>
                 <TableCell className="truncate" title={e.actor.name}>{e.actor.name}</TableCell>
                 {/* Hashes and URLs wrap anywhere, so the full value stays on the record without widening the table. */}
                 <TableCell className="min-w-48 whitespace-normal [overflow-wrap:anywhere]">

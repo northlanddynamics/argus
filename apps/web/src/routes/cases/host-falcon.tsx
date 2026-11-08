@@ -1,7 +1,8 @@
 import { ExternalLinkIcon } from "lucide-react";
+import { Time } from "@/components/time";
 import { Badge } from "@/components/ui/badge";
 import type { assetsQuery } from "@/lib/observables";
-import { exactTime, when } from "@/lib/when";
+import { when } from "@/lib/when";
 
 export type CaseAsset = NonNullable<Awaited<ReturnType<ReturnType<typeof assetsQuery>["queryFn"] & {}>>>[number];
 type FalconView = CaseAsset["falcon"][number];
@@ -50,8 +51,8 @@ export function HostFalcon({ falcon }: { falcon: FalconView[] }) {
 
 function DeviceLine({ device: d, prefix }: { device: Device; prefix: string }) {
   const asOf = d.fetchedAt ? (
-    <span className="text-muted-foreground" title={exactTime(d.fetchedAt)}>
-      as of {when(d.fetchedAt)}
+    <span className="text-muted-foreground">
+      <Time iso={d.fetchedAt} prefix="as of" />
       {d.refreshing && ", refreshing…"}
     </span>
   ) : null;

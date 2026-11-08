@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { XIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { Time } from "@/components/time";
 import { SeverityBadge, StatusBadge } from "@/components/case-badges";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { FilterBar, FilterSelect } from "@/components/filter-bar";
@@ -56,7 +57,6 @@ export const validateAlertQueueSearch = (search: Record<string, unknown>): Alert
 });
 
 /** When an Alert arrived, compactly: "Nov 3, 14:02". */
-const received = (iso: string) => new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
 type BulkKind = "open" | "attach" | "dismiss";
 /** An Alert as the Member saw it when they picked it for an action. */
@@ -463,8 +463,8 @@ export function AlertQueuePage() {
                     )}
                     </div>
                   </TableCell>
-                  <TableCell className={cn(narrowHidden, "text-muted-foreground tabular-nums")} title={exactTime(a.receivedAt)}>
-                    <span className="hidden @3xl:inline">{received(a.receivedAt)}</span>
+                  <TableCell className={cn(narrowHidden, "truncate text-muted-foreground")}>
+                    <span className="hidden @3xl:inline"><Time iso={a.receivedAt} /></span>
                   </TableCell>
                   <TableCell className="pr-4">
                     <div className="flex flex-wrap items-center gap-1">

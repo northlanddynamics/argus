@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { Time } from "@/components/time";
 import { ItemLink } from "@/components/item-link";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,6 @@ import {
   observableTypeLabel,
   setIgnored,
 } from "@/lib/observables";
-import { exactTime, when } from "@/lib/when";
 
 const typeLabel = (e: IgnoredEntry) =>
   e.kind === "observable" ? observableTypeLabel[e.type as ObservableType] : assetTypeLabel[e.type as AssetType];
@@ -67,7 +67,7 @@ export function IgnoredObservablesPage() {
               <col />
               <col className="@2xl:w-28" />
               <col className="@2xl:w-44" />
-              <col className="@2xl:w-24" />
+              <col className="@2xl:w-32" />
               <col className="@2xl:w-28" />
             </colgroup>
             <TableHeader>
@@ -75,7 +75,7 @@ export function IgnoredObservablesPage() {
                 <TableHead>Value</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead className={fromSm}><span className={showSm}>Added by</span></TableHead>
-                <TableHead className="text-right">Added</TableHead>
+                <TableHead>Added</TableHead>
                 <TableHead>
                   <span className="sr-only">Actions</span>
                 </TableHead>
@@ -93,8 +93,8 @@ export function IgnoredObservablesPage() {
                   <TableCell className={cn(fromSm, "truncate")} title={e.by.name}>
                     <span className={showSm}>{e.by.name}</span>
                   </TableCell>
-                  <TableCell className="text-right text-muted-foreground tabular-nums" title={exactTime(e.at)}>
-                    {when(e.at)}
+                  <TableCell className="truncate text-muted-foreground">
+                    <Time iso={e.at} />
                   </TableCell>
                   <TableCell className="text-right">
                     <Button

@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { BellOffIcon, type LucideIcon, MonitorIcon, PlusIcon, SirenIcon, UserIcon } from "lucide-react";
 import { type ReactElement, type ReactNode, useId, useState } from "react";
 import { toast } from "sonner";
+import { Time } from "@/components/time";
 import { ItemLink } from "@/components/item-link";
 import { observableIcon } from "@/components/search/search-hit";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -39,7 +40,7 @@ import { falconTakes, holdingOn, ResponseActionsCard } from "@/routes/cases/resp
 import { AssetActions, BulkObservableActions, ObservableActions } from "@/routes/cases/observable-actions";
 import { type CaseAsset, HostFalcon } from "@/routes/cases/host-falcon";
 import { InternalBadge } from "@/components/visibility";
-import { exactTime, when } from "@/lib/when";
+import { when } from "@/lib/when";
 import { cn } from "@/lib/utils";
 
 /**
@@ -343,7 +344,7 @@ function LinkedCard<Type extends string>(props: {
               <col className="w-0 @3xl:w-40" />
               <col className="w-0 @3xl:w-44" />
               {props.status && <col className="w-0 @xl:w-52" />}
-              <col className="w-0 @4xl:w-24" />
+              <col className="w-0 @4xl:w-32" />
               {(!readOnly || props.renderRow) && <col className="w-12" />}
             </colgroup>
             <TableHeader>
@@ -365,7 +366,7 @@ function LinkedCard<Type extends string>(props: {
                 <TableHead className={from3xl}><span className={show3xl}>Added by</span></TableHead>
                 <TableHead className={from3xl}><span className={show3xl}>Seen in other Cases</span></TableHead>
                 {props.status && <TableHead className={fromXl}><span className={showXl}>{props.status.heading}</span></TableHead>}
-                <TableHead className={cn(from4xl, "text-right")}><span className={show4xl}>Added</span></TableHead>
+                <TableHead className={from4xl}><span className={show4xl}>Added</span></TableHead>
                 {(!readOnly || props.renderRow) && (
                   <TableHead>
                     <span className="sr-only">Actions</span>
@@ -456,8 +457,8 @@ function LinkedCard<Type extends string>(props: {
                         <div className={showXl}>{props.status.render(item)}</div>
                       </TableCell>
                     )}
-                    <TableCell className={cn(from4xl, "text-right text-muted-foreground tabular-nums")} title={exactTime(item.linkedAt)}>
-                      <span className={show4xl}>{when(item.linkedAt)}</span>
+                    <TableCell className={cn(from4xl, "truncate text-muted-foreground")}>
+                      <span className={show4xl}><Time iso={item.linkedAt} /></span>
                     </TableCell>
                     {menuButton ? (
                       <TableCell className="text-right">{menuButton}</TableCell>

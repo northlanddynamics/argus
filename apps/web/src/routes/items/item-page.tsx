@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams, useRouteContext } from "@tanstack/react-router";
 import { BellOffIcon, CheckIcon, CopyIcon, ExternalLinkIcon, FingerprintIcon, LockIcon, MonitorIcon, RefreshCwIcon, SearchIcon, UserIcon } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
+import { Time } from "@/components/time";
 import { SeverityBadge, StatusBadge } from "@/components/case-badges";
 import { observableIcon } from "@/components/search/search-hit";
 import {
@@ -40,7 +41,6 @@ import {
   setIgnored,
 } from "@/lib/observables";
 import { falconIocActionLabel, responseActionKindLabel, responseActionStateLabel } from "@/lib/response-actions";
-import { exactTime, when } from "@/lib/when";
 import { ObservableActions } from "@/routes/cases/observable-actions";
 import { FalconIdentitiesCard } from "@/routes/items/falcon-identities-card";
 
@@ -144,18 +144,18 @@ function ItemPageView({ kind, id }: { kind: ItemKind; id: string }) {
             </Badge>
             <span>
               Added to the Ignored list by {item.ignored.by.name}{" "}
-              <span title={exactTime(item.ignored.at)}>{when(item.ignored.at)}</span>. It never suggests which Case an Alert belongs with.
+              <Time iso={item.ignored.at} />. It never suggests which Case an Alert belongs with.
             </span>
           </p>
         )}
         <dl className="mt-1 flex flex-wrap gap-x-6 gap-y-1 text-sm">
           <div className="flex gap-1.5">
             <dt className="text-muted-foreground">First seen</dt>
-            <dd title={exactTime(item.firstSeen)}>{when(item.firstSeen)}</dd>
+            <dd><Time iso={item.firstSeen} /></dd>
           </div>
           <div className="flex gap-1.5">
             <dt className="text-muted-foreground">Last seen</dt>
-            <dd title={exactTime(item.lastSeen)}>{when(item.lastSeen)}</dd>
+            <dd><Time iso={item.lastSeen} /></dd>
           </div>
           <div className="flex gap-1.5">
             <dt className="text-muted-foreground">Cases</dt>
@@ -349,7 +349,7 @@ function FalconDevicesCard({ item }: { item: ItemPage }) {
                       </Badge>
                     )}
                     <span>
-                      · recorded <span title={exactTime(device.recordedAt)}>{when(device.recordedAt)}</span>
+                      · recorded <Time iso={device.recordedAt} />
                     </span>
                   </p>
                 </div>
@@ -378,7 +378,7 @@ function HostLookup({ integration, lookup }: { integration: string; lookup: NonN
       )}
       {checkedAt && (
         <p className="text-xs text-muted-foreground">
-          Checked <span title={exactTime(checkedAt)}>{when(checkedAt)}</span>
+          Checked <Time iso={checkedAt} />
           {refreshing && " · checking again…"}
         </p>
       )}
@@ -390,8 +390,6 @@ function HostLookup({ integration, lookup }: { integration: string; lookup: NonN
 /** The values Falcon gave, joined by `by`; null when it gave none. */
 const joined = (values: readonly (string | null)[], by: string) => values.filter(Boolean).join(by) || null;
 
-const Time = ({ at }: { at: string }) => <span title={exactTime(at)}>{when(at)}</span>;
-
 /** A host's containment: plain when it isn't contained, marked otherwise. */
 const Containment = ({ state }: { state: NonNullable<HostFacts["containment"]> }) =>
   state === "normal" ? containmentLabel.normal : <Badge variant="outline">{containmentLabel[state]}</Badge>;
@@ -401,7 +399,7 @@ function HostEnrichment({ enrichment }: { enrichment: FalconDevice["enrichment"]
   const { host, fetchedAt, notFound, error, refreshing } = enrichment;
   const asOf = fetchedAt && (
     <p className="text-xs text-muted-foreground">
-      As of <span title={exactTime(fetchedAt)}>{when(fetchedAt)}</span>
+      As of <Time iso={fetchedAt} />
       {refreshing && " · refreshing…"}
     </p>
   );
@@ -427,8 +425,8 @@ function HostEnrichment({ enrichment }: { enrichment: FalconDevice["enrichment"]
     { label: "Containment", value: host.containment && <Containment state={host.containment} /> },
     { label: "Platform", value: joined([host.platform, host.osVersion], " · ") },
     { label: "Sensor", value: joined([host.sensorVersion, host.sensorStatus], " · ") },
-    { label: "First seen", value: host.firstSeen && <Time at={host.firstSeen} /> },
-    { label: "Last seen", value: host.lastSeen && <Time at={host.lastSeen} /> },
+    { label: "First seen", value: host.firstSeen && <Time iso={host.firstSeen} /> },
+    { label: "Last seen", value: host.lastSeen && <Time iso={host.lastSeen} /> },
     { label: "Local IP", value: host.localIp },
     { label: "External IP", value: host.externalIp },
     { label: "MAC", value: host.macAddress },
@@ -476,7 +474,7 @@ function CasesCard({ item, actions }: { item: ItemPage; actions: boolean }) {
             <col className="@3xl:w-28" />
             <col className="@3xl:w-44" />
             <col className="@3xl:w-44" />
-            <col className="@3xl:w-24" />
+            <col className="@3xl:w-32" />
             {actions && <col className="@3xl:w-12" />}
           </colgroup>
           <TableHeader className={item.cases.length ? undefined : "sr-only"}>
@@ -485,7 +483,7 @@ function CasesCard({ item, actions }: { item: ItemPage; actions: boolean }) {
               <TableHead>Severity</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className={fromSm}><span className={showSm}>Assignee</span></TableHead>
-              <TableHead className="text-right">Linked</TableHead>
+              <TableHead>Linked</TableHead>
               {actions && (
                 <TableHead>
                   <span className="sr-only">Actions</span>
@@ -512,8 +510,8 @@ function CasesCard({ item, actions }: { item: ItemPage; actions: boolean }) {
                   <TableCell className={cn(fromSm, "truncate", !c.assignee && "text-muted-foreground")} title={c.assignee?.name}>
                     <span className={showSm}>{c.assignee?.name ?? "Unassigned"}</span>
                   </TableCell>
-                  <TableCell className="text-right text-muted-foreground tabular-nums" title={exactTime(c.linkedAt)}>
-                    {when(c.linkedAt)}
+                  <TableCell className="truncate text-muted-foreground">
+                    <Time iso={c.linkedAt} />
                   </TableCell>
                   {menuButton && <TableCell className="text-right">{menuButton}</TableCell>}
                 </TableRow>
@@ -554,7 +552,7 @@ function AlertsCard({ item }: { item: ItemPage }) {
             <col className="@3xl:w-28" />
             <col className="@3xl:w-44" />
             <col className="@3xl:w-44" />
-            <col className="@3xl:w-24" />
+            <col className="@3xl:w-32" />
           </colgroup>
           <TableHeader className={item.alerts.length ? undefined : "sr-only"}>
             <TableRow className="hover:bg-transparent">
@@ -562,7 +560,7 @@ function AlertsCard({ item }: { item: ItemPage }) {
               <TableHead>Severity</TableHead>
               <TableHead>Alert Status</TableHead>
               <TableHead className={fromSm}><span className={showSm}>Case</span></TableHead>
-              <TableHead className="text-right">Raised</TableHead>
+              <TableHead>Raised</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -591,8 +589,8 @@ function AlertsCard({ item }: { item: ItemPage }) {
                   )}
                   </span>
                 </TableCell>
-                <TableCell className="text-right text-muted-foreground tabular-nums" title={exactTime(a.seenAt)}>
-                  {when(a.seenAt)}
+                <TableCell className="truncate text-muted-foreground">
+                  <Time iso={a.seenAt} />
                 </TableCell>
               </TableRow>
             ))}
@@ -631,7 +629,7 @@ function ResponseActionsCard({ item, actions }: { item: ItemPage; actions: boole
             <col className="@3xl:w-[30%]" />
             <col className="@3xl:w-36" />
             <col />
-            <col className="@3xl:w-36" />
+            <col className="@3xl:w-44" />
             {actions && <col className="@3xl:w-12" />}
           </colgroup>
           <TableHeader className={item.responseActions.length ? undefined : "sr-only"}>
@@ -639,7 +637,7 @@ function ResponseActionsCard({ item, actions }: { item: ItemPage; actions: boole
               <TableHead>Action</TableHead>
               <TableHead>State</TableHead>
               <TableHead>Case</TableHead>
-              <TableHead className="text-right">When</TableHead>
+              <TableHead>When</TableHead>
               {actions && (
                 <TableHead>
                   <span className="sr-only">Actions</span>
@@ -667,8 +665,8 @@ function ResponseActionsCard({ item, actions }: { item: ItemPage; actions: boole
                       <span className="font-mono text-xs text-muted-foreground">{caseRef(r.case.number)}</span> {r.case.title}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-right text-muted-foreground tabular-nums" title={exactTime(r.sentAt ?? r.requestedAt)}>
-                    {r.sentAt ? <>Sent {when(r.sentAt)}</> : <>Requested {when(r.requestedAt)}</>}
+                  <TableCell className="truncate text-muted-foreground">
+                    {r.sentAt ? <Time iso={r.sentAt} prefix="Sent" /> : <Time iso={r.requestedAt} prefix="Requested" />}
                   </TableCell>
                   {menuButton && <TableCell className="text-right">{menuButton}</TableCell>}
                 </TableRow>

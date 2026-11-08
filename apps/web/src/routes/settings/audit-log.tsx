@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { Time } from "@/components/time";
 import { Badge } from "@/components/ui/badge";
 import { DatePicker } from "@/components/date-picker";
 import { DATE_FILTER, FilterBar, FilterField, FilterSelect } from "@/components/filter-bar";
@@ -8,7 +9,6 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
-import { instant } from "@/lib/when";
 import { membersKey } from "@/routes/settings/members";
 
 const categories = { members: "Members", "case-roles": "Case Roles", sso: "Single sign-on", integrations: "Integrations", alerts: "Alerts", teams: "Teams", "ignored-observables": "Ignored Observables" } as const;
@@ -114,7 +114,7 @@ export function OrgAuditLogPage() {
         <Table className="@4xl:table-fixed" aria-label="Organization Audit Log">
           {/* Set widths, so the columns hold still as filters change what's listed; Action takes the rest. */}
           <colgroup>
-            <col className="@4xl:w-44" />
+            <col className="@4xl:w-36" />
             <col className="@4xl:w-36" />
             <col className="@4xl:w-32" />
             <col />
@@ -133,7 +133,7 @@ export function OrgAuditLogPage() {
             {entries.isPending &&
               Array.from({ length: 6 }, (_, i) => (
                 <TableRow key={i} className="hover:bg-transparent" aria-hidden>
-                  <TableCell className="pl-4"><Skeleton className="h-4 w-36" /></TableCell>
+                  <TableCell className="pl-4"><Skeleton className="h-4 w-24" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                   <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-3/5" /></TableCell>
@@ -142,8 +142,9 @@ export function OrgAuditLogPage() {
               ))}
             {entries.data?.map((e) => (
               <TableRow key={e.id}>
-                {/* The same UTC instant as a Case's Audit Log, so one moment never reads two ways. */}
-                <TableCell className="pl-4 font-mono text-xs tabular-nums">{instant(e.occurredAt)}</TableCell>
+                <TableCell className="truncate pl-4 text-muted-foreground">
+                  <Time iso={e.occurredAt} />
+                </TableCell>
                 <TableCell className="truncate" title={e.actor.name}>{e.actor.name}</TableCell>
                 <TableCell>
                   <Badge variant="outline">{categories[e.category] ?? e.category}</Badge>

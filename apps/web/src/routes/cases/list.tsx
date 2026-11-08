@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon, LockIcon, UsersIcon } from "lucide-react";
 import { Fragment, useEffect, useRef } from "react";
+import { Time } from "@/components/time";
 import { SeverityBadge, StatusBadge } from "@/components/case-badges";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -28,7 +29,6 @@ import {
 import { normaliseTag, tagLabel, tagsInUseQuery } from "@/lib/tags";
 import { cn } from "@/lib/utils";
 import { useJustChanged } from "@/lib/use-just-changed";
-import { exactTime, when } from "@/lib/when";
 import { OpenCaseDialog } from "@/routes/cases/open-case-dialog";
 
 /**
@@ -212,8 +212,8 @@ export function CasesPage() {
               <col className="@4xl:w-44" />
               <col className="@4xl:w-52" />
               <col className="@4xl:w-0 @6xl:w-20" />
-              <col className="@4xl:w-0 @6xl:w-28" />
-              <col className="@4xl:w-28" />
+              <col className="@4xl:w-0 @6xl:w-32" />
+              <col className="@4xl:w-32" />
             </colgroup>
             <TableCaption className="sr-only">
               {`${viewLabel[view]}, ${filtered ? "filtered, " : ""}sorted by ${sortLabel[sort]}, ${order === "desc" ? "descending" : "ascending"}`}
@@ -309,11 +309,11 @@ export function CasesPage() {
                   <TableCell className={cn(wide, "text-right tabular-nums", !c.alerts && "text-muted-foreground")}>
                     <span className={wideContent}>{c.alerts}</span>
                   </TableCell>
-                  <TableCell className={cn(wide, "text-muted-foreground tabular-nums")} title={exactTime(c.openedAt)}>
-                    <span className={wideContent}>{when(c.openedAt)}</span>
+                  <TableCell className={cn(wide, "text-muted-foreground")}>
+                    <span className={wideContent}><Time iso={c.openedAt} /></span>
                   </TableCell>
-                  <TableCell className="pr-4 text-muted-foreground tabular-nums" title={exactTime(c.updatedAt)}>
-                    {when(c.updatedAt)}
+                  <TableCell className="truncate pr-4 text-muted-foreground">
+                    <Time iso={c.updatedAt} />
                   </TableCell>
                 </TableRow>
               ))}

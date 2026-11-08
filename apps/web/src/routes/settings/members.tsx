@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouteContext } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
+import { Time } from "@/components/time";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,6 @@ import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api, authClient, errorMessage } from "@/lib/api";
 import { roleLabel } from "@/lib/roles";
-import { exactTime, when } from "@/lib/when";
 import { CaseRolesCard } from "@/routes/settings/case-roles-card";
 
 export const membersKey = ["organization", "members"];
@@ -143,8 +143,8 @@ export function MembersPage() {
                     )}
                   </TableCell>
                   <TableCell className="truncate" title={signInMethods(m.signIn)}>{signInMethods(m.signIn)}</TableCell>
-                  <TableCell className="text-muted-foreground tabular-nums" title={m.lastActiveAt ? exactTime(m.lastActiveAt) : undefined}>
-                    {m.lastActiveAt ? when(m.lastActiveAt) : "—"}
+                  <TableCell className="truncate text-muted-foreground">
+                    {m.lastActiveAt ? <Time iso={m.lastActiveAt} /> : "—"}
                   </TableCell>
                   <TableCell className="text-right">
                     {m.role !== "owner" && (

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { type FormEvent, Fragment, type ReactNode, useState } from "react";
 import { toast } from "sonner";
+import { Time } from "@/components/time";
 import { ItemLink } from "@/components/item-link";
 import { Visibility } from "@/components/visibility";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -48,7 +49,6 @@ import {
   takeResponseActions,
   toolOf,
 } from "@/lib/response-actions";
-import { exactTime, when } from "@/lib/when";
 import { caseRef, type Severity } from "@/lib/cases";
 import { ObservableActions } from "@/routes/cases/observable-actions";
 
@@ -84,14 +84,8 @@ function sentWith(integrations: readonly Eligible[], severity: Severity) {
 /** Whether a send starts Internal: so when every Integration it goes to says so by default. */
 export const startsInternal = (integrations: readonly Eligible[]) => integrations.length > 0 && integrations.every((i) => i.defaults.internal);
 
-/** A time a person can read, with the exact time for pointer and assistive tech alike. */
-function At({ iso }: { iso: string }) {
-  return (
-    <time dateTime={iso} title={exactTime(iso)}>
-      {when(iso)}
-    </time>
-  );
-}
+/** A time a person can read, with the full time on hover and copying on right-click. */
+const At = ({ iso }: { iso: string }) => <Time iso={iso} />;
 
 const list = (names: string[]) => (names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`);
 
@@ -682,7 +676,7 @@ export function ResponseActionsCard({
   const eligible = query.data?.integrations ?? [];
   const { failed, open, closed } = arrange(all);
   const rows = [...failed, ...open, ...(showClosed ? closed : [])];
-  const columns = 5 + (canMarkInternal ? 1 : 0);
+  const columns = 6 + (canMarkInternal ? 1 : 0);
   /** The error of a Retry on row `id`, shown on that row. */
   const errorOn = (id: string) => (retry.variables === id && retry.error) || null;
 
@@ -714,7 +708,8 @@ export function ResponseActionsCard({
               <col />
               <col className="@4xl:w-48" />
               <col className="@4xl:w-56" />
-              <col className="@4xl:w-40" />
+              <col className="@4xl:w-36" />
+              <col className="@4xl:w-32" />
               {canMarkInternal && <col className="@4xl:w-44" />}
               <col className="@4xl:w-28" />
             </colgroup>
@@ -725,6 +720,7 @@ export function ResponseActionsCard({
                 <TableHead>Action</TableHead>
                 <TableHead>State</TableHead>
                 <TableHead>Taken by</TableHead>
+                <TableHead>Taken</TableHead>
                 {canMarkInternal && <TableHead>Visibility</TableHead>}
                 <TableHead>
                   <span className="sr-only">Actions</span>
@@ -784,11 +780,11 @@ export function ResponseActionsCard({
                           )}
                           {r.lastError && <span className="mt-1 block text-xs break-words text-destructive">{r.lastError}</span>}
                         </TableCell>
-                        <TableCell className="text-xs whitespace-normal">
-                          <span className="block truncate" title={r.requestedBy.name}>{r.requestedBy.name}</span>
-                          <span className="block text-muted-foreground">
-                            <At iso={r.requestedAt} />
-                          </span>
+                        <TableCell className="truncate text-muted-foreground" title={r.requestedBy.name}>
+                          {r.requestedBy.name}
+                        </TableCell>
+                        <TableCell className="truncate text-muted-foreground">
+                          <At iso={r.requestedAt} />
                         </TableCell>
                         {canMarkInternal && (
                           <TableCell>

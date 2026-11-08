@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckIcon, CopyIcon, DownloadIcon, ExternalLinkIcon, FileIcon } from "lucide-react";
 import { useRef, useState } from "react";
+import { Time } from "@/components/time";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,7 +15,6 @@ import { Audience, Visibility } from "@/components/visibility";
 import { canMarkInternal, canParticipate, caseQuery } from "@/lib/cases";
 import { evidenceKey, evidenceQuery, evidenceUrl, formatBytes, shortHash, uploadEvidence } from "@/lib/evidence";
 import { cn } from "@/lib/utils";
-import { instant } from "@/lib/when";
 import { useCaseNumber } from "@/routes/cases/case-layout";
 
 /** A file on its way up. */
@@ -134,7 +134,8 @@ export function CaseEvidencePage() {
           <colgroup>
             <col />
             <col className="@4xl:w-24" />
-            <col className="@4xl:w-56" />
+            <col className="@4xl:w-40" />
+            <col className="@4xl:w-32" />
             <col className="@4xl:w-44" />
             {membersView && <col className="@4xl:w-44" />}
             <col className="@4xl:w-20" />
@@ -143,6 +144,7 @@ export function CaseEvidencePage() {
             <TableRow className="hover:bg-transparent">
               <TableHead>File</TableHead>
               <TableHead className="text-right">Size</TableHead>
+              <TableHead>Added by</TableHead>
               <TableHead>Added</TableHead>
               <TableHead>SHA-256</TableHead>
               {membersView && <TableHead>Visibility</TableHead>}
@@ -154,7 +156,7 @@ export function CaseEvidencePage() {
           <TableBody>
             {evidence.isPending && (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={membersView ? 6 : 5}>
+                <TableCell colSpan={membersView ? 7 : 6}>
                   <Skeleton className="h-8" />
                 </TableCell>
               </TableRow>
@@ -168,9 +170,11 @@ export function CaseEvidencePage() {
                   </span>
                 </TableCell>
                 <TableCell className="text-right text-muted-foreground tabular-nums">{formatBytes(e.size)}</TableCell>
-                <TableCell>
-                  <div className="truncate" title={e.addedBy.name}>{e.addedBy.name}</div>
-                  <div className="font-mono text-xs text-muted-foreground tabular-nums">{instant(e.addedAt)}</div>
+                <TableCell className="truncate text-muted-foreground" title={e.addedBy.name}>
+                  {e.addedBy.name}
+                </TableCell>
+                <TableCell className="truncate text-muted-foreground">
+                  <Time iso={e.addedAt} />
                 </TableCell>
                 <TableCell>
                   <span className="flex items-center gap-1">
@@ -205,7 +209,7 @@ export function CaseEvidencePage() {
             ))}
             {evidence.data?.length === 0 && (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={membersView ? 6 : 5} className="text-muted-foreground">
+                <TableCell colSpan={membersView ? 7 : 6} className="text-muted-foreground">
                   No Evidence yet.
                 </TableCell>
               </TableRow>
