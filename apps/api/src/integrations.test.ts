@@ -30,7 +30,7 @@ async function acme() {
     return w;
   };
 
-  type CreateJson = Parameters<Session["api"]["integrations"]["$post"]>[0]["json"];
+  type CreateJson = Extract<Parameters<Session["api"]["integrations"]["$post"]>[0]["json"], { cloud: unknown }>;
   const add = async (as: Session = admin, json: Partial<CreateJson> = {}) => {
     const res = await as.api.integrations.$post({
       json: { name: "CrowdStrike — Prod", cloud: "us-1", clientId: CLIENT_ID, clientSecret: CLIENT_SECRET, ...json },

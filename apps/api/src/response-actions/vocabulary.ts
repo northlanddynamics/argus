@@ -4,7 +4,7 @@
  */
 
 import type { Severity } from "../cases/vocabulary";
-import type { Provider } from "../integrations/vocabulary";
+import type { ActionProvider } from "../integrations/vocabulary";
 import type { ObservableType } from "../observables/vocabulary";
 
 /**
@@ -29,7 +29,7 @@ export const isHostKind = (kind: ResponseActionKind) => (HOST_KINDS as readonly 
 export const CONTAINMENT_TARGET_TYPE = "device";
 
 /** The kind of Response Action each Provider takes against an Observable. */
-export const providerKind: Record<Provider, ResponseActionKind> = { crowdstrike: "falcon_ioc", mimecast: "mimecast_blocked_sender" };
+export const providerKind: Record<ActionProvider, ResponseActionKind> = { crowdstrike: "falcon_ioc", mimecast: "mimecast_blocked_sender" };
 
 /**
  * Where a Response Action stands:
@@ -100,7 +100,7 @@ export type ResponseActionAction = (typeof RESPONSE_ACTION_ACTIONS)[number];
 export const responseActionActionLabel: Record<ResponseActionAction, string> = { ...falconIocActionLabel, ...mimecastActionLabel };
 
 /** The actions each Provider takes. */
-export const providerActions: Record<Provider, readonly ResponseActionAction[]> = { crowdstrike: FALCON_IOC_ACTIONS, mimecast: MIMECAST_ACTIONS };
+export const providerActions: Record<ActionProvider, readonly ResponseActionAction[]> = { crowdstrike: FALCON_IOC_ACTIONS, mimecast: MIMECAST_ACTIONS };
 
 /** What a Mimecast Blocked Senders entry blocks. */
 export type MimecastTargetType = "email" | "domain";

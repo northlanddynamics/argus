@@ -159,7 +159,7 @@ A thing the Organization owns or operates, such as a host or account, held once 
 _Avoid_: Device, system, resource, entity
 
 **Enrichment**:
-What an Integration's tool currently reports about an Asset, such as a host's OS, last-seen time and containment or an identity's risk, shown with the Asset as of when Argus last fetched it.
+What an Integration's tool currently reports about an Asset or an IP address, such as a host's OS, last-seen time and containment, an identity's risk, or where an IP is and which network runs it, shown as of when Argus last fetched it.
 _Avoid_: Context, intel, details, lookup
 
 **Ignored Observable**:

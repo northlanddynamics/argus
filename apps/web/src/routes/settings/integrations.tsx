@@ -45,7 +45,7 @@ const until = (iso: string) => {
   return minutes <= 0 ? "due" : `in ${minutes} min`;
 };
 
-/** Settings · Integrations: the Organization's CrowdStrike and Mimecast Integrations and how they are doing. */
+/** Settings · Integrations: the Organization's CrowdStrike, Mimecast and IPinfo Integrations and how they are doing. */
 export function IntegrationsPage() {
   const integrations = useQuery(integrationsQuery);
   // Health and the last event refresh live.
@@ -55,6 +55,8 @@ export function IntegrationsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Integrations</h1>
         <div className="flex flex-wrap justify-end gap-2">
+          {/* IPs are looked up through one IPinfo Integration (ADR 0010). */}
+          {integrations.data && !integrations.data.some((i) => i.provider === "ipinfo") && <AddIntegrationDialog provider="ipinfo" />}
           <AddIntegrationDialog provider="mimecast" />
           <AddIntegrationDialog provider="crowdstrike" />
         </div>
@@ -74,8 +76,8 @@ export function IntegrationsPage() {
       {integrations.data?.length === 0 && (
         <Card>
           <CardContent className="text-sm text-muted-foreground">
-            No Integrations yet. Add a CrowdStrike Integration to receive Falcon detections as Alerts, or a Mimecast Integration to block
-            email senders.
+            No Integrations yet. Add a CrowdStrike Integration to receive Falcon detections as Alerts, a Mimecast Integration to block
+            email senders, or IPinfo to see where IP addresses are and who runs them.
           </CardContent>
         </Card>
       )}
@@ -262,9 +264,21 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
       </CardHeader>
       <CardContent className="grid gap-4">
         {receivesAlerts && <StreamSummary integration={i} />}
+        {i.capabilities.looksUpIps && (
+          <p className="text-sm text-muted-foreground">
+            Hovering an IP anywhere in Argus shows what IPinfo Core knows about it: location, network, and whether it is anonymous or
+            hosting. Each address is looked up once and kept for a week; private and reserved addresses are never sent.
+          </p>
+        )}
         {!receivesAlerts && !i.paused && (
           <p className="text-sm text-muted-foreground">
-            {i.healthCheckedAt ? `Credentials checked ${ago(i.healthCheckedAt)}` : "Checking the credentials…"}
+            {i.capabilities.looksUpIps
+              ? i.healthCheckedAt
+                ? `Token last used ${ago(i.healthCheckedAt)}`
+                : "Checking the token…"
+              : i.healthCheckedAt
+                ? `Credentials checked ${ago(i.healthCheckedAt)}`
+                : "Checking the credentials…"}
           </p>
         )}
         {i.healthDetail && !i.paused && (
@@ -392,7 +406,12 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
         {responseActions && (i.responseActions || hasAny(i.responseActionCounts)) && (
           <ResponseActionCounts counts={i.responseActionCounts} />
         )}
-        {i.credentials && (
+        {i.credentials && i.provider === "ipinfo" && (
+          <p className="text-sm text-muted-foreground">
+            IPinfo API token <span className="font-mono">{i.credentials.clientIdHint}</span> · set {new Date(i.credentials.updatedAt).toLocaleDateString()}
+          </p>
+        )}
+        {i.credentials && i.provider !== "ipinfo" && (
           <p className="text-sm text-muted-foreground">
             {i.provider === "crowdstrike" && i.cloud ? `Falcon API credentials: ${falconCloudLabel[i.cloud]} cloud` : `${providerLabel[i.provider]} API 2.0 credentials`}{" "}
             · client <span className="font-mono">{i.credentials.clientIdHint}</span> · set{" "}
@@ -711,6 +730,14 @@ function ResponseActionDefaults({ integration: i }: { integration: IntegrationVi
 }
 
 function CredentialFields({ provider = "crowdstrike" }: { provider?: Provider }) {
+  if (provider === "ipinfo") {
+    return (
+      <div className="grid gap-2">
+        <Label htmlFor="ipinfo-token">API access token</Label>
+        <Input id="ipinfo-token" name="token" type="password" required minLength={8} autoComplete="new-password" />
+      </div>
+    );
+  }
   const app = provider === "crowdstrike" ? "API client" : "API application client";
   return (
     <>
@@ -727,8 +754,12 @@ function CredentialFields({ provider = "crowdstrike" }: { provider?: Provider })
 }
 
 const credentialsFrom = (form: FormData) => ({ clientId: String(form.get("clientId")), clientSecret: String(form.get("clientSecret")) });
+const tokenFrom = (form: FormData) => ({ token: String(form.get("token")) });
 
-/** Adds a CrowdStrike Integration, or a Mimecast one, which has no cloud, Alert stream or write-back. */
+/**
+ * Adds a CrowdStrike Integration, a Mimecast one, which has no cloud, Alert stream or write-back, or
+ * the IPinfo one, which only looks IPs up (ADR 0010).
+ */
 function AddIntegrationDialog({ provider }: { provider: Provider }) {
   const [isOpen, setIsOpen] = useState(false);
   const queryClient = useQueryClient();
@@ -737,7 +768,8 @@ function AddIntegrationDialog({ provider }: { provider: Provider }) {
     mutationFn: async (
       json:
         | { provider: "crowdstrike"; name: string; cloud: FalconCloud; clientId: string; clientSecret: string; writeBack: boolean; responseActions: boolean }
-        | { provider: "mimecast"; name: string; clientId: string; clientSecret: string; responseActions: boolean },
+        | { provider: "mimecast"; name: string; clientId: string; clientSecret: string; responseActions: boolean }
+        | { provider: "ipinfo"; name: string; token: string },
     ) => ok(await api.integrations.$post({ json }), "Could not add the Integration"),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: integrationsKey });
@@ -747,6 +779,7 @@ function AddIntegrationDialog({ provider }: { provider: Provider }) {
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    if (provider === "ipinfo") return add.mutate({ provider, name: String(form.get("name")), ...tokenFrom(form) });
     const common = { name: String(form.get("name")), responseActions: form.get("responseActions") === "on", ...credentialsFrom(form) };
     add.mutate(
       falcon
@@ -768,7 +801,13 @@ function AddIntegrationDialog({ provider }: { provider: Provider }) {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Add a {providerLabel[provider]} Integration</DialogTitle>
-          {!falcon && (
+          {provider === "ipinfo" && (
+            <DialogDescription>
+              Copy the API access token from your IPinfo account. Argus uses the Core API: location, network, and the anonymous, hosting,
+              anycast, mobile and satellite flags.
+            </DialogDescription>
+          )}
+          {provider === "mimecast" && (
             <DialogDescription>
               Create an API 2.0 application in the Mimecast Administration Console whose role has Gateway · Policies · Edit.
             </DialogDescription>
@@ -797,7 +836,14 @@ function AddIntegrationDialog({ provider }: { provider: Provider }) {
           <div className={falcon ? "grid gap-4 sm:grid-cols-[1fr_auto]" : "grid gap-4"}>
             <div className="grid gap-2">
               <Label htmlFor="integration-name">Name</Label>
-              <Input id="integration-name" name="name" required maxLength={80} placeholder={falcon ? "CrowdStrike — Prod" : "Mimecast"} />
+              <Input
+                id="integration-name"
+                name="name"
+                required
+                maxLength={80}
+                placeholder={falcon ? "CrowdStrike — Prod" : providerLabel[provider]}
+                defaultValue={provider === "ipinfo" ? "IPinfo" : undefined}
+              />
             </div>
             {falcon && (
               <div className="grid gap-2">
@@ -814,7 +860,9 @@ function AddIntegrationDialog({ provider }: { provider: Provider }) {
           </div>
           <CredentialFields provider={provider} />
           {falcon && <WriteBackSetting id="integration-write-back" name="writeBack" defaultChecked={false} />}
-          <ResponseActionsSetting id="integration-response-actions" provider={provider} name="responseActions" defaultChecked={false} />
+          {provider !== "ipinfo" && (
+            <ResponseActionsSetting id="integration-response-actions" provider={provider} name="responseActions" defaultChecked={false} />
+          )}
           {add.error && (
             <Alert variant="destructive">
               <AlertDescription>{add.error.message}</AlertDescription>
@@ -835,7 +883,7 @@ function RotateCredentialsDialog({ integration }: { integration: IntegrationView
   const [isOpen, setIsOpen] = useState(false);
   const queryClient = useQueryClient();
   const rotate = useMutation({
-    mutationFn: async (json: { clientId: string; clientSecret: string }) =>
+    mutationFn: async (json: { clientId: string; clientSecret: string } | { token: string }) =>
       ok(await api.integrations[":id"].credentials.$put({ param: { id: integration.id }, json }), "Could not rotate the credentials"),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: integrationsKey });
@@ -844,7 +892,8 @@ function RotateCredentialsDialog({ integration }: { integration: IntegrationView
   });
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    rotate.mutate(credentialsFrom(new FormData(event.currentTarget)));
+    const form = new FormData(event.currentTarget);
+    rotate.mutate(integration.provider === "ipinfo" ? tokenFrom(form) : credentialsFrom(form));
   };
   return (
     <Dialog
@@ -856,12 +905,14 @@ function RotateCredentialsDialog({ integration }: { integration: IntegrationView
     >
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
-          Rotate credentials
+          {integration.provider === "ipinfo" ? "Rotate token" : "Rotate credentials"}
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Rotate credentials of {integration.name}</DialogTitle>
+          <DialogTitle>
+            Rotate {integration.provider === "ipinfo" ? "the token" : "credentials"} of {integration.name}
+          </DialogTitle>
         </DialogHeader>
         <form className="grid gap-4" onSubmit={onSubmit}>
           <CredentialFields provider={integration.provider} />

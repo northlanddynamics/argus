@@ -16,6 +16,7 @@ import { createLive } from "../realtime/live";
 import { type ClientMessage, LIVE_PATH, type ServerMessage } from "../realtime/messages";
 import { postgresSignals } from "../realtime/signals";
 import { captureTeams } from "../teams/teams-webhook";
+import { fakeIpinfo } from "./fake-ipinfo";
 import { createTestDb } from "./db";
 
 /**
@@ -56,6 +57,7 @@ export async function buildTestApp({
   const authSecret = "test-secret-test-secret-test-secret";
   const auth = createAuth({ db, baseUrl: BASE_URL, secret: authSecret, mailer: outbox.mailer, clock });
   const evidence = memoryEvidenceStorage();
+  const ipinfo = fakeIpinfo();
   const deps: Deps = {
     db,
     auth,
@@ -66,6 +68,7 @@ export async function buildTestApp({
     baseUrl: BASE_URL,
     evidence: { storage: evidence.storage, maxBytes: evidenceMaxBytes },
     credentials: credentialSealer("test-credentials-secret"),
+    ipinfo: ipinfo.connect,
   };
 
   /**
@@ -271,6 +274,8 @@ export async function buildTestApp({
     outbox,
     /** Posts to Teams channels, and `failNext(n)` to make the next ones fail. */
     teams,
+    /** The IPinfo every Integration's lookups go to (`test/fake-ipinfo.ts`). */
+    ipinfo,
     /** Evidence files as stored, by storage key. */
     evidenceObjects: evidence.objects,
     live,

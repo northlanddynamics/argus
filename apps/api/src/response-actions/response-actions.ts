@@ -23,7 +23,7 @@ import {
 import type { FalconContainment } from "../crowdstrike/falcon";
 import { requestHostEnrichment } from "../crowdstrike/host-enrichment";
 import { secureId } from "../ids";
-import { type Provider, providerCapabilities, providerLabel } from "../integrations/vocabulary";
+import { type ActionProvider, type Provider, providerCapabilities, providerLabel } from "../integrations/vocabulary";
 import type { Membership, Participant } from "../members/membership";
 import { falconDevicesOf, linkObservable, NotLinked } from "../observables/observables";
 import { ASSET_TYPES, type AssetType, assetTypeLabel, defang, normaliseObservable, type ObservableType, observableTypeLabel } from "../observables/vocabulary";
@@ -308,7 +308,7 @@ export type ObservableResponseActionView = {
 };
 
 /** The Integrations a Response Action can be sent to, as the Case offers them, with what they send it with. */
-export type EligibleIntegration = { id: string; name: string; provider: Provider; defaults: FalconIocDefaults };
+export type EligibleIntegration = { id: string; name: string; provider: ActionProvider; defaults: FalconIocDefaults };
 
 /** A CrowdStrike Integration a Member can contain hosts through, as the Case offers it. */
 export type ContainmentIntegration = { id: string; name: string; internal: boolean };
@@ -753,7 +753,7 @@ async function eligible(db: Db | Tx, organizationId: string): Promise<EligibleIn
     .from(integrations)
     .where(and(eq(integrations.organizationId, organizationId), eq(integrations.responseActions, true)))
     .orderBy(asc(integrations.createdAt), asc(integrations.id));
-  return rows.filter((r) => providerCapabilities[r.provider].responseActions);
+  return rows.filter((r): r is typeof r & { provider: ActionProvider } => providerCapabilities[r.provider].responseActions);
 }
 
 /** The other Cases (than `caseId`) whose Active "already present" records rely on Response Action `id`. */

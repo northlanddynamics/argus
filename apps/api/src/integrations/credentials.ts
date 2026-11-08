@@ -51,12 +51,15 @@ export type ProviderCredentials = {
   crowdstrike: { clientId: string; clientSecret: string };
   /** A Mimecast API 2.0 application. */
   mimecast: { clientId: string; clientSecret: string };
+  /** An IPinfo API access token (ADR 0010). */
+  ipinfo: { token: string };
 };
 
 /** What is sealed for each Provider: its credentials, and nothing else that came with them. */
 const sealedFields: { [P in Provider]: (c: ProviderCredentials[P]) => ProviderCredentials[P] } = {
   crowdstrike: ({ clientId, clientSecret }) => ({ clientId, clientSecret }),
   mimecast: ({ clientId, clientSecret }) => ({ clientId, clientSecret }),
+  ipinfo: ({ token }) => ({ token }),
 };
 
 /** Seals `credentials` in the shape `provider` takes. */
