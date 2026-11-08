@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { EyeIcon } from "lucide-react";
 import { useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -20,11 +21,12 @@ import { Input } from "@/components/ui/input";
 import { api, errorMessage } from "@/lib/api";
 import { Visibility } from "@/components/visibility";
 import { canMarkInternal, caseQuery, isReadOnly } from "@/lib/cases";
-import { useGuests } from "@/lib/guests";
+import { namesOf, useGuests } from "@/lib/guests";
 import { describeOccurredAt, occurredKindLabel, precisionLabel, type TimelineEntryView, timelineKey, timelineQuery, utc } from "@/lib/timeline";
 import { actionLabel } from "@/routes/cases/audit-log";
 import { useCaseNumber } from "@/routes/cases/case-layout";
 import { CaseDiscussion } from "@/routes/cases/discussion";
+import { QUIET_ACTION } from "@/routes/cases/rail";
 import { EditEntryForm, NewEntryForm } from "@/routes/cases/timeline-entry-form";
 
 /** Case · Timeline & Discussion: the account of what happened, beside the conversation about it. */
@@ -33,15 +35,19 @@ export function CaseTimelinePage() {
   const { data: c } = useQuery(caseQuery(number));
   const members = !!c && canMarkInternal(c);
   const guests = useGuests(number, members);
-  const noGuests = members && guests.data !== undefined && !guests.data.some((g) => !g.expired);
+  const active = (guests.data ?? []).filter((g) => !g.expired).map((g) => g.guest.name);
   return (
     <div className="grid gap-4">
-      {noGuests && (
-        <p className="text-xs text-muted-foreground">
-          No Guests on this Case. Anything not marked Internal becomes visible to a Guest as soon as one is invited.
+      {members && guests.data !== undefined && (
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <EyeIcon aria-hidden className="size-3.5" />
+          {active.length
+            ? `${namesOf(active)} (${active.length === 1 ? "Guest" : "Guests"}) can see everything here that isn't marked Internal.`
+            : "No Guests on this Case. Anything not marked Internal becomes visible to a Guest as soon as one is invited."}
         </p>
       )}
-      <div className="grid items-start gap-6 lg:grid-cols-[3fr_2fr]">
+      {/* Side by side only where both columns have room; below that the Timeline sits above the Discussion. */}
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <CaseTimeline />
         <CaseDiscussion />
       </div>
@@ -55,26 +61,35 @@ function CaseTimeline() {
   const { data: c } = useQuery(caseQuery(number));
   const entries = useQuery(timelineQuery(number));
   const [editing, setEditing] = useState<string | null>(null);
+  /** The new-entry form opens on demand, so the Timeline itself leads the page. */
+  const [composing, setComposing] = useState(false);
   if (!c) return null;
   const readOnly = isReadOnly(c);
   return (
-    <section className="grid gap-4" aria-label="Timeline">
-      <div className="flex items-baseline justify-between">
+    <section className="grid min-w-0 gap-4" aria-label="Timeline">
+      <div className="flex min-h-8 items-center justify-between gap-2">
         <h2 className="text-lg font-semibold">Timeline</h2>
+        {!readOnly && !composing && (
+          <Button variant="outline" size="sm" onClick={() => setComposing(true)}>
+            + Timeline Entry
+          </Button>
+        )}
       </div>
-      {!readOnly && (
+      {!readOnly && composing && (
         <Card>
           <CardHeader>
-            <CardTitle>New Timeline Entry</CardTitle>
+            <CardTitle>
+              <h3>New Timeline Entry</h3>
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <NewEntryForm number={number} />
+            <NewEntryForm number={number} onCancel={() => setComposing(false)} />
           </CardContent>
         </Card>
       )}
       <ol className="grid gap-3" aria-label="Timeline Entries">
         {entries.data?.map((e) => (
-          <li key={e.id} aria-label={`Timeline Entry: ${e.body}`}>
+          <li key={e.id} aria-label={`Timeline Entry: ${e.body}`} className="group/row">
             <Card>
               <CardContent>
                 {editing === e.id ? (
@@ -139,8 +154,8 @@ function Entry({
           />
         )}
         {!readOnly && live && (
-          <div className="ml-auto flex gap-2">
-            <Button variant="outline" size="sm" onClick={onEdit}>
+          <div className="ml-auto flex gap-1">
+            <Button variant="ghost" size="sm" className={QUIET_ACTION} onClick={onEdit}>
               Edit
             </Button>
             <AlertDialog
@@ -151,7 +166,7 @@ function Entry({
               }}
             >
               <AlertDialogTrigger asChild>
-                <Button variant="outline" size="sm">
+                <Button variant="ghost" size="sm" className={QUIET_ACTION}>
                   Retract
                 </Button>
               </AlertDialogTrigger>

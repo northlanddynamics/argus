@@ -32,7 +32,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, errorMessage } from "@/lib/api";
 import { type CaseView, caseRef } from "@/lib/cases";
-import { expiryLabel, guestsKey, useGuests } from "@/lib/guests";
+import { expiryLabel, guestsKey, namesOf, useGuests } from "@/lib/guests";
 
 type InviteInput = { email: string; name?: string; expiresAt: string | null };
 
@@ -42,11 +42,14 @@ type InviteInput = { email: string; name?: string; expiresAt: string | null };
  */
 export function CaseAccessDialog({
   c,
+  guestNames,
   locked,
   error,
   onRestrictedChange,
 }: {
   c: CaseView;
+  /** The Guests whose access hasn't expired, named on the button so who can see the Case is never hidden. */
+  guestNames: string[];
   /** Restricted can't change now: the Case is Closed, or a change is on its way. */
   locked: boolean;
   /** Why the last change to Restricted failed. */
@@ -55,7 +58,7 @@ export function CaseAccessDialog({
 }) {
   const number = c.number;
   const guests = useGuests(number, c.can.work);
-  const count = guests.data?.length ?? 0;
+  const count = guestNames.length;
   /** Lifting Restricted shows the Case to every Analyst, so it asks first. */
   const [confirmingUnrestrict, setConfirmingUnrestrict] = useState(false);
   return (
@@ -65,8 +68,8 @@ export function CaseAccessDialog({
           {c.restricted ? <LockIcon data-icon="inline-start" /> : <UsersIcon data-icon="inline-start" />}
           Access
           {count > 0 && (
-            <Badge variant="secondary" className="tabular-nums" aria-label={`${count} Guest${count === 1 ? "" : "s"}`}>
-              {count}
+            <Badge variant="secondary" className="tabular-nums" title={namesOf(guestNames)}>
+              {count === 1 ? guestNames[0] : `${count} Guests`}
             </Badge>
           )}
         </Button>

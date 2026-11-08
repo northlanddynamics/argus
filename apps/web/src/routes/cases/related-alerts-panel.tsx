@@ -4,9 +4,9 @@ import { SeverityBadge } from "@/components/case-badges";
 import { ItemLink } from "@/components/item-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { alertsKey, type CaseCorrelation, caseCorrelationsQuery } from "@/lib/alerts";
+import { RailBody, RailHeader, RailSection, RailTitle } from "@/routes/cases/rail";
 import { api } from "@/lib/api";
 import { type CaseView, caseRef } from "@/lib/cases";
 import { assetTypeLabel, observableTypeLabel, shownObservable } from "@/lib/observables";
@@ -36,17 +36,17 @@ export function RelatedAlertsPanel({ c }: { c: CaseView }) {
   const mode = related.data?.attach ?? null;
   const list = related.data?.alerts ?? [];
   return (
-    <Card className="self-start">
-      <CardHeader>
-        <CardTitle className="text-xs tracking-widest text-muted-foreground uppercase">Related Alerts</CardTitle>
-      </CardHeader>
-      <CardContent className="text-sm">
+    <RailSection>
+      <RailHeader>
+        <RailTitle>Related Alerts</RailTitle>
+      </RailHeader>
+      <RailBody>
         {related.isPending ? (
           <Skeleton className="h-10 w-full" />
         ) : related.isError ? (
           <p className="text-destructive">Couldn’t load the related Alerts.</p>
         ) : list.length === 0 ? (
-          <p className="text-muted-foreground">No New Alert shares its Observables or Assets.</p>
+          <p className="text-muted-foreground">None of the New Alerts share its Observables or Assets.</p>
         ) : (
           <ul className="grid gap-2" aria-label="Related Alerts">
             {list.map((a) => (
@@ -81,7 +81,7 @@ export function RelatedAlertsPanel({ c }: { c: CaseView }) {
         )}
         {!mode && list.length > 0 && <p className="mt-2 text-xs text-muted-foreground">Closed: ask an Admin to reopen it to attach these Alerts.</p>}
         {attach.error && <p className="mt-2 text-xs text-destructive">{attach.error.message}</p>}
-      </CardContent>
-    </Card>
+      </RailBody>
+    </RailSection>
   );
 }

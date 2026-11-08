@@ -61,7 +61,7 @@ function DeviceLine({ device: d, prefix }: { device: Device; prefix: string }) {
     <span className="inline-flex flex-wrap items-center gap-x-1.5">
       <span>{[d.osVersion ?? d.platform, d.lastSeen && `seen ${when(d.lastSeen)}`].filter(Boolean).join(" · ") || "—"}</span>
       {d.containment && d.containment !== "normal" ? (
-        <Badge variant="outline" className="h-5 px-1.5 text-[11px]">
+        <Badge variant="outline">
           {containmentLabel[d.containment]}
         </Badge>
       ) : (

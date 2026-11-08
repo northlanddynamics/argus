@@ -13,6 +13,7 @@ import { Field, FieldContent, FieldDescription, FieldLabel } from "@/components/
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Audience } from "@/components/visibility";
 import { api, errorMessage } from "@/lib/api";
 import { tasksQuery } from "@/lib/tasks";
 import {
@@ -214,7 +215,7 @@ function EntryForm({
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      <div className="flex items-center justify-end gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2">
         {internal && (
           <Field orientation="horizontal" className="mr-auto w-auto">
             <Checkbox id={id("internal")} checked={internal.value} onCheckedChange={(checked) => internal.onChange(checked === true)} />
@@ -224,12 +225,17 @@ function EntryForm({
             </FieldContent>
           </Field>
         )}
+        {internal && <Audience number={number} internal={internal.value} />}
         {onCancel && (
           <Button type="button" variant="outline" onClick={onCancel}>
             Cancel
           </Button>
         )}
-        <Button type="submit" disabled={pending || disabled || rangeBackwards || incomplete || !fields.body.trim()}>
+        <Button
+          type="submit"
+          variant={pending || disabled || rangeBackwards || incomplete || !fields.body.trim() ? "outline" : "default"}
+          disabled={pending || disabled || rangeBackwards || incomplete || !fields.body.trim()}
+        >
           {submitLabel}
         </Button>
       </div>

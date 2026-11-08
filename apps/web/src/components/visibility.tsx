@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { namesOf, useGuests } from "@/lib/guests";
 import { type InternalItem, useMarkInternal } from "@/lib/internal";
+import { cn } from "@/lib/utils";
 
 /** The "Internal" marker: shown on items hidden from the Case's Guests. */
 export function InternalBadge() {
@@ -23,6 +24,28 @@ export function InternalBadge() {
     <Badge variant="outline" className="border-dashed border-foreground/50">
       Internal
     </Badge>
+  );
+}
+
+/** The names of the Case's Guests whose access hasn't expired: who would see an item that isn't Internal. */
+export function useActiveGuestNames(number: number, enabled: boolean) {
+  const guests = useGuests(number, enabled);
+  return (guests.data ?? []).filter((g) => !g.expired).map((g) => g.guest.name);
+}
+
+/**
+ * Who will see what is about to be added, said beside the button that adds it: "Visible to Kim
+ * Patel (Guest)", or "Hidden from Guests" once marked Internal. Says nothing on a Case without
+ * Guests. For Members, who are the only ones who can mark things Internal.
+ */
+export function Audience({ number, internal, className }: { number: number; internal: boolean; className?: string }) {
+  const active = useActiveGuestNames(number, true);
+  if (!active.length) return null;
+  return (
+    <span className={cn("inline-flex items-center gap-1 text-xs", internal ? "text-muted-foreground" : "font-medium", className)} role="status">
+      {internal ? <EyeOffIcon aria-hidden className="size-3.5" /> : <EyeIcon aria-hidden className="size-3.5" />}
+      {internal ? "Hidden from Guests" : `Visible to ${namesOf(active)} (${active.length === 1 ? "Guest" : "Guests"})`}
+    </span>
   );
 }
 
@@ -57,10 +80,9 @@ export function Visibility({
   canMark: boolean;
 }) {
   const mark = useMarkInternal(number);
-  const guests = useGuests(number, canMark);
   const [confirming, setConfirming] = useState(false);
   /** Guests whose access hasn't expired: the people who would see it. */
-  const active = (guests.data ?? []).filter((g) => !g.expired).map((g) => g.guest.name);
+  const active = useActiveGuestNames(number, canMark);
 
   const change = (next: boolean, undoable = true) =>
     mark.mutate(
