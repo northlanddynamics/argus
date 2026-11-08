@@ -205,10 +205,21 @@ function ResultRow({ result: r, selected, onSelect }: { result: LookupResult; se
           <span className="text-muted-foreground">—</span>
         )}
       </TableCell>
-      <TableCell className="hidden md:table-cell">
+      <TableCell className="hidden max-w-64 whitespace-normal md:table-cell">
         {r.known?.alerts.length ? (
-          <span className="tabular-nums" title={r.known.alerts.map((a) => a.title).join("\n")}>
-            {plural(r.known.alerts.length, "Alert")}
+          <span className="grid gap-0.5">
+            {r.known.alerts.slice(0, 3).map((a) => (
+              <Link
+                key={a.id}
+                to="/alerts"
+                search={{ status: "any", alert: a.id }}
+                className="truncate text-xs underline decoration-foreground/30 underline-offset-2 hover:decoration-foreground"
+                title={a.title}
+              >
+                {a.title}
+              </Link>
+            ))}
+            {r.known.alerts.length > 3 && <span className="text-xs text-muted-foreground">+{r.known.alerts.length - 3} more</span>}
           </span>
         ) : (
           <span className="text-muted-foreground">—</span>

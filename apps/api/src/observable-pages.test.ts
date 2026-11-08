@@ -157,6 +157,29 @@ describe("Observable and Asset pages", () => {
     expect(await a.observable(a.ben, "no-such-id")).toBe(404);
   });
 
+  test("an Alert's host and user lead to their Asset pages, from its page's Alerts and from the queue", async () => {
+    const a = await acme();
+    const alert = await a.detect("epp");
+    const ip = await a.named(alert, "185.220.101.4");
+    const host = await a.named(alert, "FIN-LT-0231");
+    const account = await a.named(alert, "d.howe");
+
+    const page = await a.observable(a.ben, ip);
+    if (typeof page === "number") throw new Error(`No page: ${page}`);
+    expect(page.alerts.map((x) => [x.host, x.hostAsset])).toEqual([["FIN-LT-0231", { id: host }]]);
+
+    const body = await (await a.ben.api.alerts.$get({ query: { status: "new" } })).json();
+    if (!("alerts" in body)) throw new Error("No Alert queue");
+    expect(body.alerts.map((x) => [x.host, x.hostAsset, x.userName, x.userAsset])).toEqual([["FIN-LT-0231", { id: host }, "d.howe", { id: account }]]);
+
+    // A detection naming no host has nothing to lead to.
+    await a.detect("epp", { CompositeId: "acme:ind:no-host", Hostname: undefined, UserName: undefined });
+    const again = await (await a.ben.api.alerts.$get({ query: { status: "new" } })).json();
+    if (!("alerts" in again)) throw new Error("No Alert queue");
+    const bare = again.alerts.find((x) => x.externalId === "acme:ind:no-host")!;
+    expect([bare.host, bare.hostAsset, bare.userAsset]).toEqual([null, null, null]);
+  });
+
   test("Restricted Cases the viewer can't see are neither shown nor counted, nor are their Alerts", async () => {
     const a = await acme();
     const start = a.t.clock.now();

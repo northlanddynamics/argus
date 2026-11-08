@@ -16,6 +16,7 @@ import { secureId } from "../ids";
 import type { Membership, Participant } from "../members/membership";
 import {
   alertIndicators,
+  alertSubjectAssets,
   bestCasesForAlerts,
   casesSharingAlert,
   linkAlertIndicators,
@@ -601,11 +602,14 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
           : []
         ).map((c) => [c.id, { number: c.number, title: c.title }]),
       );
+      const subjects = await alertSubjectAssets(db, rows);
       return rows.map(({ integrationId, integrationName, detectedAt, receivedAt, caseNumber, caseTitle, ...row }) => {
         const top = best.get(row.id);
         const related = top && bestCases.get(top.caseId);
         return {
           ...row,
+          /** The host and account Assets behind `host` and `userName`, for links to their pages. */
+          ...subjects.get(row.id)!,
           integration: { id: integrationId, name: integrationName },
           /** The Case it is attached to. */
           case: caseNumber !== null && caseTitle !== null ? { number: caseNumber, title: caseTitle } : null,

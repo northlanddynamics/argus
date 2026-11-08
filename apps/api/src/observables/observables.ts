@@ -147,6 +147,8 @@ export type ItemAlert = {
   severity: Severity;
   status: AlertStatus;
   host: string | null;
+  /** The host Asset its detection names as `host`, for a link to its page; null if none. */
+  hostAsset: { id: string } | null;
   /** When Falcon raised the detection, else when Argus received it. */
   seenAt: string;
   /** The Case it is attached to, unless that is a Case the actor can't see. */
@@ -441,6 +443,7 @@ function heldOnceStore<Type extends string>(
           .orderBy(desc(seenAt), desc(alerts.seq));
     if (!caseRows.length && !alertRows.length) throw new ItemNotFound(`${kind.noun} not found`);
     const ignored = isGuest(me) ? null : await ignoredMark(db, kind.ignoredItem, itemId);
+    const subjects = await alertSubjectAssets(db, alertRows.map((a) => ({ id: a.id, host: a.host, userName: null })));
     const times = [...caseRows.map((c) => c.linkedAt.getTime()), ...alertRows.map((a) => a.seenAt.getTime())];
     return {
       id: item.id,
@@ -455,6 +458,7 @@ function heldOnceStore<Type extends string>(
       })),
       alerts: alertRows.map(({ caseNumber, caseTitle, seenAt: at, ...a }) => ({
         ...a,
+        hostAsset: subjects.get(a.id)?.hostAsset ?? null,
         seenAt: at.toISOString(),
         case: caseNumber !== null && caseTitle !== null ? { number: caseNumber, title: caseTitle } : null,
       })),
@@ -868,6 +872,36 @@ export async function alertIndicators(db: Db | Tx, alertId: string) {
     observables: found!.map((o) => ({ ...o, type: o.type as ObservableType })),
     assets: assetsFound!.map((a) => ({ ...a, type: a.type as AssetType })),
   };
+}
+
+/** The Assets behind an Alert's host and user, so a list can link them to their pages. */
+export type AlertSubjectAssets = { hostAsset: { id: string } | null; userAsset: { id: string } | null };
+
+/**
+ * For each Alert in `listed`, the host and account Assets its detection names whose identifier is
+ * its `host` and `userName`, or null where it names none. One query for the whole list.
+ */
+export async function alertSubjectAssets(
+  db: Db | Tx,
+  listed: readonly { id: string; host: string | null; userName: string | null }[],
+): Promise<Map<string, AlertSubjectAssets>> {
+  const found = new Map<string, AlertSubjectAssets>();
+  const wanted = listed.filter((a) => a.host || a.userName);
+  const rows = wanted.length
+    ? await db
+        .select({ alertId: alertAssets.alertId, id: assets.id, type: assets.type, matchKey: assets.matchKey })
+        .from(alertAssets)
+        .innerJoin(assets, eq(alertAssets.itemId, assets.id))
+        .where(inArray(alertAssets.alertId, wanted.map((a) => a.id)))
+    : [];
+  const held = new Map(rows.map((r) => [`${r.alertId}\u0000${r.type}\u0000${r.matchKey}`, r.id]));
+  const idOf = (alertId: string, type: AssetType, raw: string | null) => {
+    const key = raw === null ? null : normaliseAsset(type, raw)?.key;
+    const id = key ? held.get(`${alertId}\u0000${type}\u0000${key}`) : undefined;
+    return id ? { id } : null;
+  };
+  for (const a of listed) found.set(a.id, { hostAsset: idOf(a.id, "host", a.host), userAsset: idOf(a.id, "account", a.userName) });
+  return found;
 }
 
 /** Signals the other Cases `itemIds` are linked to, whose "seen in" just changed. */
