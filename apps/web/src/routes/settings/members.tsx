@@ -142,7 +142,7 @@ export function MembersPage() {
                       </NativeSelect>
                     )}
                   </TableCell>
-                  <TableCell className="truncate" title={signInMethods(m.signIn)}>{signInMethods(m.signIn)}</TableCell>
+                  <TableCell className="truncate text-muted-foreground" title={signInMethods(m.signIn)}>{signInMethods(m.signIn)}</TableCell>
                   <TableCell className="truncate text-muted-foreground">
                     {m.lastActiveAt ? <Time iso={m.lastActiveAt} /> : "—"}
                   </TableCell>

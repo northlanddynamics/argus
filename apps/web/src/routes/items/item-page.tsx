@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams, useRouteContext } from "@tanstack/react-router";
 import { BellOffIcon, CheckIcon, CopyIcon, ExternalLinkIcon, FingerprintIcon, LockIcon, MonitorIcon, RefreshCwIcon, SearchIcon, UserIcon } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
+import { CaseRef } from "@/components/case-ref";
 import { Time } from "@/components/time";
 import { SeverityBadge, StatusBadge } from "@/components/case-badges";
 import { observableIcon } from "@/components/search/search-hit";
@@ -497,7 +498,7 @@ function CasesCard({ item, actions }: { item: ItemPage; actions: boolean }) {
                 <TableRow key={c.number}>
                   <TableCell className="whitespace-normal break-words">
                     <Link to="/cases/$number" params={{ number: String(c.number) }} className="hover:underline">
-                      <span className="font-mono text-xs text-muted-foreground">{caseRef(c.number)}</span> {c.title}
+                      <span className="font-mono text-xs text-muted-foreground">{caseRef(c.number)}</span> <span className="font-medium">{c.title}</span>
                     </Link>
                     {c.restricted && <LockIcon className="ml-1 inline size-3 text-muted-foreground" aria-label="Restricted" />}
                   </TableCell>
@@ -525,7 +526,7 @@ function CasesCard({ item, actions }: { item: ItemPage; actions: boolean }) {
               );
             })}
             {item.cases.length === 0 && (
-              <TableRow>
+              <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={actions ? 6 : 5} className="text-muted-foreground">
                   Not on any Case you can see yet.
                 </TableCell>
@@ -567,7 +568,7 @@ function AlertsCard({ item }: { item: ItemPage }) {
             {item.alerts.map((a) => (
               <TableRow key={a.id}>
                 <TableCell className="whitespace-normal break-words">
-                  <Link to="/alerts" search={{ status: "any", alert: a.id }} className="hover:underline" title={a.externalId}>
+                  <Link to="/alerts" search={{ status: "any", alert: a.id }} className="font-medium hover:underline" title={a.externalId}>
                     {a.title}
                   </Link>
                   {a.host && <span className="block font-mono text-xs text-muted-foreground">{a.host}</span>}
@@ -576,14 +577,12 @@ function AlertsCard({ item }: { item: ItemPage }) {
                   <SeverityBadge severity={a.severity} />
                 </TableCell>
                 <TableCell>
-                  <Badge variant={a.status === "new" ? "secondary" : "outline"}>{alertStatusLabel[a.status]}</Badge>
+                  <Badge variant="outline">{alertStatusLabel[a.status]}</Badge>
                 </TableCell>
                 <TableCell className={fromSm}>
                   <span className={showSm}>
                   {a.case ? (
-                    <Link to="/cases/$number" params={{ number: String(a.case.number) }} className="font-mono text-xs hover:underline" title={a.case.title}>
-                      {caseRef(a.case.number)}
-                    </Link>
+                    <CaseRef number={a.case.number} title={a.case.title} />
                   ) : (
                     <span className="text-muted-foreground">—</span>
                   )}
@@ -595,7 +594,7 @@ function AlertsCard({ item }: { item: ItemPage }) {
               </TableRow>
             ))}
             {item.alerts.length === 0 && (
-              <TableRow>
+              <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={5} className="text-muted-foreground">
                   No Alert names it.
                 </TableCell>
@@ -681,7 +680,7 @@ function ResponseActionsCard({ item, actions }: { item: ItemPage; actions: boole
               );
             })}
             {item.responseActions.length === 0 && (
-              <TableRow>
+              <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={actions ? 5 : 4} className="text-muted-foreground">
                   No Response Actions taken on it.
                 </TableCell>

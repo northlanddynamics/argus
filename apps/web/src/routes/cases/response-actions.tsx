@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
 import { type FormEvent, Fragment, type ReactNode, useState } from "react";
 import { toast } from "sonner";
+import { CaseRef } from "@/components/case-ref";
 import { Time } from "@/components/time";
 import { ItemLink } from "@/components/item-link";
 import { Visibility } from "@/components/visibility";
@@ -429,10 +429,7 @@ function StateLine({ r, number }: { r: ResponseAction; number: number }) {
         {from && from.number === number ? (
           "this Case"
         ) : from ? (
-          <Link to="/cases/$number" params={{ number: String(from.number) }} className="font-mono underline" title={from.title}>
-            {caseRef(from.number)}
-            <span className="sr-only"> {from.title}</span>
-          </Link>
+          <CaseRef number={from.number} title={from.title} />
         ) : (
           "another Case"
         )}{" "}
@@ -473,10 +470,7 @@ function OriginLine({ r, number }: { r: ResponseAction; number: number }) {
         {from && from.number === number ? (
           "this Case"
         ) : from ? (
-          <Link to="/cases/$number" params={{ number: String(from.number) }} className="font-mono underline" title={from.title}>
-            {caseRef(from.number)}
-            <span className="sr-only"> {from.title}</span>
-          </Link>
+          <CaseRef number={from.number} title={from.title} />
         ) : (
           "another Case"
         )}{" "}
@@ -556,9 +550,7 @@ export function RemoveDialog({ number, r, onClose }: { number: number; r: Respon
               <ul className="grid gap-0.5">
                 {relying.cases.map((c) => (
                   <li key={c.number}>
-                    <Link to="/cases/$number" params={{ number: String(c.number) }} className="font-mono underline">
-                      {caseRef(c.number)}
-                    </Link>{" "}
+                    <CaseRef number={c.number} title={c.title} />{" "}
                     {c.title}
                   </li>
                 ))}
@@ -730,7 +722,7 @@ export function ResponseActionsCard({
             <TableBody aria-live="polite" aria-busy={query.isPending}>
               {query.isPending &&
                 [0, 1].map((k) => (
-                  <TableRow key={k}>
+                  <TableRow key={k} className="hover:bg-transparent">
                     <TableCell colSpan={columns}>
                       <Skeleton className="h-8 w-full" />
                     </TableCell>
@@ -780,7 +772,7 @@ export function ResponseActionsCard({
                           )}
                           {r.lastError && <span className="mt-1 block text-xs break-words text-destructive">{r.lastError}</span>}
                         </TableCell>
-                        <TableCell className="truncate text-muted-foreground" title={r.requestedBy.name}>
+                        <TableCell className="truncate" title={r.requestedBy.name}>
                           {r.requestedBy.name}
                         </TableCell>
                         <TableCell className="truncate text-muted-foreground">
@@ -842,7 +834,7 @@ export function ResponseActionsCard({
                 );
               })}
               {query.isSuccess && all.length === 0 && (
-                <TableRow>
+                <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={columns} className="text-muted-foreground">
                     No Response Actions yet.
                   </TableCell>

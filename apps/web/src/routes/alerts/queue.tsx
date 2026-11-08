@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { XIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { CaseRef } from "@/components/case-ref";
 import { Time } from "@/components/time";
 import { SeverityBadge, StatusBadge } from "@/components/case-badges";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -470,27 +471,13 @@ export function AlertQueuePage() {
                     <div className="flex flex-wrap items-center gap-1">
                       <Badge variant="outline">{alertStatusLabel[a.status]}</Badge>
                       {a.case && (
-                        <Link
-                          to="/cases/$number"
-                          params={{ number: String(a.case.number) }}
-                          className="font-mono text-xs underline underline-offset-4"
-                          title={a.case.title}
-                        >
-                          {caseRef(a.case.number)}
-                        </Link>
+                        <CaseRef number={a.case.number} title={a.case.title} />
                       )}
                     </div>
                     {a.correlation && (
                       <div className="mt-0.5 truncate text-xs text-muted-foreground">
                         Related{" "}
-                        <Link
-                          to="/cases/$number"
-                          params={{ number: String(a.correlation.case.number) }}
-                          className="font-mono underline underline-offset-4"
-                          title={a.correlation.case.title}
-                        >
-                          {caseRef(a.correlation.case.number)}
-                        </Link>
+                        <CaseRef number={a.correlation.case.number} title={a.correlation.case.title} />
                         {a.correlation.others > 0 && ` +${a.correlation.others} more`}
                       </div>
                     )}

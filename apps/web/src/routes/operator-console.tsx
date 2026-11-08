@@ -57,10 +57,10 @@ export function OperatorConsolePage() {
             <CardContent>
               <Table>
                 <TableHeader>
-                  <TableRow>
+                  <TableRow className="hover:bg-transparent">
                     <TableHead>Organization</TableHead>
                     <TableHead>Owner</TableHead>
-                    <TableHead>Members</TableHead>
+                    <TableHead className="text-right">Members</TableHead>
                     <TableHead>Created</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -69,19 +69,19 @@ export function OperatorConsolePage() {
                     <TableRow key={org.id}>
                       <TableCell className="font-medium">{org.name}</TableCell>
                       <TableCell>
-                        <div>{org.owner?.email ?? "—"}</div>
+                        <div className="truncate">{org.owner?.email ?? <span className="text-muted-foreground">—</span>}</div>
                         <div className="text-xs text-muted-foreground">
                           {org.owner?.status === "active" ? "Active" : org.owner ? "Invite pending" : ""}
                         </div>
                       </TableCell>
-                      <TableCell>{org.members}</TableCell>
+                      <TableCell className="text-right tabular-nums">{org.members}</TableCell>
                       <TableCell className="text-muted-foreground">
                         <Time iso={org.createdAt} />
                       </TableCell>
                     </TableRow>
                   ))}
                   {organizations.data?.organizations.length === 0 && (
-                    <TableRow>
+                    <TableRow className="hover:bg-transparent">
                       <TableCell colSpan={4} className="text-muted-foreground">
                         No Organizations yet.
                       </TableCell>

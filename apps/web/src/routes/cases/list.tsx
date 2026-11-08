@@ -299,7 +299,7 @@ export function CasesPage() {
                       ))}
                     </span>
                   </TableCell>
-                  <TableCell className={cn(wide, "truncate")}><span className={wideContent}>{caseTypeLabel[c.caseType]}</span></TableCell>
+                  <TableCell className={cn(wide, "truncate text-muted-foreground")}><span className={wideContent}>{caseTypeLabel[c.caseType]}</span></TableCell>
                   <TableCell>
                     <StatusBadge status={c.status} resolution={c.resolution} />
                   </TableCell>

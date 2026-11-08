@@ -117,7 +117,7 @@ export function CaseTasksPage() {
                       Overdue · {t.dueDate}
                     </Badge>
                   ) : (
-                    (t.dueDate ?? "—")
+                    (t.dueDate ?? <span className="text-muted-foreground">—</span>)
                   )}
                 </TableCell>
                 {membersView && (

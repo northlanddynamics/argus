@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { BellOffIcon, type LucideIcon, MonitorIcon, PlusIcon, SirenIcon, UserIcon } from "lucide-react";
 import { type ReactElement, type ReactNode, useId, useState } from "react";
 import { toast } from "sonner";
+import { CaseRef } from "@/components/case-ref";
 import { Time } from "@/components/time";
 import { ItemLink } from "@/components/item-link";
 import { observableIcon } from "@/components/search/search-hit";
@@ -17,7 +18,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api, errorMessage } from "@/lib/api";
-import { caseQuery, caseRef, isReadOnly } from "@/lib/cases";
+import { caseQuery, isReadOnly } from "@/lib/cases";
 import {
   ASSET_TYPES,
   type AssetType,
@@ -424,11 +425,11 @@ function LinkedCard<Type extends string>(props: {
                         {item.internal && <InternalBadge />}
                       </span>
                     </TableCell>
-                    <TableCell className={cn(from3xl, "text-muted-foreground")}>
+                    <TableCell className={from3xl}>
                       <div className={cn(show3xl, "truncate")}>
                       {item.fromAlert ? (
                         <span className="inline-flex max-w-full items-center gap-1.5" title={item.fromAlert.alert?.title ?? "Added when an Alert was attached"}>
-                          <SirenIcon className="size-3.5 shrink-0" aria-hidden />
+                          <SirenIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
                           <span className="sr-only">Alert (auto):</span>
                           {item.fromAlert.alert ? (
                             <Link
@@ -484,14 +485,14 @@ function LinkedCard<Type extends string>(props: {
               })}
               {items === undefined && props.query.isPending &&
                 [0, 1].map((i) => (
-                  <TableRow key={i}>
+                  <TableRow key={i} className="hover:bg-transparent">
                     <TableCell colSpan={colSpan}>
                       <Skeleton className="h-8" />
                     </TableCell>
                   </TableRow>
                 ))}
               {items === undefined && props.query.isError && (
-                <TableRow>
+                <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={colSpan} className="whitespace-normal">
                     <span className="text-destructive">Could not load the {title}.</span>{" "}
                     <Button variant="link" size="sm" className="h-auto p-0" onClick={() => void props.query.refetch()}>
@@ -501,7 +502,7 @@ function LinkedCard<Type extends string>(props: {
                 </TableRow>
               )}
               {items?.length === 0 && (
-                <TableRow>
+                <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={colSpan} className="text-muted-foreground">
                     No {title} yet.
                   </TableCell>
@@ -522,15 +523,7 @@ function SeenIn({ seenIn }: { seenIn: { number: number; title: string }[] }) {
       {seenIn.map((s, i) => (
         <span key={s.number}>
           {i > 0 && ", "}
-          <Link
-            to="/cases/$number"
-            params={{ number: String(s.number) }}
-            className="text-foreground underline underline-offset-2"
-            title={s.title}
-            aria-label={`${caseRef(s.number)} ${s.title}`}
-          >
-            {caseRef(s.number)}
-          </Link>
+          <CaseRef number={s.number} title={s.title} />
         </span>
       ))}
     </span>

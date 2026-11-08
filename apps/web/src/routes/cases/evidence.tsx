@@ -170,7 +170,7 @@ export function CaseEvidencePage() {
                   </span>
                 </TableCell>
                 <TableCell className="text-right text-muted-foreground tabular-nums">{formatBytes(e.size)}</TableCell>
-                <TableCell className="truncate text-muted-foreground" title={e.addedBy.name}>
+                <TableCell className="truncate" title={e.addedBy.name}>
                   {e.addedBy.name}
                 </TableCell>
                 <TableCell className="truncate text-muted-foreground">

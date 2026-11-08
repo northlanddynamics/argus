@@ -303,7 +303,7 @@ function OpenCasesTable({ openCases }: { openCases: DashboardMetrics["openCases"
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
-            <TableRow>
+            <TableRow className="hover:bg-transparent">
               <TableHead>Severity</TableHead>
               {OPEN_STATUSES.map((status) => (
                 <TableHead key={status} className="text-center whitespace-normal">
@@ -385,7 +385,7 @@ function ValuesTable({ caption, head, rows, visible }: { caption: string; head: 
       <div className="max-h-72 overflow-y-auto">
         <Table>
           <TableHeader>
-            <TableRow>
+            <TableRow className="hover:bg-transparent">
               {head.map((h, i) => (
                 <TableHead key={h} className={cn(i > 0 && "text-right")}>
                   {h}
