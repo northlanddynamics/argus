@@ -89,7 +89,7 @@ const answer = (hash: string, hashType: HashType, row: Cached | undefined, hasKe
 });
 
 export function hashLookupStore({ db, clock, credentials: sealer, virustotal }: Pick<Deps, "db" | "clock" | "credentials" | "virustotal">) {
-  /** Lookups being fetched now, by key and hash, so a burst of hovers on one hash costs one call. */
+  /** Lookups being answered now, by Member, hash and refresh, so a burst of hovers on one hash costs one call. */
   const inFlight = new Map<string, Promise<HashLookup>>();
 
   const findKey = async (me: Membership) => (await db.select().from(virustotalKeys).where(eq(virustotalKeys.memberId, me.memberId)).limit(1))[0];
@@ -122,6 +122,27 @@ export function hashLookupStore({ db, clock, credentials: sealer, virustotal }: 
     }
   };
 
+  /** What is known about `hash`: cached when fresh, else fetched with the Member's own key. */
+  const resolve = async (me: Membership, hash: string, hashType: HashType, refresh: boolean): Promise<HashLookup> => {
+    const [cached] = await db
+      .select()
+      .from(hashLookups)
+      .where(and(eq(hashLookups.organizationId, me.organizationId), eq(hashLookups.hash, hash)))
+      .limit(1);
+    const key = await findKey(me);
+    const now = clock.now().getTime();
+
+    if (!refresh && cached) {
+      const age = now - cached.fetchedAt.getTime();
+      if (age < (cached.found ? HASH_LOOKUP_FRESH_MS : HASH_LOOKUP_NOT_FOUND_FRESH_MS)) return answer(hash, hashType, cached, !!key);
+    }
+    if (!key) return answer(hash, hashType, cached, false);
+    if (!refresh && key.error && key.errorAt && now - key.errorAt.getTime() < HASH_LOOKUP_RETRY_MS) {
+      return answer(hash, hashType, cached, true, key.error);
+    }
+    return fetchAndStore(me, key, hash, hashType, cached);
+  };
+
   return {
     /**
      * What is known about the file `raw` (an MD5, SHA-1 or SHA-256 hash, any case) identifies,
@@ -134,27 +155,13 @@ export function hashLookupStore({ db, clock, credentials: sealer, virustotal }: 
       const hash = hashType && normaliseObservable(hashType, text)?.value;
       if (!hashType || !hash) throw new InvalidHash();
 
-      const [cached] = await db
-        .select()
-        .from(hashLookups)
-        .where(and(eq(hashLookups.organizationId, me.organizationId), eq(hashLookups.hash, hash)))
-        .limit(1);
-      const key = await findKey(me);
-      const now = clock.now().getTime();
-
-      if (!refresh && cached) {
-        const age = now - cached.fetchedAt.getTime();
-        if (age < (cached.found ? HASH_LOOKUP_FRESH_MS : HASH_LOOKUP_NOT_FOUND_FRESH_MS)) return answer(hash, hashType, cached, !!key);
-      }
-      if (!key) return answer(hash, hashType, cached, false);
-      if (!refresh && key.error && key.errorAt && now - key.errorAt.getTime() < HASH_LOOKUP_RETRY_MS) {
-        return answer(hash, hashType, cached, true, key.error);
-      }
-
-      const flightKey = `${key.id}:${hash}`;
+      // The same Member asking about the same hash again before the first answer is back shares it,
+      // from before the cache is read, so a burst of hovers can't read the cache before the first
+      // fetch stores its answer and then fetch again.
+      const flightKey = `${me.memberId}:${hash}:${refresh}`;
       let flight = inFlight.get(flightKey);
       if (!flight) {
-        flight = fetchAndStore(me, key, hash, hashType, cached).finally(() => inFlight.delete(flightKey));
+        flight = resolve(me, hash, hashType, refresh).finally(() => inFlight.delete(flightKey));
         inFlight.set(flightKey, flight);
       }
       return flight;
