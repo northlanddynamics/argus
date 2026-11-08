@@ -45,6 +45,7 @@ import { CaseAccessDialog } from "@/routes/cases/case-access-dialog";
 import { CloseCaseDialog } from "@/routes/cases/close-case-dialog";
 import { ExportReportDialog } from "@/routes/cases/export-report-dialog";
 import { membersKey } from "@/routes/settings/members";
+import { cn } from "@/lib/utils";
 
 /** The Case's sections, each its own route under the Case. */
 const SECTIONS = [
@@ -84,6 +85,9 @@ function useSectionKeys(sections: readonly (typeof SECTIONS)[number][], params: 
     return () => window.removeEventListener("keydown", onKey);
   }, [sections, params, navigate]);
 }
+
+/** Status, Severity, Case Type and Assignee: each field stops at 18rem, and the card hugs them on a wide page. */
+const fieldsCard = "grid gap-4 rounded-xl border bg-card p-4 sm:grid-cols-2 lg:w-fit lg:grid-cols-[repeat(4,minmax(0,18rem))]";
 
 export const useCaseNumber = () => Number(useParams({ from: "/_app/cases/$number" }).number);
 
@@ -152,7 +156,7 @@ export function CaseLayout() {
     return { title: `Press ${n}`, "aria-keyshortcuts": String(n) };
   };
   return (
-    <div className="mx-auto grid w-full grid-cols-1 max-w-6xl gap-4">
+    <div className="grid w-full grid-cols-1 max-w-page gap-4">
       {found.data === null && (
         <Alert>
           <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
@@ -220,7 +224,7 @@ export function CaseLayout() {
               </Alert>
             )}
             {isReadOnly(c) ? (
-              <dl className="grid gap-4 rounded-xl border bg-card p-4 text-sm sm:grid-cols-2 lg:grid-cols-4" aria-label="Case details">
+              <dl className={cn("text-sm", fieldsCard)} aria-label="Case details">
                 <div className="grid gap-1.5">
                   <dt className="text-xs text-muted-foreground">Status</dt>
                   <dd>
@@ -248,7 +252,7 @@ export function CaseLayout() {
                 )}
               </dl>
             ) : (
-            <div className="grid gap-4 rounded-xl border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className={fieldsCard}>
               <Field className="gap-1.5">
                 <FieldLabel htmlFor="case-status" className="text-xs font-normal text-muted-foreground">
                   Status

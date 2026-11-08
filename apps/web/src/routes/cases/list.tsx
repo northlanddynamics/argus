@@ -32,6 +32,8 @@ import { useJustChanged } from "@/lib/use-just-changed";
 import { exactTime, when } from "@/lib/when";
 import { OpenCaseDialog } from "@/routes/cases/open-case-dialog";
 
+/** Columns shown only once the list is wide enough; below that their facts sit under the Title. */
+const wide = "hidden @6xl:table-cell";
 export const CASE_VIEWS = ["mine", "unassigned", "open", "closed"] as const;
 export type CaseListView = (typeof CASE_VIEWS)[number];
 const ACCESS = ["restricted", "guests"] as const;
@@ -148,7 +150,7 @@ export function CasesPage() {
   const total = counts?.[view] ?? 0;
 
   return (
-    <div className="mx-auto grid w-full grid-cols-1 max-w-6xl gap-4">
+    <div className="grid w-full grid-cols-1 max-w-page gap-4">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold tracking-tight">Cases</h1>
         <OpenCaseDialog />
@@ -200,7 +202,8 @@ export function CasesPage() {
       )}
 
       {!(cases.isError && !rows) && (
-        <Card className="py-0">
+        // Wider lists give Case Type, Alerts and Opened columns of their own rather than stretching the Title.
+        <Card className="@container py-0">
           <Table ref={table}>
             <TableCaption className="sr-only">
               {`${viewLabel[view]}, ${filtered ? "filtered, " : ""}sorted by ${sortLabel[sort]}, ${order === "desc" ? "descending" : "ascending"}`}
@@ -210,8 +213,11 @@ export function CasesPage() {
                 <TableHead scope="col" className="w-20 pl-4" {...sortable("number", "Case")} />
                 <TableHead scope="col" className="w-28" {...sortable("severity", "Severity")} />
                 <TableHead scope="col">Title</TableHead>
+                <TableHead scope="col" className={wide}>Case Type</TableHead>
                 <TableHead scope="col">Status</TableHead>
                 <TableHead scope="col">Assignee</TableHead>
+                <TableHead scope="col" className={cn(wide, "text-right")}>Alerts</TableHead>
+                <TableHead scope="col" className={wide}>Opened</TableHead>
                 <TableHead scope="col" className="pr-4" {...sortable("updated", "Updated")} />
               </TableRow>
             </TableHeader>
@@ -222,14 +228,17 @@ export function CasesPage() {
                     <TableCell className="pl-4"><Skeleton className="h-4 w-10" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-64" /></TableCell>
+                    <TableCell className={wide}><Skeleton className="h-4 w-20" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                    <TableCell className={wide}><Skeleton className="ml-auto h-4 w-6" /></TableCell>
+                    <TableCell className={wide}><Skeleton className="h-4 w-14" /></TableCell>
                     <TableCell className="pr-4"><Skeleton className="h-4 w-14" /></TableCell>
                   </TableRow>
                 ))}
               {cases.isPending && (
                 <TableRow className="sr-only">
-                  <TableCell colSpan={6} role="status">Loading Cases…</TableCell>
+                  <TableCell colSpan={9} role="status">Loading Cases…</TableCell>
                 </TableRow>
               )}
               {rows?.map((c) => (
@@ -270,8 +279,8 @@ export function CasesPage() {
                           {plural(c.guests, "Guest", "Guests")}
                         </Badge>
                       )}
-                      <span>{caseTypeLabel[c.caseType]}</span>
-                      {c.alerts > 0 && <span>{plural(c.alerts, "Alert", "Alerts")}</span>}
+                      <span className="@6xl:hidden">{caseTypeLabel[c.caseType]}</span>
+                      {c.alerts > 0 && <span className="@6xl:hidden">{plural(c.alerts, "Alert", "Alerts")}</span>}
                       {c.tags.map((t) => (
                         <Badge key={t} variant="secondary">
                           {tagLabel(t)}
@@ -279,10 +288,15 @@ export function CasesPage() {
                       ))}
                     </span>
                   </TableCell>
+                  <TableCell className={wide}>{caseTypeLabel[c.caseType]}</TableCell>
                   <TableCell>
                     <StatusBadge status={c.status} resolution={c.resolution} />
                   </TableCell>
                   <TableCell className={cn(!c.assignee && "text-muted-foreground")}>{c.assignee?.name ?? "Unassigned"}</TableCell>
+                  <TableCell className={cn(wide, "text-right tabular-nums", !c.alerts && "text-muted-foreground")}>{c.alerts}</TableCell>
+                  <TableCell className={cn(wide, "text-muted-foreground tabular-nums")} title={exactTime(c.openedAt)}>
+                    {when(c.openedAt)}
+                  </TableCell>
                   <TableCell className="pr-4 text-muted-foreground tabular-nums" title={exactTime(c.updatedAt)}>
                     {when(c.updatedAt)}
                   </TableCell>
@@ -290,7 +304,7 @@ export function CasesPage() {
               ))}
               {rows?.length === 0 && (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={6} className="py-10 text-center whitespace-normal">
+                  <TableCell colSpan={9} className="py-10 text-center whitespace-normal">
                     <EmptyState view={view} filtered={filtered} unassigned={counts?.unassigned ?? 0} onClear={() => setSearch(noFilters)} />
                   </TableCell>
                 </TableRow>

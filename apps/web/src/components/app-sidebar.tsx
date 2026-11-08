@@ -31,7 +31,9 @@ export function AppSidebar({ me, ...props }: { me: Me } & ComponentProps<typeof 
   const { state, isMobile } = useSidebar();
   const current = useOpenCaseNumber();
   return (
-    <Sidebar collapsible="icon" className="overflow-hidden *:data-[sidebar=sidebar]:flex-row" {...props}>
+    // Clipped rather than hidden: a hidden overflow can still be scrolled by code, and bringing the open Case into
+    // view in the collapsed queue would slide the rail out of sight.
+    <Sidebar collapsible="icon" className="overflow-clip *:data-[sidebar=sidebar]:flex-row *:data-[sidebar=sidebar]:overflow-clip" {...props}>
       <NavRail me={me} />
       <Sidebar collapsible="none" className="min-h-0 flex-1" inert={state === "collapsed" && !isMobile}>
         {me.guest ? <GuestCasesPanel guest={me.guest} current={current} /> : <WorkQueue me={me} current={current} />}

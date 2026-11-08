@@ -919,3 +919,26 @@ test("an Analyst is told live when a Case is assigned to them, and opens it from
     await stop();
   }
 }, 60_000);
+
+test("with the sidebar collapsed, a Case page keeps the navigation rail in view", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    await owner.api.cases.$post({ json: { title: "Suspicious PowerShell on FIN-LT-0231", caseType: "malware", severity: "high" } });
+    const page = await browser.newPage({ viewport: { width: 2560, height: 1300 } });
+    await page.context().addCookies([{ name: "sidebar_state", value: "false", url: baseUrl }]);
+    await signIn(page, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
+
+    // Opening the Case brings it into view in the (hidden) work queue; that must not slide the rail away.
+    await page.goto(`${baseUrl}/cases/1`);
+    await page.getByRole("heading", { name: "Suspicious PowerShell on FIN-LT-0231" }).waitFor();
+    await page.waitForTimeout(300);
+    const home = await page.getByRole("link", { name: "Argus home" }).boundingBox();
+    expect(home).not.toBeNull();
+    expect(home!.x).toBeGreaterThanOrEqual(0);
+    expect(home!.x + home!.width).toBeLessThanOrEqual(56);
+  } finally {
+    await stop();
+  }
+}, 60_000);

@@ -7,6 +7,8 @@
 
 @theme inline {
     --font-heading: var(--font-sans);
+    /* The widest a working page grows (see DESIGN.md, Layout). */
+    --container-page: 120rem;
     --font-sans: 'Geist Variable', sans-serif;
     --color-notice: var(--notice);
     --color-notice-border: var(--notice-border);

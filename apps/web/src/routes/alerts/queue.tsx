@@ -236,7 +236,7 @@ export function AlertQueuePage() {
   });
 
   return (
-    <div className="mx-auto grid w-full grid-cols-1 max-w-6xl gap-4">
+    <div className="grid w-full grid-cols-1 max-w-page gap-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h1 className="text-2xl font-semibold tracking-tight">Alerts</h1>
         <ul className="text-sm text-muted-foreground" aria-label="Integrations">

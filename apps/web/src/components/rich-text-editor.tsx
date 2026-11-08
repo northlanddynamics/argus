@@ -22,8 +22,9 @@ const extensions = [
   }),
 ];
 
+/** Each block keeps a readable measure however wide the card is. */
 const proseClass =
-  "max-w-none text-sm leading-relaxed outline-none [&_h2]:mt-3 [&_h2]:text-base [&_h2]:font-semibold [&_h3]:mt-2 [&_h3]:font-semibold [&_p]:my-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_a]:text-primary [&_a]:underline";
+  "max-w-none text-sm leading-relaxed *:max-w-[75ch] outline-none [&_h2]:mt-3 [&_h2]:text-base [&_h2]:font-semibold [&_h3]:mt-2 [&_h3]:font-semibold [&_p]:my-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_a]:text-primary [&_a]:underline";
 
 /** The Case Summary, editable with a toolbar or read-only. */
 export function RichTextEditor({

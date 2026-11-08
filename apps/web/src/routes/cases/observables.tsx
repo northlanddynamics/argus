@@ -272,7 +272,7 @@ function LinkedCard<Type extends string>(props: {
       <CardContent className="grid gap-4">
         {!readOnly && (
           <form
-            className="flex flex-wrap gap-2"
+            className="flex max-w-3xl flex-wrap gap-2"
             onSubmit={(e) => {
               e.preventDefault();
               if (value.trim()) add.mutate();
@@ -337,11 +337,12 @@ function LinkedCard<Type extends string>(props: {
                 <TableHead className="w-0">
                   <span className="sr-only">Type</span>
                 </TableHead>
-                <TableHead>{props.valueHeading}</TableHead>
-                <TableHead className="hidden @3xl:table-cell">Added by</TableHead>
-                <TableHead className="hidden @3xl:table-cell">Seen in other Cases</TableHead>
-                {props.status && <TableHead className="hidden @xl:table-cell">{props.status.heading}</TableHead>}
-                <TableHead className="hidden text-right @4xl:table-cell">Added</TableHead>
+                {/* The value takes the slack and the rest keep set widths, so Observables and Assets line up when stacked. */}
+                <TableHead className="w-full">{props.valueHeading}</TableHead>
+                <TableHead className="hidden w-40 @3xl:table-cell">Added by</TableHead>
+                <TableHead className="hidden w-44 @3xl:table-cell">Seen in other Cases</TableHead>
+                {props.status && <TableHead className="hidden w-48 @xl:table-cell">{props.status.heading}</TableHead>}
+                <TableHead className="hidden w-24 text-right @4xl:table-cell">Added</TableHead>
                 {(!readOnly || props.renderRow) && (
                   <TableHead className="w-0">
                     <span className="sr-only">Actions</span>

@@ -39,46 +39,49 @@ export function CaseOverviewPage() {
   if (!c) return null;
   /** Guests see neither who holds Case Roles nor the Cases this one is linked to. */
   const member = c.can.work;
+  // On a very wide page the Summary and the open Tasks sit side by side; below 104rem the Tasks would be cut short, so they stack.
   return (
-    <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
-      <div className="grid min-w-0 content-start gap-4">
-        <CaseSummaryCard number={number} summary={c.summary} readOnly={isReadOnly(c)} />
-        <OpenTasksCard number={number} />
+    <div className="@container">
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px] @[104rem]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_300px]">
+        <div className="grid min-w-0 content-start gap-4 @[104rem]:contents">
+          <CaseSummaryCard number={number} summary={c.summary} readOnly={isReadOnly(c)} />
+          <OpenTasksCard number={number} />
+        </div>
+        <Card className="gap-0 divide-y py-1">
+          <RailSection>
+            <RailHeader>
+              <RailTitle>Details</RailTitle>
+            </RailHeader>
+            <RailBody>
+              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+                <dt className="text-muted-foreground">Opened</dt>
+                <dd>
+                  {when(c.openedAt)}
+                  <span className="block text-muted-foreground">by {c.openedBy.name}</span>
+                </dd>
+                <dt className="text-muted-foreground">Updated</dt>
+                <dd>{when(c.updatedAt)}</dd>
+                {c.closed && c.resolution && (
+                  <>
+                    <dt className="text-muted-foreground">Closed</dt>
+                    <dd>
+                      {when(c.closed.at)}
+                      <span className="block text-muted-foreground">by {c.closed.by.name}</span>
+                    </dd>
+                    <dt className="text-muted-foreground">Resolution</dt>
+                    <dd>{resolutionLabel[c.resolution]}</dd>
+                  </>
+                )}
+              </dl>
+            </RailBody>
+          </RailSection>
+          {member && <CaseRolesPanel number={number} caseRoles={c.caseRoles} readOnly={isReadOnly(c)} />}
+          <CaseAlertsPanel c={c} />
+          <RelatedAlertsPanel c={c} />
+          {member && <LinkedCasesPanel number={number} readOnly={isReadOnly(c)} />}
+          <TagsPanel number={number} tags={c.tags} readOnly={isReadOnly(c)} />
+        </Card>
       </div>
-      <Card className="gap-0 divide-y py-1">
-        <RailSection>
-          <RailHeader>
-            <RailTitle>Details</RailTitle>
-          </RailHeader>
-          <RailBody>
-            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-              <dt className="text-muted-foreground">Opened</dt>
-              <dd>
-                {when(c.openedAt)}
-                <span className="block text-muted-foreground">by {c.openedBy.name}</span>
-              </dd>
-              <dt className="text-muted-foreground">Updated</dt>
-              <dd>{when(c.updatedAt)}</dd>
-              {c.closed && c.resolution && (
-                <>
-                  <dt className="text-muted-foreground">Closed</dt>
-                  <dd>
-                    {when(c.closed.at)}
-                    <span className="block text-muted-foreground">by {c.closed.by.name}</span>
-                  </dd>
-                  <dt className="text-muted-foreground">Resolution</dt>
-                  <dd>{resolutionLabel[c.resolution]}</dd>
-                </>
-              )}
-            </dl>
-          </RailBody>
-        </RailSection>
-        {member && <CaseRolesPanel number={number} caseRoles={c.caseRoles} readOnly={isReadOnly(c)} />}
-        <CaseAlertsPanel c={c} />
-        <RelatedAlertsPanel c={c} />
-        {member && <LinkedCasesPanel number={number} readOnly={isReadOnly(c)} />}
-        <TagsPanel number={number} tags={c.tags} readOnly={isReadOnly(c)} />
-      </Card>
     </div>
   );
 }
@@ -113,10 +116,9 @@ function OpenTasksCard({ number }: { number: number }) {
           <ul className="grid divide-y" aria-label="Open Tasks">
             {open.slice(0, OPEN_TASKS_SHOWN).map((t) => (
               <li key={t.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-2 first:pt-0 last:pb-0">
-                <span className="flex min-w-48 flex-1 items-center gap-2">
-                  <span className="truncate font-medium" title={t.title}>
-                    {t.title}
-                  </span>
+                {/* Titles wrap rather than truncate; owner and due date drop below when the card is narrow. */}
+                <span className="flex min-w-48 flex-1 items-baseline gap-2">
+                  <span className="font-medium">{t.title}</span>
                   {t.internal && <InternalBadge />}
                 </span>
                 <span className="shrink-0 text-muted-foreground">{t.owner.name}</span>
