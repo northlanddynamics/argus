@@ -179,9 +179,14 @@ export function CaseEvidencePage() {
                 </TableCell>
                 <TableCell>
                   <span className="flex items-center gap-1">
-                    {/* Members see what VirusTotal knows about the file on hover; Guests see the fingerprint alone. */}
+                    {/* Members see the whole hash, and what VirusTotal knows about the file, on hover; Guests get no popup, so the title shows it. */}
                     <HashHoverCard hash={e.sha256}>
-                      <code tabIndex={0} className="font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/50" aria-label={`SHA-256 ${e.sha256}`}>
+                      <code
+                        tabIndex={0}
+                        className="font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                        title={membersView ? undefined : e.sha256}
+                        aria-label={`SHA-256 ${e.sha256}`}
+                      >
                         {shortHash(e.sha256)}
                       </code>
                     </HashHoverCard>
