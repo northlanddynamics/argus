@@ -60,7 +60,7 @@ test("right-clicking an Observable copies it defanged or fanged, and opens a has
     const page = await context.newPage();
     await signIn(page, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
     const menu = page.getByRole("menu");
-    const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
+    const clipboard = () => page.evaluate<string>("navigator.clipboard.readText()");
 
     // A domain on the Case's Observables: both copies, and nowhere to look it up.
     await page.goto(`${baseUrl}/cases/1/observables`);
