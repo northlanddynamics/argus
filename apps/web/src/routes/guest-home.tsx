@@ -19,7 +19,7 @@ function GuestHomePage({ guest }: { guest: GuestInfo }) {
   const [error, setError] = useState<string | null>(null);
   const organizations = new Set(guest.cases.map((c) => c.organization.id)).size;
   return (
-    <div className="mx-auto grid w-full grid-cols-1 max-w-3xl gap-4">
+    <div className="grid w-full grid-cols-1 max-w-3xl gap-4">
       <h1 className="text-2xl font-semibold tracking-tight">Your Cases</h1>
       <Card>
         <CardContent className="grid gap-3">

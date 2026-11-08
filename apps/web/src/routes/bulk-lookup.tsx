@@ -50,7 +50,7 @@ export function BulkLookupPage() {
   const allChosen = !!results?.length && chosen.length === results.length;
 
   return (
-    <div className="mx-auto grid w-full max-w-page grid-cols-1 gap-4">
+    <div className="grid w-full max-w-page grid-cols-1 gap-4">
       <div className="grid gap-1">
         <h1 className="text-2xl font-semibold tracking-tight">Bulk Lookup</h1>
         <p className="max-w-prose text-sm text-muted-foreground">
@@ -58,8 +58,9 @@ export function BulkLookupPage() {
           ones your team has already seen.
         </p>
       </div>
+      {/* The form keeps a form's width; only the results table uses a wide page. */}
       <form
-        className="grid gap-2"
+        className="grid max-w-5xl gap-2"
         onSubmit={(e) => {
           e.preventDefault();
           if (preview?.ok) lookup.mutate(text);

@@ -6,7 +6,7 @@ const sideLink =
 /** Organization settings, for Admins and the Owner. */
 export function SettingsLayout() {
   return (
-    <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-6 md:grid-cols-[200px_minmax(0,1fr)]">
+    <div className="grid w-full max-w-6xl grid-cols-1 gap-6 md:grid-cols-[200px_minmax(0,1fr)]">
       <nav className="grid content-start gap-1" aria-label="Organization settings">
         <Link to="/settings/members" className={sideLink}>
           Members

@@ -43,8 +43,9 @@ export function CaseTasksPage() {
   const membersView = c.can.markInternal;
   const columns = membersView ? 6 : 5;
   const list = tasks.data ?? [];
+  // On a wide page the columns take set widths and the last one takes the slack, so Owner, Due and Edit stay beside the title.
   return (
-    <Card>
+    <Card className="@container">
       <CardHeader>
         <CardTitle>
           Tasks{" "}
@@ -64,14 +65,14 @@ export function CaseTasksPage() {
             <AlertDescription>{setDone.error.message}</AlertDescription>
           </Alert>
         )}
-        <Table>
+        <Table className="@7xl:table-fixed">
           <TableHeader>
             <TableRow>
               <TableHead className="w-12">Done</TableHead>
-              <TableHead>Task</TableHead>
-              <TableHead>Owner</TableHead>
-              <TableHead>Due</TableHead>
-              {membersView && <TableHead>Visibility</TableHead>}
+              <TableHead className="@7xl:w-[36rem]">Task</TableHead>
+              <TableHead className="@7xl:w-44">Owner</TableHead>
+              <TableHead className="@7xl:w-48">Due</TableHead>
+              {membersView && <TableHead className="@7xl:w-48">Visibility</TableHead>}
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -111,7 +112,7 @@ export function CaseTasksPage() {
                     />
                   </TableCell>
                 )}
-                <TableCell className="text-right">
+                <TableCell className="text-right @7xl:text-left">
                   {!readOnly && (
                     <Button variant="ghost" size="sm" className={QUIET_ACTION} aria-label={`Edit ${t.title}`} onClick={() => setEditing(t)}>
                       Edit

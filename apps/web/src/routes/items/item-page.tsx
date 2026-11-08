@@ -93,7 +93,7 @@ function ItemPageView({ kind, id }: { kind: ItemKind; id: string }) {
 
   if (page.isPending) {
     return (
-      <div className="mx-auto grid w-full max-w-page grid-cols-1 gap-4">
+      <div className="grid w-full max-w-page grid-cols-1 gap-4">
         <Skeleton className="h-16" />
         <Skeleton className="h-40" />
       </div>
@@ -102,7 +102,7 @@ function ItemPageView({ kind, id }: { kind: ItemKind; id: string }) {
   if (page.isError) return <p className="py-8 text-center text-sm text-destructive">{page.error.message}. Try again.</p>;
   if (!item) {
     return (
-      <div className="mx-auto grid w-full max-w-page gap-2 py-8 text-center">
+      <div className="grid w-full max-w-page gap-2 py-8 text-center">
         <h1 className="text-lg font-semibold">{noun[kind]} not found</h1>
         <p className="text-sm text-muted-foreground">It doesn't exist, or it isn't on any Case you can see.</p>
       </div>
@@ -110,7 +110,7 @@ function ItemPageView({ kind, id }: { kind: ItemKind; id: string }) {
   }
 
   return (
-    <div className="mx-auto grid w-full max-w-page grid-cols-1 gap-4">
+    <div className="grid w-full max-w-page grid-cols-1 gap-4">
       <section aria-label={noun[kind]} className="grid gap-1">
         <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <TypeIcon kind={kind} item={item} />
