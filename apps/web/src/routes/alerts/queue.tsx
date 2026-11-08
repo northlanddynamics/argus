@@ -4,13 +4,12 @@ import { XIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { SeverityBadge, StatusBadge } from "@/components/case-badges";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { FilterBar, FilterSelect } from "@/components/filter-bar";
 import { ItemLink } from "@/components/item-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -281,8 +280,8 @@ export function AlertQueuePage() {
           </AlertDescription>
         </Alert>
       )}
-      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
-        <Filter
+      <FilterBar onClear={filtered ? () => filter(noFilters) : undefined}>
+        <FilterSelect
           label="Alert Status"
           id="alert-status"
           value={status}
@@ -290,25 +289,27 @@ export function AlertQueuePage() {
           labels={{ ...alertStatusLabel, any: "Any" }}
           onChange={(next) => filter({ status: next === "new" ? undefined : next })}
         />
-        <Filter
+        <FilterSelect
           label="Severity"
           id="alert-severity"
-          value={search.severity ?? ""}
-          options={["", ...SEVERITIES] as const}
-          labels={{ "": "Any", ...severityLabel }}
-          onChange={(next) => filter({ severity: next || undefined })}
+          any="Any"
+          value={search.severity}
+          options={SEVERITIES}
+          labels={severityLabel}
+          onChange={(severity) => filter({ severity })}
         />
         {((streams?.length ?? 0) > 1 || search.integration) && (
-          <Filter
+          <FilterSelect
             label="Integration"
             id="alert-integration"
-            value={search.integration ?? ""}
-            options={["", ...(streams?.map((i) => i.id) ?? [])]}
-            labels={{ "": "Any", ...Object.fromEntries(streams?.map((i) => [i.id, i.name]) ?? []) }}
-            onChange={(next) => filter({ integration: next || undefined })}
+            any="Any"
+            value={search.integration}
+            options={streams?.map((i) => i.id) ?? []}
+            labels={Object.fromEntries(streams?.map((i) => [i.id, i.name]) ?? [])}
+            onChange={(integration) => filter({ integration })}
           />
         )}
-      </div>
+      </FilterBar>
       {outcome && <OutcomeNotice outcome={outcome} onReselect={reselect} onDismiss={() => setOutcome(null)} />}
       <OpenCaseFromAlertsDialog
         open={dialog?.open === true && dialog.kind === "open"}
@@ -943,36 +944,5 @@ function AlertPanel({ id, onClose, onAct }: { id: string; onClose: () => void; o
         />
       </CardContent>
     </Card>
-  );
-}
-
-function Filter<T extends string>({
-  label,
-  id,
-  value,
-  options,
-  labels,
-  onChange,
-}: {
-  label: string;
-  id: string;
-  value: T;
-  options: readonly T[];
-  labels: Record<T, string>;
-  onChange: (value: T) => void;
-}) {
-  return (
-    <div className="flex items-center gap-1.5">
-      <Label htmlFor={id} className="text-xs font-normal text-muted-foreground">
-        {label}
-      </Label>
-      <NativeSelect size="sm" id={id} value={value} onChange={(e) => onChange(e.target.value as T)}>
-        {options.map((o) => (
-          <NativeSelectOption key={o} value={o}>
-            {labels[o]}
-          </NativeSelectOption>
-        ))}
-      </NativeSelect>
-    </div>
   );
 }

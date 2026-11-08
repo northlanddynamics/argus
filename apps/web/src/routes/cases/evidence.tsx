@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { CheckIcon, CopyIcon, DownloadIcon, ExternalLinkIcon, FileIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -6,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Progress } from "@/components/ui/progress";
+import { RowIconButton } from "@/components/row-icon-button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Audience, Visibility } from "@/components/visibility";
 import { canMarkInternal, canParticipate, caseQuery } from "@/lib/cases";
@@ -13,7 +16,6 @@ import { evidenceKey, evidenceQuery, evidenceUrl, formatBytes, shortHash, upload
 import { cn } from "@/lib/utils";
 import { instant } from "@/lib/when";
 import { useCaseNumber } from "@/routes/cases/case-layout";
-import { QUIET_ACTION } from "@/routes/cases/rail";
 
 /** A file on its way up. */
 type Upload = { key: string; name: string; progress: number; error: string | null };
@@ -62,7 +64,7 @@ export function CaseEvidencePage() {
   const membersView = c.can.markInternal;
   const list = evidence.data ?? [];
   return (
-    <Card>
+    <Card className="@container">
       <CardHeader>
         <CardTitle>Evidence</CardTitle>
       </CardHeader>
@@ -127,33 +129,57 @@ export function CaseEvidencePage() {
             </div>
           ),
         )}
-        <Table>
+        <Table className="@4xl:table-fixed">
+          {/* Set widths, so the File name takes what's left and the rest line up row to row. */}
+          <colgroup>
+            <col />
+            <col className="@4xl:w-24" />
+            <col className="@4xl:w-56" />
+            <col className="@4xl:w-44" />
+            {membersView && <col className="@4xl:w-44" />}
+            <col className="@4xl:w-20" />
+          </colgroup>
           <TableHeader>
-            <TableRow>
+            <TableRow className="hover:bg-transparent">
               <TableHead>File</TableHead>
-              <TableHead>Size</TableHead>
+              <TableHead className="text-right">Size</TableHead>
               <TableHead>Added</TableHead>
               <TableHead>SHA-256</TableHead>
               {membersView && <TableHead>Visibility</TableHead>}
-              <TableHead />
+              <TableHead>
+                <span className="sr-only">Open</span>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
+            {evidence.isPending && (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={membersView ? 6 : 5}>
+                  <Skeleton className="h-8" />
+                </TableCell>
+              </TableRow>
+            )}
             {list.map((e) => (
               <TableRow key={e.id} data-testid={`evidence-${e.name}`} className="group/row">
-                <TableCell className="font-medium whitespace-normal break-all">{e.name}</TableCell>
-                <TableCell className="text-sm">{formatBytes(e.size)}</TableCell>
-                <TableCell className="text-sm">
-                  {e.addedBy.name} · {instant(e.addedAt)}
+                <TableCell className="whitespace-normal">
+                  <span className="flex items-start gap-2">
+                    <FileIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+                    <span className="font-medium [overflow-wrap:anywhere]">{e.name}</span>
+                  </span>
+                </TableCell>
+                <TableCell className="text-right text-muted-foreground tabular-nums">{formatBytes(e.size)}</TableCell>
+                <TableCell>
+                  <div className="truncate" title={e.addedBy.name}>{e.addedBy.name}</div>
+                  <div className="font-mono text-xs text-muted-foreground tabular-nums">{instant(e.addedAt)}</div>
                 </TableCell>
                 <TableCell>
-                  <span className="flex items-center gap-2">
-                    <code className="text-xs" title={e.sha256}>
+                  <span className="flex items-center gap-1">
+                    <code className="font-mono text-xs" title={e.sha256}>
                       {shortHash(e.sha256)}
                     </code>
-                    <Button variant="ghost" size="sm" className={QUIET_ACTION} aria-label={`Copy SHA-256 of ${e.name}`} onClick={() => void copy(e.sha256)}>
-                      {copied === e.sha256 ? "Copied" : "Copy"}
-                    </Button>
+                    <RowIconButton label={copied === e.sha256 ? "Copied" : "Copy SHA-256"} aria-label={`Copy SHA-256 of ${e.name}`} onClick={() => void copy(e.sha256)}>
+                      {copied === e.sha256 ? <CheckIcon /> : <CopyIcon />}
+                    </RowIconButton>
                   </span>
                 </TableCell>
                 {membersView && (
@@ -162,23 +188,23 @@ export function CaseEvidencePage() {
                   </TableCell>
                 )}
                 <TableCell className="text-right">
-                  <span className="inline-flex gap-2">
-                    <Button asChild variant="ghost" size="sm" className={QUIET_ACTION}>
+                  <span className="inline-flex gap-1">
+                    <RowIconButton label="View in a new tab" asChild>
                       <a href={evidenceUrl(number, e.id, "view")} target="_blank" rel="noopener noreferrer" aria-label={`View ${e.name}`}>
-                        View
+                        <ExternalLinkIcon />
                       </a>
-                    </Button>
-                    <Button asChild variant="ghost" size="sm" className={QUIET_ACTION}>
+                    </RowIconButton>
+                    <RowIconButton label="Download" asChild>
                       <a href={evidenceUrl(number, e.id, "download")} download={e.name} aria-label={`Download ${e.name}`}>
-                        Download
+                        <DownloadIcon />
                       </a>
-                    </Button>
+                    </RowIconButton>
                   </span>
                 </TableCell>
               </TableRow>
             ))}
             {evidence.data?.length === 0 && (
-              <TableRow>
+              <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={membersView ? 6 : 5} className="text-muted-foreground">
                   No Evidence yet.
                 </TableCell>

@@ -1,12 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { DatePicker } from "@/components/date-picker";
+import { DATE_FILTER, FilterBar, FilterField, FilterSelect } from "@/components/filter-bar";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
+import { instant } from "@/lib/when";
 import { membersKey } from "@/routes/settings/members";
 
 const categories = { members: "Members", "case-roles": "Case Roles", sso: "Single sign-on", integrations: "Integrations", alerts: "Alerts", teams: "Teams", "ignored-observables": "Ignored Observables" } as const;
@@ -81,78 +83,97 @@ export function OrgAuditLogPage() {
     queryKey: membersKey,
     queryFn: async () => (await api.organization.members.$get()).json(),
   });
+  const actors = members.data?.members.map((m) => m.userId) ?? [];
+  const actorNames = Object.fromEntries(members.data?.members.map((m) => [m.userId, m.name]) ?? []);
+  const filtered = Boolean(category || actor || from);
+  const clear = () => {
+    setCategory("");
+    setActor("");
+    setFrom("");
+  };
 
   return (
     <>
-      <div>
-        <h1 className="text-2xl font-semibold">Organization Audit Log</h1>
-      </div>
-      <Card>
-        <CardContent className="grid gap-4 sm:grid-cols-3">
-          <div className="grid gap-2">
-            <Label htmlFor="audit-category">Category</Label>
-            <NativeSelect id="audit-category" value={category} onChange={(e) => setCategory(e.target.value as Category | "")}>
-              <NativeSelectOption value="">All</NativeSelectOption>
-              {Object.entries(categories).map(([value, label]) => (
-                <NativeSelectOption key={value} value={value}>
-                  {label}
-                </NativeSelectOption>
+      <h1 className="text-2xl font-semibold tracking-tight">Organization Audit Log</h1>
+      <FilterBar onClear={filtered ? clear : undefined}>
+        <FilterSelect
+          label="Category"
+          id="audit-category"
+          any="All"
+          value={category || undefined}
+          options={Object.keys(categories) as Category[]}
+          labels={categories}
+          onChange={(next) => setCategory(next ?? "")}
+        />
+        <FilterSelect label="Actor" id="audit-actor" any="Anyone" value={actor || undefined} options={actors} labels={actorNames} onChange={(next) => setActor(next ?? "")} />
+        <FilterField label="From" htmlFor="audit-from">
+          <DatePicker id="audit-from" value={from} onChange={setFrom} placeholder="Any time" className={DATE_FILTER} />
+        </FilterField>
+      </FilterBar>
+      <Card className="@container py-0">
+        <Table className="@4xl:table-fixed" aria-label="Organization Audit Log">
+          {/* Set widths, so the columns hold still as filters change what's listed; Action takes the rest. */}
+          <colgroup>
+            <col className="@4xl:w-44" />
+            <col className="@4xl:w-36" />
+            <col className="@4xl:w-32" />
+            <col />
+            <col className="@4xl:w-[26%]" />
+          </colgroup>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="pl-4">When</TableHead>
+              <TableHead>Actor</TableHead>
+              <TableHead>Category</TableHead>
+              <TableHead>Action</TableHead>
+              <TableHead className="pr-4">Before → After</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {entries.isPending &&
+              Array.from({ length: 6 }, (_, i) => (
+                <TableRow key={i} className="hover:bg-transparent" aria-hidden>
+                  <TableCell className="pl-4"><Skeleton className="h-4 w-36" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-3/5" /></TableCell>
+                  <TableCell className="pr-4"><Skeleton className="h-4 w-2/5" /></TableCell>
+                </TableRow>
               ))}
-            </NativeSelect>
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="audit-actor">Actor</Label>
-            <NativeSelect id="audit-actor" value={actor} onChange={(e) => setActor(e.target.value)}>
-              <NativeSelectOption value="">Anyone</NativeSelectOption>
-              {members.data?.members.map((m) => (
-                <NativeSelectOption key={m.userId} value={m.userId}>
-                  {m.name}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="audit-from">From</Label>
-            <Input id="audit-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-          </div>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>When</TableHead>
-                <TableHead>Actor</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>Action</TableHead>
-                <TableHead>Before → After</TableHead>
+            {entries.data?.map((e) => (
+              <TableRow key={e.id}>
+                {/* The same UTC instant as a Case's Audit Log, so one moment never reads two ways. */}
+                <TableCell className="pl-4 font-mono text-xs tabular-nums">{instant(e.occurredAt)}</TableCell>
+                <TableCell className="truncate" title={e.actor.name}>{e.actor.name}</TableCell>
+                <TableCell>
+                  <Badge variant="outline">{categories[e.category] ?? e.category}</Badge>
+                </TableCell>
+                <TableCell className="whitespace-normal [overflow-wrap:anywhere]">{describe(e.action, e.target)}</TableCell>
+                <TableCell className="pr-4 font-mono text-xs whitespace-normal [overflow-wrap:anywhere]">
+                  {e.before !== null && <span className="text-muted-foreground line-through">{word(e.before)}</span>}
+                  {e.before !== null && " "}→ {word(e.after)}
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {entries.data?.map((e) => (
-                <TableRow key={e.id}>
-                  <TableCell className="font-mono text-xs">{new Date(e.occurredAt).toLocaleString()}</TableCell>
-                  <TableCell>{e.actor.name}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{categories[e.category] ?? e.category}</Badge>
-                  </TableCell>
-                  <TableCell>{describe(e.action, e.target)}</TableCell>
-                  <TableCell className="font-mono text-xs">
-                    <span className={e.before ? "line-through" : undefined}>{word(e.before)}</span> → {word(e.after)}
-                  </TableCell>
-                </TableRow>
-              ))}
-              {entries.data?.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-muted-foreground">
-                    Nothing recorded yet.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
+            ))}
+            {entries.isError && (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={5} className="px-4 whitespace-normal">
+                  <span className="text-destructive">The Audit Log couldn't be loaded.</span>{" "}
+                  <Button variant="link" size="sm" className="h-auto p-0" onClick={() => void entries.refetch()}>
+                    Try again
+                  </Button>
+                </TableCell>
+              </TableRow>
+            )}
+            {entries.data?.length === 0 && (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={5} className="px-4 text-muted-foreground">
+                  {filtered ? "No entries match these filters." : "Nothing recorded yet."}
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
       </Card>
     </>
   );

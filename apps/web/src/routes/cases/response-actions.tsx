@@ -707,16 +707,26 @@ export function ResponseActionsCard({
             </AlertDescription>
           </Alert>
         ) : (
-          <Table aria-label="Response Actions">
+          <div className="@container">
+          <Table aria-label="Response Actions" className="@4xl:table-fixed">
+            {/* Once there's room, set widths, so the columns hold still as Response Actions change state live; the Target takes the rest. */}
+            <colgroup>
+              <col />
+              <col className="@4xl:w-48" />
+              <col className="@4xl:w-56" />
+              <col className="@4xl:w-40" />
+              {canMarkInternal && <col className="@4xl:w-44" />}
+              <col className="@4xl:w-28" />
+            </colgroup>
             {/* Column headings only once there is something under them. */}
             <TableHeader className={query.isPending || all.length ? undefined : "sr-only"}>
-              <TableRow>
+              <TableRow className="hover:bg-transparent">
                 <TableHead>Target</TableHead>
                 <TableHead>Action</TableHead>
                 <TableHead>State</TableHead>
                 <TableHead>Taken by</TableHead>
                 {canMarkInternal && <TableHead>Visibility</TableHead>}
-                <TableHead className="w-0">
+                <TableHead>
                   <span className="sr-only">Actions</span>
                 </TableHead>
               </TableRow>
@@ -774,8 +784,8 @@ export function ResponseActionsCard({
                           )}
                           {r.lastError && <span className="mt-1 block text-xs break-words text-destructive">{r.lastError}</span>}
                         </TableCell>
-                        <TableCell className="min-w-28 text-xs whitespace-normal">
-                          {r.requestedBy.name}
+                        <TableCell className="text-xs whitespace-normal">
+                          <span className="block truncate" title={r.requestedBy.name}>{r.requestedBy.name}</span>
                           <span className="block text-muted-foreground">
                             <At iso={r.requestedAt} />
                           </span>
@@ -791,7 +801,7 @@ export function ResponseActionsCard({
                             />
                           </TableCell>
                         )}
-                        <TableCell className="w-0 text-right">
+                        <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
                             {/* Failed needs someone, so Retry stays in sight; the rest is in the menu. */}
                             {r.state === "failed" && (r.removalRequestedAt ? canRemove : !readOnly) && (
@@ -844,6 +854,7 @@ export function ResponseActionsCard({
               )}
             </TableBody>
           </Table>
+          </div>
         )}
         {lifting && <RemoveDialog number={number} r={lifting} onClose={() => setLifting(null)} />}
         {dismissing && (

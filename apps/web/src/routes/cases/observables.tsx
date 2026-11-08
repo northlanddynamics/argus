@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { BellOffIcon, type LucideIcon, MonitorIcon, SirenIcon, UserIcon } from "lucide-react";
+import { BellOffIcon, type LucideIcon, MonitorIcon, PlusIcon, SirenIcon, UserIcon } from "lucide-react";
 import { type ReactElement, type ReactNode, useId, useState } from "react";
 import { toast } from "sonner";
 import { ItemLink } from "@/components/item-link";
@@ -40,6 +40,7 @@ import { AssetActions, BulkObservableActions, ObservableActions } from "@/routes
 import { type CaseAsset, HostFalcon } from "@/routes/cases/host-falcon";
 import { InternalBadge } from "@/components/visibility";
 import { exactTime, when } from "@/lib/when";
+import { cn } from "@/lib/utils";
 
 /**
  * Case · Observables & Assets, each with the other Cases it also appears in, and the Response
@@ -132,7 +133,7 @@ export function CaseObservablesPage() {
           unlink={(id) => api.cases[":number"].assets[":id"].$delete({ param: { number: n, id } })}
           status={
             (assets.data ?? []).some((a) => a.type === "host")
-              ? { heading: "Falcon", render: (item) => <HostFalcon falcon={item.falcon} />, width: "min-w-60 max-w-72" }
+              ? { heading: "Falcon", render: (item) => <HostFalcon falcon={item.falcon} /> }
               : undefined
           }
           renderRow={(item, row, unlink) => (
@@ -186,6 +187,17 @@ function detectObservableType(current: ObservableType, raw: string): ObservableT
   return OBSERVABLE_TYPES.find((t) => normaliseObservable(t, value)) ?? null;
 }
 
+/*
+ * Columns that appear as the table widens. Below their size their cells stay in the row, emptied and
+ * without padding, so every column keeps its set width.
+ */
+const from3xl = "overflow-hidden px-0 @3xl:px-2";
+const show3xl = "hidden @3xl:block";
+const fromXl = "overflow-hidden px-0 @xl:px-2";
+const showXl = "hidden @xl:block";
+const from4xl = "overflow-hidden px-0 @4xl:px-2";
+const show4xl = "hidden @4xl:block";
+
 function LinkedCard<Type extends string>(props: {
   title: string;
   noun: string;
@@ -210,7 +222,7 @@ function LinkedCard<Type extends string>(props: {
   add: (type: Type, value: string) => Promise<Response>;
   unlink: (id: string) => Promise<Response>;
   /** A column saying where each item stands, such as what was sent from it. */
-  status?: { heading: string; render: (item: Item<Type>) => ReactNode; /** The column's width; `max-w-48` unless given. */ width?: string };
+  status?: { heading: string; render: (item: Item<Type>) => ReactNode };
   /** The icon for each type, standing in for its name. */
   typeIcon: (type: Type) => LucideIcon;
   /**
@@ -305,7 +317,8 @@ function LinkedCard<Type extends string>(props: {
               }}
             />
             <Button type="submit" variant="outline" disabled={add.isPending || !value.trim()}>
-              + Add {noun}
+              <PlusIcon aria-hidden />
+              Add {noun}
             </Button>
           </form>
         )}
@@ -321,11 +334,22 @@ function LinkedCard<Type extends string>(props: {
         )}
         {/* Columns give way to the value as the space for the table narrows, whatever the window: what was sent first, then who added it, then when. */}
         <div className="@container">
-          <Table>
+          <Table className="table-fixed">
+            {/* Set widths, the same in Observables and Assets, so the two tables line up when stacked; the value takes the rest. */}
+            <colgroup>
+              {selection && <col className="w-10" />}
+              <col className="w-8" />
+              <col />
+              <col className="w-0 @3xl:w-40" />
+              <col className="w-0 @3xl:w-44" />
+              {props.status && <col className="w-0 @xl:w-52" />}
+              <col className="w-0 @4xl:w-24" />
+              {(!readOnly || props.renderRow) && <col className="w-12" />}
+            </colgroup>
             <TableHeader>
-              <TableRow>
+              <TableRow className="hover:bg-transparent">
                 {selection && (
-                  <TableHead className="w-0">
+                  <TableHead>
                     <Checkbox
                       aria-label={`Select every ${noun}`}
                       checked={allSelected ? true : selection.selected.length ? "indeterminate" : false}
@@ -334,17 +358,16 @@ function LinkedCard<Type extends string>(props: {
                     />
                   </TableHead>
                 )}
-                <TableHead className="w-0">
+                <TableHead className="pr-0">
                   <span className="sr-only">Type</span>
                 </TableHead>
-                {/* The value takes the slack and the rest keep set widths, so Observables and Assets line up when stacked. */}
-                <TableHead className="w-full">{props.valueHeading}</TableHead>
-                <TableHead className="hidden w-40 @3xl:table-cell">Added by</TableHead>
-                <TableHead className="hidden w-44 @3xl:table-cell">Seen in other Cases</TableHead>
-                {props.status && <TableHead className="hidden w-48 @xl:table-cell">{props.status.heading}</TableHead>}
-                <TableHead className="hidden w-24 text-right @4xl:table-cell">Added</TableHead>
+                <TableHead>{props.valueHeading}</TableHead>
+                <TableHead className={from3xl}><span className={show3xl}>Added by</span></TableHead>
+                <TableHead className={from3xl}><span className={show3xl}>Seen in other Cases</span></TableHead>
+                {props.status && <TableHead className={fromXl}><span className={showXl}>{props.status.heading}</span></TableHead>}
+                <TableHead className={cn(from4xl, "text-right")}><span className={show4xl}>Added</span></TableHead>
                 {(!readOnly || props.renderRow) && (
-                  <TableHead className="w-0">
+                  <TableHead>
                     <span className="sr-only">Actions</span>
                   </TableHead>
                 )}
@@ -356,7 +379,7 @@ function LinkedCard<Type extends string>(props: {
                 const row = (menuButton?: ReactNode) => (
                   <TableRow key={item.id} data-testid={`${noun.toLowerCase()}-${item.value}`}>
                     {selection && (
-                      <TableCell className="w-0">
+                      <TableCell>
                         {canTick(item) && (
                           <Checkbox
                             aria-label={`Select ${typeLabel[item.type]} ${item.value}`}
@@ -368,7 +391,7 @@ function LinkedCard<Type extends string>(props: {
                         )}
                       </TableCell>
                     )}
-                    <TableCell className="w-0 pr-0">
+                    <TableCell className="pr-0">
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <span className="flex size-6 items-center justify-center text-muted-foreground">
@@ -379,7 +402,7 @@ function LinkedCard<Type extends string>(props: {
                       </Tooltip>
                     </TableCell>
                     {/* The value takes the room that is left, cut short with … when it doesn't fit; its page shows it whole. */}
-                    <TableCell className="w-full max-w-0 min-w-40">
+                    <TableCell>
                       <span className="flex min-w-0 items-center gap-2">
                         <ItemLink
                           kind={props.kind}
@@ -400,7 +423,8 @@ function LinkedCard<Type extends string>(props: {
                         {item.internal && <InternalBadge />}
                       </span>
                     </TableCell>
-                    <TableCell className="hidden max-w-48 truncate text-muted-foreground @3xl:table-cell">
+                    <TableCell className={cn(from3xl, "text-muted-foreground")}>
+                      <div className={cn(show3xl, "truncate")}>
                       {item.fromAlert ? (
                         <span className="inline-flex max-w-full items-center gap-1.5" title={item.fromAlert.alert?.title ?? "Added when an Alert was attached"}>
                           <SirenIcon className="size-3.5 shrink-0" aria-hidden />
@@ -418,21 +442,28 @@ function LinkedCard<Type extends string>(props: {
                           )}
                         </span>
                       ) : (
-                        item.linkedBy.name
+                        <span title={item.linkedBy.name}>{item.linkedBy.name}</span>
                       )}
+                      </div>
                     </TableCell>
-                    <TableCell className="hidden @3xl:table-cell">
-                      {item.seenIn.length === 0 ? <span className="text-muted-foreground">—</span> : <SeenIn seenIn={item.seenIn} />}
+                    <TableCell className={cn(from3xl, "whitespace-normal")}>
+                      <div className={show3xl}>
+                        {item.seenIn.length === 0 ? <span className="text-muted-foreground">—</span> : <SeenIn seenIn={item.seenIn} />}
+                      </div>
                     </TableCell>
-                    {props.status && <TableCell className={`hidden whitespace-normal @xl:table-cell ${props.status.width ?? "max-w-48"}`}>{props.status.render(item)}</TableCell>}
-                    <TableCell className="hidden text-right text-muted-foreground tabular-nums @4xl:table-cell" title={exactTime(item.linkedAt)}>
-                      {when(item.linkedAt)}
+                    {props.status && (
+                      <TableCell className={cn(fromXl, "whitespace-normal")}>
+                        <div className={showXl}>{props.status.render(item)}</div>
+                      </TableCell>
+                    )}
+                    <TableCell className={cn(from4xl, "text-right text-muted-foreground tabular-nums")} title={exactTime(item.linkedAt)}>
+                      <span className={show4xl}>{when(item.linkedAt)}</span>
                     </TableCell>
                     {menuButton ? (
-                      <TableCell className="w-0 text-right">{menuButton}</TableCell>
+                      <TableCell className="text-right">{menuButton}</TableCell>
                     ) : (
                       !readOnly && (
-                        <TableCell className="w-0 text-right">
+                        <TableCell className="text-right">
                           <Button
                             variant="ghost"
                             size="sm"

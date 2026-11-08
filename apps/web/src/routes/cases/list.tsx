@@ -1,14 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon, LockIcon, UsersIcon, XIcon } from "lucide-react";
+import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon, LockIcon, UsersIcon } from "lucide-react";
 import { Fragment, useEffect, useRef } from "react";
 import { SeverityBadge, StatusBadge } from "@/components/case-badges";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { FilterBar, FilterSelect } from "@/components/filter-bar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -32,8 +31,13 @@ import { useJustChanged } from "@/lib/use-just-changed";
 import { exactTime, when } from "@/lib/when";
 import { OpenCaseDialog } from "@/routes/cases/open-case-dialog";
 
-/** Columns shown only once the list is wide enough; below that their facts sit under the Title. */
-const wide = "hidden @6xl:table-cell";
+/**
+ * Columns shown only once the list is wide enough; below that their facts sit under the Title. Their
+ * cells stay in the row, emptied and without padding, so every column keeps its set width.
+ */
+const wide = "overflow-hidden px-0 @6xl:px-2";
+/** The content of a `wide` cell, shown only when its column is. */
+const wideContent = "hidden @6xl:inline";
 export const CASE_VIEWS = ["mine", "unassigned", "open", "closed"] as const;
 export type CaseListView = (typeof CASE_VIEWS)[number];
 const ACCESS = ["restricted", "guests"] as const;
@@ -168,21 +172,15 @@ export function CasesPage() {
             ))}
           </TabsList>
         </Tabs>
-        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
+        <FilterBar onClear={filtered ? () => setSearch(noFilters) : undefined}>
           {view !== "closed" && (
-            <Filter label="Status" id="filter-status" value={search.status} options={search.status === "closed" ? STATUSES : OPEN_STATUSES} labels={statusLabel} onChange={(status) => setSearch({ status })} />
+            <FilterSelect label="Status" id="filter-status" any="Any" value={search.status} options={search.status === "closed" ? STATUSES : OPEN_STATUSES} labels={statusLabel} onChange={(status) => setSearch({ status })} />
           )}
-          <Filter label="Severity" id="filter-severity" value={search.severity} options={SEVERITIES} labels={severityLabel} onChange={(severity) => setSearch({ severity })} />
-          <Filter label="Case Type" id="filter-type" value={search.caseType} options={CASE_TYPES} labels={caseTypeLabel} onChange={(caseType) => setSearch({ caseType })} />
-          <Filter label="Tag" id="filter-tag" value={search.tag} options={tagOptions} labels={tagLabels} onChange={(tag) => setSearch({ tag })} />
-          <Filter label="Access" id="filter-access" value={search.access} options={ACCESS} labels={accessLabel} onChange={(access) => setSearch({ access })} />
-          {filtered && (
-            <Button variant="ghost" size="sm" onClick={() => setSearch(noFilters)}>
-              <XIcon aria-hidden />
-              Clear
-            </Button>
-          )}
-        </div>
+          <FilterSelect label="Severity" id="filter-severity" any="Any" value={search.severity} options={SEVERITIES} labels={severityLabel} onChange={(severity) => setSearch({ severity })} />
+          <FilterSelect label="Case Type" id="filter-type" any="Any" value={search.caseType} options={CASE_TYPES} labels={caseTypeLabel} onChange={(caseType) => setSearch({ caseType })} />
+          <FilterSelect label="Tag" id="filter-tag" any="Any" value={search.tag} options={tagOptions} labels={tagLabels} onChange={(tag) => setSearch({ tag })} />
+          <FilterSelect label="Access" id="filter-access" any="Any" value={search.access} options={ACCESS} labels={accessLabel} onChange={(access) => setSearch({ access })} />
+        </FilterBar>
       </div>
 
       {cases.isError && (
@@ -204,7 +202,19 @@ export function CasesPage() {
       {!(cases.isError && !rows) && (
         // Wider lists give Case Type, Alerts and Opened columns of their own rather than stretching the Title.
         <Card className="@container py-0">
-          <Table ref={table}>
+          <Table ref={table} className="@4xl:table-fixed">
+            {/* Set widths, so the columns stay put from one view, filter or sort to the next; the Title takes the rest. */}
+            <colgroup>
+              <col className="@4xl:w-20" />
+              <col className="@4xl:w-28" />
+              <col />
+              <col className="@4xl:w-0 @6xl:w-36" />
+              <col className="@4xl:w-44" />
+              <col className="@4xl:w-52" />
+              <col className="@4xl:w-0 @6xl:w-20" />
+              <col className="@4xl:w-0 @6xl:w-28" />
+              <col className="@4xl:w-28" />
+            </colgroup>
             <TableCaption className="sr-only">
               {`${viewLabel[view]}, ${filtered ? "filtered, " : ""}sorted by ${sortLabel[sort]}, ${order === "desc" ? "descending" : "ascending"}`}
             </TableCaption>
@@ -213,11 +223,11 @@ export function CasesPage() {
                 <TableHead scope="col" className="w-20 pl-4" {...sortable("number", "Case")} />
                 <TableHead scope="col" className="w-28" {...sortable("severity", "Severity")} />
                 <TableHead scope="col">Title</TableHead>
-                <TableHead scope="col" className={wide}>Case Type</TableHead>
+                <TableHead scope="col" className={wide}><span className={wideContent}>Case Type</span></TableHead>
                 <TableHead scope="col">Status</TableHead>
                 <TableHead scope="col">Assignee</TableHead>
-                <TableHead scope="col" className={cn(wide, "text-right")}>Alerts</TableHead>
-                <TableHead scope="col" className={wide}>Opened</TableHead>
+                <TableHead scope="col" className={cn(wide, "text-right")}><span className={wideContent}>Alerts</span></TableHead>
+                <TableHead scope="col" className={wide}><span className={wideContent}>Opened</span></TableHead>
                 <TableHead scope="col" className="pr-4" {...sortable("updated", "Updated")} />
               </TableRow>
             </TableHeader>
@@ -228,11 +238,11 @@ export function CasesPage() {
                     <TableCell className="pl-4"><Skeleton className="h-4 w-10" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-64" /></TableCell>
-                    <TableCell className={wide}><Skeleton className="h-4 w-20" /></TableCell>
+                    <TableCell className={wide}><Skeleton className="hidden h-4 w-20 @6xl:block" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-                    <TableCell className={wide}><Skeleton className="ml-auto h-4 w-6" /></TableCell>
-                    <TableCell className={wide}><Skeleton className="h-4 w-14" /></TableCell>
+                    <TableCell className={wide}><Skeleton className="ml-auto hidden h-4 w-6 @6xl:block" /></TableCell>
+                    <TableCell className={wide}><Skeleton className="hidden h-4 w-14 @6xl:block" /></TableCell>
                     <TableCell className="pr-4"><Skeleton className="h-4 w-14" /></TableCell>
                   </TableRow>
                 ))}
@@ -257,7 +267,7 @@ export function CasesPage() {
                   <TableCell>
                     <SeverityBadge severity={c.severity} />
                   </TableCell>
-                  <TableCell className="min-w-56 whitespace-normal">
+                  <TableCell className="whitespace-normal">
                     <Link
                       to="/cases/$number"
                       params={{ number: String(c.number) }}
@@ -288,14 +298,18 @@ export function CasesPage() {
                       ))}
                     </span>
                   </TableCell>
-                  <TableCell className={wide}>{caseTypeLabel[c.caseType]}</TableCell>
+                  <TableCell className={cn(wide, "truncate")}><span className={wideContent}>{caseTypeLabel[c.caseType]}</span></TableCell>
                   <TableCell>
                     <StatusBadge status={c.status} resolution={c.resolution} />
                   </TableCell>
-                  <TableCell className={cn(!c.assignee && "text-muted-foreground")}>{c.assignee?.name ?? "Unassigned"}</TableCell>
-                  <TableCell className={cn(wide, "text-right tabular-nums", !c.alerts && "text-muted-foreground")}>{c.alerts}</TableCell>
+                  <TableCell className={cn("truncate", !c.assignee && "text-muted-foreground")} title={c.assignee?.name}>
+                    {c.assignee?.name ?? "Unassigned"}
+                  </TableCell>
+                  <TableCell className={cn(wide, "text-right tabular-nums", !c.alerts && "text-muted-foreground")}>
+                    <span className={wideContent}>{c.alerts}</span>
+                  </TableCell>
                   <TableCell className={cn(wide, "text-muted-foreground tabular-nums")} title={exactTime(c.openedAt)}>
-                    {when(c.openedAt)}
+                    <span className={wideContent}>{when(c.openedAt)}</span>
                   </TableCell>
                   <TableCell className="pr-4 text-muted-foreground tabular-nums" title={exactTime(c.updatedAt)}>
                     {when(c.updatedAt)}
@@ -373,38 +387,6 @@ function EmptyState({ view, filtered, unassigned, onClear }: { view: CaseListVie
     <div className="grid justify-items-center gap-1">
       <p className="font-medium">{title}</p>
       {next && <p className="text-muted-foreground">{next}</p>}
-    </div>
-  );
-}
-
-function Filter<T extends string>({
-  label,
-  id,
-  value,
-  options,
-  labels,
-  onChange,
-}: {
-  label: string;
-  id: string;
-  value: T | undefined;
-  options: readonly T[];
-  labels: Record<T, string>;
-  onChange: (value: T | undefined) => void;
-}) {
-  return (
-    <div className="flex items-center gap-1.5">
-      <Label htmlFor={id} className="text-xs font-normal text-muted-foreground">
-        {label}
-      </Label>
-      <NativeSelect size="sm" id={id} value={value ?? ""} onChange={(e) => onChange((e.target.value || undefined) as T | undefined)}>
-        <NativeSelectOption value="">Any</NativeSelectOption>
-        {options.map((o) => (
-          <NativeSelectOption key={o} value={o}>
-            {labels[o]}
-          </NativeSelectOption>
-        ))}
-      </NativeSelect>
     </div>
   );
 }

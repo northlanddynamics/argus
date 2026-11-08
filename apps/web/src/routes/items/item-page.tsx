@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useMe } from "@/lib/api";
 import { alertStatusLabel } from "@/lib/alerts";
@@ -63,6 +64,10 @@ const typeLabel = (kind: ItemKind, item: ItemPage) =>
   kind === "observable" ? observableTypeLabel[item.type as ObservableType] : assetTypeLabel[item.type as AssetType];
 
 /** A long value with places it may wrap: after each / ? & = and dot, never inside an escape like %2F. */
+/** Columns shown from `sm`; below it their cells stay in the row, emptied, so the columns keep their widths. */
+const fromSm = "overflow-hidden px-0 sm:px-2";
+const showSm = "hidden sm:inline";
+
 function Breakable({ text }: { text: string }) {
   const parts = text.split(/(?<=[/?&=.])/);
   return parts.map((part, i) => (
@@ -459,21 +464,30 @@ function HostEnrichment({ enrichment }: { enrichment: FalconDevice["enrichment"]
 function CasesCard({ item, actions }: { item: ItemPage; actions: boolean }) {
   const observable = { id: item.id, type: item.type as ObservableType, value: item.value };
   return (
-    <Card>
+    <Card className="@container">
       <CardHeader>
         <CardTitle>Cases</CardTitle>
       </CardHeader>
       <CardContent>
-        <Table aria-label="Linked Cases">
+        <Table aria-label="Linked Cases" className="@3xl:table-fixed">
+          {/* Set widths, in the Cases list's order (Severity, then Status), so these lists read the same way. */}
+          <colgroup>
+            <col />
+            <col className="@3xl:w-28" />
+            <col className="@3xl:w-44" />
+            <col className="@3xl:w-44" />
+            <col className="@3xl:w-24" />
+            {actions && <col className="@3xl:w-12" />}
+          </colgroup>
           <TableHeader className={item.cases.length ? undefined : "sr-only"}>
-            <TableRow>
+            <TableRow className="hover:bg-transparent">
               <TableHead>Case</TableHead>
-              <TableHead>Status</TableHead>
               <TableHead>Severity</TableHead>
-              <TableHead className="hidden sm:table-cell">Assignee</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className={fromSm}><span className={showSm}>Assignee</span></TableHead>
               <TableHead className="text-right">Linked</TableHead>
               {actions && (
-                <TableHead className="w-0">
+                <TableHead>
                   <span className="sr-only">Actions</span>
                 </TableHead>
               )}
@@ -483,23 +497,25 @@ function CasesCard({ item, actions }: { item: ItemPage; actions: boolean }) {
             {item.cases.map((c) => {
               const row = (menuButton?: ReactNode) => (
                 <TableRow key={c.number}>
-                  <TableCell className="max-w-0 min-w-48 whitespace-normal break-words">
+                  <TableCell className="whitespace-normal break-words">
                     <Link to="/cases/$number" params={{ number: String(c.number) }} className="hover:underline">
                       <span className="font-mono text-xs text-muted-foreground">{caseRef(c.number)}</span> {c.title}
                     </Link>
                     {c.restricted && <LockIcon className="ml-1 inline size-3 text-muted-foreground" aria-label="Restricted" />}
                   </TableCell>
                   <TableCell>
-                    <StatusBadge status={c.status} />
-                  </TableCell>
-                  <TableCell>
                     <SeverityBadge severity={c.severity} />
                   </TableCell>
-                  <TableCell className="hidden sm:table-cell">{c.assignee?.name ?? <span className="text-muted-foreground">Unassigned</span>}</TableCell>
+                  <TableCell>
+                    <StatusBadge status={c.status} />
+                  </TableCell>
+                  <TableCell className={cn(fromSm, "truncate", !c.assignee && "text-muted-foreground")} title={c.assignee?.name}>
+                    <span className={showSm}>{c.assignee?.name ?? "Unassigned"}</span>
+                  </TableCell>
                   <TableCell className="text-right text-muted-foreground tabular-nums" title={exactTime(c.linkedAt)}>
                     {when(c.linkedAt)}
                   </TableCell>
-                  {menuButton && <TableCell className="w-0 text-right">{menuButton}</TableCell>}
+                  {menuButton && <TableCell className="text-right">{menuButton}</TableCell>}
                 </TableRow>
               );
               return actions ? (
@@ -526,37 +542,46 @@ function CasesCard({ item, actions }: { item: ItemPage; actions: boolean }) {
 
 function AlertsCard({ item }: { item: ItemPage }) {
   return (
-    <Card>
+    <Card className="@container">
       <CardHeader>
         <CardTitle>Alerts naming it</CardTitle>
       </CardHeader>
       <CardContent>
-        <Table aria-label="Alerts naming it">
+        <Table aria-label="Alerts naming it" className="@3xl:table-fixed">
+          {/* The same widths as the Cases above, so Severity and Status line up between the two. */}
+          <colgroup>
+            <col />
+            <col className="@3xl:w-28" />
+            <col className="@3xl:w-44" />
+            <col className="@3xl:w-44" />
+            <col className="@3xl:w-24" />
+          </colgroup>
           <TableHeader className={item.alerts.length ? undefined : "sr-only"}>
-            <TableRow>
+            <TableRow className="hover:bg-transparent">
               <TableHead>Alert</TableHead>
-              <TableHead>Status</TableHead>
               <TableHead>Severity</TableHead>
-              <TableHead className="hidden sm:table-cell">Case</TableHead>
+              <TableHead>Alert Status</TableHead>
+              <TableHead className={fromSm}><span className={showSm}>Case</span></TableHead>
               <TableHead className="text-right">Raised</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {item.alerts.map((a) => (
               <TableRow key={a.id}>
-                <TableCell className="max-w-0 min-w-48 whitespace-normal break-words">
+                <TableCell className="whitespace-normal break-words">
                   <Link to="/alerts" search={{ status: "any", alert: a.id }} className="hover:underline" title={a.externalId}>
                     {a.title}
                   </Link>
                   {a.host && <span className="block font-mono text-xs text-muted-foreground">{a.host}</span>}
                 </TableCell>
                 <TableCell>
-                  <Badge variant={a.status === "new" ? "secondary" : "outline"}>{alertStatusLabel[a.status]}</Badge>
-                </TableCell>
-                <TableCell>
                   <SeverityBadge severity={a.severity} />
                 </TableCell>
-                <TableCell className="hidden sm:table-cell">
+                <TableCell>
+                  <Badge variant={a.status === "new" ? "secondary" : "outline"}>{alertStatusLabel[a.status]}</Badge>
+                </TableCell>
+                <TableCell className={fromSm}>
+                  <span className={showSm}>
                   {a.case ? (
                     <Link to="/cases/$number" params={{ number: String(a.case.number) }} className="font-mono text-xs hover:underline" title={a.case.title}>
                       {caseRef(a.case.number)}
@@ -564,6 +589,7 @@ function AlertsCard({ item }: { item: ItemPage }) {
                   ) : (
                     <span className="text-muted-foreground">—</span>
                   )}
+                  </span>
                 </TableCell>
                 <TableCell className="text-right text-muted-foreground tabular-nums" title={exactTime(a.seenAt)}>
                   {when(a.seenAt)}
@@ -595,20 +621,27 @@ const stateVariant = { pending: "secondary", active: "outline", removing: "secon
 function ResponseActionsCard({ item, actions }: { item: ItemPage; actions: boolean }) {
   const observable = { id: item.id, type: item.type as ObservableType, value: item.value };
   return (
-    <Card>
+    <Card className="@container">
       <CardHeader>
         <CardTitle>Response Actions</CardTitle>
       </CardHeader>
       <CardContent>
-        <Table aria-label="Response Actions">
+        <Table aria-label="Response Actions" className="@3xl:table-fixed">
+          <colgroup>
+            <col className="@3xl:w-[30%]" />
+            <col className="@3xl:w-36" />
+            <col />
+            <col className="@3xl:w-36" />
+            {actions && <col className="@3xl:w-12" />}
+          </colgroup>
           <TableHeader className={item.responseActions.length ? undefined : "sr-only"}>
-            <TableRow>
+            <TableRow className="hover:bg-transparent">
               <TableHead>Action</TableHead>
               <TableHead>State</TableHead>
               <TableHead>Case</TableHead>
               <TableHead className="text-right">When</TableHead>
               {actions && (
-                <TableHead className="w-0">
+                <TableHead>
                   <span className="sr-only">Actions</span>
                 </TableHead>
               )}
@@ -629,7 +662,7 @@ function ResponseActionsCard({ item, actions }: { item: ItemPage; actions: boole
                     <Badge variant={stateVariant[r.state]}>{responseActionStateLabel[r.state]}</Badge>
                     {r.origin !== "created" && <span className="mt-1 block text-xs text-muted-foreground">Already present</span>}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="truncate">
                     <Link to="/cases/$number/observables" params={{ number: String(r.case.number) }} className="hover:underline" title={r.case.title}>
                       <span className="font-mono text-xs text-muted-foreground">{caseRef(r.case.number)}</span> {r.case.title}
                     </Link>
@@ -637,7 +670,7 @@ function ResponseActionsCard({ item, actions }: { item: ItemPage; actions: boole
                   <TableCell className="text-right text-muted-foreground tabular-nums" title={exactTime(r.sentAt ?? r.requestedAt)}>
                     {r.sentAt ? <>Sent {when(r.sentAt)}</> : <>Requested {when(r.requestedAt)}</>}
                   </TableCell>
-                  {menuButton && <TableCell className="w-0 text-right">{menuButton}</TableCell>}
+                  {menuButton && <TableCell className="text-right">{menuButton}</TableCell>}
                 </TableRow>
               );
               // Taken from its Case, so acted on from there too.

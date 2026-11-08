@@ -348,7 +348,7 @@ test("an Admin adds a Case Role; an Analyst gives it on a Case, works its Tasks 
 
     // She creates a Task for Ben and completes another of her own.
     await page.getByRole("tab", { name: "Tasks 0/0" }).click();
-    await page.getByRole("button", { name: "+ New Task" }).click();
+    await page.getByRole("button", { name: "New Task" }).click();
     let dialog = page.getByRole("dialog", { name: "New Task" });
     await dialog.getByLabel("Title").fill("Capture memory image");
     await dialog.getByLabel("Description").fill("Before reboot; upload as Evidence");
@@ -356,7 +356,7 @@ test("an Admin adds a Case Role; an Analyst gives it on a Case, works its Tasks 
     await pickDay(dialog, "Due date (optional)", "2026-01-05");
     await dialog.getByRole("button", { name: "Create Task" }).click();
     await page.getByTestId("task-Capture memory image").getByText("Ben Analyst").waitFor();
-    await page.getByRole("button", { name: "+ New Task" }).click();
+    await page.getByRole("button", { name: "New Task" }).click();
     dialog = page.getByRole("dialog", { name: "New Task" });
     await dialog.getByLabel("Title").fill("Contain host");
     await dialog.getByRole("button", { name: "Create Task" }).click();
@@ -641,7 +641,7 @@ test("an Analyst adds Observables and Assets, sees the other Cases they appear i
     // A defanged domain is the same Observable as C-1's, shown defanged, and C-1 is listed.
     await choose(page, "Observable type", "Domain");
     await page.getByLabel("Observable value").fill("INVOICE-PORTAL[.]biz");
-    await page.getByRole("button", { name: "+ Add Observable" }).click();
+    await page.getByRole("button", { name: "Add Observable" }).click();
     const domain = page.getByTestId("observable-invoice-portal.biz");
     await domain.getByText("invoice-portal[.]biz").waitFor();
     await domain.getByRole("link", { name: "C-1" }).waitFor();
@@ -649,12 +649,12 @@ test("an Analyst adds Observables and Assets, sees the other Cases they appear i
     // An invalid value says why.
     await choose(page, "Observable type", "IP");
     await page.getByLabel("Observable value").fill("999.1.1.1");
-    await page.getByRole("button", { name: "+ Add Observable" }).click();
+    await page.getByRole("button", { name: "Add Observable" }).click();
     await page.getByText("IP must be an IPv4 or IPv6 address").waitFor();
 
     await choose(page, "Asset type", "Host");
     await page.getByLabel("Asset identifier").fill("FIN-LT-0231");
-    await page.getByRole("button", { name: "+ Add Asset" }).click();
+    await page.getByRole("button", { name: "Add Asset" }).click();
     const host = page.getByTestId("asset-FIN-LT-0231");
     await host.getByText("Ana Analyst").waitFor();
 

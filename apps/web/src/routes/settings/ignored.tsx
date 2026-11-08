@@ -4,6 +4,8 @@ import { ItemLink } from "@/components/item-link";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useLiveStatus } from "@/lib/live";
 import {
@@ -27,6 +29,10 @@ const shown = (e: IgnoredEntry) => (e.kind === "observable" ? defang(e.type as O
  * Settings · Ignored Observables: the Observables and Assets on the Organization's Ignored list,
  * newest first, each with who added it. Items are added from their own page; here they're removed.
  */
+/** The Added by column: shown from `sm`; below it its cells stay in the row, emptied, so the columns keep their widths. */
+const fromSm = "overflow-hidden px-0 sm:px-2";
+const showSm = "hidden sm:inline";
+
 export function IgnoredObservablesPage() {
   const queryClient = useQueryClient();
   const list = useQuery(ignoredQuery);
@@ -53,14 +59,22 @@ export function IgnoredObservablesPage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      <Card>
+      <Card className="@container">
         <CardContent>
-          <Table aria-label="Ignored Observables">
+          <Table aria-label="Ignored Observables" className="@2xl:table-fixed">
+            {/* Set widths, so the value takes what's left and the columns hold still as the list changes. */}
+            <colgroup>
+              <col />
+              <col className="@2xl:w-28" />
+              <col className="@2xl:w-44" />
+              <col className="@2xl:w-24" />
+              <col className="@2xl:w-28" />
+            </colgroup>
             <TableHeader>
-              <TableRow>
+              <TableRow className="hover:bg-transparent">
                 <TableHead>Value</TableHead>
                 <TableHead>Type</TableHead>
-                <TableHead className="hidden sm:table-cell">Added by</TableHead>
+                <TableHead className={fromSm}><span className={showSm}>Added by</span></TableHead>
                 <TableHead className="text-right">Added</TableHead>
                 <TableHead>
                   <span className="sr-only">Actions</span>
@@ -70,13 +84,15 @@ export function IgnoredObservablesPage() {
             <TableBody>
               {list.data?.map((e) => (
                 <TableRow key={`${e.kind}:${e.id}`}>
-                  <TableCell className="max-w-0 min-w-40 font-mono text-sm break-all whitespace-normal">
+                  <TableCell className="font-mono text-xs break-all whitespace-normal">
                     <ItemLink kind={e.kind} id={e.id} className="hover:underline" title={e.value}>
                       {shown(e)}
                     </ItemLink>
                   </TableCell>
                   <TableCell className="text-muted-foreground">{typeLabel(e)}</TableCell>
-                  <TableCell className="hidden sm:table-cell">{e.by.name}</TableCell>
+                  <TableCell className={cn(fromSm, "truncate")} title={e.by.name}>
+                    <span className={showSm}>{e.by.name}</span>
+                  </TableCell>
                   <TableCell className="text-right text-muted-foreground tabular-nums" title={exactTime(e.at)}>
                     {when(e.at)}
                   </TableCell>
@@ -94,16 +110,17 @@ export function IgnoredObservablesPage() {
                 </TableRow>
               ))}
               {list.data?.length === 0 && (
-                <TableRow>
+                <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={5} className="text-muted-foreground">
                     Nothing is ignored.
                   </TableCell>
                 </TableRow>
               )}
               {list.isPending && (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-muted-foreground">
-                    Loading…
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={5}>
+                    <Skeleton className="h-8" />
+                    <span className="sr-only" role="status">Loading…</span>
                   </TableCell>
                 </TableRow>
               )}
