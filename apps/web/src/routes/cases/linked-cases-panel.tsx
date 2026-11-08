@@ -5,11 +5,11 @@ import { type FormEvent, useState } from "react";
 import { StatusBadge } from "@/components/case-badges";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Field, FieldLabel, FieldLegend, FieldSet, FieldTitle } from "@/components/ui/field";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RailBody, RailHeader, RailSection, RailTitle } from "@/routes/cases/rail";
 import { api, errorMessage } from "@/lib/api";
 import { LINK_TYPES, type LinkType, linkSideLabel, linksKey, linksQuery } from "@/lib/case-links";
 import { caseKey, caseRef, casesKey } from "@/lib/cases";
@@ -31,16 +31,16 @@ export function LinkedCasesPanel({ number, readOnly }: { number: number; readOnl
   });
 
   return (
-    <Card className="self-start">
-      <CardHeader>
-        <CardTitle className="text-xs tracking-widest text-muted-foreground uppercase">Linked Cases</CardTitle>
+    <RailSection>
+      <RailHeader>
+        <RailTitle>Linked Cases</RailTitle>
         {!readOnly && (
-          <CardAction>
+          <div>
             <LinkCaseDialog number={number} />
-          </CardAction>
+          </div>
         )}
-      </CardHeader>
-      <CardContent className="grid gap-3">
+      </RailHeader>
+      <RailBody>
         {links.data?.length ? (
           <ul className="grid gap-2 text-sm" aria-label="Linked Cases">
             {links.data.map((l) => (
@@ -79,8 +79,8 @@ export function LinkedCasesPanel({ number, readOnly }: { number: number; readOnl
             <AlertDescription>{unlink.error.message}</AlertDescription>
           </Alert>
         )}
-      </CardContent>
-    </Card>
+      </RailBody>
+    </RailSection>
   );
 }
 

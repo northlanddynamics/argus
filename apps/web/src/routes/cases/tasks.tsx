@@ -12,6 +12,7 @@ import { Visibility } from "@/components/visibility";
 import { canMarkInternal, canParticipate, caseKey, caseQuery, isReadOnly } from "@/lib/cases";
 import { type TaskView, tasksKey, tasksQuery } from "@/lib/tasks";
 import { useCaseNumber } from "@/routes/cases/case-layout";
+import { QUIET_ACTION } from "@/routes/cases/rail";
 import { TaskDialog } from "@/routes/cases/task-dialog";
 
 /** Case · Tasks: who owns what, when it's due, what's done, and (for Members) what Guests can see. */
@@ -76,7 +77,7 @@ export function CaseTasksPage() {
           </TableHeader>
           <TableBody>
             {list.map((t) => (
-              <TableRow key={t.id} data-testid={`task-${t.title}`}>
+              <TableRow key={t.id} data-testid={`task-${t.title}`} className="group/row">
                 <TableCell>
                   <Checkbox
                     aria-label={`${t.title} done`}
@@ -112,7 +113,7 @@ export function CaseTasksPage() {
                 )}
                 <TableCell className="text-right">
                   {!readOnly && (
-                    <Button variant="outline" size="sm" aria-label={`Edit ${t.title}`} onClick={() => setEditing(t)}>
+                    <Button variant="ghost" size="sm" className={QUIET_ACTION} aria-label={`Edit ${t.title}`} onClick={() => setEditing(t)}>
                       Edit
                     </Button>
                   )}

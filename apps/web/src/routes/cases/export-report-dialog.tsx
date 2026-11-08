@@ -27,10 +27,20 @@ const reportUrl = (number: number, variant: ReportVariant, format: ReportFormat)
  * "Export": a Case Report as PDF or Markdown, complete or Guest-safe. `complete` is whether the
  * viewer may export the complete one (Guests may not). Every export is recorded in the Audit Log.
  */
-export function ExportReportDialog({ number, complete }: { number: number; complete: boolean }) {
+export function ExportReportDialog({
+  number,
+  complete,
+  hasGuests = false,
+}: {
+  number: number;
+  complete: boolean;
+  /** The Case has Guests, so a report is likelier to leave the Organization: start from the Guest-safe one. */
+  hasGuests?: boolean;
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const variants = complete ? REPORT_VARIANTS : (["guest_safe"] as const);
-  const [variant, setVariant] = useState<ReportVariant>(variants[0]);
+  const initial: ReportVariant = hasGuests ? "guest_safe" : variants[0];
+  const [variant, setVariant] = useState<ReportVariant>(initial);
   const [format, setFormat] = useState<ReportFormat>("pdf");
 
   return (
@@ -38,7 +48,7 @@ export function ExportReportDialog({ number, complete }: { number: number; compl
       open={isOpen}
       onOpenChange={(next) => {
         setIsOpen(next);
-        if (next) setVariant(variants[0]);
+        if (next) setVariant(initial);
       }}
     >
       <DialogTrigger asChild>

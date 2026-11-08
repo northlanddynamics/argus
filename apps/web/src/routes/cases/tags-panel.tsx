@@ -1,11 +1,12 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { XIcon } from "lucide-react";
 import { type FormEvent, useState } from "react";
+import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { RailBody, RailHeader, RailSection, RailTitle } from "@/routes/cases/rail";
 import { api, errorMessage } from "@/lib/api";
 import { type CaseView, caseKey, casesKey } from "@/lib/cases";
 import { tagLabel } from "@/lib/tags";
@@ -14,6 +15,8 @@ import { tagLabel } from "@/lib/tags";
 export function TagsPanel({ number, tags, readOnly }: { number: number; tags: string[]; readOnly: boolean }) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState("");
+  /** The new-Tag field opens on demand, so the rail shows the Tags rather than a form. */
+  const [adding, setAdding] = useState(false);
 
   const show = (next: string[]) => {
     queryClient.setQueryData(caseKey(number), (c: CaseView | null | undefined) => (c ? { ...c, tags: next } : c));
@@ -31,6 +34,7 @@ export function TagsPanel({ number, tags, readOnly }: { number: number; tags: st
     onSuccess: (next) => {
       show(next);
       setDraft("");
+      setAdding(false);
     },
   });
 
@@ -43,7 +47,10 @@ export function TagsPanel({ number, tags, readOnly }: { number: number; tags: st
       if (!("tags" in body)) throw new Error("Could not remove the Tag");
       return body.tags;
     },
-    onSuccess: show,
+    onSuccess: (next, tag) => {
+      show(next);
+      toast(`Removed ${tagLabel(tag)}`, { action: { label: "Undo", onClick: () => add.mutate(tag) } });
+    },
   });
 
   const onAdd = (event: FormEvent<HTMLFormElement>) => {
@@ -53,11 +60,16 @@ export function TagsPanel({ number, tags, readOnly }: { number: number; tags: st
 
   const error = add.error ?? remove.error;
   return (
-    <Card className="self-start">
-      <CardHeader>
-        <CardTitle className="text-xs tracking-widest text-muted-foreground uppercase">Tags</CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-3">
+    <RailSection>
+      <RailHeader>
+        <RailTitle>Tags</RailTitle>
+        {!readOnly && !adding && (
+          <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
+            + Tag
+          </Button>
+        )}
+      </RailHeader>
+      <RailBody>
         {tags.length ? (
           <ul className="flex flex-wrap gap-1.5" aria-label="Tags">
             {tags.map((tag) => (
@@ -69,7 +81,7 @@ export function TagsPanel({ number, tags, readOnly }: { number: number; tags: st
                       variant="ghost"
                       size="icon-xs"
                       aria-label={`Remove ${tagLabel(tag)}`}
-                      className="-mr-1 size-4 rounded-full hover:text-destructive"
+                      className="-mr-1 size-5 rounded-full hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring"
                       disabled={remove.isPending}
                       onClick={() => remove.mutate(tag)}
                     >
@@ -81,13 +93,25 @@ export function TagsPanel({ number, tags, readOnly }: { number: number; tags: st
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-muted-foreground">No Tags yet.</p>
+          <p className="text-muted-foreground">No Tags yet.</p>
         )}
-        {!readOnly && (
+        {!readOnly && adding && (
           <form className="flex gap-2" onSubmit={onAdd}>
-            <Input aria-label="New Tag" placeholder="#tag" value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={60} />
-            <Button type="submit" variant="outline" size="sm" disabled={add.isPending || !draft.trim()}>
-              + Tag
+            <Input
+              aria-label="New Tag"
+              placeholder="#tag"
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== "Escape") return;
+                setDraft("");
+                setAdding(false);
+              }}
+              maxLength={60}
+            />
+            <Button type="submit" size="sm" disabled={add.isPending || !draft.trim()}>
+              Add
             </Button>
           </form>
         )}
@@ -96,7 +120,7 @@ export function TagsPanel({ number, tags, readOnly }: { number: number; tags: st
             <AlertDescription>{error.message}</AlertDescription>
           </Alert>
         )}
-      </CardContent>
-    </Card>
+      </RailBody>
+    </RailSection>
   );
 }

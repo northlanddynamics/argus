@@ -1,9 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { RichTextEditor } from "@/components/rich-text-editor";
+import { InternalBadge } from "@/components/visibility";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { api, errorMessage } from "@/lib/api";
 import { type CaseSummary, type CaseView, caseKey, caseQuery, casesKey, resolutionLabel, isReadOnly } from "@/lib/cases";
 import { useCaseNumber } from "@/routes/cases/case-layout";
@@ -11,55 +14,130 @@ import { CaseAlertsPanel } from "@/routes/cases/alerts-panel";
 import { RelatedAlertsPanel } from "@/routes/cases/related-alerts-panel";
 import { CaseRolesPanel } from "@/routes/cases/case-roles-panel";
 import { LinkedCasesPanel } from "@/routes/cases/linked-cases-panel";
+import { RailBody, RailHeader, RailSection, RailTitle } from "@/routes/cases/rail";
 import { TagsPanel } from "@/routes/cases/tags-panel";
+import { type TaskView, tasksQuery } from "@/lib/tasks";
+import { instant } from "@/lib/when";
 
 type Summary = CaseView["summary"];
 
 /** What is being edited: the text and the version it started from. */
 type Draft = { content: CaseSummary; version: number };
 
-const when = (iso: string) => new Date(iso).toLocaleString();
+const when = instant;
 
+/** How many open Tasks the Overview lists before pointing to the Tasks tab. */
+const OPEN_TASKS_SHOWN = 5;
+
+/**
+ * Case · Overview: what the Case is about and what needs doing next, with its details, links and
+ * Tags in the rail beside it.
+ */
 export function CaseOverviewPage() {
   const number = useCaseNumber();
   const { data: c } = useQuery(caseQuery(number));
   if (!c) return null;
+  /** Guests see neither who holds Case Roles nor the Cases this one is linked to. */
+  const member = c.can.work;
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
-      <CaseSummaryCard number={number} summary={c.summary} readOnly={isReadOnly(c)} />
-      <div className="grid content-start gap-4">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-xs tracking-widest text-muted-foreground uppercase">Details</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
-            <dt className="text-muted-foreground">Opened</dt>
-            <dd>
-              {when(c.openedAt)} by {c.openedBy.name}
-            </dd>
-            <dt className="text-muted-foreground">Updated</dt>
-            <dd>{when(c.updatedAt)}</dd>
-            {c.closed && c.resolution && (
-              <>
-                <dt className="text-muted-foreground">Closed</dt>
-                <dd>
-                  {when(c.closed.at)} by {c.closed.by.name}
-                </dd>
-                <dt className="text-muted-foreground">Resolution</dt>
-                <dd>{resolutionLabel[c.resolution]}</dd>
-              </>
-            )}
-          </dl>
-        </CardContent>
-      </Card>
-      <CaseRolesPanel number={number} caseRoles={c.caseRoles} readOnly={isReadOnly(c)} />
-      <CaseAlertsPanel c={c} />
-      <RelatedAlertsPanel c={c} />
-      <LinkedCasesPanel number={number} readOnly={isReadOnly(c)} />
-      <TagsPanel number={number} tags={c.tags} readOnly={isReadOnly(c)} />
+    <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="grid min-w-0 content-start gap-4">
+        <CaseSummaryCard number={number} summary={c.summary} readOnly={isReadOnly(c)} />
+        <OpenTasksCard number={number} />
       </div>
+      <Card className="gap-0 divide-y py-1">
+        <RailSection>
+          <RailHeader>
+            <RailTitle>Details</RailTitle>
+          </RailHeader>
+          <RailBody>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+              <dt className="text-muted-foreground">Opened</dt>
+              <dd>
+                {when(c.openedAt)}
+                <span className="block text-muted-foreground">by {c.openedBy.name}</span>
+              </dd>
+              <dt className="text-muted-foreground">Updated</dt>
+              <dd>{when(c.updatedAt)}</dd>
+              {c.closed && c.resolution && (
+                <>
+                  <dt className="text-muted-foreground">Closed</dt>
+                  <dd>
+                    {when(c.closed.at)}
+                    <span className="block text-muted-foreground">by {c.closed.by.name}</span>
+                  </dd>
+                  <dt className="text-muted-foreground">Resolution</dt>
+                  <dd>{resolutionLabel[c.resolution]}</dd>
+                </>
+              )}
+            </dl>
+          </RailBody>
+        </RailSection>
+        {member && <CaseRolesPanel number={number} caseRoles={c.caseRoles} readOnly={isReadOnly(c)} />}
+        <CaseAlertsPanel c={c} />
+        <RelatedAlertsPanel c={c} />
+        {member && <LinkedCasesPanel number={number} readOnly={isReadOnly(c)} />}
+        <TagsPanel number={number} tags={c.tags} readOnly={isReadOnly(c)} />
+      </Card>
     </div>
+  );
+}
+
+/** Overdue first, then by due date (none last), then as listed. */
+const byUrgency = (a: TaskView, b: TaskView) =>
+  Number(b.overdue) - Number(a.overdue) || (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999");
+
+/** The open Tasks, most urgent first: the Case's next actions, on the page Analysts land on. */
+function OpenTasksCard({ number }: { number: number }) {
+  const tasks = useQuery(tasksQuery(number));
+  const open = (tasks.data ?? []).filter((t) => !t.done).toSorted(byUrgency);
+  const params = { number: String(number) };
+  return (
+    <Card size="sm">
+      <CardHeader>
+        <CardTitle>
+          <h2>Open Tasks</h2>
+        </CardTitle>
+        <CardAction>
+          <Button variant="link" size="sm" className="h-auto px-0" asChild>
+            <Link to="/cases/$number/tasks" params={params}>
+              All Tasks
+            </Link>
+          </Button>
+        </CardAction>
+      </CardHeader>
+      <CardContent>
+        {tasks.isPending ? null : open.length === 0 ? (
+          <p className="text-muted-foreground">No open Tasks.</p>
+        ) : (
+          <ul className="grid divide-y" aria-label="Open Tasks">
+            {open.slice(0, OPEN_TASKS_SHOWN).map((t) => (
+              <li key={t.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-2 first:pt-0 last:pb-0">
+                <span className="flex min-w-48 flex-1 items-center gap-2">
+                  <span className="truncate font-medium" title={t.title}>
+                    {t.title}
+                  </span>
+                  {t.internal && <InternalBadge />}
+                </span>
+                <span className="shrink-0 text-muted-foreground">{t.owner.name}</span>
+                <span className="min-w-32 shrink-0 text-right tabular-nums">
+                  {t.overdue ? (
+                    <Badge variant="outline" className="border-overdue-border text-overdue">
+                      Overdue · {t.dueDate}
+                    </Badge>
+                  ) : (
+                    <span className="text-muted-foreground">{t.dueDate ? `Due ${t.dueDate}` : "No due date"}</span>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {open.length > OPEN_TASKS_SHOWN && (
+          <p className="mt-2 text-muted-foreground">and {open.length - OPEN_TASKS_SHOWN} more on the Tasks tab.</p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -141,10 +219,15 @@ function CaseSummaryCard({ number, summary, readOnly }: { number: number; summar
       )}
       <Card>
         <CardHeader>
-          <CardTitle>Case Summary</CardTitle>
-          <CardDescription className="text-xs">
-            Last saved by {summary.updatedBy.name} · v{summary.version}
-          </CardDescription>
+          <CardTitle>
+            <h2>Case Summary</h2>
+          </CardTitle>
+          {/* Nothing to attribute until something has been written. */}
+          {(summary.content.content.length > 0 || summary.version > 1) && (
+            <CardDescription className="text-xs">
+              Last saved by {summary.updatedBy.name} · v{summary.version}
+            </CardDescription>
+          )}
         </CardHeader>
         <CardContent className="grid gap-4">
           {draft ? (
@@ -185,7 +268,9 @@ function CaseSummaryCard({ number, summary, readOnly }: { number: number; summar
       {setAside && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">Your draft, set aside</CardTitle>
+            <CardTitle className="text-sm">
+              <h2>Your draft, set aside</h2>
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <RichTextEditor label="Your draft" value={setAside} editable={false} />

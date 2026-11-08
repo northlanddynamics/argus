@@ -319,161 +319,164 @@ function LinkedCard<Type extends string>(props: {
             <AlertDescription>{unlink.error.message}</AlertDescription>
           </Alert>
         )}
-        <Table>
-          <TableHeader>
-            <TableRow>
-              {selection && (
+        {/* Columns give way to the value as the space for the table narrows, whatever the window: what was sent first, then who added it, then when. */}
+        <div className="@container">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                {selection && (
+                  <TableHead className="w-0">
+                    <Checkbox
+                      aria-label={`Select every ${noun}`}
+                      checked={allSelected ? true : selection.selected.length ? "indeterminate" : false}
+                      disabled={!tickable.length}
+                      onCheckedChange={(checked) => selection.onChange(checked === true ? tickable.map((i) => i.id) : [])}
+                    />
+                  </TableHead>
+                )}
                 <TableHead className="w-0">
-                  <Checkbox
-                    aria-label={`Select every ${noun}`}
-                    checked={allSelected ? true : selection.selected.length ? "indeterminate" : false}
-                    disabled={!tickable.length}
-                    onCheckedChange={(checked) => selection.onChange(checked === true ? tickable.map((i) => i.id) : [])}
-                  />
+                  <span className="sr-only">Type</span>
                 </TableHead>
-              )}
-              <TableHead className="w-0">
-                <span className="sr-only">Type</span>
-              </TableHead>
-              <TableHead>{props.valueHeading}</TableHead>
-              <TableHead className="hidden md:table-cell">Added by</TableHead>
-              <TableHead className="hidden md:table-cell">Seen in other Cases</TableHead>
-              {props.status && <TableHead className="hidden lg:table-cell">{props.status.heading}</TableHead>}
-              <TableHead className="hidden text-right lg:table-cell">Added</TableHead>
-              {(!readOnly || props.renderRow) && (
-                <TableHead className="w-0">
-                  <span className="sr-only">Actions</span>
-                </TableHead>
-              )}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {items?.map((item) => {
-              const Icon = props.typeIcon(item.type);
-              const row = (menuButton?: ReactNode) => (
-                <TableRow key={item.id} data-testid={`${noun.toLowerCase()}-${item.value}`}>
-                  {selection && (
-                    <TableCell className="w-0">
-                      {canTick(item) && (
-                        <Checkbox
-                          aria-label={`Select ${typeLabel[item.type]} ${item.value}`}
-                          checked={selection.selected.includes(item.id)}
-                          onCheckedChange={(checked) =>
-                            selection.onChange(checked === true ? [...selection.selected, item.id] : selection.selected.filter((id) => id !== item.id))
-                          }
-                        />
+                <TableHead>{props.valueHeading}</TableHead>
+                <TableHead className="hidden @3xl:table-cell">Added by</TableHead>
+                <TableHead className="hidden @3xl:table-cell">Seen in other Cases</TableHead>
+                {props.status && <TableHead className="hidden @xl:table-cell">{props.status.heading}</TableHead>}
+                <TableHead className="hidden text-right @4xl:table-cell">Added</TableHead>
+                {(!readOnly || props.renderRow) && (
+                  <TableHead className="w-0">
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
+                )}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items?.map((item) => {
+                const Icon = props.typeIcon(item.type);
+                const row = (menuButton?: ReactNode) => (
+                  <TableRow key={item.id} data-testid={`${noun.toLowerCase()}-${item.value}`}>
+                    {selection && (
+                      <TableCell className="w-0">
+                        {canTick(item) && (
+                          <Checkbox
+                            aria-label={`Select ${typeLabel[item.type]} ${item.value}`}
+                            checked={selection.selected.includes(item.id)}
+                            onCheckedChange={(checked) =>
+                              selection.onChange(checked === true ? [...selection.selected, item.id] : selection.selected.filter((id) => id !== item.id))
+                            }
+                          />
+                        )}
+                      </TableCell>
+                    )}
+                    <TableCell className="w-0 pr-0">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="flex size-6 items-center justify-center text-muted-foreground">
+                            <Icon className="size-4" aria-label={typeLabel[item.type]} role="img" />
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent>{typeLabel[item.type]}</TooltipContent>
+                      </Tooltip>
+                    </TableCell>
+                    {/* The value takes the room that is left, cut short with … when it doesn't fit; its page shows it whole. */}
+                    <TableCell className="w-full max-w-0 min-w-40">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <ItemLink
+                          kind={props.kind}
+                          id={item.id}
+                          fromCase={props.caseNumber}
+                          className="min-w-0 truncate font-mono text-xs hover:underline"
+                          title={props.fullValue(item.type, item.value)}
+                          aria-label={`${typeLabel[item.type]} ${props.fullValue(item.type, item.value)}`}
+                        >
+                          {shown(item.type, item.value)}
+                        </ItemLink>
+                        {item.ignored && (
+                          <Badge variant="outline" className="shrink-0" title="On the Ignored list: it never suggests which Case an Alert belongs with">
+                            <BellOffIcon aria-hidden />
+                            Ignored
+                          </Badge>
+                        )}
+                        {item.internal && <InternalBadge />}
+                      </span>
+                    </TableCell>
+                    <TableCell className="hidden max-w-48 truncate text-muted-foreground @3xl:table-cell">
+                      {item.fromAlert ? (
+                        <span className="inline-flex max-w-full items-center gap-1.5" title={item.fromAlert.alert?.title ?? "Added when an Alert was attached"}>
+                          <SirenIcon className="size-3.5 shrink-0" aria-hidden />
+                          <span className="sr-only">Alert (auto):</span>
+                          {item.fromAlert.alert ? (
+                            <Link
+                              to="/alerts"
+                              search={{ status: "any", alert: item.fromAlert.alert.id }}
+                              className="truncate text-foreground underline underline-offset-2"
+                            >
+                              {item.fromAlert.alert.title}
+                            </Link>
+                          ) : (
+                            <span className="truncate">An Alert</span>
+                          )}
+                        </span>
+                      ) : (
+                        item.linkedBy.name
                       )}
                     </TableCell>
-                  )}
-                  <TableCell className="w-0 pr-0">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="flex size-6 items-center justify-center text-muted-foreground">
-                          <Icon className="size-4" aria-label={typeLabel[item.type]} role="img" />
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent>{typeLabel[item.type]}</TooltipContent>
-                    </Tooltip>
-                  </TableCell>
-                  {/* The value takes the room that is left, cut short with … when it doesn't fit; its page shows it whole. */}
-                  <TableCell className="w-full max-w-0">
-                    <span className="flex min-w-0 items-center gap-2">
-                      <ItemLink
-                        kind={props.kind}
-                        id={item.id}
-                        fromCase={props.caseNumber}
-                        className="min-w-0 truncate font-mono text-xs hover:underline"
-                        title={props.fullValue(item.type, item.value)}
-                        aria-label={`${typeLabel[item.type]} ${props.fullValue(item.type, item.value)}`}
-                      >
-                        {shown(item.type, item.value)}
-                      </ItemLink>
-                      {item.ignored && (
-                        <Badge variant="outline" className="shrink-0" title="On the Ignored list: it never suggests which Case an Alert belongs with">
-                          <BellOffIcon aria-hidden />
-                          Ignored
-                        </Badge>
-                      )}
-                      {item.internal && <InternalBadge />}
-                    </span>
-                  </TableCell>
-                  <TableCell className="hidden max-w-48 truncate text-muted-foreground md:table-cell">
-                    {item.fromAlert ? (
-                      <span className="inline-flex max-w-full items-center gap-1.5" title={item.fromAlert.alert?.title ?? "Added when an Alert was attached"}>
-                        <SirenIcon className="size-3.5 shrink-0" aria-hidden />
-                        <span className="sr-only">Alert (auto):</span>
-                        {item.fromAlert.alert ? (
-                          <Link
-                            to="/alerts"
-                            search={{ status: "any", alert: item.fromAlert.alert.id }}
-                            className="truncate text-foreground underline underline-offset-2"
-                          >
-                            {item.fromAlert.alert.title}
-                          </Link>
-                        ) : (
-                          <span className="truncate">An Alert</span>
-                        )}
-                      </span>
+                    <TableCell className="hidden @3xl:table-cell">
+                      {item.seenIn.length === 0 ? <span className="text-muted-foreground">—</span> : <SeenIn seenIn={item.seenIn} />}
+                    </TableCell>
+                    {props.status && <TableCell className={`hidden whitespace-normal @xl:table-cell ${props.status.width ?? "max-w-48"}`}>{props.status.render(item)}</TableCell>}
+                    <TableCell className="hidden text-right text-muted-foreground tabular-nums @4xl:table-cell" title={exactTime(item.linkedAt)}>
+                      {when(item.linkedAt)}
+                    </TableCell>
+                    {menuButton ? (
+                      <TableCell className="w-0 text-right">{menuButton}</TableCell>
                     ) : (
-                      item.linkedBy.name
+                      !readOnly && (
+                        <TableCell className="w-0 text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="px-2"
+                            disabled={unlink.isPending}
+                            aria-label={`Unlink ${typeLabel[item.type]} ${item.value}`}
+                            onClick={() => unlink.mutate(item)}
+                          >
+                            Unlink
+                          </Button>
+                        </TableCell>
+                      )
                     )}
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell">
-                    {item.seenIn.length === 0 ? <span className="text-muted-foreground">—</span> : <SeenIn seenIn={item.seenIn} />}
-                  </TableCell>
-                  {props.status && <TableCell className={`hidden whitespace-normal lg:table-cell ${props.status.width ?? "max-w-48"}`}>{props.status.render(item)}</TableCell>}
-                  <TableCell className="hidden text-right text-muted-foreground tabular-nums lg:table-cell" title={exactTime(item.linkedAt)}>
-                    {when(item.linkedAt)}
-                  </TableCell>
-                  {menuButton ? (
-                    <TableCell className="w-0 text-right">{menuButton}</TableCell>
-                  ) : (
-                    !readOnly && (
-                      <TableCell className="w-0 text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="px-2"
-                          disabled={unlink.isPending}
-                          aria-label={`Unlink ${typeLabel[item.type]} ${item.value}`}
-                          onClick={() => unlink.mutate(item)}
-                        >
-                          Unlink
-                        </Button>
-                      </TableCell>
-                    )
-                  )}
-                </TableRow>
-              );
-              return props.renderRow ? props.renderRow(item, row, () => unlink.mutate(item)) : row();
-            })}
-            {items === undefined && props.query.isPending &&
-              [0, 1].map((i) => (
-                <TableRow key={i}>
-                  <TableCell colSpan={colSpan}>
-                    <Skeleton className="h-8" />
+                  </TableRow>
+                );
+                return props.renderRow ? props.renderRow(item, row, () => unlink.mutate(item)) : row();
+              })}
+              {items === undefined && props.query.isPending &&
+                [0, 1].map((i) => (
+                  <TableRow key={i}>
+                    <TableCell colSpan={colSpan}>
+                      <Skeleton className="h-8" />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              {items === undefined && props.query.isError && (
+                <TableRow>
+                  <TableCell colSpan={colSpan} className="whitespace-normal">
+                    <span className="text-destructive">Could not load the {title}.</span>{" "}
+                    <Button variant="link" size="sm" className="h-auto p-0" onClick={() => void props.query.refetch()}>
+                      Try again
+                    </Button>
                   </TableCell>
                 </TableRow>
-              ))}
-            {items === undefined && props.query.isError && (
-              <TableRow>
-                <TableCell colSpan={colSpan} className="whitespace-normal">
-                  <span className="text-destructive">Could not load the {title}.</span>{" "}
-                  <Button variant="link" size="sm" className="h-auto p-0" onClick={() => void props.query.refetch()}>
-                    Try again
-                  </Button>
-                </TableCell>
-              </TableRow>
-            )}
-            {items?.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={colSpan} className="text-muted-foreground">
-                  No {title} yet.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+              )}
+              {items?.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={colSpan} className="text-muted-foreground">
+                    No {title} yet.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
       </CardContent>
     </Card>
   );

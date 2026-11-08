@@ -1,3 +1,4 @@
+import { utc } from "api/timeline/occurred-at";
 import { ago } from "@/lib/alerts";
 
 /**
@@ -11,5 +12,11 @@ export const when = (iso: string) => {
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric", ...(otherYear ? { year: "numeric" } : {}) });
 };
 
-/** The exact local time, shown on hover over a `when`. */
-export const exactTime = (iso: string) => new Date(iso).toLocaleString();
+/**
+ * An instant on the Case record: "2026-11-08 00:51 UTC". Every time on a Case is shown this way,
+ * as the Timeline and Case Reports show it, so one moment never reads two ways on two tabs.
+ */
+export const instant = (iso: string) => utc(new Date(iso).toISOString());
+
+/** The exact time, shown on hover over a `when`. */
+export const exactTime = instant;

@@ -2,9 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { SeverityBadge } from "@/components/case-badges";
 import { Button } from "@/components/ui/button";
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Visibility } from "@/components/visibility";
 import { caseAlertsQuery } from "@/lib/alerts";
+import { RailBody, RailHeader, RailSection, RailTitle } from "@/routes/cases/rail";
 import { type CaseView, canMarkInternal } from "@/lib/cases";
 
 /**
@@ -17,20 +17,20 @@ export function CaseAlertsPanel({ c }: { c: CaseView }) {
   // Guests learn nothing of Alerts they can't see, not even that there are none.
   if (!member && !alerts.data?.length) return null;
   return (
-    <Card className="self-start">
-      <CardHeader>
-        <CardTitle className="text-xs tracking-widest text-muted-foreground uppercase">Alerts</CardTitle>
+    <RailSection>
+      <RailHeader>
+        <RailTitle>Alerts</RailTitle>
         {member && (
-          <CardAction>
-            <Button variant="link" size="xs" asChild>
+          <div>
+            <Button variant="link" size="xs" className="h-auto px-0" asChild>
               <Link to="/alerts" search={{ status: "attached" }}>
                 Alert queue
               </Link>
             </Button>
-          </CardAction>
+          </div>
         )}
-      </CardHeader>
-      <CardContent>
+      </RailHeader>
+      <RailBody>
         {alerts.data?.length ? (
           <ul className="grid gap-3 text-sm" aria-label="Attached Alerts">
             {alerts.data.map((a) => (
@@ -57,7 +57,7 @@ export function CaseAlertsPanel({ c }: { c: CaseView }) {
         ) : (
           <p className="text-sm text-muted-foreground">No Alerts attached.</p>
         )}
-      </CardContent>
-    </Card>
+      </RailBody>
+    </RailSection>
   );
 }

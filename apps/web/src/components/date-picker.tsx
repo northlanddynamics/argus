@@ -58,7 +58,8 @@ export function DatePicker({
           aria-invalid={invalid}
           className={cn("w-full justify-between font-normal data-[empty=true]:text-muted-foreground", className)}
         >
-          {selected ? selected.toLocaleDateString() : placeholder}
+          {/* `YYYY-MM-DD`: one unambiguous form, beside UTC times and due dates. */}
+          {selected ? value : placeholder}
           <CalendarIcon />
         </Button>
       </PopoverTrigger>

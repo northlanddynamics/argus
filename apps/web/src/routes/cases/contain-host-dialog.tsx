@@ -214,7 +214,7 @@ function DeviceFacts({ device: d }: { device: ContainmentDevice }) {
       <span className="flex flex-wrap items-center gap-x-2">
         <span className="font-medium">{d.hostname ?? "Unknown hostname"}</span>
         {d.containment && (
-          <Badge variant={d.containment === "normal" ? "secondary" : "outline"} className="h-5 px-1.5 text-[11px]">
+          <Badge variant={d.containment === "normal" ? "secondary" : "outline"}>
             {containmentLabel[d.containment]}
           </Badge>
         )}

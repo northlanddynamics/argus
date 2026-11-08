@@ -7,11 +7,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Visibility } from "@/components/visibility";
+import { Audience, Visibility } from "@/components/visibility";
 import { canMarkInternal, canParticipate, caseQuery } from "@/lib/cases";
 import { evidenceKey, evidenceQuery, evidenceUrl, formatBytes, shortHash, uploadEvidence } from "@/lib/evidence";
 import { cn } from "@/lib/utils";
+import { instant } from "@/lib/when";
 import { useCaseNumber } from "@/routes/cases/case-layout";
+import { QUIET_ACTION } from "@/routes/cases/rail";
 
 /** A file on its way up. */
 type Upload = { key: string; name: string; progress: number; error: string | null };
@@ -92,6 +94,7 @@ export function CaseEvidencePage() {
             <Button variant="outline" size="sm" onClick={() => input.current?.click()}>
               {internal ? "Choose Internal files" : "Choose files"}
             </Button>
+            {canMarkInternal(c) && <Audience number={number} internal={internal} className="basis-full justify-center" />}
             <input
               ref={input}
               type="file"
@@ -137,18 +140,18 @@ export function CaseEvidencePage() {
           </TableHeader>
           <TableBody>
             {list.map((e) => (
-              <TableRow key={e.id} data-testid={`evidence-${e.name}`}>
+              <TableRow key={e.id} data-testid={`evidence-${e.name}`} className="group/row">
                 <TableCell className="font-medium whitespace-normal break-all">{e.name}</TableCell>
                 <TableCell className="text-sm">{formatBytes(e.size)}</TableCell>
                 <TableCell className="text-sm">
-                  {e.addedBy.name} · {new Date(e.addedAt).toLocaleString()}
+                  {e.addedBy.name} · {instant(e.addedAt)}
                 </TableCell>
                 <TableCell>
                   <span className="flex items-center gap-2">
                     <code className="text-xs" title={e.sha256}>
                       {shortHash(e.sha256)}
                     </code>
-                    <Button variant="outline" size="sm" aria-label={`Copy SHA-256 of ${e.name}`} onClick={() => void copy(e.sha256)}>
+                    <Button variant="ghost" size="sm" className={QUIET_ACTION} aria-label={`Copy SHA-256 of ${e.name}`} onClick={() => void copy(e.sha256)}>
                       {copied === e.sha256 ? "Copied" : "Copy"}
                     </Button>
                   </span>
@@ -160,12 +163,12 @@ export function CaseEvidencePage() {
                 )}
                 <TableCell className="text-right">
                   <span className="inline-flex gap-2">
-                    <Button asChild variant="outline" size="sm">
+                    <Button asChild variant="ghost" size="sm" className={QUIET_ACTION}>
                       <a href={evidenceUrl(number, e.id, "view")} target="_blank" rel="noopener noreferrer" aria-label={`View ${e.name}`}>
                         View
                       </a>
                     </Button>
-                    <Button asChild variant="outline" size="sm">
+                    <Button asChild variant="ghost" size="sm" className={QUIET_ACTION}>
                       <a href={evidenceUrl(number, e.id, "download")} download={e.name} aria-label={`Download ${e.name}`}>
                         Download
                       </a>

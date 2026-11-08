@@ -23,8 +23,11 @@ import {
   type Status,
   summaryText,
 } from "@/lib/cases";
+import { defang, observableTypeLabel } from "@/lib/observables";
 import { promotedSources, timelineQuery } from "@/lib/timeline";
+import { instant } from "@/lib/when";
 import { useCaseNumber } from "@/routes/cases/case-layout";
+import { QUIET_ACTION } from "@/routes/cases/rail";
 import { PromoteDialog } from "@/routes/cases/timeline-entry-form";
 import { membersKey } from "@/routes/settings/members";
 
@@ -117,11 +120,23 @@ function shown(action: CaseAuditAction, value: string | null) {
   }
 }
 
+/**
+ * What an entry is about, as people read it. Observable values are defanged, as on the Observables
+ * tab, so a URL copied from the Audit Log is never live.
+ */
+function shownTarget(action: CaseAuditAction, target: string) {
+  if (!action.startsWith("observable.")) return target;
+  for (const [type, label] of Object.entries(observableTypeLabel) as [keyof typeof observableTypeLabel, string][]) {
+    if (target.startsWith(`${label} `)) return `${label} ${defang(type, target.slice(label.length + 1))}`;
+  }
+  return target;
+}
+
 type Entry = { id: string; occurredAt: string; action: CaseAuditAction; target: string | null; before: string | null; after: string | null };
 
 /** An entry in words, as the starting text of a Timeline Entry Promoted from it. */
 const entryText = (e: Entry) => {
-  const what = `${actionLabel[e.action] ?? e.action}${e.target === null ? "" : ` ${e.target}`}`;
+  const what = `${actionLabel[e.action] ?? e.action}${e.target === null ? "" : ` ${shownTarget(e.action, e.target)}`}`;
   if (e.before === null && e.after === null) return what;
   const change = e.before === null ? shown(e.action, e.after) : `${shown(e.action, e.before)} → ${shown(e.action, e.after)}`;
   return `${what}: ${change}`;
@@ -216,17 +231,22 @@ export function CaseAuditLogPage() {
             </TableHeader>
             <TableBody>
               {entries.data?.map((e) => (
-                <TableRow key={e.id}>
-                  <TableCell className="font-mono text-xs">{new Date(e.occurredAt).toLocaleString()}</TableCell>
+                <TableRow key={e.id} className="group/row">
+                  <TableCell className="font-mono text-xs whitespace-nowrap">{instant(e.occurredAt)}</TableCell>
                   <TableCell>{e.actor.name}</TableCell>
                   {/* Hashes and URLs wrap anywhere, so the full value stays on the record without widening the table. */}
                   <TableCell className="min-w-48 whitespace-normal [overflow-wrap:anywhere]">
                     {actionLabel[e.action] ?? e.action}
-                    {e.target !== null && <span className="font-medium"> {e.target}</span>}
+                    {e.target !== null && <span className="font-medium"> {shownTarget(e.action, e.target)}</span>}
                   </TableCell>
                   <TableCell className="min-w-48 font-mono text-xs whitespace-normal [overflow-wrap:anywhere]">
-                    {e.before !== null && <span className="line-through">{shown(e.action, e.before)}</span>}
-                    {e.before !== null && " "}→ {shown(e.action, e.after)}
+                    {/* An addition or removal has no before and after to show. */}
+                    {(e.before !== null || e.after !== null) && (
+                      <>
+                        {e.before !== null && <span className="line-through">{shown(e.action, e.before)}</span>}
+                        {e.before !== null && " "}→ {shown(e.action, e.after)}
+                      </>
+                    )}
                   </TableCell>
                   <TableCell className="text-right">
                     {promoted.has(e.id) ? (
@@ -234,8 +254,10 @@ export function CaseAuditLogPage() {
                     ) : (
                       c?.status !== "closed" && (
                         <Button
-                          variant="outline"
+                          variant="ghost"
                           size="sm"
+                          // Quiet until the row is pointed at or focused, so one button per row doesn't drown the record.
+                          className={QUIET_ACTION}
                           aria-label="Promote to Timeline"
                           onClick={() => setPromoting(e)}
                         >

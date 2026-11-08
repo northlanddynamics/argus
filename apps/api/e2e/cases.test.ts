@@ -58,7 +58,7 @@ async function pickDay(scope: Page | Locator, label: string, day: string) {
   const trigger = scope.getByLabel(label, { exact: true });
   await trigger.click();
   // It opens on the chosen day's month (the trigger shows that day), or this one.
-  const shown = (await trigger.getAttribute("data-empty")) === "true" ? new Date() : new Date((await trigger.textContent()) ?? "");
+  const shown = (await trigger.getAttribute("data-empty")) === "true" ? new Date() : new Date(`${(await trigger.textContent()) ?? ""}T00:00`);
   const cell = page.locator(`[data-slot=popover-content] [data-day="${target.toLocaleDateString()}"]`).first();
   for (let i = 0; i < 36 && !(await cell.count()); i++) {
     const back = target < shown;
@@ -183,9 +183,11 @@ test("an Analyst closes a Case with a Resolution and it becomes read-only; the O
     await dialog.getByRole("button", { name: "Close Case" }).click();
 
     // Read-only, and an Analyst can't reopen.
-    await page.getByText("Closed · False Positive").waitFor();
+    await page.getByRole("alert").getByText("Closed · False Positive").waitFor();
     await page.getByText("only an Admin can reopen it").waitFor();
-    for (const field of ["Status", "Severity", "Case Type", "Assignee"]) expect(await page.getByLabel(field).isDisabled()).toBe(true);
+    // Shown as a read-only summary, not as fields to change.
+    await page.getByLabel("Case details").waitFor();
+    for (const field of ["Status", "Severity", "Case Type", "Assignee"]) expect(await page.getByRole("combobox", { name: field, exact: true }).count()).toBe(0);
     expect(await page.getByRole("button", { name: "Edit" }).count()).toBe(0);
     expect(await page.getByRole("button", { name: /Reopen/ }).count()).toBe(0);
     await page.getByRole("link", { name: "Cases", exact: true }).first().click();
@@ -487,6 +489,7 @@ test("an Analyst writes the Timeline: exact, range and approximate entries, cita
     await page.goto(`${baseUrl}/cases/1`);
     await page.getByRole("tab", { name: "Timeline & Discussion" }).click();
     await page.getByText("Nothing on the Timeline yet.").waitFor();
+    await page.getByRole("button", { name: "+ Timeline Entry" }).click();
     const form = page.getByRole("form", { name: "Add entry" });
     const entries = page.getByRole("list", { name: "Timeline Entries" });
     const headings = () => entries.getByRole("heading").allTextContents();
@@ -688,8 +691,9 @@ test("an Analyst tags a Case, filters the list by Tag, links Cases and marks one
     await page.goto(`${baseUrl}/cases/1`);
     await page.getByText("No Tags yet.").waitFor();
     for (const tag of ["#BEC", "finance", "oops"]) {
-      await page.getByLabel("New Tag").fill(tag);
       await page.getByRole("button", { name: "+ Tag" }).click();
+      await page.getByLabel("New Tag").fill(tag);
+      await page.getByRole("button", { name: "Add", exact: true }).click();
       await page.getByLabel("Tags").getByText(`#${tag.replace("#", "").toLowerCase()}`).waitFor();
     }
     await page.getByRole("button", { name: "Remove #oops" }).click();
@@ -790,7 +794,9 @@ test("the Owner invites a Guest to a Case; the Guest signs in by email link, rea
     await page.getByText("One Guest account, invited by 2 Organizations.").waitFor();
     await page.getByRole("main").getByRole("button", { name: /Suspicious PowerShell on FIN-LT-0231/ }).click();
     await page.getByRole("heading", { name: "Suspicious PowerShell on FIN-LT-0231" }).waitFor();
-    for (const field of ["Status", "Severity", "Case Type", "Assignee"]) expect(await page.getByLabel(field).isDisabled()).toBe(true);
+    // Shown as a read-only summary, not as fields to change.
+    await page.getByLabel("Case details").waitFor();
+    for (const field of ["Status", "Severity", "Case Type", "Assignee"]) expect(await page.getByRole("combobox", { name: field, exact: true }).count()).toBe(0);
     expect(await page.getByRole("tab", { name: "Audit Log" }).count()).toBe(0);
     expect(await page.getByRole("button", { name: "Close Case" }).count()).toBe(0);
     expect(await page.getByRole("button", { name: "Edit" }).count()).toBe(0);

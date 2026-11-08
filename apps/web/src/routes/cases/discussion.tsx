@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type KeyboardEvent, useRef, useState } from "react";
+import { type KeyboardEvent, useId, useRef, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,11 +14,11 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldContent, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
-import { Visibility } from "@/components/visibility";
+import { Audience, Visibility } from "@/components/visibility";
 import { api, errorMessage } from "@/lib/api";
 import { canMarkInternal, canParticipate, caseQuery, isReadOnly } from "@/lib/cases";
 import {
@@ -32,8 +32,10 @@ import {
   typedText,
 } from "@/lib/discussion";
 import { personRoleLabel } from "@/lib/roles";
+import { instant } from "@/lib/when";
 import { promotedSources, timelineQuery } from "@/lib/timeline";
 import { useCaseNumber } from "@/routes/cases/case-layout";
+import { QUIET_ACTION } from "@/routes/cases/rail";
 import { PromoteDialog } from "@/routes/cases/timeline-entry-form";
 
 /**
@@ -64,10 +66,11 @@ export function CaseDiscussion() {
   const readOnly = isReadOnly(c);
   const participating = canParticipate(c);
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Discussion</CardTitle>
-      </CardHeader>
+    <section className="grid min-w-0 gap-4" aria-label="Discussion">
+      <div className="flex min-h-8 items-center">
+        <h2 className="text-lg font-semibold">Discussion</h2>
+      </div>
+      <Card>
       <CardContent className="grid gap-4">
         <ol className="grid gap-4" aria-label="Messages">
           {messages.data?.map((m) =>
@@ -113,7 +116,8 @@ export function CaseDiscussion() {
           />
         )}
       </CardContent>
-    </Card>
+      </Card>
+    </section>
   );
 }
 
@@ -149,8 +153,8 @@ function Message({
     onSettled: () => queryClient.invalidateQueries({ queryKey: discussionKey(number) }),
   });
   return (
-    <li className="grid gap-1 border-b pb-4 last:border-b-0" aria-label={`Message from ${m.author.name}`}>
-      <div className="flex items-baseline gap-2 text-sm">
+    <li className="group/row grid gap-1 border-b pb-4 last:border-b-0" aria-label={`Message from ${m.author.name}`}>
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
         <span className="font-semibold">{m.author.name}</span>
         {m.falcon && (
           <Badge variant="outline">
@@ -158,7 +162,7 @@ function Message({
           </Badge>
         )}
         <time className="text-xs text-muted-foreground" dateTime={m.postedAt}>
-          {new Date(m.postedAt).toLocaleString()}
+          {instant(m.postedAt)}
         </time>
         {m.editedAt && !m.retractedAt && <span className="text-xs text-muted-foreground">· edited</span>}
         {promoted && <span className="text-xs text-muted-foreground">· on the Timeline</span>}
@@ -188,21 +192,21 @@ function Message({
         </p>
       )}
       {participating && m.body !== null && (
-        <div className="flex gap-2">
+        <div className="-ml-2 flex flex-wrap gap-1">
           {!readOnly && !promoted && (
-            <Button variant="outline" size="sm" onClick={onPromote}>
+            <Button variant="ghost" size="sm" className={QUIET_ACTION} onClick={onPromote}>
               Promote to Timeline
             </Button>
           )}
           {m.can.edit && (
-            <Button variant="outline" size="sm" onClick={onEdit}>
+            <Button variant="ghost" size="sm" className={QUIET_ACTION} onClick={onEdit}>
               Edit
             </Button>
           )}
           {m.can.retract && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="outline" size="sm">
+                <Button variant="ghost" size="sm" className={QUIET_ACTION}>
                   Retract
                 </Button>
               </AlertDialogTrigger>
@@ -258,6 +262,9 @@ function EditMessage({ number, message, onDone }: { number: number; message: Mes
   );
 }
 
+/** The modifier that sends a message with Enter: ⌘ on Apple devices, Ctrl elsewhere. */
+const SEND_KEY = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
+
 /** The "@query" being typed just before the caret, if any. */
 const mentionQuery = (text: string, caret: number) => /(?:^|\s)@([^\s@<>]*)$/.exec(text.slice(0, caret))?.[1] ?? null;
 
@@ -293,6 +300,7 @@ function Composer({
   const [query, setQuery] = useState<string | null>(null);
   const [highlight, setHighlight] = useState(0);
   const box = useRef<HTMLTextAreaElement>(null);
+  const listId = useId();
   const people = useQuery({ ...mentionableQuery(number), enabled: query !== null });
 
   /** Whose name, or any word of it, starts with what's typed after "@". */
@@ -302,6 +310,8 @@ function Composer({
       : (people.data ?? [])
           .filter((p) => !internal || p.role !== "guest")
           .filter((p) => p.name.toLowerCase().split(/\s+/).some((word) => word.startsWith(query.toLowerCase())));
+
+  const picking = query !== null && offered.length > 0;
 
   const track = (value: string, caret: number) => {
     setText(value);
@@ -372,15 +382,20 @@ function Composer({
       <Textarea
         ref={box}
         aria-label={label}
-        placeholder="Write a message. Type @ to mention someone who can see this Case."
+        // The mention picker is a listbox the caret stays out of, so the highlighted person is announced from here.
+        aria-autocomplete="list"
+        aria-controls={picking ? listId : undefined}
+        aria-activedescendant={picking ? `${listId}-${highlight}` : undefined}
+        placeholder={`Write a message. Type @ to mention someone who can see this Case; ${SEND_KEY}+Enter sends.`}
         value={text}
         maxLength={10_000}
         onChange={(e) => track(e.target.value, e.target.selectionStart)}
         onKeyDown={onKeyDown}
         onBlur={() => setTimeout(() => setQuery(null), 150)}
       />
-      {query !== null && offered.length > 0 && (
+      {picking && (
         <ul
+          id={listId}
           role="listbox"
           aria-label="People who can see this Case"
           className="absolute bottom-full left-0 z-10 mb-1 w-64 overflow-hidden rounded-lg border bg-popover text-sm shadow-md"
@@ -388,6 +403,7 @@ function Composer({
           {offered.map((p, i) => (
             <li
               key={p.id}
+              id={`${listId}-${i}`}
               role="option"
               aria-selected={i === highlight}
               className={`cursor-pointer px-3 py-1.5 ${i === highlight ? "bg-accent" : ""}`}
@@ -406,7 +422,7 @@ function Composer({
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      <div className="flex items-center justify-end gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2">
         {offerInternal && (
           <Field orientation="horizontal" className="mr-auto w-auto">
             <Checkbox id={`${label}-internal`} checked={internal} onCheckedChange={(checked) => setInternal(checked === true)} />
@@ -416,12 +432,14 @@ function Composer({
             </FieldContent>
           </Field>
         )}
+        {offerInternal && <Audience number={number} internal={internal} />}
         {onCancel && (
           <Button type="button" variant="ghost" onClick={onCancel}>
             Cancel
           </Button>
         )}
-        <Button type="submit" disabled={pending || !text.trim()}>
+        {/* Outline until there's something to send, so an empty box doesn't carry the page's strongest button. */}
+        <Button type="submit" variant={text.trim() ? "default" : "outline"} disabled={pending || !text.trim()}>
           {submitLabel}
         </Button>
       </div>

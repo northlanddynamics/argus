@@ -5,8 +5,8 @@ import { type FormEvent, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RailBody, RailHeader, RailSection, RailTitle } from "@/routes/cases/rail";
 import { api, errorMessage } from "@/lib/api";
 import { caseRoleCatalogKey, caseRoleCatalogQuery } from "@/lib/case-roles";
 import { type CaseView, caseKey, casesKey } from "@/lib/cases";
@@ -71,18 +71,18 @@ export function CaseRolesPanel({ number, caseRoles, readOnly }: { number: number
 
   const error = assign.error ?? unassign.error;
   return (
-    <Card className="self-start">
-      <CardHeader>
-        <CardTitle className="text-xs tracking-widest text-muted-foreground uppercase">Case Roles</CardTitle>
+    <RailSection>
+      <RailHeader>
+        <RailTitle>Case Roles</RailTitle>
         {!readOnly && !adding && (
-          <CardAction>
+          <div>
             <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
               + Assign
             </Button>
-          </CardAction>
+          </div>
         )}
-      </CardHeader>
-      <CardContent className="grid gap-3">
+      </RailHeader>
+      <RailBody>
         {caseRoles.length ? (
           <ul className="grid gap-1 text-sm">
             {caseRoles.map((a) => (
@@ -154,7 +154,7 @@ export function CaseRolesPanel({ number, caseRoles, readOnly }: { number: number
             <AlertDescription>{error.message}</AlertDescription>
           </Alert>
         )}
-      </CardContent>
-    </Card>
+      </RailBody>
+    </RailSection>
   );
 }
