@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { IpHoverCard } from "@/components/ip-details";
+import { hasContextPopup, ObservableHoverCard } from "@/components/observable-details";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { XIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -656,20 +656,20 @@ function FalconComments({ comments: c }: { comments: AlertDetail["falconComments
 }
 
 /** Observables or Assets an Alert names, as badges. */
-function Extracted({ label, kind, items }: { label: string; kind: ItemKind; items: { id: string; text: string; title: string; ip?: boolean }[] }) {
+function Extracted({ label, kind, items }: { label: string; kind: ItemKind; items: { id: string; text: string; title: string; type?: string }[] }) {
   return (
     <section aria-label={label} className="grid gap-1">
       <h3 className="text-xs font-medium text-muted-foreground">{label}</h3>
       {items.length ? (
         <div className="flex flex-wrap gap-1">
           {items.map((item) => (
-            <IpHoverCard key={item.id} ip={item.title} enabled={!!item.ip}>
-              <Badge variant="outline" className="max-w-full truncate font-mono hover:bg-muted" title={item.ip ? undefined : item.title} asChild>
+            <ObservableHoverCard key={item.id} type={item.type ?? ""} value={item.title} enabled={!!item.type}>
+              <Badge variant="outline" className="max-w-full truncate font-mono hover:bg-muted" title={item.type && hasContextPopup(item.type) ? undefined : item.title} asChild>
                 <ItemLink kind={kind} id={item.id}>
                   {item.text}
                 </ItemLink>
               </Badge>
-            </IpHoverCard>
+            </ObservableHoverCard>
           ))}
         </div>
       ) : (
@@ -893,7 +893,7 @@ function AlertPanel({ id, onClose, onAct }: { id: string; onClose: () => void; o
         <Extracted
           label="Extracted Observables"
           kind="observable"
-          items={a.indicators.observables.map((o) => ({ id: o.id, text: `${observableTypeLabel[o.type]} ${shownObservable(o.type, o.value)}`, title: o.value, ip: o.type === "ip" }))}
+          items={a.indicators.observables.map((o) => ({ id: o.id, text: `${observableTypeLabel[o.type]} ${shownObservable(o.type, o.value)}`, title: o.value, type: o.type }))}
         />
         <Extracted
           label="Extracted Assets"

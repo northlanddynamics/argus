@@ -19,6 +19,7 @@ import {
 import type { FalconHost, FalconIdentity } from "../crowdstrike/falcon";
 import type { CaseSummary } from "../cases/case-summary";
 import type { IpDetails } from "../ipinfo/ipinfo";
+import type { FileReport } from "../virustotal/virustotal";
 import { CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabulary";
 import { STORED_LINK_TYPES } from "../case-links/vocabulary";
 import { ASSET_TYPES, OBSERVABLE_TYPES } from "../observables/vocabulary";
@@ -44,7 +45,7 @@ import {
   WRITE_BACK_ACTIONS,
   WRITE_BACK_STATES,
 } from "../alerts/vocabulary";
-import { organization, session, user } from "./auth-schema";
+import { member, organization, session, user } from "./auth-schema";
 
 /**
  * A Postgres `tsvector`: the words a row is found by in global search (`search/search.ts`). Each is a
@@ -858,6 +859,55 @@ export const ipLookups = pgTable(
     error: text("error"),
   },
   (t) => [uniqueIndex("ip_lookups_ip_idx").on(t.integrationId, t.ip)],
+);
+
+/**
+ * A Member's own VirusTotal API key (ADR 0011), sealed like Integration credentials. One per Member,
+ * set, replaced and removed only by them, and gone with their membership. `hint` is its last four
+ * characters. `error` is why VirusTotal last refused a lookup with it, or why it couldn't be reached,
+ * as of `error_at`; it is cleared by the next lookup that works.
+ */
+export const virustotalKeys = pgTable("virustotal_keys", {
+  id: text("id").primaryKey(),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organization.id, { onDelete: "restrict" }),
+  memberId: text("member_id")
+    .notNull()
+    .unique()
+    .references(() => member.id, { onDelete: "cascade" }),
+  key: text("key").notNull(),
+  hint: text("hint").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  error: text("error"),
+  errorAt: timestamp("error_at", { withTimezone: true }),
+});
+
+/**
+ * What VirusTotal last reported about a file, by one of its hashes (ADR 0011): the cache hovering a
+ * hash reads, shared by the Organization's Members whoever's key fetched it. One row per Organization
+ * and hash (lowercase hex), replaced on every fetch; a report found by one hash is stored under each
+ * of the file's MD5, SHA-1 and SHA-256. `found` false (with no `report`) is a file VirusTotal has
+ * never seen. Only answers are stored: why a lookup failed belongs to the key that made it.
+ */
+export const hashLookups = pgTable(
+  "hash_lookups",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    hash: text("hash").notNull(),
+    found: boolean("found").notNull(),
+    report: jsonb("report").$type<FileReport>(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    uniqueIndex("hash_lookups_hash_idx").on(t.organizationId, t.hash),
+    check("hash_lookups_report", sql`${t.found} = (${t.report} IS NOT NULL)`),
+  ],
 );
 
 /**

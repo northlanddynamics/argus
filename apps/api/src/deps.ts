@@ -5,6 +5,7 @@ import type { EvidenceStorage } from "./evidence/storage";
 import type { GuestSession } from "./guests/guest-sessions";
 import type { CredentialSealer } from "./integrations/credentials";
 import type { IpinfoConnector } from "./ipinfo/ipinfo";
+import type { VirustotalConnector } from "./virustotal/virustotal";
 import type { Mailer } from "./mail";
 import type { SignalSource } from "./realtime/signals";
 import type { TeamsPoster } from "./teams/teams-webhook";
@@ -27,6 +28,8 @@ export type Deps = {
   credentials: CredentialSealer;
   /** Makes IPinfo clients, to look IPs up while a Member waits (ADR 0010). */
   ipinfo: IpinfoConnector;
+  /** Makes VirusTotal clients, one per Member's key, to look hashes up while they wait (ADR 0011). */
+  virustotal: VirustotalConnector;
 };
 
 export type EvidenceConfig = { storage: EvidenceStorage; maxBytes: number };

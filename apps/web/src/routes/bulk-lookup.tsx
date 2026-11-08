@@ -1,5 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { IpHoverCard, IpText } from "@/components/ip-details";
+import { HashText } from "@/components/hash-details";
+import { IpText } from "@/components/ip-details";
+import { hasContextPopup, ObservableHoverCard } from "@/components/observable-details";
 import { Link } from "@tanstack/react-router";
 import { useDeferredValue, useMemo, useState } from "react";
 import { CaseRef } from "@/components/case-ref";
@@ -185,13 +187,17 @@ function ResultRow({ result: r, selected, onSelect }: { result: LookupResult; se
       </TableCell>
       <TableCell className="max-w-0 min-w-48 font-mono text-xs break-all whitespace-normal" title={r.value}>
         {r.known ? (
-          <IpHoverCard ip={r.value} enabled={r.type === "ip"}>
+          <ObservableHoverCard type={r.type} value={r.value}>
             <ItemLink kind="observable" id={r.known.id} className="hover:underline">
               {shown}
             </ItemLink>
-          </IpHoverCard>
+          </ObservableHoverCard>
         ) : r.type === "ip" ? (
           <IpText ip={r.value} className="no-underline" />
+        ) : hasContextPopup(r.type) ? (
+          <HashText hash={r.value} className="no-underline">
+            {shown}
+          </HashText>
         ) : (
           shown
         )}

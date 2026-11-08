@@ -598,7 +598,10 @@ test("an Analyst adds Evidence, sees its SHA-256, views and downloads it, and fi
     await page.getByLabel("Evidence files").setInputFiles({ name: "invoice-4471.eml", mimeType: "message/rfc822", buffer: Buffer.from(eml) });
     const row = page.getByTestId("evidence-invoice-4471.eml");
     await row.getByText(`${sha256.slice(0, 4)}…${sha256.slice(-4)}`).waitFor();
-    expect(await row.locator("code").getAttribute("title")).toBe(sha256);
+    // Hovering the fingerprint shows the whole hash in its VirusTotal popup.
+    await row.locator("code").hover();
+    await page.locator("[data-slot=hover-card-content]").getByText(sha256).waitFor();
+    await page.mouse.move(0, 0);
     expect(await page.getByRole("button", { name: /delete|replace/i }).count()).toBe(0);
 
     // View opens it in a new tab, as text; Download saves it under its own name.
