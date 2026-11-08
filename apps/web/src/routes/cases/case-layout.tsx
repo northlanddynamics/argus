@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { PageHeader } from "@/components/page-header";
 import { Link, Outlet, useMatchRoute, useNavigate, useParams, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useMemo } from "react";
 import { LockIcon } from "lucide-react";
@@ -172,9 +173,10 @@ export function CaseLayout() {
       {c && (
         <>
           <section className="grid gap-4" aria-label="Case">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="grid gap-1">
-                <p className="flex flex-wrap items-center gap-1.5 font-mono text-xs text-muted-foreground">
+            <PageHeader
+              title={c.title}
+              description={
+                <p className="flex flex-wrap items-center gap-1.5 font-mono text-xs">
                   {caseRef(c.number)}
                   <span className="contents font-sans">
                     <SeverityBadge severity={c.severity} />
@@ -190,23 +192,24 @@ export function CaseLayout() {
                     )}
                   </span>
                 </p>
-                <h1 className="text-2xl font-semibold tracking-tight">{c.title}</h1>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                <PresenceAvatars number={c.number} />
-                {c.can.work && (
-                  <CaseAccessDialog
-                    c={c}
-                    guestNames={guestNames}
-                    locked={locked}
-                    error={change.variables?.restricted !== undefined ? change.error : null}
-                    onRestrictedChange={(restricted) => change.mutate({ restricted })}
-                  />
-                )}
-                <ExportReportDialog number={c.number} complete={c.can.exportCompleteReport} hasGuests={guestNames.length > 0} />
-                {!isReadOnly(c) && <CloseCaseDialog number={c.number} />}
-              </div>
-            </div>
+              }
+              actions={
+                <>
+                  <PresenceAvatars number={c.number} />
+                  {c.can.work && (
+                    <CaseAccessDialog
+                      c={c}
+                      guestNames={guestNames}
+                      locked={locked}
+                      error={change.variables?.restricted !== undefined ? change.error : null}
+                      onRestrictedChange={(restricted) => change.mutate({ restricted })}
+                    />
+                  )}
+                  <ExportReportDialog number={c.number} complete={c.can.exportCompleteReport} hasGuests={guestNames.length > 0} />
+                  {!isReadOnly(c) && <CloseCaseDialog number={c.number} />}
+                </>
+              }
+            />
             {c.closed && c.resolution && (
               <Alert className="border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80">
                 <AlertTitle>Closed · {resolutionLabel[c.resolution]}</AlertTitle>

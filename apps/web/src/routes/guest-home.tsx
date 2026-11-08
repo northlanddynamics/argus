@@ -1,4 +1,5 @@
 import { useRouteContext } from "@tanstack/react-router";
+import { PageHeader } from "@/components/page-header";
 import { useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
@@ -20,7 +21,7 @@ function GuestHomePage({ guest }: { guest: GuestInfo }) {
   const organizations = new Set(guest.cases.map((c) => c.organization.id)).size;
   return (
     <div className="grid w-full grid-cols-1 max-w-3xl gap-4">
-      <h1 className="text-2xl font-semibold tracking-tight">Your Cases</h1>
+      <PageHeader title="Your Cases" />
       <Card>
         <CardContent className="grid gap-3">
           {guest.cases.length ? (

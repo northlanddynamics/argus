@@ -1,4 +1,5 @@
 import { ObservableMenu } from "@/components/observable-menu";
+import { PageHeader } from "@/components/page-header";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Time } from "@/components/time";
@@ -48,13 +49,10 @@ export function IgnoredObservablesPage() {
 
   return (
     <>
-      <div className="grid gap-1">
-        <h1 className="text-2xl font-semibold">Ignored Observables</h1>
-        <p className="max-w-prose text-sm text-muted-foreground">
-          Values too common to mean anything, such as public resolvers or your own mail domain. They stay linked and searchable, but never suggest
-          which Case an Alert belongs with. Add one from its page.
-        </p>
-      </div>
+      <PageHeader
+        title="Ignored Observables"
+        description="Values too common to mean anything, such as public resolvers or your own mail domain. They stay linked and searchable, but never suggest which Case an Alert belongs with. Add one from its page."
+      />
       {error && (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>

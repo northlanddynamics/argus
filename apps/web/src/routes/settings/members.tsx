@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { PageHeader } from "@/components/page-header";
 import { useNavigate, useRouteContext } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
 import { Time } from "@/components/time";
@@ -72,10 +73,8 @@ export function MembersPage() {
   const list = members.data;
   return (
     <>
+      <PageHeader title="Members" description="Who's in the Organization and what each person can do. Invite someone by email and choose their role." />
       <Card className="@container">
-        <CardHeader className="flex-row items-center justify-between">
-          <CardTitle>Members</CardTitle>
-        </CardHeader>
         <CardContent className="grid gap-4">
           <form className="grid items-end gap-2 sm:grid-cols-[1fr_auto_auto]" onSubmit={onInvite}>
             <div className="grid gap-2">

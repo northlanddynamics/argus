@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { PageHeader } from "@/components/page-header";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon, LockIcon, UsersIcon } from "lucide-react";
 import { Fragment, useEffect, useRef } from "react";
@@ -155,10 +156,7 @@ export function CasesPage() {
 
   return (
     <div className="grid w-full grid-cols-1 max-w-page gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold tracking-tight">Cases</h1>
-        <OpenCaseDialog />
-      </div>
+      <PageHeader title="Cases" actions={<OpenCaseDialog />} />
       <div className="grid gap-3">
         <Tabs value={view} activationMode="manual">
           <TabsList variant="line" aria-label="Case views" className="w-full justify-start overflow-x-auto overflow-y-hidden border-b">

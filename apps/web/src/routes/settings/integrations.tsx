@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { PageHeader } from "@/components/page-header";
 import { type FormEvent, type ReactNode, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
@@ -52,15 +53,17 @@ export function IntegrationsPage() {
   useLiveStatus();
   return (
     <>
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Integrations</h1>
-        <div className="flex flex-wrap justify-end gap-2">
-          {/* IPs are looked up through one IPinfo Integration (ADR 0010). */}
-          {integrations.data && !integrations.data.some((i) => i.provider === "ipinfo") && <AddIntegrationDialog provider="ipinfo" />}
-          <AddIntegrationDialog provider="mimecast" />
-          <AddIntegrationDialog provider="crowdstrike" />
-        </div>
-      </div>
+      <PageHeader
+        title="Integrations"
+        actions={
+          <>
+            {/* IPs are looked up through one IPinfo Integration (ADR 0010). */}
+            {integrations.data && !integrations.data.some((i) => i.provider === "ipinfo") && <AddIntegrationDialog provider="ipinfo" />}
+            <AddIntegrationDialog provider="mimecast" />
+            <AddIntegrationDialog provider="crowdstrike" />
+          </>
+        }
+      />
       {integrations.isPending && <Skeleton className="h-48 w-full rounded-xl" />}
       {integrations.isError && (
         <Alert variant="destructive">
