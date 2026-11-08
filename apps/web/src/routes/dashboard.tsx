@@ -47,7 +47,7 @@ export function DashboardPage() {
   const switching = metrics.isPlaceholderData;
 
   return (
-    <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-6">
+    <div className="mx-auto grid w-full max-w-page grid-cols-1 gap-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>

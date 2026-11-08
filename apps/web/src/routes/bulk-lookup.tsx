@@ -50,7 +50,7 @@ export function BulkLookupPage() {
   const allChosen = !!results?.length && chosen.length === results.length;
 
   return (
-    <div className="mx-auto grid w-full max-w-5xl grid-cols-1 gap-4">
+    <div className="mx-auto grid w-full max-w-page grid-cols-1 gap-4">
       <div className="grid gap-1">
         <h1 className="text-2xl font-semibold tracking-tight">Bulk Lookup</h1>
         <p className="max-w-prose text-sm text-muted-foreground">

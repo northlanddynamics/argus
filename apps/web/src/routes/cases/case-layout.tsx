@@ -152,7 +152,7 @@ export function CaseLayout() {
     return { title: `Press ${n}`, "aria-keyshortcuts": String(n) };
   };
   return (
-    <div className="mx-auto grid w-full grid-cols-1 max-w-6xl gap-4">
+    <div className="mx-auto grid w-full grid-cols-1 max-w-page gap-4">
       {found.data === null && (
         <Alert>
           <AlertDescription className="flex flex-wrap items-center justify-between gap-3">

@@ -148,7 +148,7 @@ export function CasesPage() {
   const total = counts?.[view] ?? 0;
 
   return (
-    <div className="mx-auto grid w-full grid-cols-1 max-w-6xl gap-4">
+    <div className="mx-auto grid w-full grid-cols-1 max-w-page gap-4">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold tracking-tight">Cases</h1>
         <OpenCaseDialog />

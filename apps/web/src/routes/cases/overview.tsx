@@ -39,9 +39,11 @@ export function CaseOverviewPage() {
   if (!c) return null;
   /** Guests see neither who holds Case Roles nor the Cases this one is linked to. */
   const member = c.can.work;
+  // On a very wide page the Summary and the open Tasks sit side by side, so the Summary keeps a readable line length.
   return (
-    <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
-      <div className="grid min-w-0 content-start gap-4">
+    <div className="@container">
+    <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px] @[88rem]:grid-cols-[minmax(0,3fr)_minmax(0,2fr)_300px]">
+      <div className="grid min-w-0 content-start gap-4 @[88rem]:contents">
         <CaseSummaryCard number={number} summary={c.summary} readOnly={isReadOnly(c)} />
         <OpenTasksCard number={number} />
       </div>
@@ -79,6 +81,7 @@ export function CaseOverviewPage() {
         {member && <LinkedCasesPanel number={number} readOnly={isReadOnly(c)} />}
         <TagsPanel number={number} tags={c.tags} readOnly={isReadOnly(c)} />
       </Card>
+    </div>
     </div>
   );
 }

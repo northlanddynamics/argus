@@ -44,7 +44,7 @@ export function SearchPage() {
   const pageSearch = (p: number): SearchPageSearch => ({ ...search, page: p > 1 ? p : undefined });
 
   return (
-    <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-4">
+    <div className="mx-auto grid w-full max-w-page grid-cols-1 gap-4">
       <h1 className="text-2xl font-semibold tracking-tight">Search</h1>
       <SearchForm key={q} initial={q} guest={guest} onSearch={(next) => void setSearch({ q: next })} />
       <div className="flex flex-wrap items-center justify-between gap-2">
