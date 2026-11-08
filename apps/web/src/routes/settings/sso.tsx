@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Field, FieldContent, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Field, FieldContent, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -173,10 +173,6 @@ export function SsoPage() {
               <Checkbox id="sso-provision" checked={provisionValue} onCheckedChange={(checked) => setProvision(checked === true)} />
               <FieldContent>
                 <FieldLabel htmlFor="sso-provision">Provision unknown SSO users as Analysts</FieldLabel>
-                <FieldDescription>
-                  Someone your identity provider signs in who isn't a Member yet joins as an Analyst, if their email is at the domain above.
-                  Otherwise only Members, and people with a pending invitation, get in.
-                </FieldDescription>
               </FieldContent>
             </Field>
 

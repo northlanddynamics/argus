@@ -17,7 +17,7 @@ import {
 
 const VARIANT_DESCRIPTIONS: Record<ReportVariant, string> = {
   complete: "Everything on the Case, Internal items included and marked.",
-  guest_safe: "Leaves out every Internal item, safe to share outside the team.",
+  guest_safe: "Leaves out every Internal item.",
 };
 
 const reportUrl = (number: number, variant: ReportVariant, format: ReportFormat) =>

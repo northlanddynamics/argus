@@ -4,7 +4,7 @@ import { type FormEvent, useState } from "react";
 import { Time } from "@/components/time";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useRemoveVirustotalKey, useSetVirustotalKey, virustotalKeyQuery } from "@/lib/hash-lookups";
@@ -47,11 +47,6 @@ function VirustotalKeyCard() {
     <Card>
       <CardHeader>
         <CardTitle>VirusTotal</CardTitle>
-        <CardDescription>
-          Hovering a hash anywhere in Argus shows what VirusTotal knows about the file, looked up with your own API key. What you look up is
-          kept for your Organization for a day, so other Members see it without spending their quota; your key is never shown to anyone,
-          Admins included.
-        </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4 text-sm">
         {current && (

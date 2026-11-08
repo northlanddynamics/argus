@@ -164,11 +164,7 @@ export function IpLookupBody({ lookup, loading, error, admin, showHostname = fal
           <p className="font-medium">
             {lookup.reserved?.label} address{lookup.reserved?.range && <span className="font-mono text-xs font-normal"> ({lookup.reserved.range})</span>}
           </p>
-          <p className="text-muted-foreground">
-            {lookup.reserved?.range
-              ? "Not looked up: it means nothing outside the network it belongs to, and Argus doesn't send internal addresses to IPinfo."
-              : "IPinfo holds nothing for it: it isn't routed on the public internet."}
-          </p>
+          {!lookup.reserved?.range && <p className="text-muted-foreground">IPinfo holds nothing for it: it isn't routed on the public internet.</p>}
         </div>
       );
     case "unconfigured":

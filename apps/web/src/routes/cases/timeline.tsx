@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { EyeIcon } from "lucide-react";
 import { useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -21,7 +20,6 @@ import { Input } from "@/components/ui/input";
 import { api, errorMessage } from "@/lib/api";
 import { Visibility } from "@/components/visibility";
 import { canMarkInternal, caseQuery, isReadOnly } from "@/lib/cases";
-import { namesOf, useGuests } from "@/lib/guests";
 import { describeOccurredAt, occurredKindLabel, precisionLabel, type TimelineEntryView, timelineKey, timelineQuery, utc } from "@/lib/timeline";
 import { actionLabel } from "@/routes/cases/audit-log";
 import { useCaseNumber } from "@/routes/cases/case-layout";
@@ -31,21 +29,8 @@ import { EditEntryForm, NewEntryForm } from "@/routes/cases/timeline-entry-form"
 
 /** Case · Timeline & Discussion: the account of what happened, beside the conversation about it. */
 export function CaseTimelinePage() {
-  const number = useCaseNumber();
-  const { data: c } = useQuery(caseQuery(number));
-  const members = !!c && canMarkInternal(c);
-  const guests = useGuests(number, members);
-  const active = (guests.data ?? []).filter((g) => !g.expired).map((g) => g.guest.name);
   return (
     <div className="grid gap-4">
-      {members && guests.data !== undefined && (
-        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <EyeIcon aria-hidden className="size-3.5" />
-          {active.length
-            ? `${namesOf(active)} (${active.length === 1 ? "Guest" : "Guests"}) can see everything here that isn't marked Internal.`
-            : "No Guests on this Case. Anything not marked Internal becomes visible to a Guest as soon as one is invited."}
-        </p>
-      )}
       {/* Side by side only where both columns have room; below that the Timeline sits above the Discussion. */}
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <CaseTimeline />

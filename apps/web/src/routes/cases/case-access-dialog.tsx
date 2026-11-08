@@ -89,10 +89,6 @@ export function CaseAccessDialog({
             />
             <FieldContent>
               <FieldLabel htmlFor="case-restricted">Restricted</FieldLabel>
-              <FieldDescription>
-                Only Admins, its Assignee and people with a Case Role on it can see it.
-                {!c.can.restrict && " Only Admins and its Assignee can change this."}
-              </FieldDescription>
             </FieldContent>
           </Field>
           {error && (
@@ -256,9 +252,7 @@ function GuestsSection({ c, guests }: { c: CaseView; guests: ReturnType<typeof u
           </div>
         </form>
       ) : (
-        <p className="text-xs text-muted-foreground">
-          {c.status === "closed" ? "A Closed Case takes no new Guests." : "Only Admins and this Case's Assignee can invite or remove Guests."}
-        </p>
+        c.status === "closed" && <p className="text-xs text-muted-foreground">A Closed Case takes no new Guests.</p>
       )}
     </FieldSet>
   );

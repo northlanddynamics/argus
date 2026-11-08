@@ -420,7 +420,7 @@ function LinkedCard<Type extends string>(props: {
                           </ItemLink>
                         </ObservableHoverCard>
                         {item.ignored && (
-                          <Badge variant="outline" className="shrink-0" title="On the Ignored list: it never suggests which Case an Alert belongs with">
+                          <Badge variant="outline" className="shrink-0">
                             <BellOffIcon aria-hidden />
                             Ignored
                           </Badge>

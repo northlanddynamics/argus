@@ -334,7 +334,7 @@ export function AlertQueuePage() {
           <AlertDescription>
             {loaded
               ? "The queue below may be out of date. Try again, or reload the page."
-              : "No Alerts are shown because the queue didn't load, not because there are none. Try again, or reload the page."}
+              : "Try again, or reload the page."}
           </AlertDescription>
           <AlertAction>
             <Button variant="outline" size="sm" disabled={alerts.isFetching} onClick={() => alerts.refetch()}>
@@ -541,7 +541,6 @@ export function AlertQueuePage() {
           {limit !== null && loaded.length >= limit
             ? `Showing the newest ${limit} Alerts. Narrow the filters to see older ones.`
             : `${loaded.length} ${status === "any" ? (loaded.length === 1 ? "Alert" : "Alerts") : `${alertStatusLabel[status]} ${loaded.length === 1 ? "Alert" : "Alerts"}`}`}
-          {" · new Alerts appear live"}
         </p>
         <p>
           <Key>j</Key> <Key>k</Key> move · <Key>x</Key> selects · <Key>Enter</Key> opens · <Key>Esc</Key> closes · with Alerts selected,{" "}
