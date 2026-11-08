@@ -60,6 +60,11 @@ test("right-clicking an Observable copies it defanged or fanged, and opens a has
     const page = await context.newPage();
     await signIn(page, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
     const menu = page.getByRole("menu");
+    /** One Escape closes the menu: a value's context popup never opens over it. */
+    const closeMenu = async () => {
+      await page.keyboard.press("Escape");
+      await menu.waitFor({ state: "detached" });
+    };
     const clipboard = () => page.evaluate<string>("navigator.clipboard.readText()");
 
     // A domain on the Case's Observables: both copies, and nowhere to look it up.
@@ -85,7 +90,7 @@ test("right-clicking an Observable copies it defanged or fanged, and opens a has
     await page.getByRole("link", { name: "IP 10.20.4.17" }).click({ button: "right" });
     await menu.getByRole("menuitem", { name: "Copy" }).waitFor();
     expect(await menu.getByRole("menuitem", { name: "Open in IPinfo.io" }).count()).toBe(0);
-    await page.keyboard.press("Escape");
+    await closeMenu();
 
     // On an Observable's own page, the value has the menu too.
     await page.getByRole("link", { name: "IP 185.220.101.4" }).click();
@@ -104,7 +109,7 @@ test("right-clicking an Observable copies it defanged or fanged, and opens a has
     await page.locator("[data-slot=hover-card-content]").waitFor();
     await ip.click({ button: "right" });
     await menu.getByRole("menuitem", { name: "Open in IPinfo.io" }).waitFor();
-    await page.keyboard.press("Escape");
+    await closeMenu();
     await page.getByText("hxxps://invoice-portal[.]biz/pay", { exact: true }).click({ button: "right" });
     await menu.getByRole("menuitem", { name: "Copy fanged" }).click();
     expect(await clipboard()).toBe("https://invoice-portal.biz/pay");

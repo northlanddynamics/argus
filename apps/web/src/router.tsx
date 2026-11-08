@@ -8,6 +8,7 @@ import { queryClient } from "@/lib/query-client";
 import { canManage } from "@/lib/roles";
 import { AppShell } from "@/components/app-shell";
 import { AcceptInvitePage } from "@/routes/accept-invite";
+import { AccountPage } from "@/routes/account";
 import { AlertQueuePage, validateAlertQueueSearch } from "@/routes/alerts/queue";
 import { OperatorConsolePage } from "@/routes/operator-console";
 import { CaseAuditLogPage } from "@/routes/cases/audit-log";
@@ -143,6 +144,16 @@ const assetRoute = createRoute({
   component: AssetPage,
 });
 
+/** Your settings: what a Member sets for themselves, such as their VirusTotal key. Members only. */
+const accountRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/account",
+  beforeLoad: ({ context }) => {
+    if (!context.me.organization) throw redirect({ to: "/" });
+  },
+  component: AccountPage,
+});
+
 /** Bulk Lookup: Members only. Loaded on first visit, since it carries the Public Suffix List. */
 const bulkLookupRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -249,6 +260,7 @@ export const router = createRouter({
       dashboardRoute,
       searchRoute,
       bulkLookupRoute,
+      accountRoute,
       observableRoute,
       assetRoute,
       settingsRoute.addChildren([settingsIndexRoute, membersRoute, ssoRoute, integrationsRoute, ignoredRoute, orgAuditLogRoute]),

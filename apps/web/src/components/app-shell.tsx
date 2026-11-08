@@ -65,6 +65,7 @@ function crumbsWithin(pathname: string, search: Record<string, unknown>, me: Me)
   if (area === "alerts") return [{ label: "Alerts" }];
   if (area === "search") return [{ label: "Search" }];
   if (area === "lookup") return [{ label: "Bulk Lookup" }];
+  if (area === "account") return [{ label: "Your settings" }];
   if (area === "observables") return [{ label: "Observable" }];
   if (area === "assets") return [{ label: "Asset" }];
   if (area === "dashboard") return [{ label: "Dashboard" }];
@@ -78,7 +79,7 @@ const startsOpen = () => !document.cookie.split("; ").includes("sidebar_state=fa
 /** Areas with nothing to do with working Cases, where the work queue starts tucked away to give the page room. */
 const tuckedArea = (pathname: string) => {
   const area = pathname.split("/")[1];
-  return area === "settings" || area === "dashboard" ? area : null;
+  return area === "settings" || area === "dashboard" || area === "account" ? area : null;
 };
 
 /**

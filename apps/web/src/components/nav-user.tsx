@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
-import { ChevronsUpDownIcon, KeyRoundIcon, LogOutIcon } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { ChevronsUpDownIcon, KeyRoundIcon, LogOutIcon, SettingsIcon } from "lucide-react";
 import { useState } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -23,7 +23,7 @@ const initials = (name: string) =>
     .map((part) => part[0]!.toUpperCase())
     .join("");
 
-/** The signed-in person, with adding a passkey (Members only) and signing out. */
+/** The signed-in person, with Your settings and adding a passkey (Members only), and signing out. */
 export function NavUser({ me }: { me: Me }) {
   const { isMobile } = useSidebar();
   const navigate = useNavigate();
@@ -73,6 +73,14 @@ export function NavUser({ me }: { me: Me }) {
               <div className="flex items-center gap-2 px-1 py-1.5">{who}</div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            {me.organization && (
+              <DropdownMenuItem asChild>
+                <Link to="/account">
+                  <SettingsIcon />
+                  Your settings
+                </Link>
+              </DropdownMenuItem>
+            )}
             {!me.guest && (
               <DropdownMenuItem
                 disabled={passkey === "pending" || passkey === "added"}
