@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams, useRouteContext } from "@tanstack/react-router";
 import { BellOffIcon, CheckIcon, CopyIcon, ExternalLinkIcon, FingerprintIcon, LockIcon, MonitorIcon, RefreshCwIcon, SearchIcon, UserIcon } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
+import { CaseRef } from "@/components/case-ref";
+import { Time } from "@/components/time";
 import { SeverityBadge, StatusBadge } from "@/components/case-badges";
 import { observableIcon } from "@/components/search/search-hit";
 import {
@@ -20,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useMe } from "@/lib/api";
 import { alertStatusLabel } from "@/lib/alerts";
@@ -39,7 +42,6 @@ import {
   setIgnored,
 } from "@/lib/observables";
 import { falconIocActionLabel, responseActionKindLabel, responseActionStateLabel } from "@/lib/response-actions";
-import { exactTime, when } from "@/lib/when";
 import { ObservableActions } from "@/routes/cases/observable-actions";
 import { FalconIdentitiesCard } from "@/routes/items/falcon-identities-card";
 
@@ -63,6 +65,10 @@ const typeLabel = (kind: ItemKind, item: ItemPage) =>
   kind === "observable" ? observableTypeLabel[item.type as ObservableType] : assetTypeLabel[item.type as AssetType];
 
 /** A long value with places it may wrap: after each / ? & = and dot, never inside an escape like %2F. */
+/** Columns shown from `sm`; below it their cells stay in the row, emptied, so the columns keep their widths. */
+const fromSm = "overflow-hidden px-0 sm:px-2";
+const showSm = "hidden sm:inline";
+
 function Breakable({ text }: { text: string }) {
   const parts = text.split(/(?<=[/?&=.])/);
   return parts.map((part, i) => (
@@ -139,18 +145,18 @@ function ItemPageView({ kind, id }: { kind: ItemKind; id: string }) {
             </Badge>
             <span>
               Added to the Ignored list by {item.ignored.by.name}{" "}
-              <span title={exactTime(item.ignored.at)}>{when(item.ignored.at)}</span>. It never suggests which Case an Alert belongs with.
+              <Time iso={item.ignored.at} />. It never suggests which Case an Alert belongs with.
             </span>
           </p>
         )}
         <dl className="mt-1 flex flex-wrap gap-x-6 gap-y-1 text-sm">
           <div className="flex gap-1.5">
             <dt className="text-muted-foreground">First seen</dt>
-            <dd title={exactTime(item.firstSeen)}>{when(item.firstSeen)}</dd>
+            <dd><Time iso={item.firstSeen} /></dd>
           </div>
           <div className="flex gap-1.5">
             <dt className="text-muted-foreground">Last seen</dt>
-            <dd title={exactTime(item.lastSeen)}>{when(item.lastSeen)}</dd>
+            <dd><Time iso={item.lastSeen} /></dd>
           </div>
           <div className="flex gap-1.5">
             <dt className="text-muted-foreground">Cases</dt>
@@ -344,7 +350,7 @@ function FalconDevicesCard({ item }: { item: ItemPage }) {
                       </Badge>
                     )}
                     <span>
-                      · recorded <span title={exactTime(device.recordedAt)}>{when(device.recordedAt)}</span>
+                      · recorded <Time iso={device.recordedAt} />
                     </span>
                   </p>
                 </div>
@@ -373,7 +379,7 @@ function HostLookup({ integration, lookup }: { integration: string; lookup: NonN
       )}
       {checkedAt && (
         <p className="text-xs text-muted-foreground">
-          Checked <span title={exactTime(checkedAt)}>{when(checkedAt)}</span>
+          Checked <Time iso={checkedAt} />
           {refreshing && " · checking again…"}
         </p>
       )}
@@ -385,8 +391,6 @@ function HostLookup({ integration, lookup }: { integration: string; lookup: NonN
 /** The values Falcon gave, joined by `by`; null when it gave none. */
 const joined = (values: readonly (string | null)[], by: string) => values.filter(Boolean).join(by) || null;
 
-const Time = ({ at }: { at: string }) => <span title={exactTime(at)}>{when(at)}</span>;
-
 /** A host's containment: plain when it isn't contained, marked otherwise. */
 const Containment = ({ state }: { state: NonNullable<HostFacts["containment"]> }) =>
   state === "normal" ? containmentLabel.normal : <Badge variant="outline">{containmentLabel[state]}</Badge>;
@@ -396,7 +400,7 @@ function HostEnrichment({ enrichment }: { enrichment: FalconDevice["enrichment"]
   const { host, fetchedAt, notFound, error, refreshing } = enrichment;
   const asOf = fetchedAt && (
     <p className="text-xs text-muted-foreground">
-      As of <span title={exactTime(fetchedAt)}>{when(fetchedAt)}</span>
+      As of <Time iso={fetchedAt} />
       {refreshing && " · refreshing…"}
     </p>
   );
@@ -422,8 +426,8 @@ function HostEnrichment({ enrichment }: { enrichment: FalconDevice["enrichment"]
     { label: "Containment", value: host.containment && <Containment state={host.containment} /> },
     { label: "Platform", value: joined([host.platform, host.osVersion], " · ") },
     { label: "Sensor", value: joined([host.sensorVersion, host.sensorStatus], " · ") },
-    { label: "First seen", value: host.firstSeen && <Time at={host.firstSeen} /> },
-    { label: "Last seen", value: host.lastSeen && <Time at={host.lastSeen} /> },
+    { label: "First seen", value: host.firstSeen && <Time iso={host.firstSeen} /> },
+    { label: "Last seen", value: host.lastSeen && <Time iso={host.lastSeen} /> },
     { label: "Local IP", value: host.localIp },
     { label: "External IP", value: host.externalIp },
     { label: "MAC", value: host.macAddress },
@@ -459,21 +463,30 @@ function HostEnrichment({ enrichment }: { enrichment: FalconDevice["enrichment"]
 function CasesCard({ item, actions }: { item: ItemPage; actions: boolean }) {
   const observable = { id: item.id, type: item.type as ObservableType, value: item.value };
   return (
-    <Card>
+    <Card className="@container">
       <CardHeader>
         <CardTitle>Cases</CardTitle>
       </CardHeader>
       <CardContent>
-        <Table aria-label="Linked Cases">
+        <Table aria-label="Linked Cases" className="@3xl:table-fixed">
+          {/* Set widths, in the Cases list's order (Severity, then Status), so these lists read the same way. */}
+          <colgroup>
+            <col />
+            <col className="@3xl:w-28" />
+            <col className="@3xl:w-44" />
+            <col className="@3xl:w-44" />
+            <col className="@3xl:w-32" />
+            {actions && <col className="@3xl:w-12" />}
+          </colgroup>
           <TableHeader className={item.cases.length ? undefined : "sr-only"}>
-            <TableRow>
+            <TableRow className="hover:bg-transparent">
               <TableHead>Case</TableHead>
-              <TableHead>Status</TableHead>
               <TableHead>Severity</TableHead>
-              <TableHead className="hidden sm:table-cell">Assignee</TableHead>
-              <TableHead className="text-right">Linked</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className={fromSm}><span className={showSm}>Assignee</span></TableHead>
+              <TableHead>Linked</TableHead>
               {actions && (
-                <TableHead className="w-0">
+                <TableHead>
                   <span className="sr-only">Actions</span>
                 </TableHead>
               )}
@@ -483,23 +496,25 @@ function CasesCard({ item, actions }: { item: ItemPage; actions: boolean }) {
             {item.cases.map((c) => {
               const row = (menuButton?: ReactNode) => (
                 <TableRow key={c.number}>
-                  <TableCell className="max-w-0 min-w-48 whitespace-normal break-words">
+                  <TableCell className="whitespace-normal break-words">
                     <Link to="/cases/$number" params={{ number: String(c.number) }} className="hover:underline">
-                      <span className="font-mono text-xs text-muted-foreground">{caseRef(c.number)}</span> {c.title}
+                      <span className="font-mono text-xs text-muted-foreground">{caseRef(c.number)}</span> <span className="font-medium">{c.title}</span>
                     </Link>
                     {c.restricted && <LockIcon className="ml-1 inline size-3 text-muted-foreground" aria-label="Restricted" />}
                   </TableCell>
                   <TableCell>
-                    <StatusBadge status={c.status} />
-                  </TableCell>
-                  <TableCell>
                     <SeverityBadge severity={c.severity} />
                   </TableCell>
-                  <TableCell className="hidden sm:table-cell">{c.assignee?.name ?? <span className="text-muted-foreground">Unassigned</span>}</TableCell>
-                  <TableCell className="text-right text-muted-foreground tabular-nums" title={exactTime(c.linkedAt)}>
-                    {when(c.linkedAt)}
+                  <TableCell>
+                    <StatusBadge status={c.status} />
                   </TableCell>
-                  {menuButton && <TableCell className="w-0 text-right">{menuButton}</TableCell>}
+                  <TableCell className={cn(fromSm, "truncate", !c.assignee && "text-muted-foreground")} title={c.assignee?.name}>
+                    <span className={showSm}>{c.assignee?.name ?? "Unassigned"}</span>
+                  </TableCell>
+                  <TableCell className="truncate text-muted-foreground">
+                    <Time iso={c.linkedAt} />
+                  </TableCell>
+                  {menuButton && <TableCell className="text-right">{menuButton}</TableCell>}
                 </TableRow>
               );
               return actions ? (
@@ -511,7 +526,7 @@ function CasesCard({ item, actions }: { item: ItemPage; actions: boolean }) {
               );
             })}
             {item.cases.length === 0 && (
-              <TableRow>
+              <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={actions ? 6 : 5} className="text-muted-foreground">
                   Not on any Case you can see yet.
                 </TableCell>
@@ -526,52 +541,60 @@ function CasesCard({ item, actions }: { item: ItemPage; actions: boolean }) {
 
 function AlertsCard({ item }: { item: ItemPage }) {
   return (
-    <Card>
+    <Card className="@container">
       <CardHeader>
         <CardTitle>Alerts naming it</CardTitle>
       </CardHeader>
       <CardContent>
-        <Table aria-label="Alerts naming it">
+        <Table aria-label="Alerts naming it" className="@3xl:table-fixed">
+          {/* The same widths as the Cases above, so Severity and Status line up between the two. */}
+          <colgroup>
+            <col />
+            <col className="@3xl:w-28" />
+            <col className="@3xl:w-44" />
+            <col className="@3xl:w-44" />
+            <col className="@3xl:w-32" />
+          </colgroup>
           <TableHeader className={item.alerts.length ? undefined : "sr-only"}>
-            <TableRow>
+            <TableRow className="hover:bg-transparent">
               <TableHead>Alert</TableHead>
-              <TableHead>Status</TableHead>
               <TableHead>Severity</TableHead>
-              <TableHead className="hidden sm:table-cell">Case</TableHead>
-              <TableHead className="text-right">Raised</TableHead>
+              <TableHead>Alert Status</TableHead>
+              <TableHead className={fromSm}><span className={showSm}>Case</span></TableHead>
+              <TableHead>Raised</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {item.alerts.map((a) => (
               <TableRow key={a.id}>
-                <TableCell className="max-w-0 min-w-48 whitespace-normal break-words">
-                  <Link to="/alerts" search={{ status: "any", alert: a.id }} className="hover:underline" title={a.externalId}>
+                <TableCell className="whitespace-normal break-words">
+                  <Link to="/alerts" search={{ status: "any", alert: a.id }} className="font-medium hover:underline" title={a.externalId}>
                     {a.title}
                   </Link>
                   {a.host && <span className="block font-mono text-xs text-muted-foreground">{a.host}</span>}
                 </TableCell>
                 <TableCell>
-                  <Badge variant={a.status === "new" ? "secondary" : "outline"}>{alertStatusLabel[a.status]}</Badge>
-                </TableCell>
-                <TableCell>
                   <SeverityBadge severity={a.severity} />
                 </TableCell>
-                <TableCell className="hidden sm:table-cell">
+                <TableCell>
+                  <Badge variant="outline">{alertStatusLabel[a.status]}</Badge>
+                </TableCell>
+                <TableCell className={fromSm}>
+                  <span className={showSm}>
                   {a.case ? (
-                    <Link to="/cases/$number" params={{ number: String(a.case.number) }} className="font-mono text-xs hover:underline" title={a.case.title}>
-                      {caseRef(a.case.number)}
-                    </Link>
+                    <CaseRef number={a.case.number} title={a.case.title} />
                   ) : (
                     <span className="text-muted-foreground">—</span>
                   )}
+                  </span>
                 </TableCell>
-                <TableCell className="text-right text-muted-foreground tabular-nums" title={exactTime(a.seenAt)}>
-                  {when(a.seenAt)}
+                <TableCell className="truncate text-muted-foreground">
+                  <Time iso={a.seenAt} />
                 </TableCell>
               </TableRow>
             ))}
             {item.alerts.length === 0 && (
-              <TableRow>
+              <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={5} className="text-muted-foreground">
                   No Alert names it.
                 </TableCell>
@@ -595,20 +618,27 @@ const stateVariant = { pending: "secondary", active: "outline", removing: "secon
 function ResponseActionsCard({ item, actions }: { item: ItemPage; actions: boolean }) {
   const observable = { id: item.id, type: item.type as ObservableType, value: item.value };
   return (
-    <Card>
+    <Card className="@container">
       <CardHeader>
         <CardTitle>Response Actions</CardTitle>
       </CardHeader>
       <CardContent>
-        <Table aria-label="Response Actions">
+        <Table aria-label="Response Actions" className="@3xl:table-fixed">
+          <colgroup>
+            <col className="@3xl:w-[30%]" />
+            <col className="@3xl:w-36" />
+            <col />
+            <col className="@3xl:w-44" />
+            {actions && <col className="@3xl:w-12" />}
+          </colgroup>
           <TableHeader className={item.responseActions.length ? undefined : "sr-only"}>
-            <TableRow>
+            <TableRow className="hover:bg-transparent">
               <TableHead>Action</TableHead>
               <TableHead>State</TableHead>
               <TableHead>Case</TableHead>
-              <TableHead className="text-right">When</TableHead>
+              <TableHead>When</TableHead>
               {actions && (
-                <TableHead className="w-0">
+                <TableHead>
                   <span className="sr-only">Actions</span>
                 </TableHead>
               )}
@@ -629,15 +659,15 @@ function ResponseActionsCard({ item, actions }: { item: ItemPage; actions: boole
                     <Badge variant={stateVariant[r.state]}>{responseActionStateLabel[r.state]}</Badge>
                     {r.origin !== "created" && <span className="mt-1 block text-xs text-muted-foreground">Already present</span>}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="truncate">
                     <Link to="/cases/$number/observables" params={{ number: String(r.case.number) }} className="hover:underline" title={r.case.title}>
                       <span className="font-mono text-xs text-muted-foreground">{caseRef(r.case.number)}</span> {r.case.title}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-right text-muted-foreground tabular-nums" title={exactTime(r.sentAt ?? r.requestedAt)}>
-                    {r.sentAt ? <>Sent {when(r.sentAt)}</> : <>Requested {when(r.requestedAt)}</>}
+                  <TableCell className="truncate text-muted-foreground">
+                    {r.sentAt ? <Time iso={r.sentAt} prefix="Sent" /> : <Time iso={r.requestedAt} prefix="Requested" />}
                   </TableCell>
-                  {menuButton && <TableCell className="w-0 text-right">{menuButton}</TableCell>}
+                  {menuButton && <TableCell className="text-right">{menuButton}</TableCell>}
                 </TableRow>
               );
               // Taken from its Case, so acted on from there too.
@@ -650,7 +680,7 @@ function ResponseActionsCard({ item, actions }: { item: ItemPage; actions: boole
               );
             })}
             {item.responseActions.length === 0 && (
-              <TableRow>
+              <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={actions ? 5 : 4} className="text-muted-foreground">
                   No Response Actions taken on it.
                 </TableCell>

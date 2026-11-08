@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouteContext } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
+import { Time } from "@/components/time";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,7 +26,6 @@ async function ok(res: Response, fallback: string) {
 const signInMethods = (s: { password: boolean; totp: boolean; passkeys: number; sso: boolean }) =>
   [s.password && (s.totp ? "Password + TOTP" : "Password"), s.passkeys > 0 && "passkey", s.sso && "SSO"].filter(Boolean).join(", ") || "—";
 
-const lastActive = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : "—");
 
 /** A change to the Members list: refreshes it afterwards and reports its error, if any. */
 function useMembersAction<T>(setError: (error: string | null) => void, fn: (input: T) => Promise<void>) {
@@ -72,7 +72,7 @@ export function MembersPage() {
   const list = members.data;
   return (
     <>
-      <Card>
+      <Card className="@container">
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle>Members</CardTitle>
         </CardHeader>
@@ -98,28 +98,40 @@ export function MembersPage() {
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
-          <Table>
+          <Table className="@2xl:table-fixed">
+            {/* Set widths, so Members and pending invites line up and the columns hold still as the list changes. */}
+            <colgroup>
+              <col />
+              <col className="@2xl:w-36" />
+              <col className="@2xl:w-48" />
+              <col className="@2xl:w-32" />
+              <col className="@2xl:w-28" />
+            </colgroup>
             <TableHeader>
-              <TableRow>
+              <TableRow className="hover:bg-transparent">
                 <TableHead>Member</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Sign-in</TableHead>
                 <TableHead>Last active</TableHead>
-                <TableHead />
+                <TableHead>
+                  <span className="sr-only">Actions</span>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {list?.members.map((m) => (
                 <TableRow key={m.id} data-testid={`member-${m.email}`}>
                   <TableCell>
-                    <div className="font-medium">{m.name}</div>
-                    <div className="text-xs text-muted-foreground">{m.email}</div>
+                    <div className="truncate font-medium" title={m.name}>{m.name}</div>
+                    <div className="truncate text-xs text-muted-foreground" title={m.email}>{m.email}</div>
                   </TableCell>
                   <TableCell>
                     {m.role === "owner" ? (
                       <Badge>Owner</Badge>
                     ) : (
                       <NativeSelect
+                        size="sm"
+                        className="w-28"
                         aria-label={`Role of ${m.name}`}
                         value={m.role}
                         disabled={changeRole.isPending}
@@ -130,8 +142,10 @@ export function MembersPage() {
                       </NativeSelect>
                     )}
                   </TableCell>
-                  <TableCell>{signInMethods(m.signIn)}</TableCell>
-                  <TableCell className="text-muted-foreground">{lastActive(m.lastActiveAt)}</TableCell>
+                  <TableCell className="truncate text-muted-foreground" title={signInMethods(m.signIn)}>{signInMethods(m.signIn)}</TableCell>
+                  <TableCell className="truncate text-muted-foreground">
+                    {m.lastActiveAt ? <Time iso={m.lastActiveAt} /> : "—"}
+                  </TableCell>
                   <TableCell className="text-right">
                     {m.role !== "owner" && (
                       <Button
@@ -151,12 +165,13 @@ export function MembersPage() {
               {list?.invitations?.map((i) => (
                 <TableRow key={i.id} data-testid={`invitation-${i.email}`}>
                   <TableCell>
-                    <div className="font-medium">{i.email}</div>
+                    <div className="truncate font-medium" title={i.email}>{i.email}</div>
                     <div className="text-xs text-muted-foreground">Invited · {i.expired ? "expired" : "pending"}</div>
                   </TableCell>
-                  <TableCell>{roleLabel[i.role]}</TableCell>
-                  <TableCell>—</TableCell>
-                  <TableCell>—</TableCell>
+                  {/* Lined up with the text in the Members' role selects above. */}
+                  <TableCell className="pl-4.5">{roleLabel[i.role]}</TableCell>
+                  <TableCell className="text-muted-foreground">—</TableCell>
+                  <TableCell className="text-muted-foreground">—</TableCell>
                   <TableCell className="text-right">
                     <Button variant="outline" size="sm" aria-label={`Revoke invite for ${i.email}`} onClick={() => revoke.mutate(i.id)}>
                       Revoke

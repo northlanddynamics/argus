@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
+import { Time } from "@/components/time";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { DatePicker } from "@/components/date-picker";
-import { Field, FieldLabel } from "@/components/ui/field";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DATE_FILTER, FilterBar, FilterField, FilterSelect } from "@/components/filter-bar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { falconStatusLabel } from "@/lib/alerts";
 import { api } from "@/lib/api";
@@ -25,7 +26,6 @@ import {
 } from "@/lib/cases";
 import { defang, observableTypeLabel } from "@/lib/observables";
 import { promotedSources, timelineQuery } from "@/lib/timeline";
-import { instant } from "@/lib/when";
 import { useCaseNumber } from "@/routes/cases/case-layout";
 import { QUIET_ACTION } from "@/routes/cases/rail";
 import { PromoteDialog } from "@/routes/cases/timeline-entry-form";
@@ -142,8 +142,6 @@ const entryText = (e: Entry) => {
   return `${what}: ${change}`;
 };
 
-/** Radix Select can't hold an empty value, so "no filter" gets one of its own. */
-const ANY = "any";
 
 export function CaseAuditLogPage() {
   const number = useCaseNumber();
@@ -174,110 +172,115 @@ export function CaseAuditLogPage() {
     queryKey: membersKey,
     queryFn: async () => (await api.organization.members.$get()).json(),
   });
+  const actors = members.data?.members.map((m) => m.userId) ?? [];
+  const actorNames = Object.fromEntries(members.data?.members.map((m) => [m.userId, m.name]) ?? []);
+  const filtered = Boolean(actor || action || from);
+  const clear = () => {
+    setActor("");
+    setAction("");
+    setFrom("");
+  };
 
   return (
-    <>
-      <Card>
-        <CardContent className="grid gap-4 sm:grid-cols-[1fr_1fr_1fr_2fr] sm:items-end">
-          <Field>
-            <FieldLabel htmlFor="audit-actor">Actor</FieldLabel>
-            <Select value={actor || ANY} onValueChange={(next) => setActor(next === ANY ? "" : next)}>
-              <SelectTrigger id="audit-actor" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ANY}>Anyone</SelectItem>
-                {members.data?.members.map((m) => (
-                  <SelectItem key={m.userId} value={m.userId}>
-                    {m.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="audit-action">Action</FieldLabel>
-            <Select value={action || ANY} onValueChange={(next) => setAction(next === ANY ? "" : (next as CaseAuditAction))}>
-              <SelectTrigger id="audit-action" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ANY}>All actions</SelectItem>
-                {CASE_AUDIT_ACTIONS.map((a) => (
-                  <SelectItem key={a} value={a}>
-                    {actionLabel[a]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="audit-from">From</FieldLabel>
-            <DatePicker id="audit-from" value={from} onChange={setFrom} placeholder="Any time" />
-          </Field>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>When</TableHead>
-                <TableHead>Actor</TableHead>
-                <TableHead>Action</TableHead>
-                <TableHead className="w-[30%]">Before → After</TableHead>
-                <TableHead className="w-0" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {entries.data?.map((e) => (
-                <TableRow key={e.id} className="group/row">
-                  <TableCell className="font-mono text-xs whitespace-nowrap">{instant(e.occurredAt)}</TableCell>
-                  <TableCell>{e.actor.name}</TableCell>
-                  {/* Hashes and URLs wrap anywhere, so the full value stays on the record without widening the table. */}
-                  <TableCell className="min-w-48 whitespace-normal [overflow-wrap:anywhere]">
-                    {actionLabel[e.action] ?? e.action}
-                    {e.target !== null && <span className="font-medium"> {shownTarget(e.action, e.target)}</span>}
-                  </TableCell>
-                  <TableCell className="min-w-48 font-mono text-xs whitespace-normal [overflow-wrap:anywhere]">
-                    {/* An addition or removal has no before and after to show. */}
-                    {(e.before !== null || e.after !== null) && (
-                      <>
-                        {e.before !== null && <span className="line-through">{shown(e.action, e.before)}</span>}
-                        {e.before !== null && " "}→ {shown(e.action, e.after)}
-                      </>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {promoted.has(e.id) ? (
-                      <span className="text-xs text-muted-foreground">On the Timeline</span>
-                    ) : (
-                      c?.status !== "closed" && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          // Quiet until the row is pointed at or focused, so one button per row doesn't drown the record.
-                          className={QUIET_ACTION}
-                          aria-label="Promote to Timeline"
-                          onClick={() => setPromoting(e)}
-                        >
-                          Promote
-                        </Button>
-                      )
-                    )}
-                  </TableCell>
+    <div className="grid gap-3">
+      <FilterBar onClear={filtered ? clear : undefined}>
+        <FilterSelect label="Actor" id="audit-actor" any="Anyone" value={actor || undefined} options={actors} labels={actorNames} onChange={(next) => setActor(next ?? "")} />
+        <FilterSelect label="Action" id="audit-action" any="All actions" value={action || undefined} options={CASE_AUDIT_ACTIONS} labels={actionLabel} onChange={(next) => setAction(next ?? "")} />
+        <FilterField label="From" htmlFor="audit-from">
+          <DatePicker id="audit-from" value={from} onChange={setFrom} placeholder="Any time" className={DATE_FILTER} />
+        </FilterField>
+      </FilterBar>
+      <Card className="@container py-0">
+        <Table className="@4xl:table-fixed" aria-label="Case Audit Log">
+          {/* Set widths, so the columns hold still as filters change what's listed; Action takes the rest. */}
+          <colgroup>
+            <col className="@4xl:w-36" />
+            <col className="@4xl:w-36" />
+            <col />
+            <col className="@4xl:w-[28%]" />
+            <col className="@4xl:w-32" />
+          </colgroup>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="pl-4">When</TableHead>
+              <TableHead>Actor</TableHead>
+              <TableHead>Action</TableHead>
+              <TableHead>Before → After</TableHead>
+              <TableHead className="pr-4">
+                <span className="sr-only">Promote</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {entries.isPending &&
+              Array.from({ length: 6 }, (_, i) => (
+                <TableRow key={i} className="hover:bg-transparent" aria-hidden>
+                  <TableCell className="pl-4"><Skeleton className="h-4 w-24" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-3/5" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-2/5" /></TableCell>
+                  <TableCell className="pr-4" />
                 </TableRow>
               ))}
-              {entries.data?.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-muted-foreground">
-                    Nothing matches.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
+            {entries.data?.map((e) => (
+              <TableRow key={e.id} className="group/row">
+                <TableCell className="truncate pl-4 text-muted-foreground">
+                  <Time iso={e.occurredAt} />
+                </TableCell>
+                <TableCell className="truncate" title={e.actor.name}>{e.actor.name}</TableCell>
+                {/* Hashes and URLs wrap anywhere, so the full value stays on the record without widening the table. */}
+                <TableCell className="min-w-48 whitespace-normal [overflow-wrap:anywhere]">
+                  {actionLabel[e.action] ?? e.action}
+                  {e.target !== null && <span className="font-medium"> {shownTarget(e.action, e.target)}</span>}
+                </TableCell>
+                <TableCell className="min-w-48 font-mono text-xs whitespace-normal [overflow-wrap:anywhere]">
+                  {/* An addition or removal has no before and after to show. */}
+                  {(e.before !== null || e.after !== null) && (
+                    <>
+                      {e.before !== null && <span className="text-muted-foreground line-through">{shown(e.action, e.before)}</span>}
+                      {e.before !== null && " "}→ {shown(e.action, e.after)}
+                    </>
+                  )}
+                </TableCell>
+                <TableCell className="pr-4 text-right">
+                  {promoted.has(e.id) ? (
+                    <span className="text-xs text-muted-foreground">On the Timeline</span>
+                  ) : (
+                    c?.status !== "closed" && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        // Quiet until the row is pointed at or focused, so one button per row doesn't drown the record.
+                        className={QUIET_ACTION}
+                        aria-label="Promote to Timeline"
+                        onClick={() => setPromoting(e)}
+                      >
+                        Promote
+                      </Button>
+                    )
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+            {entries.isError && (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={5} className="px-4 whitespace-normal">
+                  <span className="text-destructive">The Audit Log couldn't be loaded.</span>{" "}
+                  <Button variant="link" size="sm" className="h-auto p-0" onClick={() => void entries.refetch()}>
+                    Try again
+                  </Button>
+                </TableCell>
+              </TableRow>
+            )}
+            {entries.data?.length === 0 && (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={5} className="px-4 text-muted-foreground">
+                  {filtered ? "No entries match these filters." : "Nothing recorded yet."}
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
       </Card>
       {promoting && (
         <PromoteDialog
@@ -288,6 +291,6 @@ export function CaseAuditLogPage() {
           onClose={() => setPromoting(null)}
         />
       )}
-    </>
+    </div>
   );
 }

@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
 import { type FormEvent, Fragment, type ReactNode, useState } from "react";
 import { toast } from "sonner";
+import { CaseRef } from "@/components/case-ref";
+import { Time } from "@/components/time";
 import { ItemLink } from "@/components/item-link";
 import { Visibility } from "@/components/visibility";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -48,7 +49,6 @@ import {
   takeResponseActions,
   toolOf,
 } from "@/lib/response-actions";
-import { exactTime, when } from "@/lib/when";
 import { caseRef, type Severity } from "@/lib/cases";
 import { ObservableActions } from "@/routes/cases/observable-actions";
 
@@ -84,14 +84,8 @@ function sentWith(integrations: readonly Eligible[], severity: Severity) {
 /** Whether a send starts Internal: so when every Integration it goes to says so by default. */
 export const startsInternal = (integrations: readonly Eligible[]) => integrations.length > 0 && integrations.every((i) => i.defaults.internal);
 
-/** A time a person can read, with the exact time for pointer and assistive tech alike. */
-function At({ iso }: { iso: string }) {
-  return (
-    <time dateTime={iso} title={exactTime(iso)}>
-      {when(iso)}
-    </time>
-  );
-}
+/** A time a person can read, with the full time on hover and copying on right-click. */
+const At = ({ iso }: { iso: string }) => <Time iso={iso} />;
 
 const list = (names: string[]) => (names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`);
 
@@ -435,10 +429,7 @@ function StateLine({ r, number }: { r: ResponseAction; number: number }) {
         {from && from.number === number ? (
           "this Case"
         ) : from ? (
-          <Link to="/cases/$number" params={{ number: String(from.number) }} className="font-mono underline" title={from.title}>
-            {caseRef(from.number)}
-            <span className="sr-only"> {from.title}</span>
-          </Link>
+          <CaseRef number={from.number} title={from.title} />
         ) : (
           "another Case"
         )}{" "}
@@ -479,10 +470,7 @@ function OriginLine({ r, number }: { r: ResponseAction; number: number }) {
         {from && from.number === number ? (
           "this Case"
         ) : from ? (
-          <Link to="/cases/$number" params={{ number: String(from.number) }} className="font-mono underline" title={from.title}>
-            {caseRef(from.number)}
-            <span className="sr-only"> {from.title}</span>
-          </Link>
+          <CaseRef number={from.number} title={from.title} />
         ) : (
           "another Case"
         )}{" "}
@@ -562,9 +550,7 @@ export function RemoveDialog({ number, r, onClose }: { number: number; r: Respon
               <ul className="grid gap-0.5">
                 {relying.cases.map((c) => (
                   <li key={c.number}>
-                    <Link to="/cases/$number" params={{ number: String(c.number) }} className="font-mono underline">
-                      {caseRef(c.number)}
-                    </Link>{" "}
+                    <CaseRef number={c.number} title={c.title} />{" "}
                     {c.title}
                   </li>
                 ))}
@@ -682,7 +668,7 @@ export function ResponseActionsCard({
   const eligible = query.data?.integrations ?? [];
   const { failed, open, closed } = arrange(all);
   const rows = [...failed, ...open, ...(showClosed ? closed : [])];
-  const columns = 5 + (canMarkInternal ? 1 : 0);
+  const columns = 6 + (canMarkInternal ? 1 : 0);
   /** The error of a Retry on row `id`, shown on that row. */
   const errorOn = (id: string) => (retry.variables === id && retry.error) || null;
 
@@ -707,16 +693,28 @@ export function ResponseActionsCard({
             </AlertDescription>
           </Alert>
         ) : (
-          <Table aria-label="Response Actions">
+          <div className="@container">
+          <Table aria-label="Response Actions" className="@4xl:table-fixed">
+            {/* Once there's room, set widths, so the columns hold still as Response Actions change state live; the Target takes the rest. */}
+            <colgroup>
+              <col />
+              <col className="@4xl:w-48" />
+              <col className="@4xl:w-56" />
+              <col className="@4xl:w-36" />
+              <col className="@4xl:w-32" />
+              {canMarkInternal && <col className="@4xl:w-44" />}
+              <col className="@4xl:w-28" />
+            </colgroup>
             {/* Column headings only once there is something under them. */}
             <TableHeader className={query.isPending || all.length ? undefined : "sr-only"}>
-              <TableRow>
+              <TableRow className="hover:bg-transparent">
                 <TableHead>Target</TableHead>
                 <TableHead>Action</TableHead>
                 <TableHead>State</TableHead>
                 <TableHead>Taken by</TableHead>
+                <TableHead>Taken</TableHead>
                 {canMarkInternal && <TableHead>Visibility</TableHead>}
-                <TableHead className="w-0">
+                <TableHead>
                   <span className="sr-only">Actions</span>
                 </TableHead>
               </TableRow>
@@ -724,7 +722,7 @@ export function ResponseActionsCard({
             <TableBody aria-live="polite" aria-busy={query.isPending}>
               {query.isPending &&
                 [0, 1].map((k) => (
-                  <TableRow key={k}>
+                  <TableRow key={k} className="hover:bg-transparent">
                     <TableCell colSpan={columns}>
                       <Skeleton className="h-8 w-full" />
                     </TableCell>
@@ -774,11 +772,11 @@ export function ResponseActionsCard({
                           )}
                           {r.lastError && <span className="mt-1 block text-xs break-words text-destructive">{r.lastError}</span>}
                         </TableCell>
-                        <TableCell className="min-w-28 text-xs whitespace-normal">
+                        <TableCell className="truncate" title={r.requestedBy.name}>
                           {r.requestedBy.name}
-                          <span className="block text-muted-foreground">
-                            <At iso={r.requestedAt} />
-                          </span>
+                        </TableCell>
+                        <TableCell className="truncate text-muted-foreground">
+                          <At iso={r.requestedAt} />
                         </TableCell>
                         {canMarkInternal && (
                           <TableCell>
@@ -791,7 +789,7 @@ export function ResponseActionsCard({
                             />
                           </TableCell>
                         )}
-                        <TableCell className="w-0 text-right">
+                        <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
                             {/* Failed needs someone, so Retry stays in sight; the rest is in the menu. */}
                             {r.state === "failed" && (r.removalRequestedAt ? canRemove : !readOnly) && (
@@ -836,7 +834,7 @@ export function ResponseActionsCard({
                 );
               })}
               {query.isSuccess && all.length === 0 && (
-                <TableRow>
+                <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={columns} className="text-muted-foreground">
                     No Response Actions yet.
                   </TableCell>
@@ -844,6 +842,7 @@ export function ResponseActionsCard({
               )}
             </TableBody>
           </Table>
+          </div>
         )}
         {lifting && <RemoveDialog number={number} r={lifting} onClose={() => setLifting(null)} />}
         {dismissing && (

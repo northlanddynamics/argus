@@ -1,19 +1,17 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { RefreshCwIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import { Time } from "@/components/time";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { type ItemPage, itemPagesKey, refreshEnrichment } from "@/lib/observables";
-import { exactTime, when } from "@/lib/when";
 
 type FalconIdentity = ItemPage["falconIdentities"][number]["identities"][number];
 type IdentityFacts = NonNullable<FalconIdentity["enrichment"]["identity"]>;
 type Lookup = NonNullable<ItemPage["falconIdentities"][number]["lookup"]>;
-
-const Time = ({ at }: { at: string }) => <span title={exactTime(at)}>{when(at)}</span>;
 
 /** A yes/no fact Falcon may not have given; `flagged` is the answer that deserves attention. */
 function YesNo({ value, flagged, yes = "Yes", no = "No" }: { value: boolean | null; flagged: boolean; yes?: string; no?: string }) {
@@ -93,7 +91,7 @@ export function FalconIdentitiesCard({ item }: { item: ItemPage }) {
                       </Badge>
                     )}
                     <span>
-                      · recorded <Time at={identity.recordedAt} />
+                      · recorded <Time iso={identity.recordedAt} />
                     </span>
                   </p>
                 </div>
@@ -122,7 +120,7 @@ function IdentityLookup({ integration, lookup }: { integration: string; lookup: 
       )}
       {checkedAt && (
         <p className="text-xs text-muted-foreground">
-          Checked <Time at={checkedAt} />
+          Checked <Time iso={checkedAt} />
           {refreshing && " · checking again…"}
         </p>
       )}
@@ -139,7 +137,7 @@ function IdentityEnrichment({ enrichment }: { enrichment: FalconIdentity["enrich
   const { identity, fetchedAt, notFound, error, refreshing } = enrichment;
   const asOf = fetchedAt && (
     <p className="text-xs text-muted-foreground">
-      As of <Time at={fetchedAt} />
+      As of <Time iso={fetchedAt} />
       {refreshing && " · refreshing…"}
     </p>
   );
@@ -178,9 +176,9 @@ function IdentityEnrichment({ enrichment }: { enrichment: FalconIdentity["enrich
         ),
     },
     { label: "Watched", value: <YesNo value={identity.watched} flagged /> },
-    { label: "Password set", value: identity.passwordLastSet && <Time at={identity.passwordLastSet} /> },
+    { label: "Password set", value: identity.passwordLastSet && <Time iso={identity.passwordLastSet} /> },
     { label: "Password expires", value: <YesNo value={identity.passwordNeverExpires === null ? null : !identity.passwordNeverExpires} flagged={false} no="Never" /> },
-    { label: "Last activity", value: identity.lastActivity && <Time at={identity.lastActivity} /> },
+    { label: "Last activity", value: identity.lastActivity && <Time iso={identity.lastActivity} /> },
     { label: "UPN", value: identity.upn },
     { label: "Email", value: identity.email },
     { label: "SAM name", value: identity.samAccountName },

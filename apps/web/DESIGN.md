@@ -249,6 +249,19 @@ Familiar and unremarkable: stock shadcn/ui, added with `bunx shadcn@latest add` 
 - **Sidebar:** shadcn's sidebar in Sidebar Mist: an icon rail, then the work queue. The queue splits open Cases into Assigned to me, Assigned to others and Unassigned; each Member can hide, collapse, sort (Severity or last change) and reorder the sections, remembered per browser. The open Case is a white row with a hairline ring, and rows flash briefly when they change live but hold still under the pointer. It collapses, and the choice is remembered; it starts collapsed in Settings and the Dashboard.
 - **Breadcrumbs:** in the sticky header. The Organization name is medium weight; links are muted until hovered, and the current page is in foreground.
 
+### Tables
+- **Columns:** each column has a set width (a `colgroup`, switched on with a container query once the table has room) and one flexible column, the row's subject, takes the rest, so columns hold still as views, filters, sorting and live updates change the rows. Columns that appear on wider screens keep their cells in the row, emptied, so the others don't shift.
+- **Filters:** one bar above the table: a 12px muted label beside a small select, and Clear once any filter is set.
+- **The row's subject** (Case title, Alert title, file, Task, Member, Organization) is medium weight and underlines on hover where it links; an identifier as subject (Observable value, hash, host) is 12px monospace instead.
+- **People** (Actor, Added by, Owner, Assignee) are plain foreground text, cut short with the full name on hover; a missing person is named in muted text ("Unassigned").
+- **Descriptors** (type, kind, Case Type, sign-in method) are muted text.
+- **Times** are relative ("3 hours ago"), muted, in their own column, never run together with a person. Hovering shows the full time in the viewer's zone and in UTC; right-clicking offers Copy UTC and Copy regional (`Time` in `src/components/time.tsx`). Due dates are days and stay `YYYY-MM-DD`.
+- **Case references** are `CaseRef`: monospace, underlined, the title on hover.
+- **Statuses** are outline badges; Severity keeps its weights.
+- **Missing values** are a muted "—". **Counts and sizes** are right-aligned in tabular figures.
+- **Row actions** are muted until the row is pointed at: icon buttons with a tooltip, or a ⋯ menu where there are several.
+- Header, loading and empty rows don't highlight on hover.
+
 ### Notices
 - **Style:** shadcn's `Alert` in the Amber Notice treatment, placed inline where the problem is (in the dialog, above the table) rather than as a toast.
 

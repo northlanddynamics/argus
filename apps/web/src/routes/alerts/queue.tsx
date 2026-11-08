@@ -2,15 +2,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { XIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { CaseRef } from "@/components/case-ref";
+import { Time } from "@/components/time";
 import { SeverityBadge, StatusBadge } from "@/components/case-badges";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { FilterBar, FilterSelect } from "@/components/filter-bar";
 import { ItemLink } from "@/components/item-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -57,7 +58,6 @@ export const validateAlertQueueSearch = (search: Record<string, unknown>): Alert
 });
 
 /** When an Alert arrived, compactly: "Nov 3, 14:02". */
-const received = (iso: string) => new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
 type BulkKind = "open" | "attach" | "dismiss";
 /** An Alert as the Member saw it when they picked it for an action. */
@@ -281,8 +281,8 @@ export function AlertQueuePage() {
           </AlertDescription>
         </Alert>
       )}
-      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
-        <Filter
+      <FilterBar onClear={filtered ? () => filter(noFilters) : undefined}>
+        <FilterSelect
           label="Alert Status"
           id="alert-status"
           value={status}
@@ -290,25 +290,27 @@ export function AlertQueuePage() {
           labels={{ ...alertStatusLabel, any: "Any" }}
           onChange={(next) => filter({ status: next === "new" ? undefined : next })}
         />
-        <Filter
+        <FilterSelect
           label="Severity"
           id="alert-severity"
-          value={search.severity ?? ""}
-          options={["", ...SEVERITIES] as const}
-          labels={{ "": "Any", ...severityLabel }}
-          onChange={(next) => filter({ severity: next || undefined })}
+          any="Any"
+          value={search.severity}
+          options={SEVERITIES}
+          labels={severityLabel}
+          onChange={(severity) => filter({ severity })}
         />
         {((streams?.length ?? 0) > 1 || search.integration) && (
-          <Filter
+          <FilterSelect
             label="Integration"
             id="alert-integration"
-            value={search.integration ?? ""}
-            options={["", ...(streams?.map((i) => i.id) ?? [])]}
-            labels={{ "": "Any", ...Object.fromEntries(streams?.map((i) => [i.id, i.name]) ?? []) }}
-            onChange={(next) => filter({ integration: next || undefined })}
+            any="Any"
+            value={search.integration}
+            options={streams?.map((i) => i.id) ?? []}
+            labels={Object.fromEntries(streams?.map((i) => [i.id, i.name]) ?? [])}
+            onChange={(integration) => filter({ integration })}
           />
         )}
-      </div>
+      </FilterBar>
       {outcome && <OutcomeNotice outcome={outcome} onReselect={reselect} onDismiss={() => setOutcome(null)} />}
       <OpenCaseFromAlertsDialog
         open={dialog?.open === true && dialog.kind === "open"}
@@ -462,34 +464,20 @@ export function AlertQueuePage() {
                     )}
                     </div>
                   </TableCell>
-                  <TableCell className={cn(narrowHidden, "text-muted-foreground tabular-nums")} title={exactTime(a.receivedAt)}>
-                    <span className="hidden @3xl:inline">{received(a.receivedAt)}</span>
+                  <TableCell className={cn(narrowHidden, "truncate text-muted-foreground")}>
+                    <span className="hidden @3xl:inline"><Time iso={a.receivedAt} /></span>
                   </TableCell>
                   <TableCell className="pr-4">
                     <div className="flex flex-wrap items-center gap-1">
                       <Badge variant="outline">{alertStatusLabel[a.status]}</Badge>
                       {a.case && (
-                        <Link
-                          to="/cases/$number"
-                          params={{ number: String(a.case.number) }}
-                          className="font-mono text-xs underline underline-offset-4"
-                          title={a.case.title}
-                        >
-                          {caseRef(a.case.number)}
-                        </Link>
+                        <CaseRef number={a.case.number} title={a.case.title} />
                       )}
                     </div>
                     {a.correlation && (
                       <div className="mt-0.5 truncate text-xs text-muted-foreground">
                         Related{" "}
-                        <Link
-                          to="/cases/$number"
-                          params={{ number: String(a.correlation.case.number) }}
-                          className="font-mono underline underline-offset-4"
-                          title={a.correlation.case.title}
-                        >
-                          {caseRef(a.correlation.case.number)}
-                        </Link>
+                        <CaseRef number={a.correlation.case.number} title={a.correlation.case.title} />
                         {a.correlation.others > 0 && ` +${a.correlation.others} more`}
                       </div>
                     )}
@@ -943,36 +931,5 @@ function AlertPanel({ id, onClose, onAct }: { id: string; onClose: () => void; o
         />
       </CardContent>
     </Card>
-  );
-}
-
-function Filter<T extends string>({
-  label,
-  id,
-  value,
-  options,
-  labels,
-  onChange,
-}: {
-  label: string;
-  id: string;
-  value: T;
-  options: readonly T[];
-  labels: Record<T, string>;
-  onChange: (value: T) => void;
-}) {
-  return (
-    <div className="flex items-center gap-1.5">
-      <Label htmlFor={id} className="text-xs font-normal text-muted-foreground">
-        {label}
-      </Label>
-      <NativeSelect size="sm" id={id} value={value} onChange={(e) => onChange(e.target.value as T)}>
-        {options.map((o) => (
-          <NativeSelectOption key={o} value={o}>
-            {labels[o]}
-          </NativeSelectOption>
-        ))}
-      </NativeSelect>
-    </div>
   );
 }

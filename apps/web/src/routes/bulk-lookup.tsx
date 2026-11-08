@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useDeferredValue, useMemo, useState } from "react";
+import { CaseRef } from "@/components/case-ref";
 import { ItemLink } from "@/components/item-link";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -126,7 +127,7 @@ export function BulkLookupPage() {
             </div>
             <Table aria-label="Values found">
               <TableHeader>
-                <TableRow>
+                <TableRow className="hover:bg-transparent">
                   <TableHead className="w-8">
                     <Checkbox
                       aria-label="Select all"
@@ -146,7 +147,7 @@ export function BulkLookupPage() {
                   <ResultRow key={keyOf(r)} result={r} selected={selected.has(keyOf(r))} onSelect={(on) => toggle(keyOf(r), on)} />
                 ))}
                 {!results.length && (
-                  <TableRow>
+                  <TableRow className="hover:bg-transparent">
                     <TableCell colSpan={6} className="text-muted-foreground">
                       No IPs, domains, URLs, email addresses or hashes in that text.
                     </TableCell>
@@ -181,7 +182,7 @@ function ResultRow({ result: r, selected, onSelect }: { result: LookupResult; se
       <TableCell>
         <Checkbox aria-label={`Select ${r.value}`} checked={selected} onCheckedChange={(on) => onSelect(on === true)} />
       </TableCell>
-      <TableCell className="max-w-0 min-w-48 font-mono text-sm break-all whitespace-normal" title={r.value}>
+      <TableCell className="max-w-0 min-w-48 font-mono text-xs break-all whitespace-normal" title={r.value}>
         {r.known ? (
           <ItemLink kind="observable" id={r.known.id} className="hover:underline">
             {shown}
@@ -196,9 +197,7 @@ function ResultRow({ result: r, selected, onSelect }: { result: LookupResult; se
         {r.known?.cases.length ? (
           <span className="flex flex-wrap gap-x-2 gap-y-0.5">
             {r.known.cases.slice(0, 5).map((c) => (
-              <Link key={c.number} to="/cases/$number" params={{ number: String(c.number) }} className="font-mono text-xs hover:underline" title={c.title}>
-                {caseRef(c.number)}
-              </Link>
+              <CaseRef key={c.number} number={c.number} title={c.title} />
             ))}
             {r.known.cases.length > 5 && <span className="text-xs text-muted-foreground">+{r.known.cases.length - 5} more</span>}
           </span>
@@ -208,7 +207,7 @@ function ResultRow({ result: r, selected, onSelect }: { result: LookupResult; se
       </TableCell>
       <TableCell className="hidden md:table-cell">
         {r.known?.alerts.length ? (
-          <span className="text-sm" title={r.known.alerts.map((a) => a.title).join("\n")}>
+          <span className="tabular-nums" title={r.known.alerts.map((a) => a.title).join("\n")}>
             {plural(r.known.alerts.length, "Alert")}
           </span>
         ) : (

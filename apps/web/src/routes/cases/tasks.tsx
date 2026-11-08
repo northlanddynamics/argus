@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouteContext } from "@tanstack/react-router";
+import { PencilIcon, PlusIcon } from "lucide-react";
 import { useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -8,11 +9,11 @@ import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/componen
 import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api, errorMessage } from "@/lib/api";
+import { RowIconButton } from "@/components/row-icon-button";
 import { Visibility } from "@/components/visibility";
 import { canMarkInternal, canParticipate, caseKey, caseQuery, isReadOnly } from "@/lib/cases";
 import { type TaskView, tasksKey, tasksQuery } from "@/lib/tasks";
 import { useCaseNumber } from "@/routes/cases/case-layout";
-import { QUIET_ACTION } from "@/routes/cases/rail";
 import { TaskDialog } from "@/routes/cases/task-dialog";
 
 /** Case · Tasks: who owns what, when it's due, what's done, and (for Members) what Guests can see. */
@@ -55,7 +56,10 @@ export function CaseTasksPage() {
         </CardTitle>
         {!readOnly && (
           <CardAction>
-            <Button onClick={() => setEditing("new")}>+ New Task</Button>
+            <Button onClick={() => setEditing("new")}>
+              <PlusIcon aria-hidden />
+              New Task
+            </Button>
           </CardAction>
         )}
       </CardHeader>
@@ -65,15 +69,27 @@ export function CaseTasksPage() {
             <AlertDescription>{setDone.error.message}</AlertDescription>
           </Alert>
         )}
-        <Table className="@7xl:table-fixed">
+        <Table className="@3xl:table-fixed">
+          {/* Set widths, so the columns hold still as Tasks are added and done. On a wide page the Task
+              column stops at 36rem and the last one takes the slack, keeping Owner, Due and Edit beside the title. */}
+          <colgroup>
+            <col className="@3xl:w-14" />
+            <col className="@7xl:w-[36rem]" />
+            <col className="@3xl:w-48" />
+            <col className="@3xl:w-44" />
+            {membersView && <col className="@3xl:w-44" />}
+            <col className="@3xl:w-12 @7xl:w-auto" />
+          </colgroup>
           <TableHeader>
-            <TableRow>
-              <TableHead className="w-12">Done</TableHead>
-              <TableHead className="@7xl:w-[36rem]">Task</TableHead>
-              <TableHead className="@7xl:w-44">Owner</TableHead>
-              <TableHead className="@7xl:w-48">Due</TableHead>
-              {membersView && <TableHead className="@7xl:w-48">Visibility</TableHead>}
-              <TableHead />
+            <TableRow className="hover:bg-transparent">
+              <TableHead>Done</TableHead>
+              <TableHead>Task</TableHead>
+              <TableHead>Owner</TableHead>
+              <TableHead>Due</TableHead>
+              {membersView && <TableHead>Visibility</TableHead>}
+              <TableHead>
+                <span className="sr-only">Edit</span>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -91,14 +107,17 @@ export function CaseTasksPage() {
                   <div className="font-medium">{t.title}</div>
                   {t.description && <div className="text-xs text-muted-foreground">{t.description}</div>}
                 </TableCell>
-                <TableCell>{t.owner.name}{t.owner.id === me.user.id && me.guest ? " (you)" : ""}</TableCell>
-                <TableCell>
+                <TableCell className="truncate" title={t.owner.name}>
+                  {t.owner.name}
+                  {t.owner.id === me.user.id && me.guest ? " (you)" : ""}
+                </TableCell>
+                <TableCell className="tabular-nums">
                   {t.overdue ? (
                     <Badge variant="outline" className="border-overdue-border text-overdue">
                       Overdue · {t.dueDate}
                     </Badge>
                   ) : (
-                    (t.dueDate ?? "—")
+                    (t.dueDate ?? <span className="text-muted-foreground">—</span>)
                   )}
                 </TableCell>
                 {membersView && (
@@ -114,15 +133,15 @@ export function CaseTasksPage() {
                 )}
                 <TableCell className="text-right @7xl:text-left">
                   {!readOnly && (
-                    <Button variant="ghost" size="sm" className={QUIET_ACTION} aria-label={`Edit ${t.title}`} onClick={() => setEditing(t)}>
-                      Edit
-                    </Button>
+                    <RowIconButton label="Edit Task" aria-label={`Edit ${t.title}`} onClick={() => setEditing(t)}>
+                      <PencilIcon />
+                    </RowIconButton>
                   )}
                 </TableCell>
               </TableRow>
             ))}
             {tasks.data?.length === 0 && (
-              <TableRow>
+              <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={columns} className="text-muted-foreground">
                   No Tasks yet.
                 </TableCell>

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouteContext } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
+import { Time } from "@/components/time";
 import { AppHeader } from "@/components/app-header";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -56,10 +57,10 @@ export function OperatorConsolePage() {
             <CardContent>
               <Table>
                 <TableHeader>
-                  <TableRow>
+                  <TableRow className="hover:bg-transparent">
                     <TableHead>Organization</TableHead>
                     <TableHead>Owner</TableHead>
-                    <TableHead>Members</TableHead>
+                    <TableHead className="text-right">Members</TableHead>
                     <TableHead>Created</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -68,17 +69,19 @@ export function OperatorConsolePage() {
                     <TableRow key={org.id}>
                       <TableCell className="font-medium">{org.name}</TableCell>
                       <TableCell>
-                        <div>{org.owner?.email ?? "—"}</div>
+                        <div className="truncate">{org.owner?.email ?? <span className="text-muted-foreground">—</span>}</div>
                         <div className="text-xs text-muted-foreground">
                           {org.owner?.status === "active" ? "Active" : org.owner ? "Invite pending" : ""}
                         </div>
                       </TableCell>
-                      <TableCell>{org.members}</TableCell>
-                      <TableCell className="text-muted-foreground">{org.createdAt.slice(0, 10)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{org.members}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        <Time iso={org.createdAt} />
+                      </TableCell>
                     </TableRow>
                   ))}
                   {organizations.data?.organizations.length === 0 && (
-                    <TableRow>
+                    <TableRow className="hover:bg-transparent">
                       <TableCell colSpan={4} className="text-muted-foreground">
                         No Organizations yet.
                       </TableCell>
