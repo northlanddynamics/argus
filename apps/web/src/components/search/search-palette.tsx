@@ -4,7 +4,8 @@ import { ArrowRightIcon, SearchIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { KindFilter } from "@/components/search/kind-filter";
-import { SearchHitRow, useOpenHit } from "@/components/search/search-hit";
+import { ObservableMenu } from "@/components/observable-menu";
+import { hitObservable, SearchHitRow, useOpenHit } from "@/components/search/search-hit";
 import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
@@ -152,17 +153,18 @@ export function SearchPalette() {
               {hits.length > 0 && (
                 <CommandGroup heading={hits.length > 1 ? "Top results" : undefined}>
                   {hits.map((hit) => (
-                    <CommandItem
-                      key={hitKey(hit)}
-                      value={hitKey(hit)}
-                      onSelect={() => {
-                        leave();
-                        void openHit(hit);
-                      }}
-                      className="group/hit py-1.5 [&>svg:last-child]:hidden"
-                    >
-                      <SearchHitRow hit={hit} query={settled} showKind />
-                    </CommandItem>
+                    <ObservableMenu key={hitKey(hit)} observable={hitObservable(hit)}>
+                      <CommandItem
+                        value={hitKey(hit)}
+                        onSelect={() => {
+                          leave();
+                          void openHit(hit);
+                        }}
+                        className="group/hit py-1.5 [&>svg:last-child]:hidden"
+                      >
+                        <SearchHitRow hit={hit} query={settled} showKind />
+                      </CommandItem>
+                    </ObservableMenu>
                   ))}
                 </CommandGroup>
               )}

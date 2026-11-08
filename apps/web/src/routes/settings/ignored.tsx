@@ -1,3 +1,4 @@
+import { ObservableMenu } from "@/components/observable-menu";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Time } from "@/components/time";
@@ -85,9 +86,11 @@ export function IgnoredObservablesPage() {
               {list.data?.map((e) => (
                 <TableRow key={`${e.kind}:${e.id}`}>
                   <TableCell className="font-mono text-xs break-all whitespace-normal">
-                    <ItemLink kind={e.kind} id={e.id} className="hover:underline" title={e.value}>
-                      {shown(e)}
-                    </ItemLink>
+                    <ObservableMenu observable={e.kind === "observable" ? { type: e.type as ObservableType, value: e.value } : null}>
+                      <ItemLink kind={e.kind} id={e.id} className="hover:underline" title={e.value}>
+                        {shown(e)}
+                      </ItemLink>
+                    </ObservableMenu>
                   </TableCell>
                   <TableCell className="text-muted-foreground">{typeLabel(e)}</TableCell>
                   <TableCell className={cn(fromSm, "truncate")} title={e.by.name}>

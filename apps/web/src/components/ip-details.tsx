@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { CopyIcon, ExternalLinkIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
 import { toast } from "sonner";
+import { ObservableMenu } from "@/components/observable-menu";
 import { Time } from "@/components/time";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { meQuery } from "@/lib/api";
+import { useHoverCardOpen } from "@/lib/hover-card";
 import { asTypeLabel, type IpDetails, type IpLookup, ipLookupQuery, useRefreshIpLookup } from "@/lib/ip-lookups";
 import { canManage } from "@/lib/roles";
 import { cn } from "@/lib/utils";
@@ -263,10 +265,11 @@ function IpPopup({ ip, admin }: { ip: string; admin: boolean }) {
  */
 export function IpHoverCard({ ip, enabled = true, children }: { ip: string; enabled?: boolean; children: ReactElement }) {
   const me = useQuery(meQuery).data;
+  const popup = useHoverCardOpen();
   const role = me?.organization?.role;
   if (!enabled || !role) return children;
   return (
-    <HoverCard openDelay={400} closeDelay={150}>
+    <HoverCard openDelay={400} closeDelay={150} {...popup}>
       <HoverCardTrigger asChild>{children}</HoverCardTrigger>
       <HoverCardContent className="w-80" side="bottom" align="start" collisionPadding={16}>
         <IpPopup ip={ip} admin={canManage(role)} />
@@ -275,13 +278,15 @@ export function IpHoverCard({ ip, enabled = true, children }: { ip: string; enab
   );
 }
 
-/** Plain IP text, focusable, with the IP context popup. */
+/** Plain IP text, focusable, with the IP context popup and the Observable right-click menu. */
 export function IpText({ ip, className }: { ip: string; className?: string }) {
   return (
     <IpHoverCard ip={ip}>
-      <span tabIndex={0} className={cn("font-mono text-xs underline decoration-dotted underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-ring/50", className)}>
-        {ip}
-      </span>
+      <ObservableMenu observable={{ type: "ip", value: ip }}>
+        <span tabIndex={0} className={cn("font-mono text-xs underline decoration-dotted underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-ring/50", className)}>
+          {ip}
+        </span>
+      </ObservableMenu>
     </IpHoverCard>
   );
 }

@@ -1,3 +1,4 @@
+import { ObservableMenu } from "@/components/observable-menu";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { CopyIcon, ExternalLinkIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
@@ -10,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { meQuery } from "@/lib/api";
+import { useHoverCardOpen } from "@/lib/hover-card";
 import { formatBytes } from "@/lib/evidence";
 import { enginesThatAnalysed, type FileReport, type HashLookup, hashLookupQuery, useRefreshHashLookup } from "@/lib/hash-lookups";
 import { cn } from "@/lib/utils";
@@ -257,9 +259,10 @@ function HashPopup({ hash }: { hash: string }) {
  */
 export function HashHoverCard({ hash, enabled = true, children }: { hash: string; enabled?: boolean; children: ReactElement }) {
   const me = useQuery(meQuery).data;
+  const popup = useHoverCardOpen();
   if (!enabled || !me?.organization) return children;
   return (
-    <HoverCard openDelay={400} closeDelay={150}>
+    <HoverCard openDelay={400} closeDelay={150} {...popup}>
       <HoverCardTrigger asChild>{children}</HoverCardTrigger>
       <HoverCardContent className="max-h-(--radix-hover-card-content-available-height) w-80 overflow-y-auto" side="bottom" align="start" collisionPadding={16}>
         <HashPopup hash={hash} />
@@ -285,12 +288,17 @@ export function HashDetailsCard({ hash }: { hash: string }) {
 }
 
 /** Plain hash text, focusable, with the hash context popup. `children` is how it is shown, the hash itself by default. */
+/** Which hash it is, by its length: 32 hex digits MD5, 40 SHA-1, otherwise SHA-256. */
+const hashType = (hash: string) => (hash.length === 32 ? "md5" : hash.length === 40 ? "sha1" : "sha256");
+
 export function HashText({ hash, className, children }: { hash: string; className?: string; children?: ReactNode }) {
   return (
     <HashHoverCard hash={hash}>
-      <span tabIndex={0} className={cn("font-mono text-xs underline decoration-dotted underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-ring/50", className)}>
-        {children ?? hash}
-      </span>
+      <ObservableMenu observable={{ type: hashType(hash), value: hash }}>
+        <span tabIndex={0} className={cn("font-mono text-xs underline decoration-dotted underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-ring/50", className)}>
+          {children ?? hash}
+        </span>
+      </ObservableMenu>
     </HashHoverCard>
   );
 }

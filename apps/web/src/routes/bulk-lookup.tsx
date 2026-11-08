@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { HashText } from "@/components/hash-details";
 import { IpText } from "@/components/ip-details";
 import { hasContextPopup, ObservableHoverCard } from "@/components/observable-details";
+import { ObservableMenu } from "@/components/observable-menu";
 import { Link } from "@tanstack/react-router";
 import { useDeferredValue, useMemo, useState } from "react";
 import { CaseRef } from "@/components/case-ref";
@@ -188,9 +189,11 @@ function ResultRow({ result: r, selected, onSelect }: { result: LookupResult; se
       <TableCell className="max-w-0 min-w-48 font-mono text-xs break-all whitespace-normal" title={r.value}>
         {r.known ? (
           <ObservableHoverCard type={r.type} value={r.value}>
-            <ItemLink kind="observable" id={r.known.id} className="hover:underline">
-              {shown}
-            </ItemLink>
+            <ObservableMenu observable={r}>
+              <ItemLink kind="observable" id={r.known.id} className="hover:underline">
+                {shown}
+              </ItemLink>
+            </ObservableMenu>
           </ObservableHoverCard>
         ) : r.type === "ip" ? (
           <IpText ip={r.value} className="no-underline" />
@@ -199,7 +202,9 @@ function ResultRow({ result: r, selected, onSelect }: { result: LookupResult; se
             {shown}
           </HashText>
         ) : (
-          shown
+          <ObservableMenu observable={r}>
+            <span>{shown}</span>
+          </ObservableMenu>
         )}
       </TableCell>
       <TableCell className="text-muted-foreground">{observableTypeLabel[r.type]}</TableCell>

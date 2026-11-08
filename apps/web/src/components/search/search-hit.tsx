@@ -1,3 +1,4 @@
+import { ObservableMenu } from "@/components/observable-menu";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   AtSignIcon,
@@ -197,20 +198,24 @@ export function useOpenHit(guest: boolean) {
   };
 }
 
-/** A result as a link to where it opens. */
+/** An Observable result's value, for its right-click menu. */
+export const hitObservable = (hit: SearchHit) => (hit.kind === "observables" ? hit.item : null);
+
+/** A result as a link to where it opens; an Observable's has its right-click menu. */
 export function SearchHitLink({ hit, guest, className, children }: { hit: SearchHit; guest: boolean; className?: string; children: ReactNode }) {
   const target = targetOf(hit, guest);
   const classes = cn("block rounded-md px-2 py-1.5 outline-none hover:bg-muted focus-visible:bg-muted", className);
-  if (target.to === "/alerts") {
-    return (
-      <Link to={target.to} search={target.search} className={classes}>
-        {children}
-      </Link>
-    );
-  }
   return (
-    <Link to={target.to} params={target.params} className={classes}>
-      {children}
-    </Link>
+    <ObservableMenu observable={hitObservable(hit)}>
+      {target.to === "/alerts" ? (
+        <Link to={target.to} search={target.search} className={classes}>
+          {children}
+        </Link>
+      ) : (
+        <Link to={target.to} params={target.params} className={classes}>
+          {children}
+        </Link>
+      )}
+    </ObservableMenu>
   );
 }

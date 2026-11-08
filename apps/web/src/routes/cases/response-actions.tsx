@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ObservableHoverCard } from "@/components/observable-details";
+import { ObservableMenu } from "@/components/observable-menu";
 import { type FormEvent, Fragment, type ReactNode, useState } from "react";
 import { toast } from "sonner";
 import { CaseRef } from "@/components/case-ref";
@@ -738,9 +739,11 @@ export function ResponseActionsCard({
                           {r.observable ? (
                             <>
                               <ObservableHoverCard type={r.observable.type} value={r.observable.value}>
-                                <ItemLink kind="observable" id={r.observable.id} className="block font-mono text-xs break-all hover:underline" title={r.observable.value}>
-                                  {shownObservable(r.observable.type, r.observable.value)}
-                                </ItemLink>
+                                <ObservableMenu observable={r.observable}>
+                                  <ItemLink kind="observable" id={r.observable.id} className="block font-mono text-xs break-all hover:underline" title={r.observable.value}>
+                                    {shownObservable(r.observable.type, r.observable.value)}
+                                  </ItemLink>
+                                </ObservableMenu>
                               </ObservableHoverCard>
                               <span className="text-xs text-muted-foreground">{observableTypeLabel[r.observable.type]}</span>
                             </>

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { HashDetailsCard } from "@/components/hash-details";
 import { IpDetailsCard, IpText } from "@/components/ip-details";
 import { hasContextPopup } from "@/components/observable-details";
+import { ObservableMenu } from "@/components/observable-menu";
 import { Link, useParams, useRouteContext } from "@tanstack/react-router";
 import { BellOffIcon, CheckIcon, CopyIcon, ExternalLinkIcon, FingerprintIcon, LockIcon, MonitorIcon, RefreshCwIcon, SearchIcon, UserIcon } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
@@ -127,9 +128,11 @@ function ItemPageView({ kind, id }: { kind: ItemKind; id: string }) {
           {noun[kind]} · {typeLabel(kind, item)}
         </p>
         <div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-2">
-          <h1 className="min-w-0 flex-1 basis-80 font-mono text-2xl font-semibold tracking-tight [overflow-wrap:anywhere]" title={item.value}>
-            <Breakable text={shown(kind, item)} />
-          </h1>
+          <ObservableMenu observable={kind === "observable" ? { type: item.type as ObservableType, value: item.value } : null}>
+            <h1 className="min-w-0 flex-1 basis-80 font-mono text-2xl font-semibold tracking-tight [overflow-wrap:anywhere]" title={item.value}>
+              <Breakable text={shown(kind, item)} />
+            </h1>
+          </ObservableMenu>
           <div className="flex shrink-0 items-center gap-1">
             <CopyButton text={shown(kind, item)} />
             <Button variant="outline" size="sm" asChild>
