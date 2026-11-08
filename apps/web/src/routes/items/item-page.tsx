@@ -3,6 +3,7 @@ import { Link, useParams, useRouteContext } from "@tanstack/react-router";
 import { BellOffIcon, CheckIcon, CopyIcon, ExternalLinkIcon, FingerprintIcon, LockIcon, MonitorIcon, RefreshCwIcon, SearchIcon, UserIcon } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
 import { CaseRef } from "@/components/case-ref";
+import { ItemLink } from "@/components/item-link";
 import { Time } from "@/components/time";
 import { SeverityBadge, StatusBadge } from "@/components/case-badges";
 import { observableIcon } from "@/components/search/search-hit";
@@ -571,7 +572,14 @@ function AlertsCard({ item }: { item: ItemPage }) {
                   <Link to="/alerts" search={{ status: "any", alert: a.id }} className="font-medium hover:underline" title={a.externalId}>
                     {a.title}
                   </Link>
-                  {a.host && <span className="block font-mono text-xs text-muted-foreground">{a.host}</span>}
+                  {a.host &&
+                    (a.hostAsset && a.hostAsset.id !== item.id ? (
+                      <ItemLink kind="asset" id={a.hostAsset.id} className="block font-mono text-xs text-muted-foreground hover:underline" aria-label={`Host ${a.host}`}>
+                        {a.host}
+                      </ItemLink>
+                    ) : (
+                      <span className="block font-mono text-xs text-muted-foreground">{a.host}</span>
+                    ))}
                 </TableCell>
                 <TableCell>
                   <SeverityBadge severity={a.severity} />

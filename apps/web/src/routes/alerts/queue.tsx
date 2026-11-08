@@ -455,11 +455,25 @@ export function AlertQueuePage() {
                   <TableCell className={cn(narrowHidden, "font-mono text-xs")}>
                     <div className="hidden @3xl:block">
                     <div className="truncate" title={a.host ?? undefined}>
-                      {a.host ?? <span className="font-sans text-muted-foreground">No host</span>}
+                      {a.host === null ? (
+                        <span className="font-sans text-muted-foreground">No host</span>
+                      ) : a.hostAsset ? (
+                        <ItemLink kind="asset" id={a.hostAsset.id} className="hover:underline" aria-label={`Host ${a.host}`}>
+                          {a.host}
+                        </ItemLink>
+                      ) : (
+                        a.host
+                      )}
                     </div>
                     {a.userName && (
                       <div className="truncate text-muted-foreground" title={a.userName}>
-                        {a.userName}
+                        {a.userAsset ? (
+                          <ItemLink kind="asset" id={a.userAsset.id} className="hover:underline" aria-label={`Account ${a.userName}`}>
+                            {a.userName}
+                          </ItemLink>
+                        ) : (
+                          a.userName
+                        )}
                       </div>
                     )}
                     </div>
