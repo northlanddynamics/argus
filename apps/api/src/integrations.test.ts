@@ -276,6 +276,72 @@ describe("Providers and Response Actions", () => {
   });
 });
 
+describe("Deleting an Integration", () => {
+  test("an Admin deletes one: it leaves Settings, can't be changed again, and the deletion is in the Organization Audit Log", async () => {
+    const a = await acme();
+    const id = await a.addProd();
+    const lab = await a.addProd({ name: "CrowdStrike — Lab", clientId: "falcon-lab-0009" });
+    const param = { id };
+    expect((await a.ana.api.integrations[":id"].$delete({ param })).status).toBe(403);
+
+    expect((await a.admin.api.integrations[":id"].$delete({ param })).status).toBe(200);
+    expect((await a.integrations()).map((i) => i.id)).toEqual([lab]);
+    expect((await a.integrations(a.ana)).map((i) => i.id)).toEqual([lab]);
+    expect((await a.admin.api.integrations[":id"].$delete({ param })).status).toBe(404);
+    expect((await a.admin.api.integrations[":id"].resume.$post({ param })).status).toBe(404);
+    expect((await a.admin.api.integrations[":id"].credentials.$put({ param, json: { clientId: "x", clientSecret: "y" } })).status).toBe(404);
+
+    expect((await a.orgAudit())[0]).toMatchObject({
+      action: "integration.deleted",
+      actor: { name: "Adam Admin" },
+      target: "CrowdStrike — Prod",
+      before: "CrowdStrike US-1 · client …0001",
+      after: null,
+    });
+    // Kept, turned off for good (ADR 0003, 0013).
+    const [row] = await a.t.deps.db.execute<{ paused: boolean; write_back: boolean; deleted_at: Date | null }>(
+      sql`SELECT paused, write_back, deleted_at FROM integrations WHERE id = ${id}`,
+    );
+    expect(row).toMatchObject({ paused: true, write_back: false });
+    expect(row!.deleted_at).not.toBeNull();
+  });
+
+  test("its stream is let go for good, and the Alerts it brought in stay in the queue under its name", async () => {
+    const a = await acme();
+    const id = await a.addProd();
+    const stream = a.falcon.tenant(CLIENT_ID);
+    const w = a.worker();
+    await w.tick();
+    stream.detection("EppDetectionSummaryEvent", "ldt:0", { Name: "Kept" });
+    await stream.drained();
+
+    await a.admin.api.integrations[":id"].$delete({ param: { id } });
+    await w.tick();
+    expect(stream.connections).toBe(0);
+    await w.tick();
+    expect(stream.opened).toHaveLength(1);
+    expect(await a.queue()).toMatchObject([{ title: "Kept", integration: { id, name: "CrowdStrike — Prod" } }]);
+  });
+
+  test("its name is free again for a new Integration", async () => {
+    const a = await acme();
+    const id = await a.addProd();
+    await a.admin.api.integrations[":id"].$delete({ param: { id } });
+    const again = await a.addProd({ clientId: "falcon-client-0002" });
+    expect(again).not.toBe(id);
+    expect((await a.integrations()).map((i) => [i.id, i.name])).toEqual([[again, "CrowdStrike — Prod"]]);
+  });
+
+  test("another Organization's Integration is not found", async () => {
+    const a = await acme();
+    const id = await a.addProd();
+    await a.t.inviteOwner("Globex", "owner@globex.example");
+    const globex = await a.t.acceptInvite("owner@globex.example", PASSWORD, "Gil Globex");
+    expect((await globex.api.integrations[":id"].$delete({ param: { id } })).status).toBe(404);
+    expect(await a.integrations()).toHaveLength(1);
+  });
+});
+
 describe("Event Streams ingest", () => {
   test("endpoint, identity and mobile detections become Alerts with Status New; other events are skipped", async () => {
     const a = await acme();

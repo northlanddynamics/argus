@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { NotPermitted, organizationPolicy } from "../access/policy";
 import { type FalconCloud, falconCloudLabel } from "../alerts/vocabulary";
 import { recordOrgAudit } from "../audit/org-audit-log";
@@ -17,7 +17,7 @@ import { DEFAULT_FALCON_IOC_DEFAULTS, type FalconIocDefaults, FALCON_IOC_PLATFOR
 /**
  * Integrations as Admins manage them: add one, rotate its credentials, pause and resume it, allow or
  * deny write-back to Falcon, turn Response Actions on or off and set what they are sent with, turn
- * Host containment on or off (ADR 0009), each recorded in the Organization
+ * Host containment on or off (ADR 0009), delete it (ADR 0013), each recorded in the Organization
  * Audit Log. What an Integration can do comes from its Provider (`vocabulary.ts`, ADR 0007). Every
  * Member sees the Organization's Integrations and how their streams are doing; only Admins see which
  * credentials are in use.
@@ -63,6 +63,20 @@ export class NotSupportedByProvider extends Error {
 /** The defaults asked for can't be used, such as no platform at all. */
 export class InvalidDefaults extends Error {}
 
+/**
+ * Response Actions taken through the Integration may still be held in its tool, so it can't be deleted
+ * until they are removed from their Cases: nothing could remove them afterwards (ADR 0013).
+ */
+export class IntegrationHoldsResponseActions extends Error {
+  constructor(count: number) {
+    super(
+      count === 1
+        ? "1 Response Action taken through this Integration is still in place; remove it from its Case first"
+        : `${count} Response Actions taken through this Integration are still in place; remove them from their Cases first`,
+    );
+  }
+}
+
 export class IntegrationNameTaken extends Error {
   constructor(name: string) {
     super(`An Integration is already called "${name}"`);
@@ -100,12 +114,12 @@ const fits = (provider: Provider, c: ProviderCredentials[Provider]) => (provider
 
 const actorOf = (me: Membership) => ({ type: "member" as const, id: me.userId, name: me.name });
 
-/** `me`'s Organization's Integration `id`, locked for the change about to be made. */
+/** `me`'s Organization's Integration `id`, unless deleted, locked for the change about to be made. */
 async function find(tx: Tx, me: Membership, id: string) {
   const [row] = await tx
     .select()
     .from(integrations)
-    .where(and(eq(integrations.id, id), eq(integrations.organizationId, me.organizationId)))
+    .where(and(eq(integrations.id, id), eq(integrations.organizationId, me.organizationId), isNull(integrations.deletedAt)))
     .for("update")
     .limit(1);
   if (!row) throw new IntegrationNotFound();
@@ -168,13 +182,13 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
   const seal = (provider: Provider, c: ProviderCredentials[Provider]) => sealCredentials(sealer, provider, c);
 
   return {
-    /** The Organization's Integrations, oldest first. */
+    /** The Organization's Integrations, oldest first; deleted ones are left out. */
     async list(me: Membership) {
       const admin = organizationPolicy.canManageIntegrations(me);
       const rows = await db
         .select()
         .from(integrations)
-        .where(eq(integrations.organizationId, me.organizationId))
+        .where(and(eq(integrations.organizationId, me.organizationId), isNull(integrations.deletedAt)))
         .orderBy(asc(integrations.createdAt), asc(integrations.id));
       const writeBacks = await writeBackCounts(
         db,
@@ -443,6 +457,49 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
           target: row.name,
           before: defaultsLabel(before, row.provider),
           after: defaultsLabel(next, row.provider),
+        });
+        await publish(tx, { kind: "alerts", organizationId: me.organizationId });
+      });
+    },
+
+    /**
+     * Deletes the Integration (ADR 0013): it is turned off for good (paused, write-back, Response
+     * Actions and Host containment off), leaves Settings and frees its name, but is kept, so the
+     * Alerts, Response Actions and lookups made through it still say where they came from. Refused
+     * while Response Actions taken through it may still be held in its tool. Admins only.
+     */
+    async delete(me: Membership, id: string) {
+      if (!organizationPolicy.canManageIntegrations(me)) throw new NotPermitted();
+      await db.transaction(async (tx) => {
+        const row = await find(tx, me, id);
+        const r = responseActionsTable;
+        const [held] = await tx
+          .select({ count: sql<number>`count(*)::int` })
+          .from(r)
+          .where(
+            and(
+              eq(r.integrationId, id),
+              // What `response_actions_one_created_idx` counts as held in the tool.
+              sql`${r.kind} <> 'falcon_containment_lift' AND ${r.origin} = 'created' AND (${r.state} IN ('pending', 'active', 'removing') OR (${r.state} = 'failed' AND ${r.removalRequestedAt} IS NOT NULL))`,
+            ),
+          );
+        if (held!.count > 0) throw new IntegrationHoldsResponseActions(held!.count);
+        const now = clock.now();
+        await tx
+          .update(integrations)
+          .set({ deletedAt: now, deletedById: me.userId, paused: true, writeBack: false, responseActions: false, hostContainment: false })
+          .where(eq(integrations.id, id));
+        await recordOrgAudit(tx, {
+          organizationId: me.organizationId,
+          occurredAt: now,
+          actor: actorOf(me),
+          category: "integrations",
+          action: "integration.deleted",
+          target: row.name,
+          before: [
+            row.provider === "crowdstrike" && row.cloud ? `${providerLabel[row.provider]} ${falconCloudLabel[row.cloud]}` : providerLabel[row.provider],
+            credentialsLabel(row.provider, row.clientIdHint),
+          ].join(" · "),
         });
         await publish(tx, { kind: "alerts", organizationId: me.organizationId });
       });

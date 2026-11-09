@@ -246,6 +246,10 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
       ok(await api.integrations[":id"]["host-containment"].$put({ param: { id: i.id }, json: { enabled } }), "Could not change Host containment"),
     onSettled: () => queryClient.invalidateQueries({ queryKey: integrationsKey }),
   });
+  const remove = useMutation({
+    mutationFn: async () => ok(await api.integrations[":id"].$delete({ param: { id: i.id } }), "Could not delete the Integration"),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: integrationsKey }),
+  });
   const { receivesAlerts, writesBack, responseActions } = i.capabilities;
   const word = healthWord(i);
   return (
@@ -263,6 +267,7 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
             {i.paused ? "Resume" : "Pause"}
           </Button>
           <RotateCredentialsDialog integration={i} />
+          <DeleteIntegrationDialog integration={i} onDelete={() => remove.mutate()} pending={remove.isPending} />
         </CardAction>
       </CardHeader>
       <CardContent className="grid gap-4">
@@ -305,6 +310,11 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
         {setPaused.error && (
           <Alert variant="destructive">
             <AlertDescription>{setPaused.error.message}</AlertDescription>
+          </Alert>
+        )}
+        {remove.error && (
+          <Alert variant="destructive">
+            <AlertDescription>{remove.error.message}</AlertDescription>
           </Alert>
         )}
         {writesBack && (
@@ -421,6 +431,50 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
 }
 
 /** The Integration's write-backs to Falcon by where they stand; sent, skipped and failed over the last 24 hours. */
+const capitalized = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+/**
+ * Deleting an Integration (ADR 0013), confirmed first: it stops for good and leaves this page, but
+ * what came in or was done through it stays where it is.
+ */
+function DeleteIntegrationDialog({ integration: i, onDelete, pending }: { integration: IntegrationView; onDelete: () => void; pending: boolean }) {
+  const { receivesAlerts, responseActions, looksUpIps } = i.capabilities;
+  const kept = [
+    receivesAlerts && "the Alerts it brought in",
+    responseActions && "the Response Actions taken through it",
+    looksUpIps && "the IP details already looked up",
+  ].filter((k): k is string => Boolean(k));
+  const stops = receivesAlerts
+    ? "Argus stops reading its Alert stream and writing back to it."
+    : looksUpIps
+      ? "Argus stops looking IPs up through it."
+      : "Argus stops taking Response Actions through it.";
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button variant="outline" size="sm" disabled={pending}>
+          Delete
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete {i.name}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            {stops} {kept.length > 0 && `${capitalized(kept.join(" and "))} stay, under its name. `}It can't be resumed: to connect again, add a
+            new Integration.{responseActions && " Any Response Actions taken through it that are still in place must be removed from their Cases first."}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" onClick={onDelete}>
+            Delete Integration
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 function WriteBacks({ counts: w }: { counts: IntegrationView["writeBacks"] }) {
   return (
     <div className="grid gap-2" data-testid="write-backs">

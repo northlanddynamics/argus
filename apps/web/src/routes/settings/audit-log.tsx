@@ -39,6 +39,7 @@ const actionLabels: Record<string, string> = {
   "integration.host_containment_enabled": "Turned on Host containment for",
   "integration.host_containment_disabled": "Turned off Host containment for",
   "integration.stream_gap": "Gap in the stream of",
+  "integration.deleted": "Deleted Integration",
   "sso.enabled": "Enabled single sign-on",
   "sso.changed": "Changed single sign-on",
   "sso.disabled": "Disabled single sign-on",

@@ -122,6 +122,21 @@ describe("IPinfo Integration", () => {
   });
 });
 
+describe("Deleting the IPinfo Integration", () => {
+  test("IPs are no longer looked up, and another IPinfo Integration can be added in its place", async () => {
+    const a = await acme();
+    const id = (await a.addIpinfo()).body.integration!.id;
+    expect((await a.owner.api.integrations[":id"].$delete({ param: { id } })).status).toBe(200);
+    expect((await a.lookup("185.220.101.4")).lookup).toMatchObject({ state: "unconfigured" });
+    expect(a.t.ipinfo.lookups).toEqual([]);
+
+    const replacement = await a.addIpinfo({ token: "another-token-0000" });
+    expect(replacement.status).toBe(201);
+    await a.health.tick();
+    expect(a.t.ipinfo.lookups).toEqual([{ token: "another-token-0000", ip: "8.8.8.8" }]);
+  });
+});
+
 describe("IP lookups", () => {
   test("a Member looks up any IP: fetched from IPinfo once, then served from the cache until it is a week old", async () => {
     const a = await acme();
