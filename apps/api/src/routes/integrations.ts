@@ -4,7 +4,7 @@ import { z } from "zod";
 import { NotPermitted } from "../access/policy";
 import { FALCON_CLOUDS } from "../alerts/vocabulary";
 import type { Deps } from "../deps";
-import { IntegrationHoldsResponseActions, IntegrationNameTaken, type NewIntegration, IntegrationNotFound, InvalidDefaults, NotSupportedByProvider, OneIpinfoIntegration, WrongCredentials } from "../integrations/integrations";
+import { IgnoresEverySeverity, IntegrationHoldsResponseActions, IntegrationNameTaken, type NewIntegration, IntegrationNotFound, InvalidDefaults, NotSupportedByProvider, OneIpinfoIntegration, WrongCredentials } from "../integrations/integrations";
 import { SEVERITIES } from "../cases/vocabulary";
 import { FALCON_IOC_PLATFORMS } from "../response-actions/vocabulary";
 import { type MemberEnv, requireMember } from "../members/membership";
@@ -49,11 +49,13 @@ const ipinfoBody = z.strictObject({
 const createBody = z.union([crowdstrikeBody, mimecastBody, ipinfoBody]);
 const rotateBody = z.union([credentialsBody, tokenBody]);
 const enabledBody = z.object({ enabled: z.boolean() });
+/** The Severities of detections to receive no Alert for; none to receive them all. */
+const ignoredSeveritiesBody = z.object({ severities: z.array(z.enum(SEVERITIES)) });
 
 
 const notPermitted = { error: "Not permitted" } as const;
 
-/** Integrations (CrowdStrike, Mimecast or IPinfo): every Member sees them and their health; Admins add, rotate, pause, resume and delete them and set their write-back, Response Actions, Response Action defaults and Host containment. */
+/** Integrations (CrowdStrike, Mimecast or IPinfo): every Member sees them and their health; Admins add, rotate, pause, resume and delete them and set their write-back, Response Actions, Response Action defaults, Host containment and ignored Severities. */
 export const integrationRoutes = (deps: Deps, { integrations }: Modules) =>
   new Hono<MemberEnv>()
     .use(requireMember(deps.db))
@@ -139,6 +141,18 @@ export const integrationRoutes = (deps: Deps, { integrations }: Modules) =>
         if (e instanceof NotPermitted) return c.json(notPermitted, 403);
         if (e instanceof IntegrationNotFound) return c.json({ error: e.message }, 404);
         if (e instanceof NotSupportedByProvider) return c.json({ error: e.message }, 422);
+        throw e;
+      }
+    })
+    .put("/:id/ignored-severities", zValidator("json", ignoredSeveritiesBody), async (c) => {
+      try {
+        await integrations.setIgnoredSeverities(c.get("membership"), c.req.param("id"), c.req.valid("json").severities);
+        return c.json({ ok: true }, 200);
+      } catch (e) {
+        if (e instanceof NotPermitted) return c.json(notPermitted, 403);
+        if (e instanceof IntegrationNotFound) return c.json({ error: e.message }, 404);
+        if (e instanceof NotSupportedByProvider) return c.json({ error: e.message }, 422);
+        if (e instanceof IgnoresEverySeverity) return c.json({ error: e.message }, 422);
         throw e;
       }
     })

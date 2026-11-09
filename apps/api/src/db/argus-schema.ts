@@ -20,7 +20,7 @@ import type { FalconHost, FalconIdentity } from "../crowdstrike/falcon";
 import type { CaseSummary } from "../cases/case-summary";
 import type { IpDetails } from "../ipinfo/ipinfo";
 import type { DomainReport, FileReport, UrlReport } from "../virustotal/virustotal";
-import { CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabulary";
+import { CASE_TYPES, RESOLUTIONS, SEVERITIES, type Severity, STATUSES } from "../cases/vocabulary";
 import { STORED_LINK_TYPES } from "../case-links/vocabulary";
 import { ASSET_TYPES, OBSERVABLE_TYPES } from "../observables/vocabulary";
 import { PROVIDERS } from "../integrations/vocabulary";
@@ -796,6 +796,11 @@ export const integrations = pgTable(
      * Response Actions, off until an Admin turns it on. Needs Hosts: Write.
      */
     hostContainment: boolean("host_containment").notNull().default(false),
+    /**
+     * The Severities of detections its stream skips (CrowdStrike only): a detection of one of them
+     * becomes no Alert, and leaves an Alert already received as it was. None until an Admin chooses some.
+     */
+    ignoredSeverities: jsonb("ignored_severities").$type<Severity[]>().notNull().default([]),
     health: text("health", { enum: INTEGRATION_HEALTH }).notNull(),
     healthDetail: text("health_detail"),
     healthChangedAt: timestamp("health_changed_at", { withTimezone: true }).notNull(),

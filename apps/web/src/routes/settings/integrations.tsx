@@ -29,7 +29,7 @@ import { ago, FALCON_CLOUDS, type FalconCloud, falconCloudLabel, healthWord, typ
 import { api, errorMessage } from "@/lib/api";
 import { useLiveStatus } from "@/lib/live";
 import { type Provider, providerLabel } from "api/integrations/vocabulary";
-import { SEVERITIES, severityLabel } from "api/cases/vocabulary";
+import { SEVERITIES, type Severity, severityLabel } from "api/cases/vocabulary";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FALCON_IOC_PLATFORMS, type FalconIocDefaults, type FalconIocPlatform, falconIocPlatformLabel } from "@/lib/response-actions";
 
@@ -406,6 +406,10 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
             <AlertDescription>{setHostContainment.error.message}</AlertDescription>
           </Alert>
         )}
+        {receivesAlerts && (
+          // Keyed by what is saved, so a change saved elsewhere replaces the form's.
+          <IgnoredSeverities key={i.ignoredSeverities.join()} integration={i} />
+        )}
         {responseActions && (
           // Keyed by what is saved, so a change saved elsewhere replaces the form's.
           <ResponseActionDefaults key={JSON.stringify(i.responseActionDefaults)} integration={i} />
@@ -670,6 +674,74 @@ function ResponseActionsSetting(props: {
         </p>
       </div>
     </div>
+  );
+}
+
+/**
+ * The Severities of detections the Integration receives no Alert for: a detection of one of them is
+ * skipped as it arrives, and leaves an Alert already received as it was. Admins change them; every
+ * Member sees them. At least one Severity stays unignored: pausing is how to stop Alerts altogether.
+ */
+function IgnoredSeverities({ integration: i }: { integration: IntegrationView }) {
+  const queryClient = useQueryClient();
+  const saved = i.ignoredSeverities;
+  const [draft, setDraft] = useState<Severity[]>(saved);
+  const locked = !i.credentials;
+  const save = useMutation({
+    mutationFn: async (severities: Severity[]) =>
+      ok(await api.integrations[":id"]["ignored-severities"].$put({ param: { id: i.id }, json: { severities } }), "Could not save the ignored Severities"),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: integrationsKey }),
+  });
+  const changed = SEVERITIES.some((s) => draft.includes(s) !== saved.includes(s));
+  const all = draft.length === SEVERITIES.length;
+  const toggle = (severity: Severity, on: boolean) => setDraft((d) => SEVERITIES.filter((s) => (s === severity ? on : d.includes(s))));
+  const id = (severity: Severity) => `ignored-severity-${severity}-${i.id}`;
+  return (
+    <form
+      className="grid gap-3 rounded-lg border p-3"
+      aria-label="Ignored Severities"
+      data-testid="ignored-severities"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (changed && !all) save.mutate(draft);
+      }}
+    >
+      <div className="grid gap-0.5">
+        <span className="text-sm font-semibold">Ignored Severities</span>
+        <p className="text-sm text-muted-foreground">
+          Detections of these Severities are skipped and don't become Alerts. Alerts already received are kept.
+          {locked && " Only Admins can change these."}
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-4" role="group" aria-label="Severities to ignore">
+        {SEVERITIES.map((s) => (
+          <div key={s} className="flex items-center gap-2">
+            <Checkbox id={id(s)} checked={draft.includes(s)} disabled={locked} onCheckedChange={(checked) => toggle(s, checked === true)} />
+            <Label htmlFor={id(s)} className="font-normal">
+              {severityLabel[s]}
+            </Label>
+          </div>
+        ))}
+      </div>
+      {all && <p className="text-xs text-destructive">Leave at least one Severity unignored. To stop receiving Alerts, pause the Integration.</p>}
+      {save.error && (
+        <Alert variant="destructive">
+          <AlertDescription>{save.error.message}</AlertDescription>
+        </Alert>
+      )}
+      {!locked && (
+        <div className="flex justify-end gap-2">
+          {changed && (
+            <Button type="button" variant="ghost" size="sm" onClick={() => setDraft(saved)}>
+              Reset
+            </Button>
+          )}
+          <Button type="submit" size="sm" disabled={!changed || all || save.isPending}>
+            Save ignored Severities
+          </Button>
+        </div>
+      )}
+    </form>
   );
 }
 

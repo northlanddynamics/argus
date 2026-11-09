@@ -121,6 +121,45 @@ test("the Owner adds a CrowdStrike Integration; its detections appear live in an
   }
 }, 60_000);
 
+test("the Owner ignores Low and Informational detections from Settings; they never reach the Alert queue", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  const falcon = fakeFalcon();
+  const worker = createStreamWorker(t.deps, { connect: falcon.connect, workerId: "worker-1" });
+  t.onCleanup(worker.close);
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    await owner.api.integrations.$post({ json: { name: "CrowdStrike — Prod", cloud: "us-1", clientId: "falcon-client-0001", clientSecret: "s" } });
+    await worker.tick();
+
+    const page = await browser.newPage();
+    await signIn(page, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
+    await page.goto(`${baseUrl}/settings/integrations`);
+    const ignored = page.getByTestId("integration-CrowdStrike — Prod").getByRole("form", { name: "Ignored Severities" });
+    const save = ignored.getByRole("button", { name: "Save ignored Severities" });
+    expect(await save.isDisabled()).toBe(true);
+
+    // Ignoring every Severity is refused here: pausing does that.
+    for (const s of ["Critical", "High", "Medium", "Low", "Informational"]) await ignored.getByLabel(s, { exact: true }).click();
+    await ignored.getByText("Leave at least one Severity unignored").waitFor();
+    expect(await save.isDisabled()).toBe(true);
+    for (const s of ["Critical", "High", "Medium"]) await ignored.getByLabel(s, { exact: true }).click();
+    await save.click();
+    await save.and(page.locator(":disabled")).waitFor();
+    expect((await owner.api.integrations.$get().then((r) => r.json())).integrations[0]!.ignoredSeverities).toEqual(["low", "informational"]);
+
+    const stream = falcon.tenant("falcon-client-0001");
+    stream.detection("EppDetectionSummaryEvent", "ldt:low", { Name: "PUP installer blocked", SeverityName: "Low" });
+    stream.detection("EppDetectionSummaryEvent", "ldt:high", { Name: "Credential dumping attempt", SeverityName: "High" });
+    await stream.drained();
+    await page.getByRole("link", { name: "Alerts" }).click();
+    await page.getByTestId("alert-ldt:high").waitFor();
+    expect(await page.getByTestId("alert-ldt:low").count()).toBe(0);
+  } finally {
+    await stop();
+  }
+}, 60_000);
+
 test("an Analyst bulk-attaches Alerts to a Case, is told which changed meanwhile, then opens a Case from the rest", async () => {
   const { t, baseUrl, stop } = await serveTestApp();
   const falcon = fakeFalcon();

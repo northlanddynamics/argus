@@ -276,6 +276,69 @@ describe("Providers and Response Actions", () => {
   });
 });
 
+describe("Ignoring Severities", () => {
+  test("only Admins choose the Severities a CrowdStrike Integration ignores, each change in the Organization Audit Log", async () => {
+    const a = await acme();
+    const id = await a.addProd();
+    const set = (as: typeof a.admin, severities: ("critical" | "high" | "medium" | "low" | "informational")[], on = id) =>
+      as.api.integrations[":id"]["ignored-severities"].$put({ param: { id: on }, json: { severities } });
+
+    expect((await a.integration(id, a.ana)).ignoredSeverities).toEqual([]);
+    expect((await set(a.ana, ["low"])).status).toBe(403);
+    expect((await set(a.admin, ["informational", "low", "informational"])).status).toBe(200);
+    expect((await a.integration(id, a.ana)).ignoredSeverities).toEqual(["low", "informational"]);
+    // The same choice again changes nothing.
+    expect((await set(a.owner, ["low", "informational"])).status).toBe(200);
+    expect((await set(a.admin, ["critical", "high", "medium", "low", "informational"])).status).toBe(422);
+    expect((await a.admin.api.integrations[":id"]["ignored-severities"].$put({ param: { id }, json: { severities: ["severe" as "low"] } })).status).toBe(400);
+    expect((await set(a.owner, [])).status).toBe(200);
+    expect((await a.integration(id)).ignoredSeverities).toEqual([]);
+    expect((await set(a.admin, ["low"], "nope")).status).toBe(404);
+
+    expect((await a.orgAudit()).map((e) => [e.action, e.actor.name, e.before, e.after])).toEqual([
+      ["integration.ignored_severities_changed", "Olive Owner", "Ignoring Low, Informational", "Ignoring none"],
+      ["integration.ignored_severities_changed", "Adam Admin", "Ignoring none", "Ignoring Low, Informational"],
+      ["integration.created", "Adam Admin", null, "CrowdStrike US-1 · client …0001 · read only"],
+    ]);
+  });
+
+  test("an Integration whose Provider sends no Alerts has no Severities to ignore", async () => {
+    const a = await acme();
+    const mail = await a.addProd({ name: "Mail", clientId: "mimecast-app-0003" });
+    await a.t.deps.db.execute(sql`UPDATE integrations SET provider = 'mimecast', cloud = NULL WHERE id = ${mail}`);
+    const res = await a.admin.api.integrations[":id"]["ignored-severities"].$put({ param: { id: mail }, json: { severities: ["low"] } });
+    expect(res.status).toBe(422);
+  });
+
+  test("a detection of an ignored Severity becomes no Alert and leaves one already received as it was; the stream moves on", async () => {
+    const a = await acme();
+    const id = await a.addProd();
+    const stream = a.falcon.tenant(CLIENT_ID);
+    await a.worker().tick();
+    stream.detection("EppDetectionSummaryEvent", "ldt:1", { Name: "Adware bundle", SeverityName: "Medium" });
+    await stream.drained();
+
+    await a.admin.api.integrations[":id"]["ignored-severities"].$put({ param: { id }, json: { severities: ["low", "informational"] } });
+    stream.detection("EppDetectionSummaryEvent", "ldt:2", { Name: "Potentially unwanted program", SeverityName: "Low" });
+    stream.detection("IdpDetectionSummaryEvent", "ind:3", { Name: "Service account sign-in", Severity: 10 });
+    stream.detection("EppDetectionSummaryEvent", "ldt:1", { Name: "Adware bundle", SeverityName: "Low" });
+    stream.detection("EppDetectionSummaryEvent", "ldt:4", { Name: "Credential dumping attempt", SeverityName: "High" });
+    await stream.drained();
+
+    expect((await a.queue()).map((x) => [x.externalId, x.severity, x.version])).toEqual([
+      ["ldt:4", "high", 1],
+      ["ldt:1", "medium", 1],
+    ]);
+    expect((await a.integration(id)).streamOffset).toBe(4);
+
+    // Unignored again, the next detection of that Severity is received.
+    await a.admin.api.integrations[":id"]["ignored-severities"].$put({ param: { id }, json: { severities: [] } });
+    stream.detection("EppDetectionSummaryEvent", "ldt:2", { Name: "Potentially unwanted program", SeverityName: "Low" });
+    await stream.drained();
+    expect((await a.queue()).map((x) => x.externalId)).toEqual(["ldt:2", "ldt:4", "ldt:1"]);
+  });
+});
+
 describe("Deleting an Integration", () => {
   test("an Admin deletes one: it leaves Settings, can't be changed again, and the deletion is in the Organization Audit Log", async () => {
     const a = await acme();
