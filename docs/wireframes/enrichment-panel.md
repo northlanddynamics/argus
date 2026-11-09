@@ -20,6 +20,8 @@ What each source shows, and the wording of every state (looking up, never seen, 
 - **Closes** on `Esc`, its `✕`, clicking the dimmed page, or opening the Observable's page. Focus returns to the value that opened it.
 - **Focus.** Opening moves focus to the panel's heading, so Back, ↑ ↓ and ✕ are next, and stays in the panel while it is open; closing returns it to the value it was opened from.
 - **Guests** get no panel button, no menu item and no shortcut, as they got no popup: Argus never spends the Organization's IPinfo quota or a Member's VirusTotal key for a Guest.
+- **Shows everything.** The panel lists every detection, category, tag, DNS record, name, threat and redirect a source reported, with the details the cards leave out (a file's other hashes and submissions, a certificate's subject and expiry, every popularity rank, an IP's postcode and coordinates); nothing is cut to "and N more".
+- **Ignore.** For Admins, the header's Ignore button (🔕) puts the value on the Organization's Ignored list after asking, or takes it off; an Ignored value shows an "Ignored" badge beside its type.
 - **On an Observable's own page** nothing changes: the IP details and VirusTotal cards stay on the page. Values inside those cards (Resolves to, Ends at) open the panel for themselves.
 
 ## A. The panel over a Case's Observables
@@ -89,8 +91,8 @@ What each source shows, and the wording of every state (looking up, never seen, 
 │ Detections  BitDefender Trojan.Gene…     │
 │             ESET-NOD32 Win32/Emotet.CK   │
 │             Kaspersky HEUR:Trojan.Win…   │
-│             Microsoft Trojan:Win32/Em…   │  ← the panel has room for all of them: the first
-│             and 53 more                  │    eight, in place of the popup's three
+│             Microsoft Trojan:Win32/Em…   │  ← the panel lists every one, in place of the
+│             …                            │    popup's three and "and N more"
 │ Type        Win32 EXE · 471 KB           │
 │ Also named  invoice.exe, scan_0423.exe   │
 │ Signed by   Fake Corp Ltd                │
@@ -145,7 +147,9 @@ The domain report's IPs, MX hosts and nameservers are links in the panel. Follow
 │ ⧉ Copy fanged                │
 ├──────────────────────────────┤
 │ ↗ Open in VirusTotal         │
-└──────────────────────────────┘
+├──────────────────────────────┤
+│ 🔕 Ignore… / Stop ignoring   │  ← Admins only; Ignore asks first. Also in a Case row's ⋯ menu,
+└──────────────────────────────┘    and on values inside a report (Resolves to, Ends at, …)
 
  Evidence file row
 │ Invoice_0423.pdf.exe   SHA-256 a3f5c8e1…  ← the hash itself is a button that opens the panel

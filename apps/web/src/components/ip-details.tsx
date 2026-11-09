@@ -41,8 +41,8 @@ const FLAGS: { key: keyof Pick<IpDetails, "anonymous" | "hosting" | "anycast" | 
 
 const joined = (parts: (string | null)[], sep = ", ") => parts.filter(Boolean).join(sep) || null;
 
-/** The flags that are true, the details as label-value rows. */
-function Details({ details: d, showHostname }: { details: IpDetails; showHostname: boolean }) {
+/** The flags that are true, the details as label-value rows; `full`, for the Enrichment panel, adds the postcode and coordinates. */
+function Details({ details: d, showHostname, full }: { details: IpDetails; showHostname: boolean; full?: boolean }) {
   const flags = FLAGS.filter((f) => d[f.key]);
   const offset = d.timezone && utcOffset(d.timezone);
   const rows: { label: string; value: ReactNode }[] = [
@@ -51,7 +51,7 @@ function Details({ details: d, showHostname }: { details: IpDetails; showHostnam
       label: "Location",
       value: (d.city || d.region || d.country) && (
         <>
-          {joined([d.city, d.region]) && <span className="block">{joined([d.city, d.region])}</span>}
+          {joined([d.city, d.region, full ? d.postalCode : null]) && <span className="block">{joined([d.city, d.region, full ? d.postalCode : null])}</span>}
           {d.country && (
             <span className="block">
               {d.countryCode && <span aria-hidden>{flag(d.countryCode)} </span>}
@@ -74,6 +74,7 @@ function Details({ details: d, showHostname }: { details: IpDetails; showHostnam
         </>
       ),
     },
+    { label: "Coordinates", value: full && d.latitude !== null && d.longitude !== null && <span className="font-mono text-xs">{d.latitude}, {d.longitude}</span> },
     { label: "Type", value: d.asType && asTypeLabel[d.asType] },
     { label: "Time zone", value: d.timezone && (offset ? `${d.timezone} (${offset})` : d.timezone) },
   ];
@@ -151,7 +152,21 @@ function Unconfigured({ admin, paused }: { admin: boolean; paused: boolean }) {
  * The body of the panel or card for `ip`'s lookup: details, or why there are none. `showHostname`
  * puts the reverse DNS name among the rows, for the card, which has no header to show it in.
  */
-export function IpLookupBody({ lookup, loading, error, admin, showHostname = false }: { lookup: IpLookup | undefined; loading: boolean; error: Error | null; admin: boolean; showHostname?: boolean }) {
+export function IpLookupBody({
+  lookup,
+  loading,
+  error,
+  admin,
+  showHostname = false,
+  full,
+}: {
+  lookup: IpLookup | undefined;
+  loading: boolean;
+  error: Error | null;
+  admin: boolean;
+  showHostname?: boolean;
+  full?: boolean;
+}) {
   if (loading && !lookup) return <DetailsSkeleton />;
   if (!lookup) return <Problem>{error?.message ?? "Could not look the IP up"}</Problem>;
   switch (lookup.state) {
@@ -167,16 +182,16 @@ export function IpLookupBody({ lookup, loading, error, admin, showHostname = fal
     case "unconfigured":
       return <Unconfigured admin={admin} paused={false} />;
     case "paused":
-      return lookup.details ? <Details details={lookup.details} showHostname={showHostname} /> : <Unconfigured admin={admin} paused />;
+      return lookup.details ? <Details details={lookup.details} showHostname={showHostname} full={full} /> : <Unconfigured admin={admin} paused />;
     case "failed":
       return (
         <div className="grid gap-2">
           <Problem>{lookup.error}</Problem>
-          {lookup.details && <Details details={lookup.details} showHostname={showHostname} />}
+          {lookup.details && <Details details={lookup.details} showHostname={showHostname} full={full} />}
         </div>
       );
     case "found":
-      return lookup.details && <Details details={lookup.details} showHostname={showHostname} />;
+      return lookup.details && <Details details={lookup.details} showHostname={showHostname} full={full} />;
   }
 }
 
@@ -232,7 +247,7 @@ export function IpEnrichment({ ip, admin }: { ip: string; admin: boolean }) {
         </div>
       ) : (
         <SourceSection title="IPinfo" footer={<IpLookupFooter ip={ip} lookup={lookup} loading={q.isPending} named={false} />}>
-          <IpLookupBody lookup={lookup} loading={q.isPending} error={q.error} admin={admin} />
+          <IpLookupBody lookup={lookup} loading={q.isPending} error={q.error} admin={admin} full />
         </SourceSection>
       )}
     </EnrichmentLayout>

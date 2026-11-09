@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { CopyIcon, ExternalLinkIcon } from "lucide-react";
 import { createContext, type ReactNode, useContext } from "react";
 import { toast } from "sonner";
+import { ObservableMenu } from "@/components/observable-menu";
 import { Button } from "@/components/ui/button";
 import { bulkLookup } from "@/lib/bulk-lookup";
 import { type EnrichableType, useEnrichmentPanel } from "@/lib/enrichment";
@@ -110,7 +111,8 @@ export function SourceSection({ title, footer, children }: { title: string; foot
 /**
  * A value in a report (an IP a domain resolves to, the URL a URL ends at) that opens its own
  * Enrichment: in the panel, replacing what it shows and adding Back; elsewhere, such as on an
- * Observable's page, by opening the panel. Guests get the value as text.
+ * Observable's page, by opening the panel. Right-clicking it offers the Observable menu, as anywhere
+ * an Observable is shown. Guests get the value as text.
  */
 export function FollowValue({ type, value, className, children }: { type: EnrichableType; value: string; className?: string; children: ReactNode }) {
   const panel = useEnrichmentPanel();
@@ -118,12 +120,14 @@ export function FollowValue({ type, value, className, children }: { type: Enrich
   const text = cn("font-mono text-xs break-all", className);
   if (!panel.available) return <span className={text}>{children}</span>;
   return (
-    <button
-      type="button"
-      className={cn(text, "cursor-pointer text-left underline underline-offset-2 outline-none hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/50")}
-      onClick={(e) => (inPanel ? panel.follow({ type, value }) : panel.open({ type, value }, { from: e.currentTarget }))}
-    >
-      {children}
-    </button>
+    <ObservableMenu observable={{ type, value }}>
+      <button
+        type="button"
+        className={cn(text, "cursor-pointer text-left underline underline-offset-2 outline-none hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/50")}
+        onClick={(e) => (inPanel ? panel.follow({ type, value }) : panel.open({ type, value }, { from: e.currentTarget }))}
+      >
+        {children}
+      </button>
+    </ObservableMenu>
   );
 }

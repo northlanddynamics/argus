@@ -34,7 +34,7 @@ export type FileReport = {
   sha256: string | null;
   /** The name VirusTotal thinks most telling, of all it has been submitted under. */
   name: string | null;
-  /** Other names it has been submitted under, at most ten. */
+  /** Other names it has been submitted under. */
   names: string[];
   size: number | null;
   /** "Win32 EXE", "PDF", … */
@@ -56,7 +56,7 @@ export type FileReport = {
   votes: { harmless: number; malicious: number };
   /** Its code signature, when it carries one. */
   signature: { signers: string | null; verified: string | null } | null;
-  /** The engines that call it malicious, with what each calls it, at most ten, by engine name. */
+  /** The engines that call it malicious, with what each calls it, by engine name. */
   detections: { engine: string; result: string }[];
 };
 
@@ -80,7 +80,7 @@ export type Detection = { engine: string; result: string };
 export type DomainReport = {
   domain: string;
   stats: AnalysisStats;
-  /** At most ten, by engine name. */
+  /** Every one, by engine name. */
   detections: Detection[];
   /** What the URL-categorisation vendors call it, most-agreed first, each once: "phishing", "business". */
   categories: string[];
@@ -90,7 +90,7 @@ export type DomainReport = {
   /** When the domain was registered, by WHOIS. */
   registeredAt: string | null;
   registrar: string | null;
-  /** Its A, AAAA, CNAME, MX and NS records when VirusTotal last resolved it, at most ten. */
+  /** Its A, AAAA, CNAME, MX and NS records when VirusTotal last resolved it. */
   dns: { type: string; value: string }[];
   /** The HTTPS certificate it last served. */
   certificate: { issuer: string | null; subject: string | null; validFrom: string | null; validUntil: string | null } | null;
@@ -107,14 +107,14 @@ export type UrlReport = {
   url: string | null;
   /** Where it ended up, after redirects, when that is somewhere else. */
   finalUrl: string | null;
-  /** The redirects VirusTotal followed, in order, at most ten. */
+  /** The redirects VirusTotal followed, in order. */
   redirects: string[];
   /** The page's title. */
   title: string | null;
   /** The HTTP status of the last response. */
   httpStatus: number | null;
   stats: AnalysisStats;
-  /** At most ten, by engine name. */
+  /** Every one, by engine name. */
   detections: Detection[];
   /** What the URL-categorisation vendors call it, most-agreed first, each once. */
   categories: string[];
