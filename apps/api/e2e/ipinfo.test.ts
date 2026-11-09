@@ -14,7 +14,7 @@ afterAll(async () => {
 });
 
 const PASSWORD = "correct-horse-battery";
-/** Set to a directory to keep screenshots of the popup. */
+/** Set to a directory to keep screenshots of the Enrichment panel. */
 const SHOTS = process.env.E2E_SCREENSHOTS;
 
 const starting = () => new Response("starting", { status: 503 });
@@ -38,7 +38,7 @@ async function signIn(page: Page, baseUrl: string, email: string, code: () => Pr
   await page.getByText("Acme Security", { exact: true }).waitFor();
 }
 
-test("the Owner adds IPinfo; hovering an IP on a Case shows what IPinfo knows about it, and a private one says it isn't looked up", async () => {
+test("the Owner adds IPinfo; opening an IP's Enrichment on a Case shows what IPinfo knows about it, and a private one says it isn't looked up", async () => {
   const { t, baseUrl, stop } = await serveTestApp();
   try {
     await t.inviteOwner("Acme Security", "owner@acme.example");
@@ -54,10 +54,16 @@ test("the Owner adds IPinfo; hovering an IP on a Case shows what IPinfo knows ab
     const page = await browser.newPage({ deviceScaleFactor: 2 });
     await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
     await page.goto(`${baseUrl}/cases/1/observables`);
+    const panel = page.getByRole("complementary", { name: "IP Enrichment" });
+    const show = (ip: string) => page.getByRole("button", { name: `Show Enrichment for ${ip}` }).click();
     await page.getByRole("link", { name: "IP 185.220.101.4" }).hover();
-    await page.getByText("your Organization hasn't connected IPinfo").waitFor();
+    await page.waitForTimeout(600);
+    expect(await panel.count()).toBe(0); // Nothing opens on hover.
+    await show("185.220.101.4");
+    await panel.getByText("your Organization hasn't connected IPinfo").waitFor();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/d-unconfigured.png` });
-    await page.mouse.move(0, 0);
+    await panel.getByRole("button", { name: "Close" }).click();
+    await panel.waitFor({ state: "detached" });
 
     // The Owner adds it in Settings.
     const ownerPage = await browser.newPage();
@@ -70,35 +76,58 @@ test("the Owner adds IPinfo; hovering an IP on a Case shows what IPinfo knows ab
     expect(await ownerPage.getByRole("button", { name: "+ Add IPinfo Integration" }).count()).toBe(0);
     if (SHOTS) await ownerPage.screenshot({ path: `${SHOTS}/settings.png`, fullPage: true });
 
-    // Now hovering the IP looks it up.
+    // Now opening the IP's Enrichment looks it up.
     await page.reload();
-    await page.getByRole("link", { name: "IP 185.220.101.4" }).hover();
-    const popup = page.locator("[data-slot=hover-card-content]");
-    await popup.getByText("Frankfurt am Main, Hesse").waitFor();
-    await popup.getByText("tor-exit-04.example-relay.net").waitFor();
-    await popup.getByText("Anonymous").waitFor();
-    await popup.getByText("AS60729").waitFor();
+    await show("185.220.101.4");
+    await panel.getByText("Frankfurt am Main, Hesse").waitFor();
+    await panel.getByText("tor-exit-04.example-relay.net").waitFor();
+    await panel.getByText("Anonymous").waitFor();
+    await panel.getByText("AS60729").waitFor();
+    await panel.getByText("In 1 Case").waitFor();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/a-found.png` });
     expect(t.ipinfo.lookups.filter((l) => l.ip === "185.220.101.4")).toHaveLength(1);
+    // Its row is marked, and the URL keeps it open across a reload.
+    expect(await page.getByTestId("observable-185.220.101.4").evaluate((row) => !!row.querySelector("[data-enrichment-current]"))).toBe(true);
+    expect(new URL(page.url()).searchParams.get("enrichment")).toBe("ip:185.220.101.4");
+    await page.reload();
+    await panel.getByText("Frankfurt am Main, Hesse").waitFor();
 
     // Refresh asks IPinfo again.
-    await popup.getByRole("button", { name: "Refresh 185.220.101.4" }).click();
-    await popup.getByText("refreshing…").waitFor({ state: "detached" });
+    await panel.getByRole("button", { name: "Refresh 185.220.101.4" }).click();
+    await panel.getByText("refreshing…").waitFor({ state: "detached" });
     expect(t.ipinfo.lookups.filter((l) => l.ip === "185.220.101.4")).toHaveLength(2);
-    await page.mouse.move(0, 0);
-    await popup.waitFor({ state: "detached" });
 
-    // A private address is never sent.
-    await page.getByRole("link", { name: "IP 10.20.4.17" }).hover();
-    await page.getByText("Private address").waitFor();
+    // ↑ ↓ step to the other IP on the Case; a private address is never sent.
+    const order = await page.locator("[data-testid^='observable-']").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-testid")));
+    await show("185.220.101.4");
+    await panel.waitFor({ state: "detached" }); // Pressing it again closes the panel.
+    await show("185.220.101.4");
+    const step = order.indexOf("observable-10.20.4.17") > order.indexOf("observable-185.220.101.4") ? "Next (J)" : "Previous (K)";
+    await panel.getByRole("button", { name: step }).click();
+    await panel.getByText("Private address").waitFor();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/c-private.png` });
     expect(t.ipinfo.lookups.some((l) => l.ip === "10.20.4.17")).toBe(false);
-    await page.mouse.move(0, 0);
 
-    // The IP's own page shows the details as a card.
-    await page.getByRole("link", { name: "IP 185.220.101.4" }).click();
+    // From the keyboard: I on a focused value opens it, Esc closes it and returns focus to the value.
+    await panel.getByRole("button", { name: "Close" }).click();
+    const link = page.getByRole("link", { name: "IP 185.220.101.4" });
+    await link.focus();
+    await page.keyboard.press("i");
+    await panel.getByText("Frankfurt am Main, Hesse").waitFor();
+    await page.keyboard.press("Escape");
+    await panel.waitFor({ state: "detached" });
+    expect(await page.evaluate<string | null>("document.activeElement?.getAttribute('aria-label')")).toBe("IP 185.220.101.4");
+
+    // The right-click menu opens it too.
+    await link.click({ button: "right" });
+    await page.getByRole("menuitem", { name: /^Show Enrichment/ }).click();
+    await panel.getByText("Frankfurt am Main, Hesse").waitFor();
+
+    // The IP's own page shows the details as a card, and following its link closes the panel.
+    await link.click();
     await page.getByText("IP details").waitFor();
     await page.getByText("Stiftung Erneuerbare Freiheit").waitFor();
+    expect(await panel.count()).toBe(0);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/f-page.png`, fullPage: true });
   } finally {
     await stop();

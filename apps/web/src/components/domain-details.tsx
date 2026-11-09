@@ -1,34 +1,47 @@
 import { useQuery } from "@tanstack/react-query";
-import type { ReactElement } from "react";
 import { Time } from "@/components/time";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
-import { communityRow, detectionsRow, joined, KeyLink, NoKey, PopupHeader, Problem, ReportSkeleton, Rows, Tags, Verdict, VirustotalFooter } from "@/components/virustotal-parts";
-import { meQuery } from "@/lib/api";
+import { EnrichmentLayout, FollowValue, KnownLine, SourceSection, ValueHeader } from "@/components/enrichment-parts";
+import { communityRow, detectionsRow, KeyLink, NoKey, PANEL_DETECTIONS, Problem, ReportSkeleton, Rows, Tags, Verdict, VirustotalFooter } from "@/components/virustotal-parts";
 import { type DomainLookup, type DomainReport, domainLookupQuery, useRefreshDomainLookup } from "@/lib/domain-url-lookups";
-import { useHoverCardOpen } from "@/lib/hover-card";
+import type { EnrichableType } from "@/lib/enrichment";
 import { defang } from "@/lib/observables";
 
 /**
- * What VirusTotal says about a domain (ADR 0012), as the domain context popup and a domain or email
- * Observable's page show it; laid out in `docs/wireframes/domain-url-context-popup.md`. An email
+ * What VirusTotal says about a domain (ADR 0012), as the Enrichment panel and a domain or email
+ * Observable's page show it; laid out in `docs/wireframes/domain-url-context-popup.md` and
+ * `enrichment-panel.md`. Its DNS records open their own Enrichment. An email
  * address shows its domain's report: VirusTotal is only ever asked about the domain.
  */
 
 /** "#40,210 in Cisco Umbrella": its best rank in a popularity list. */
 const rankText = (p: DomainReport["popularity"]) => p[0] && `#${p[0].rank.toLocaleString()} in ${p[0].list}`;
 
-/** The DNS records of `types`, at most three, joined. */
-const records = (r: DomainReport, ...types: string[]) =>
-  joined(
-    r.dns
-      .filter((d) => types.includes(d.type))
-      .slice(0, 3)
-      .map((d) => d.value),
+/** What a DNS record points at, as an Observable: an address for A and AAAA, a name for the rest. */
+const recordType = (type: string): EnrichableType => (type === "A" || type === "AAAA" ? "ip" : "domain");
+
+const hasRecords = (r: DomainReport, types: string[]) => r.dns.some((d) => types.includes(d.type));
+
+/** The DNS records of `types`, at most three, each opening its own Enrichment. */
+function Records({ report, types }: { report: DomainReport; types: string[] }) {
+  const found = report.dns.filter((d) => types.includes(d.type)).slice(0, 3);
+  return (
+    <span className="grid justify-items-start">
+      {found.map((d) => {
+        const type = recordType(d.type);
+        const value = d.value.replace(/\.$/, "");
+        return (
+          <FollowValue key={`${d.type}:${d.value}`} type={type} value={value}>
+            {defang(type, value)}
+          </FollowValue>
+        );
+      })}
+    </span>
   );
+}
 
 /** The verdict, a warning when the domain is newly registered, then the report as label-value rows. */
-function Report({ report: r, newlyRegistered }: { report: DomainReport; newlyRegistered: boolean }) {
+function Report({ report: r, newlyRegistered, listed }: { report: DomainReport; newlyRegistered: boolean; listed?: number }) {
   const cert = r.certificate;
   return (
     <div className="grid gap-2">
@@ -42,7 +55,7 @@ function Report({ report: r, newlyRegistered }: { report: DomainReport; newlyReg
       <Rows
         rows={[
           { label: "Categories", value: r.categories.length > 0 && r.categories.slice(0, 3).join(", ") },
-          detectionsRow(r.detections, r.stats.malicious),
+          detectionsRow(r.detections, r.stats.malicious, listed),
           {
             label: "Registered",
             value: (r.registeredAt || r.registrar) && (
@@ -52,9 +65,9 @@ function Report({ report: r, newlyRegistered }: { report: DomainReport; newlyReg
               </>
             ),
           },
-          { label: "Resolves to", value: records(r, "A", "AAAA", "CNAME") && <span className="font-mono text-xs break-all">{records(r, "A", "AAAA", "CNAME")}</span> },
-          { label: "Mail", value: records(r, "MX") && <span className="font-mono text-xs break-all">{records(r, "MX")}</span> },
-          { label: "Nameservers", value: records(r, "NS") && <span className="font-mono text-xs break-all">{records(r, "NS")}</span> },
+          { label: "Resolves to", value: hasRecords(r, ["A", "AAAA", "CNAME"]) && <Records report={r} types={["A", "AAAA", "CNAME"]} /> },
+          { label: "Mail", value: hasRecords(r, ["MX"]) && <Records report={r} types={["MX"]} /> },
+          { label: "Nameservers", value: hasRecords(r, ["NS"]) && <Records report={r} types={["NS"]} /> },
           {
             label: "Certificate",
             value: cert && (cert.issuer || cert.validFrom) && (
@@ -77,8 +90,8 @@ function Report({ report: r, newlyRegistered }: { report: DomainReport; newlyReg
   );
 }
 
-/** The body of the popup or card for a domain's lookup: the report, or why there is none. */
-export function DomainLookupBody({ lookup, loading, error }: { lookup: DomainLookup | undefined; loading: boolean; error: Error | null }) {
+/** The body of the panel or card for a domain's lookup: the report, or why there is none. */
+export function DomainLookupBody({ lookup, loading, error, listed }: { lookup: DomainLookup | undefined; loading: boolean; error: Error | null; listed?: number }) {
   if (loading && !lookup) return <ReportSkeleton />;
   if (!lookup) return <Problem>{error?.message ?? "Could not look the domain up"}</Problem>;
   switch (lookup.state) {
@@ -94,63 +107,50 @@ export function DomainLookupBody({ lookup, loading, error }: { lookup: DomainLoo
           <Problem>
             {lookup.error} · <KeyLink>Your key</KeyLink>
           </Problem>
-          {lookup.report && <Report report={lookup.report} newlyRegistered={lookup.newlyRegistered} />}
+          {lookup.report && <Report report={lookup.report} newlyRegistered={lookup.newlyRegistered} listed={listed} />}
         </div>
       );
     case "found":
-      return lookup.report && <Report report={lookup.report} newlyRegistered={lookup.newlyRegistered} />;
+      return lookup.report && <Report report={lookup.report} newlyRegistered={lookup.newlyRegistered} listed={listed} />;
   }
 }
 
-function DomainFooter({ value, lookup, loading }: { value: string; lookup: DomainLookup | undefined; loading: boolean }) {
-  return <VirustotalFooter what={defang("domain", lookup?.domain ?? value)} lookup={lookup} loading={loading} refresh={useRefreshDomainLookup(value)} />;
+function DomainFooter({ value, lookup, loading, named }: { value: string; lookup: DomainLookup | undefined; loading: boolean; named?: boolean }) {
+  return <VirustotalFooter what={defang("domain", lookup?.domain ?? value)} lookup={lookup} loading={loading} refresh={useRefreshDomainLookup(value)} named={named} />;
 }
 
 /** VirusTotal's page for a domain, when it may be looked up there. */
 const domainHref = (lookup: DomainLookup | undefined) => (lookup && lookup.state !== "withheld" ? `https://www.virustotal.com/gui/domain/${encodeURIComponent(lookup.domain)}` : null);
 
-/** The popup's content; mounted only while it is open, so the lookup starts when it opens. */
-function DomainPopup({ type, value }: { type: "domain" | "email"; value: string }) {
+/** The Enrichment panel's content for a domain or email address: its header, then what VirusTotal says about the domain. */
+export function DomainEnrichment({ type, value }: { type: "domain" | "email"; value: string }) {
   const q = useQuery(domainLookupQuery(value));
   const lookup = q.data;
   const shown = defang(type, value);
+  const withheld = lookup?.state === "withheld";
   return (
-    <div className="grid gap-2.5">
-      <PopupHeader shown={shown} copy={shown} copied="Copied (defanged)" href={domainHref(lookup)}>
-        {type === "email" && lookup && <span className="text-xs break-all text-muted-foreground">Its domain, {defang("domain", lookup.domain)}</span>}
-      </PopupHeader>
-      <div className="border-t pt-2.5">
-        <DomainLookupBody lookup={lookup} loading={q.isPending} error={q.error} />
-      </div>
-      {lookup?.state !== "no_key" && lookup?.state !== "withheld" && (
-        <div className="border-t pt-2">
-          <DomainFooter value={value} lookup={lookup} loading={q.isPending} />
+    <EnrichmentLayout
+      header={
+        <ValueHeader shown={shown} copy={shown} copied="Copied (defanged)" href={domainHref(lookup)} hrefLabel="Open on VirusTotal">
+          {type === "email" && lookup && <span className="text-xs break-all text-muted-foreground">Its domain, {defang("domain", lookup.domain)}</span>}
+          <KnownLine type={type} value={value} />
+        </ValueHeader>
+      }
+    >
+      {withheld ? (
+        <div className="p-4 text-sm">
+          <DomainLookupBody lookup={lookup} loading={false} error={null} />
         </div>
+      ) : (
+        <SourceSection title="VirusTotal" footer={<DomainFooter value={value} lookup={lookup} loading={q.isPending} named={false} />}>
+          <DomainLookupBody lookup={lookup} loading={q.isPending} error={q.error} listed={PANEL_DETECTIONS} />
+        </SourceSection>
       )}
-    </div>
+    </EnrichmentLayout>
   );
 }
 
-/**
- * Wraps a domain or email address as it is shown anywhere so that resting the pointer on it, or
- * focusing it, opens what VirusTotal says about the domain. `children` must be one element that can
- * hold a ref, and focusable to open from the keyboard. Guests see the value alone.
- */
-export function DomainHoverCard({ type, value, children }: { type: "domain" | "email"; value: string; children: ReactElement }) {
-  const me = useQuery(meQuery).data;
-  const popup = useHoverCardOpen();
-  if (!me?.organization) return children;
-  return (
-    <HoverCard openDelay={400} closeDelay={150} {...popup}>
-      <HoverCardTrigger asChild>{children}</HoverCardTrigger>
-      <HoverCardContent className="max-h-(--radix-hover-card-content-available-height) w-80 overflow-y-auto" side="bottom" align="start" collisionPadding={16}>
-        <DomainPopup type={type} value={value} />
-      </HoverCardContent>
-    </HoverCard>
-  );
-}
-
-/** A domain or email Observable's own page's "VirusTotal": what the popup shows, without needing a hover. */
+/** A domain or email Observable's own page's "VirusTotal": what the Enrichment panel shows. */
 export function DomainDetailsCard({ type, value }: { type: "domain" | "email"; value: string }) {
   const q = useQuery(domainLookupQuery(value));
   return (

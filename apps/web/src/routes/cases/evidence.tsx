@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { HashHoverCard } from "@/components/hash-details";
+import { EnrichmentButton, ObservableText } from "@/components/observable-details";
 import { CheckIcon, CopyIcon, DownloadIcon, ExternalLinkIcon, FileIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import { Time } from "@/components/time";
@@ -130,7 +130,7 @@ export function CaseEvidencePage() {
             </div>
           ),
         )}
-        <Table className="@4xl:table-fixed">
+        <Table className="@4xl:table-fixed" data-enrichment-list>
           {/* Set widths, so the File name takes what's left and the rest line up row to row. */}
           <colgroup>
             <col />
@@ -179,17 +179,17 @@ export function CaseEvidencePage() {
                 </TableCell>
                 <TableCell>
                   <span className="flex items-center gap-1">
-                    {/* Members see the whole hash, and what VirusTotal knows about the file, on hover; Guests get no popup, so the title shows it. */}
-                    <HashHoverCard hash={e.sha256}>
-                      <code
-                        tabIndex={0}
-                        className="font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                        title={membersView ? undefined : e.sha256}
-                        aria-label={`SHA-256 ${e.sha256}`}
-                      >
+                    {/* Members open what VirusTotal knows about the file in the Enrichment panel; Guests see the whole hash on hover. */}
+                    {membersView ? (
+                      <ObservableText type="sha256" value={e.sha256} label={`SHA-256 ${e.sha256}`} className="no-underline hover:underline">
+                        {shortHash(e.sha256)}
+                      </ObservableText>
+                    ) : (
+                      <code tabIndex={0} className="font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/50" title={e.sha256} aria-label={`SHA-256 ${e.sha256}`}>
                         {shortHash(e.sha256)}
                       </code>
-                    </HashHoverCard>
+                    )}
+                    <EnrichmentButton type="sha256" value={e.sha256} />
                     <RowIconButton label={copied === e.sha256 ? "Copied" : "Copy SHA-256"} aria-label={`Copy SHA-256 of ${e.name}`} onClick={() => void copy(e.sha256)}>
                       {copied === e.sha256 ? <CheckIcon /> : <CopyIcon />}
                     </RowIconButton>

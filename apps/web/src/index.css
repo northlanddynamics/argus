@@ -197,3 +197,10 @@
     @apply bg-primary text-primary-foreground;
     }
 }
+/* The row, or the badge, whose Observable the Enrichment panel shows (`docs/wireframes/enrichment-panel.md`). */
+@layer components {
+  [data-slot="table-row"]:has([data-enrichment-current]),
+  [data-slot="badge"][data-enrichment-current] {
+    background-color: var(--muted);
+  }
+}

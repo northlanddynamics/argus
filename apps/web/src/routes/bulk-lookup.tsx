@@ -1,7 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
-import { IpText } from "@/components/ip-details";
-import { hasContextPopup, ObservableHoverCard, ObservableText } from "@/components/observable-details";
+import { EnrichmentButton, EnrichmentTarget, ObservableText } from "@/components/observable-details";
 import { ObservableMenu } from "@/components/observable-menu";
 import { Link } from "@tanstack/react-router";
 import { useDeferredValue, useMemo, useState } from "react";
@@ -18,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { CasePicker } from "@/routes/alerts/alert-dialogs";
 import { bulkLookup, extractObservables, linkToCase, type LookupResult } from "@/lib/bulk-lookup";
+import { hasEnrichment } from "@/lib/enrichment";
 import { caseRef, casesKey } from "@/lib/cases";
 import { itemPagesKey, observableTypeLabel, shownObservable } from "@/lib/observables";
 
@@ -126,7 +126,7 @@ export function BulkLookupPage() {
                 Link to a Case…
               </Button>
             </div>
-            <Table aria-label="Values found">
+            <Table aria-label="Values found" data-enrichment-list>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="w-8">
@@ -179,30 +179,31 @@ export function BulkLookupPage() {
 function ResultRow({ result: r, selected, onSelect }: { result: LookupResult; selected: boolean; onSelect: (on: boolean) => void }) {
   const shown = shownObservable(r.type, r.value);
   return (
-    <TableRow data-state={selected ? "selected" : undefined}>
+    <TableRow data-state={selected ? "selected" : undefined} className="group/row">
       <TableCell>
         <Checkbox aria-label={`Select ${r.value}`} checked={selected} onCheckedChange={(on) => onSelect(on === true)} />
       </TableCell>
       <TableCell className="max-w-0 min-w-48 font-mono text-xs break-all whitespace-normal" title={r.value}>
-        {r.known ? (
-          <ObservableHoverCard type={r.type} value={r.value}>
+        <span className="flex items-start gap-1">
+          {r.known ? (
+            <EnrichmentTarget type={r.type} value={r.value}>
+              <ObservableMenu observable={r}>
+                <ItemLink kind="observable" id={r.known.id} className="min-w-0 hover:underline">
+                  {shown}
+                </ItemLink>
+              </ObservableMenu>
+            </EnrichmentTarget>
+          ) : hasEnrichment(r.type) ? (
+            <ObservableText type={r.type} value={r.value} className="min-w-0 no-underline">
+              {shown}
+            </ObservableText>
+          ) : (
             <ObservableMenu observable={r}>
-              <ItemLink kind="observable" id={r.known.id} className="hover:underline">
-                {shown}
-              </ItemLink>
+              <span>{shown}</span>
             </ObservableMenu>
-          </ObservableHoverCard>
-        ) : r.type === "ip" ? (
-          <IpText ip={r.value} className="no-underline" />
-        ) : hasContextPopup(r.type) ? (
-          <ObservableText type={r.type} value={r.value} className="no-underline">
-            {shown}
-          </ObservableText>
-        ) : (
-          <ObservableMenu observable={r}>
-            <span>{shown}</span>
-          </ObservableMenu>
-        )}
+          )}
+          <EnrichmentButton type={r.type} value={r.value} className="-my-0.5 ml-auto" />
+        </span>
       </TableCell>
       <TableCell className="text-muted-foreground">{observableTypeLabel[r.type]}</TableCell>
       <TableCell>{r.known ? <Badge>Known</Badge> : <Badge variant="outline">Unknown</Badge>}</TableCell>

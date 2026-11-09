@@ -22,3 +22,5 @@ Hovering an MD5, SHA-1 or SHA-256 anywhere in Argus shows what VirusTotal knows 
 - What a Member without a key sees may be older than a day; the popup says how old.
 - Lookups are not Audit Logged: they read, and change nothing in Argus or VirusTotal.
 - The v3 file API calls are unverified against a live key.
+
+_Update: hover no longer opens anything. The same details now open in the Enrichment panel, docked on the right (`docs/wireframes/enrichment-panel.md`); what is looked up, cached and shown is unchanged._

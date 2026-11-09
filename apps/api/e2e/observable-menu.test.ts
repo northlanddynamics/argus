@@ -60,7 +60,7 @@ test("right-clicking an Observable copies it defanged or fanged, and opens a has
     const page = await context.newPage();
     await signIn(page, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
     const menu = page.getByRole("menu");
-    /** One Escape closes the menu: a value's context popup never opens over it. */
+    /** One Escape closes the menu. */
     const closeMenu = async () => {
       await page.keyboard.press("Escape");
       await menu.waitFor({ state: "detached" });
@@ -100,17 +100,22 @@ test("right-clicking an Observable copies it defanged or fanged, and opens a has
     await menu.getByRole("menuitem", { name: "Open in IPinfo.io" }).click();
     expect((await ipinfo).url()).toBe("https://ipinfo.io/185.220.101.4");
 
-    // In Bulk Lookup an IP has both its context popup and the menu.
+    // In Bulk Lookup an IP has both its Enrichment and the menu.
     await page.goto(`${baseUrl}/lookup`);
     await page.getByLabel("Text to look up").fill("seen 185.220.101.4 and hxxps://invoice-portal[.]biz/pay");
     await page.getByRole("button", { name: "Look up", exact: true }).click();
     const ip = page.getByRole("link", { name: "185.220.101.4" });
-    await ip.hover();
-    await page.locator("[data-slot=hover-card-content]").waitFor();
+    await ip.click({ button: "right" });
+    await menu.getByRole("menuitem", { name: /^Show Enrichment/ }).click();
+    await page.getByRole("complementary", { name: "IP Enrichment" }).waitFor();
     await ip.click({ button: "right" });
     await menu.getByRole("menuitem", { name: "Open in IPinfo.io" }).waitFor();
     await closeMenu();
-    await page.getByText("hxxps://invoice-portal[.]biz/pay", { exact: true }).click({ button: "right" });
+    // A value Argus doesn't hold yet opens its Enrichment when clicked.
+    const url = page.getByRole("button", { name: "hxxps://invoice-portal[.]biz/pay", exact: true });
+    await url.click();
+    await page.getByRole("complementary", { name: "URL Enrichment" }).waitFor();
+    await url.click({ button: "right" });
     await menu.getByRole("menuitem", { name: "Copy fanged" }).click();
     expect(await clipboard()).toBe("https://invoice-portal.biz/pay");
     await context.close();

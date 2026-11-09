@@ -97,7 +97,7 @@ What each source shows, and the wording of every state (looking up, never seen, 
 │             ESET-NOD32 Win32/Emotet.CK   │
 │             Kaspersky HEUR:Trojan.Win…   │
 │             Microsoft Trojan:Win32/Em…   │  ← the panel has room for all of them: the first
-│             … 57 more  [Show all]        │    eight, then Show all, in place of "and 58 more"
+│             and 53 more                  │    eight, in place of the popup's three
 │ Type        Win32 EXE · 471 KB           │
 │ Also named  invoice.exe, scan_0423.exe   │
 │ Signed by   Fake Corp Ltd                │
@@ -124,13 +124,13 @@ The domain report's IPs, MX hosts and nameservers are links in the panel. Follow
 │ ⚠ Newly registered: 6 days ago           │    │ Location   Frankfurt am Main, Hesse      │
 │ Resolves to  185.220.101.4 ↗︎             │    │ …                                        │
 │              (link, opens in the panel)  │    │ as of 3 h ago                [Refresh]   │
-│ Mail         mail.invoice-portal[.]biz   │    └──────────────────────────────────────────┘
-│ Nameservers  dns1.registrar-servers.com  │
+│ Mail         mail[.]invoice-portal[.]biz │    └──────────────────────────────────────────┘
+│ Nameservers  dns1[.]registrar-servers[.]com
 │ …                                        │     Back returns to the domain report, at the
 └──────────────────────────────────────────┘     scroll position it was left at
 ```
 
-- A followed value that Argus doesn't hold as an Observable has no "In n Cases" line, and offers **Add to Case C-12** in its place when the panel was opened from within a Case.
+- A followed value that Argus doesn't hold as an Observable has no "In n Cases" line. (Offering **Add to Case C-12** in its place, when the panel was opened from within a Case, is not built yet.)
 - A private, reserved or withheld value is still a link: its panel shows the popup's C (IP) or D (domain) state.
 
 ## E. Entry points

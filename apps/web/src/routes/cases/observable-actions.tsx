@@ -18,9 +18,11 @@ import {
   WifiIcon,
   WifiOffIcon,
   ZapIcon,
+  PanelRightOpenIcon,
 } from "lucide-react";
 import { type ComponentType, type ReactElement, type ReactNode, useState } from "react";
 import { toast } from "sonner";
+import { type EnrichableType, hasEnrichment, useEnrichmentPanel } from "@/lib/enrichment";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -246,6 +248,7 @@ export function ObservableActions({
   children: (menuButton: ReactNode) => ReactElement;
 }) {
   const navigate = useNavigate();
+  const enrichment = useEnrichmentPanel();
   const queryClient = useQueryClient();
   // Loaded once a menu opens; on the Case's own pages they are cached already.
   const [wanted, setWanted] = useState(false);
@@ -432,6 +435,12 @@ export function ObservableActions({
           </kit.Sub>
           <kit.Separator />
         </>
+      )}
+      {enrichment.available && hasEnrichment(observable.type) && (
+        <kit.Item onSelect={() => enrichment.open({ type: observable.type as EnrichableType, value: observable.value })}>
+          <PanelRightOpenIcon />
+          Show Enrichment
+        </kit.Item>
       )}
       <kit.Item onSelect={() => void navigate({ to: "/observables/$id", params: { id: observable.id }, search: { from: number } })}>
         <ExternalLinkIcon />

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ObservableHoverCard } from "@/components/observable-details";
+import { EnrichmentButton, EnrichmentTarget } from "@/components/observable-details";
+import { cn } from "@/lib/utils";
 import { ObservableMenu } from "@/components/observable-menu";
 import { type FormEvent, Fragment, type ReactNode, useState } from "react";
 import { toast } from "sonner";
@@ -695,7 +696,7 @@ export function ResponseActionsCard({
           </Alert>
         ) : (
           <div className="@container">
-          <Table aria-label="Response Actions" className="@4xl:table-fixed">
+          <Table aria-label="Response Actions" className="@4xl:table-fixed" data-enrichment-list>
             {/* Once there's room, set widths, so the columns hold still as Response Actions change state live; the Target takes the rest. */}
             <colgroup>
               <col />
@@ -733,17 +734,20 @@ export function ResponseActionsCard({
                 const error = errorOn(r.id);
                 const subject = subjectOf(r);
                 const row = (menuButton: ReactNode) => (
-                      <TableRow data-testid={`response-action-${subject.value}`} className={r.state === "removed" ? "text-muted-foreground" : undefined}>
+                      <TableRow data-testid={`response-action-${subject.value}`} className={cn("group/row", r.state === "removed" && "text-muted-foreground")}>
                         <TableCell className="min-w-52 whitespace-normal">
                           {r.observable ? (
                             <>
-                              <ObservableHoverCard type={r.observable.type} value={r.observable.value}>
-                                <ObservableMenu observable={r.observable}>
-                                  <ItemLink kind="observable" id={r.observable.id} className="block font-mono text-xs break-all hover:underline" title={r.observable.value}>
-                                    {shownObservable(r.observable.type, r.observable.value)}
-                                  </ItemLink>
-                                </ObservableMenu>
-                              </ObservableHoverCard>
+                              <span className="flex items-start gap-1">
+                                <EnrichmentTarget type={r.observable.type} value={r.observable.value}>
+                                  <ObservableMenu observable={r.observable}>
+                                    <ItemLink kind="observable" id={r.observable.id} className="block min-w-0 font-mono text-xs break-all hover:underline" title={r.observable.value}>
+                                      {shownObservable(r.observable.type, r.observable.value)}
+                                    </ItemLink>
+                                  </ObservableMenu>
+                                </EnrichmentTarget>
+                                <EnrichmentButton type={r.observable.type} value={r.observable.value} className="-my-1 ml-auto" />
+                              </span>
                               <span className="text-xs text-muted-foreground">{observableTypeLabel[r.observable.type]}</span>
                             </>
                           ) : (

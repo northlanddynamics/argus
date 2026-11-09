@@ -1,23 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
-import type { ReactElement } from "react";
 import { Time } from "@/components/time";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
-import { communityRow, detectionsRow, joined, KeyLink, NoKey, PopupHeader, Problem, ReportSkeleton, Rows, Tags, Verdict, VirustotalFooter } from "@/components/virustotal-parts";
-import { meQuery } from "@/lib/api";
-import { useHoverCardOpen } from "@/lib/hover-card";
+import { EnrichmentLayout, KnownLine, SourceSection, ValueHeader } from "@/components/enrichment-parts";
+import { communityRow, detectionsRow, joined, KeyLink, NoKey, PANEL_DETECTIONS, Problem, ReportSkeleton, Rows, Tags, Verdict, VirustotalFooter } from "@/components/virustotal-parts";
 import { formatBytes } from "@/lib/evidence";
 import { type FileReport, type HashLookup, hashLookupQuery, useRefreshHashLookup } from "@/lib/hash-lookups";
 
 /**
- * What VirusTotal says about a file, by its hash (ADR 0011), as the hash context popup and a hash
- * Observable's page show it; laid out in `docs/wireframes/hash-context-popup.md`. The conventions
- * are the IP context popup's (`ip-details.tsx`); the parts are shared with domains and URLs
- * (`virustotal-parts.tsx`).
+ * What VirusTotal says about a file, by its hash (ADR 0011), as the Enrichment panel and a hash
+ * Observable's page show it; laid out in `docs/wireframes/hash-context-popup.md` and
+ * `enrichment-panel.md`. The parts are shared with domains and URLs (`virustotal-parts.tsx`).
  */
 
 /** The verdict, then the report as label-value rows. `showName` puts the file's name among them, for the card. */
-function Report({ report: r, showName }: { report: FileReport; showName: boolean }) {
+function Report({ report: r, showName, listed }: { report: FileReport; showName: boolean; listed?: number }) {
   return (
     <div className="grid gap-2">
       <Verdict stats={r.stats} />
@@ -34,7 +30,7 @@ function Report({ report: r, showName }: { report: FileReport; showName: boolean
               </>
             ),
           },
-          detectionsRow(r.detections, r.stats.malicious),
+          detectionsRow(r.detections, r.stats.malicious, listed),
           { label: "Type", value: joined([r.typeDescription, r.size !== null ? formatBytes(r.size) : null], " · ") },
           {
             label: "Also named",
@@ -56,9 +52,22 @@ function Report({ report: r, showName }: { report: FileReport; showName: boolean
 }
 
 /**
- * The body of the popup or card for a hash's lookup: the report, or why there is none.
+ * The body of the panel or card for a hash's lookup: the report, or why there is none.
  */
-export function HashLookupBody({ lookup, loading, error, showName = false }: { lookup: HashLookup | undefined; loading: boolean; error: Error | null; showName?: boolean }) {
+export function HashLookupBody({
+  lookup,
+  loading,
+  error,
+  showName = false,
+  listed,
+}: {
+  lookup: HashLookup | undefined;
+  loading: boolean;
+  error: Error | null;
+  showName?: boolean;
+  /** How many detections to name before "and N more". */
+  listed?: number;
+}) {
   if (loading && !lookup) return <ReportSkeleton />;
   if (!lookup) return <Problem>{error?.message ?? "Could not look the hash up"}</Problem>;
   switch (lookup.state) {
@@ -72,62 +81,41 @@ export function HashLookupBody({ lookup, loading, error, showName = false }: { l
           <Problem>
             {lookup.error} · <KeyLink>Your key</KeyLink>
           </Problem>
-          {lookup.report && <Report report={lookup.report} showName={showName} />}
+          {lookup.report && <Report report={lookup.report} showName={showName} listed={listed} />}
         </div>
       );
     case "found":
-      return lookup.report && <Report report={lookup.report} showName={showName} />;
+      return lookup.report && <Report report={lookup.report} showName={showName} listed={listed} />;
   }
 }
 
 /** "VirusTotal · as of 3 hours ago", with Refresh (or Retry after a failure), or the way to a key. */
-export function HashLookupFooter({ hash, lookup, loading }: { hash: string; lookup: HashLookup | undefined; loading: boolean }) {
-  return <VirustotalFooter what={hash} lookup={lookup} loading={loading} refresh={useRefreshHashLookup(hash)} />;
+export function HashLookupFooter({ hash, lookup, loading, named }: { hash: string; lookup: HashLookup | undefined; loading: boolean; named?: boolean }) {
+  return <VirustotalFooter what={hash} lookup={lookup} loading={loading} refresh={useRefreshHashLookup(hash)} named={named} />;
 }
 
-/** The popup's content; mounted only while it is open, so the lookup starts when it opens. */
-function HashPopup({ hash }: { hash: string }) {
+/** The Enrichment panel's content for a hash: its header, then what VirusTotal says about the file. */
+export function HashEnrichment({ hash, type }: { hash: string; type: "md5" | "sha1" | "sha256" }) {
   const q = useQuery(hashLookupQuery(hash));
   const lookup = q.data;
   const shown = lookup?.hash ?? hash.toLowerCase();
   return (
-    <div className="grid gap-2.5">
-      <PopupHeader shown={shown} copy={shown} copied="Copied the hash" href={`https://www.virustotal.com/gui/file/${encodeURIComponent(shown)}`}>
-        {lookup?.report?.name && <span className="text-xs break-all text-muted-foreground">{lookup.report.name}</span>}
-      </PopupHeader>
-      <div className="border-t pt-2.5">
-        <HashLookupBody lookup={lookup} loading={q.isPending} error={q.error} />
-      </div>
-      {lookup?.state !== "no_key" && (
-        <div className="border-t pt-2">
-          <HashLookupFooter hash={hash} lookup={lookup} loading={q.isPending} />
-        </div>
-      )}
-    </div>
+    <EnrichmentLayout
+      header={
+        <ValueHeader shown={shown} copy={shown} copied="Copied the hash" href={`https://www.virustotal.com/gui/file/${encodeURIComponent(shown)}`} hrefLabel="Open on VirusTotal">
+          {lookup?.report?.name && <span className="text-xs break-all text-muted-foreground">{lookup.report.name}</span>}
+          <KnownLine type={type} value={hash} />
+        </ValueHeader>
+      }
+    >
+      <SourceSection title="VirusTotal" footer={<HashLookupFooter hash={hash} lookup={lookup} loading={q.isPending} named={false} />}>
+        <HashLookupBody lookup={lookup} loading={q.isPending} error={q.error} listed={PANEL_DETECTIONS} />
+      </SourceSection>
+    </EnrichmentLayout>
   );
 }
 
-/**
- * Wraps a hash as it is shown anywhere (a link to its page, a badge, plain text) so that resting the
- * pointer on it, or focusing it, opens what VirusTotal says about the file. `children` must be one
- * element that can hold a ref, and focusable to open from the keyboard. `enabled` false leaves it as
- * it is, for lists of values only some of which are hashes. Guests see the hash alone.
- */
-export function HashHoverCard({ hash, enabled = true, children }: { hash: string; enabled?: boolean; children: ReactElement }) {
-  const me = useQuery(meQuery).data;
-  const popup = useHoverCardOpen();
-  if (!enabled || !me?.organization) return children;
-  return (
-    <HoverCard openDelay={400} closeDelay={150} {...popup}>
-      <HoverCardTrigger asChild>{children}</HoverCardTrigger>
-      <HoverCardContent className="max-h-(--radix-hover-card-content-available-height) w-80 overflow-y-auto" side="bottom" align="start" collisionPadding={16}>
-        <HashPopup hash={hash} />
-      </HoverCardContent>
-    </HoverCard>
-  );
-}
-
-/** A hash Observable's own page's "VirusTotal": what the popup shows, without needing a hover. */
+/** A hash Observable's own page's "VirusTotal": what the Enrichment panel shows. */
 export function HashDetailsCard({ hash }: { hash: string }) {
   const q = useQuery(hashLookupQuery(hash));
   return (

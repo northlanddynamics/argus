@@ -1,7 +1,8 @@
-import { CopyIcon, ExternalLinkIcon } from "lucide-react";
-import type { ComponentProps, ComponentType, ReactElement, ReactNode } from "react";
+import { CopyIcon, ExternalLinkIcon, PanelRightOpenIcon } from "lucide-react";
+import { type ComponentProps, type ComponentType, type ReactElement, type ReactNode, useRef } from "react";
 import { toast } from "sonner";
-import { ContextMenu, ContextMenuContent, ContextMenuSeparator, ContextMenuTrigger, ContextMenuItem } from "@/components/ui/context-menu";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { hasEnrichment, useEnrichmentPanel } from "@/lib/enrichment";
 import { observableCopies, observableLookups, type ObservableType } from "@/lib/observables";
 import { cn } from "@/lib/utils";
 
@@ -36,27 +37,51 @@ export function ObservableLookupItems({ Item, type, value }: { Item: ItemCompone
 }
 
 /**
- * Right-clicking (or long-pressing) an Observable wherever it is shown offers to copy it and to open
- * it where it can be looked up. `children` must be one element that can hold a ref; the props an
- * outer trigger (such as the IP context popup's) gives this are passed on to it, so the two nest.
+ * Right-clicking (or long-pressing) an Observable wherever it is shown offers to show its Enrichment
+ * in the Enrichment panel (for types that have one, for Members), to copy it, and to open it where
+ * it can be looked up. `children` must be one element that can hold a ref; the props an outer
+ * wrapper (such as `EnrichmentTarget`) gives this are passed on to it, so the two nest.
  * With no `observable`, `children` are left as they are, for lists that mix in Assets.
  */
 export function ObservableMenu({
   observable,
   children,
   className,
+  onContextMenu,
   ...rest
 }: { observable: { type: ObservableType; value: string } | null | undefined; children: ReactElement } & Omit<ComponentProps<"span">, "children">) {
+  const panel = useEnrichmentPanel();
+  // The value the menu was opened on, so the panel knows the list it is in and where to return focus.
+  const trigger = useRef<HTMLElement | null>(null);
   if (!observable) return children;
   const { type, value } = observable;
   const lookups = observableLookups(type, value).length > 0;
+  const enrichment = panel.available && hasEnrichment(type);
   return (
     <ContextMenu>
       {/* The value stays selectable: the trigger would otherwise make it select-none. */}
-      <ContextMenuTrigger asChild className={cn("select-text", className)} {...rest}>
+      <ContextMenuTrigger
+        asChild
+        className={cn("select-text", className)}
+        onContextMenu={(e) => {
+          trigger.current = e.currentTarget;
+          onContextMenu?.(e);
+        }}
+        {...rest}
+      >
         {children}
       </ContextMenuTrigger>
       <ContextMenuContent className="w-52">
+        {enrichment && (
+          <>
+            <ContextMenuItem onSelect={() => panel.open({ type, value }, { from: trigger.current })}>
+              <PanelRightOpenIcon aria-hidden />
+              Show Enrichment
+              <ContextMenuShortcut>I</ContextMenuShortcut>
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+          </>
+        )}
         <ObservableCopyItems Item={ContextMenuItem} type={type} value={value} />
         {lookups && (
           <>
