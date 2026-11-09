@@ -217,6 +217,54 @@ test("an Analyst bulk-attaches Alerts to a Case, is told which changed meanwhile
   }
 }, 60_000);
 
+test("an Analyst drags selected Alerts, or a single one, onto a Case in the work queue to attach them", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  const falcon = fakeFalcon();
+  const worker = createStreamWorker(t.deps, { connect: falcon.connect, workerId: "worker-1" });
+  t.onCleanup(worker.close);
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    await owner.api.organization.invitations.$post({ json: { email: "ana@acme.example", role: "analyst" } });
+    const ana = await t.acceptInvite("ana@acme.example", PASSWORD, "Ana Analyst");
+    await owner.api.integrations.$post({ json: { name: "CrowdStrike — Prod", cloud: "us-1", clientId: "falcon-client-0001", clientSecret: "s" } });
+    await worker.tick();
+    const stream = falcon.tenant("falcon-client-0001");
+    stream.detection("EppDetectionSummaryEvent", "ldt:1", { Name: "Encoded PowerShell from Office process", SeverityName: "High" });
+    stream.detection("EppDetectionSummaryEvent", "ldt:2", { Name: "Credential dumping attempt", SeverityName: "High" });
+    stream.detection("EppDetectionSummaryEvent", "ldt:3", { Name: "Suspicious outbound connection", SeverityName: "Medium" });
+    stream.detection("EppDetectionSummaryEvent", "ldt:4", { Name: "Unusual sign-in location", SeverityName: "Critical" });
+    await stream.drained();
+    const opened = await (await ana.api.cases.$post({ json: { title: "PowerShell on FIN-LT-0231", caseType: "malware", severity: "high" } })).json();
+    if (!("case" in opened)) throw new Error("Could not open a Case");
+    const number = opened.case.number;
+
+    const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
+    await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
+    await page.goto(`${baseUrl}/alerts`);
+    const queueCase = page.getByRole("navigation", { name: "Work queue" }).getByRole("link", { name: /^PowerShell on FIN-LT-0231/ });
+
+    // Dragging a selected Alert carries the whole selection.
+    for (const id of ["ldt:1", "ldt:2"]) await page.getByLabel(`Select ${id}`).check();
+    await page.getByTestId("alert-ldt:1").dragTo(queueCase);
+    await page.getByText(`2 Alerts attached to C-${number}`).waitFor();
+    await page.getByTestId("alert-ldt:1").waitFor({ state: "detached" });
+    await page.getByTestId("alert-ldt:2").waitFor({ state: "detached" });
+
+    // Dragging an Alert that isn't selected carries only that one.
+    await page.getByLabel("Select ldt:4").check();
+    await page.getByTestId("alert-ldt:3").dragTo(queueCase);
+    await page.getByText(`1 Alert attached to C-${number}`).waitFor();
+    await page.getByTestId("alert-ldt:3").waitFor({ state: "detached" });
+    await page.getByText("1 selected").waitFor();
+    const attached = await (await ana.api.cases[":number"].alerts.$get({ param: { number: String(number) } })).json();
+    if (!("alerts" in attached)) throw new Error("Could not load the Case's Alerts");
+    expect(attached.alerts.map((a) => a.externalId).toSorted()).toEqual(["ldt:1", "ldt:2", "ldt:3"]);
+  } finally {
+    await stop();
+  }
+}, 60_000);
+
 test("an Alert shows the Observables and Assets it names; attaching it adds them to the Case as Alert (auto)", async () => {
   const { t, baseUrl, stop } = await serveTestApp();
   const falcon = fakeFalcon();

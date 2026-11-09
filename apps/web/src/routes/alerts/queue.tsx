@@ -6,6 +6,7 @@ import { EnrichmentButton, EnrichmentTarget } from "@/components/observable-deta
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { XIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { CaseRef } from "@/components/case-ref";
 import { Time } from "@/components/time";
 import { SeverityBadge, StatusBadge } from "@/components/case-badges";
@@ -34,12 +35,14 @@ import {
   healthWord,
   integrationsQuery,
 } from "@/lib/alerts";
+import { endAlertDrag, startAlertDrag } from "@/lib/alert-drag";
 import { api } from "@/lib/api";
 import { type CaseType, caseRef, SEVERITIES, type Severity, severityLabel } from "@/lib/cases";
 import { assetTypeLabel, type ItemKind, type ObservableType, observableTypeLabel, shownObservable } from "@/lib/observables";
 import { cn } from "@/lib/utils";
 import { exactTime } from "@/lib/when";
 import {
+  attachAlerts,
   AttachAlertsDialog,
   type BulkOutcome,
   DismissAlertsDialog,
@@ -204,8 +207,8 @@ export function AlertQueuePage() {
     title: lead ? (dialogPicked.length > 1 ? `${lead.title} and ${dialogPicked.length - 1} more` : lead.title) : "",
     caseType: lead ? caseTypeFor[lead.kind] : ("malware" as const),
   };
-  const done = (result: BulkOutcome) => {
-    const known = dialog?.picked ?? new Map<string, Picked>();
+  /** Reports what an action on the `known` Alerts did, and takes them out of the selection. */
+  const finish = (known: Map<string, Picked>, result: BulkOutcome) => {
     // Name each refused Alert as the Member saw it, even one the server no longer shows them.
     const refused = result.refused.map((r) => ({ ...r, externalId: r.externalId ?? known.get(r.id)?.externalId ?? null, title: r.title ?? known.get(r.id)?.title ?? null }));
     setOutcome({ ...result, refused });
@@ -215,6 +218,37 @@ export function AlertQueuePage() {
       for (const id of known.keys()) next.delete(id);
       return next;
     });
+  };
+  const done = (result: BulkOutcome) => finish(dialog?.picked ?? new Map(), result);
+
+  const queryClient = useQueryClient();
+  /** Alerts dropped on a Case in the work queue are attached to it straight away. */
+  const dropAttach = useMutation({
+    mutationFn: ({ number, picked }: { number: number; picked: Map<string, Picked> }) =>
+      attachAlerts(number, [...picked].map(([id, p]) => ({ id, version: p.version }))),
+    onSuccess: async (result, { number, picked }) => {
+      await queryClient.invalidateQueries({ queryKey: alertsKey });
+      const verb = `attached to ${caseRef(number)}`;
+      if (result.refused.length) {
+        // Some were refused: the notice says which and why, and offers to select them again.
+        finish(picked, { ...result, verb });
+        justDone.current = false;
+        requestAnimationFrame(() => document.getElementById("alert-outcome")?.focus());
+        return;
+      }
+      setOutcome(null);
+      setSelected((prev) => new Map([...prev].filter(([id]) => !picked.has(id))));
+      toast(`${alertCount(result.applied.length)} ${verb}`);
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  /**
+   * Dragging a row carries the selection when the row is in it, and only that Alert otherwise.
+   * Dropping it on a Case in the work queue attaches them.
+   */
+  const dragStart = (event: React.DragEvent, a: AlertRow) => {
+    const picked = selected.has(a.id) ? selected : new Map([[a.id, pickedOf(a)]]);
+    startAlertDrag(event, { count: picked.size, drop: (number) => dropAttach.mutate({ number, picked }) });
   };
   /** Selects the refused Alerts again, as they are now. */
   const reselect = () => {
@@ -350,7 +384,8 @@ export function AlertQueuePage() {
           </AlertAction>
         </Alert>
       )}
-      <div className={cn("grid items-start gap-4", showing && "@4xl:grid-cols-[1fr_340px]")}>
+      {/* The Alert panel takes two fifths of the page beside the queue, never less than 26rem. */}
+      <div className={cn("grid items-start gap-4", showing && "@4xl:grid-cols-[minmax(0,3fr)_minmax(26rem,2fr)]")}>
       {!(alerts.isError && !loaded) && (
       <Card className="@container py-0">
           <Table ref={table} className="table-fixed">
@@ -429,6 +464,9 @@ export function AlertQueuePage() {
                   data-testid={`alert-${a.externalId}`}
                   data-alert-id={a.id}
                   data-state={selected.has(a.id) ? "selected" : undefined}
+                  draggable
+                  onDragStart={(e) => dragStart(e, a)}
+                  onDragEnd={endAlertDrag}
                   // A half-strength fill: muted text on the full grey wash falls short of 4.5:1.
                   className={cn("focus-within:bg-muted/50 data-[state=selected]:bg-muted/50", showing === a.id && "bg-muted/50")}
                 >
@@ -553,7 +591,7 @@ export function AlertQueuePage() {
         </p>
         <p>
           <Key>j</Key> <Key>k</Key> move · <Key>x</Key> selects · <Key>Enter</Key> opens · <Key>Esc</Key> closes · with Alerts selected,{" "}
-          <Key>o</Key> opens a Case, <Key>a</Key> attaches, <Key>d</Key> dismisses
+          <Key>o</Key> opens a Case, <Key>a</Key> attaches, <Key>d</Key> dismisses · drag Alerts onto a Case in the work queue to attach them
         </p>
         </div>
       )}
@@ -840,7 +878,8 @@ function AlertPanel({ id, onClose, onAct }: { id: string; onClose: () => void; o
   const onCase = a.attached?.case ?? null;
   const editable = onCase !== null && onCase.status !== "closed";
   return (
-    <Card role="region" aria-label="Alert" className="self-start">
+    // Beside the queue it stays in view while the queue scrolls, scrolling on its own when it runs longer than the window.
+    <Card role="region" aria-label="Alert" className="self-start @4xl:sticky @4xl:top-18 @4xl:max-h-[calc(100svh-5.5rem)] @4xl:overflow-y-auto">
       <CardContent className="grid gap-3 text-sm">
         <div className="flex items-center gap-2">
           <SeverityBadge severity={a.severity} />
