@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { casePolicy, visibleAlerts, visibleCases, visibleItems } from "../access/policy";
+import { casePolicy, isGuest, visibleAlerts, visibleCases, visibleItems } from "../access/policy";
 import { recordOrgAudit } from "../audit/org-audit-log";
 import { recordCaseAudit } from "../cases/case-audit-log";
 import { actorOf, CaseClosed, CaseNotFound, insertCase, type OpenCaseInput, reopenLocked } from "../cases/cases";
@@ -26,7 +26,7 @@ import {
   unlinkAlertIndicators,
 } from "../observables/observables";
 import { publish } from "../realtime/signals";
-import { alertLabel, type AlertStatus, crowdstrikeActorName, type DismissalReason, dismissalReasonLabel } from "./vocabulary";
+import { alertLabel, type AlertStatus, crowdstrikeActorName, falconAlertUrl, type DismissalReason, dismissalReasonLabel } from "./vocabulary";
 import { queueTeamsPost, sendTeamsPosts } from "../teams/teams";
 
 /**
@@ -143,6 +143,8 @@ export type CaseCorrelation = {
     detectedAt: string | null;
     receivedAt: string;
     version: number;
+    /** The Alert in the Falcon console, when its detection linked to it. */
+    falconUrl: string | null;
     integration: { id: string; name: string };
   };
   sharedCount: number;
@@ -568,6 +570,7 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
           detectedAt: alerts.detectedAt,
           receivedAt: alerts.receivedAt,
           version: alerts.version,
+          falconLink: sql<string | null>`${alerts.payload}->>'FalconHostLink'`,
           integrationId: integrations.id,
           integrationName: integrations.name,
           dismissalReason: alerts.dismissalReason,
@@ -603,7 +606,7 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
         ).map((c) => [c.id, { number: c.number, title: c.title }]),
       );
       const subjects = await alertSubjectAssets(db, rows);
-      return rows.map(({ integrationId, integrationName, detectedAt, receivedAt, caseNumber, caseTitle, ...row }) => {
+      return rows.map(({ integrationId, integrationName, detectedAt, receivedAt, caseNumber, caseTitle, falconLink, ...row }) => {
         const top = best.get(row.id);
         const related = top && bestCases.get(top.caseId);
         return {
@@ -611,6 +614,8 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
           /** The host and account Assets behind `host` and `userName`, for links to their pages. */
           ...subjects.get(row.id)!,
           integration: { id: integrationId, name: integrationName },
+          /** The Alert in the Falcon console, when its detection linked to it. */
+          falconUrl: falconAlertUrl(falconLink),
           /** The Case it is attached to. */
           case: caseNumber !== null && caseTitle !== null ? { number: caseNumber, title: caseTitle } : null,
           /** Correlation: its strongest visible Case other than its own, and how many other Cases it correlates with. */
@@ -645,15 +650,19 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
           attachedAt: alerts.attachedAt,
           version: alerts.version,
           internal: alerts.internal,
+          falconLink: sql<string | null>`${alerts.payload}->>'FalconHostLink'`,
           integrationName: integrations.name,
         })
         .from(alerts)
         .innerJoin(integrations, eq(alerts.integrationId, integrations.id))
         .where(and(eq(alerts.caseId, found.id), visibleItems(me, alerts.internal)))
         .orderBy(desc(alerts.attachedAt), desc(alerts.seq));
-      return rows.map(({ detectedAt, attachedAt, integrationName, ...row }) => ({
+      const guest = isGuest(me);
+      return rows.map(({ detectedAt, attachedAt, integrationName, falconLink, ...row }) => ({
         ...row,
         integration: { name: integrationName },
+        /** The Alert in the Falcon console, for Members, when its detection linked to it. */
+        falconUrl: guest ? null : falconAlertUrl(falconLink),
         detectedAt: detectedAt?.toISOString() ?? null,
         attachedAt: attachedAt?.toISOString() ?? null,
       }));
@@ -681,6 +690,7 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
           receivedAt: alerts.receivedAt,
           seq: alerts.seq,
           version: alerts.version,
+          falconLink: sql<string | null>`${alerts.payload}->>'FalconHostLink'`,
           integrationId: integrations.id,
           integrationName: integrations.name,
         })
@@ -692,9 +702,10 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
         alerts: rows
           .map((r) => ({ row: r, items: shared.get(r.id)! }))
           .toSorted((x, y) => y.items.length - x.items.length || y.row.receivedAt.getTime() - x.row.receivedAt.getTime() || y.row.seq - x.row.seq)
-          .map(({ row: { integrationId, integrationName, detectedAt, receivedAt, seq: _seq, ...row }, items }) => ({
+          .map(({ row: { integrationId, integrationName, detectedAt, receivedAt, seq: _seq, falconLink, ...row }, items }) => ({
             alert: {
               ...row,
+              falconUrl: falconAlertUrl(falconLink),
               integration: { id: integrationId, name: integrationName },
               detectedAt: detectedAt?.toISOString() ?? null,
               receivedAt: receivedAt.toISOString(),
@@ -790,6 +801,8 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
         receivedAt: row.receivedAt.toISOString(),
         version: row.version,
         payload: row.payload,
+        /** The Alert in the Falcon console, when its detection linked to it. */
+        falconUrl: falconAlertUrl(row.payload.FalconHostLink),
         /** The Observables and Assets its detection names. */
         indicators: await alertIndicators(db, row.id),
         /** Hidden from the Guests on its Case. */

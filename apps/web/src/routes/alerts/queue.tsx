@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
+import { AlertMenu } from "@/components/alert-menu";
 import { ObservableMenu } from "@/components/observable-menu";
 import { EnrichmentButton, EnrichmentTarget } from "@/components/observable-details";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
@@ -422,6 +423,7 @@ export function AlertQueuePage() {
                 </TableRow>
               )}
               {loaded?.map((a, index) => (
+                <AlertMenu key={a.id} falconUrl={a.falconUrl}>
                 <TableRow
                   key={a.id}
                   data-testid={`alert-${a.externalId}`}
@@ -511,6 +513,7 @@ export function AlertQueuePage() {
                     )}
                   </TableCell>
                 </TableRow>
+                </AlertMenu>
               ))}
               {loaded?.length === 0 && (
                 <TableRow className="hover:bg-transparent">
@@ -856,12 +859,14 @@ function AlertPanel({ id, onClose, onAct }: { id: string; onClose: () => void; o
             <XIcon aria-hidden />
           </Button>
         </div>
-        <div>
-          <h2 className="text-base font-semibold text-balance">{a.title}</h2>
-          <p className="text-xs text-muted-foreground">
-            <span className="font-mono">{a.externalId}</span> · {alertKindLabel[a.kind]} · {a.integration.name}
-          </p>
-        </div>
+        <AlertMenu falconUrl={a.falconUrl}>
+          <div>
+            <h2 className="text-base font-semibold text-balance">{a.title}</h2>
+            <p className="text-xs text-muted-foreground">
+              <span className="font-mono">{a.externalId}</span> · {alertKindLabel[a.kind]} · {a.integration.name}
+            </p>
+          </div>
+        </AlertMenu>
         {a.description && <p>{a.description}</p>}
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
           <dt className="text-muted-foreground">Host</dt>

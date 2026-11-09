@@ -1,3 +1,4 @@
+import { AlertMenu } from "@/components/alert-menu";
 import { ObservableMenu } from "@/components/observable-menu";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -54,9 +55,11 @@ export function RelatedAlertsPanel({ c }: { c: CaseView }) {
               <li key={a.alert.id} className="grid gap-1.5 rounded border p-2">
                 <div className="flex items-center gap-2">
                   <SeverityBadge severity={a.alert.severity} />
-                  <Link to="/alerts" search={{ alert: a.alert.id }} className="min-w-0 truncate font-medium underline-offset-4 hover:underline" title={a.alert.title}>
-                    {a.alert.title}
-                  </Link>
+                  <AlertMenu falconUrl={a.alert.falconUrl}>
+                    <Link to="/alerts" search={{ alert: a.alert.id }} className="min-w-0 truncate font-medium underline-offset-4 hover:underline" title={a.alert.title}>
+                      {a.alert.title}
+                    </Link>
+                  </AlertMenu>
                   <span className="ml-auto shrink-0 text-xs text-muted-foreground">{a.sharedCount} shared</span>
                 </div>
                 <span className="font-mono text-xs text-muted-foreground">{a.alert.externalId}</span>

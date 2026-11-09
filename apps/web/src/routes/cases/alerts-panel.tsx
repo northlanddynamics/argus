@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { AlertMenu } from "@/components/alert-menu";
 import { SeverityBadge } from "@/components/case-badges";
 import { Button } from "@/components/ui/button";
 import { Visibility } from "@/components/visibility";
@@ -34,7 +35,8 @@ export function CaseAlertsPanel({ c }: { c: CaseView }) {
         {alerts.data?.length ? (
           <ul className="grid gap-3 text-sm" aria-label="Attached Alerts">
             {alerts.data.map((a) => (
-              <li key={a.id} className="grid gap-0.5">
+              <AlertMenu key={a.id} falconUrl={a.falconUrl}>
+              <li className="grid gap-0.5">
                 <span className="flex items-center gap-2">
                   <SeverityBadge severity={a.severity} />
                   <span className="truncate" title={a.title}>
@@ -52,6 +54,7 @@ export function CaseAlertsPanel({ c }: { c: CaseView }) {
                   />
                 )}
               </li>
+              </AlertMenu>
             ))}
           </ul>
         ) : (

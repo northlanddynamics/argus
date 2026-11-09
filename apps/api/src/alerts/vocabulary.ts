@@ -61,6 +61,21 @@ const FALCON_CONSOLES: Record<FalconCloud, string> = {
   "us-gov-1": "https://falcon.laggar.gcw.crowdstrike.com",
 };
 
+/**
+ * The Alert in the Falcon console: the `FalconHostLink` its detection carried, if that is an https
+ * link to one of the Falcon consoles (anything else is dropped, so a payload can't smuggle in a link).
+ */
+export function falconAlertUrl(link: unknown): string | null {
+  if (typeof link !== "string") return null;
+  let url: URL;
+  try {
+    url = new URL(link);
+  } catch {
+    return null;
+  }
+  return url.protocol === "https:" && Object.values(FALCON_CONSOLES).some((c) => new URL(c).host === url.host) ? url.href : null;
+}
+
 /** Device `deviceId` (an `aid`) in the Falcon console of `cloud`. */
 export const falconDeviceUrl = (cloud: FalconCloud, deviceId: string) => `${FALCON_CONSOLES[cloud]}/hosts/hosts/host/${encodeURIComponent(deviceId)}`;
 
