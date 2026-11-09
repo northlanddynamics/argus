@@ -762,7 +762,11 @@ export const guestSessions = pgTable("guest_sessions", {
  *
  * The rest is the worker's account of the Event Streams connection: `stream_offset` is the offset of
  * the last event it processed (it resumes after it), and `last_gap_*` the last stretch of the stream
- * Falcon could no longer replay. Never deleted (ADR 0003); migration 0017 refuses deletes.
+ * Falcon could no longer replay. Never deleted (ADR 0003); migration 0017 refuses deletes. Deleting one
+ * (ADR 0013) only sets `deleted_at` and `deleted_by_id` and turns it off: paused, with write-back,
+ * Response Actions and Host containment off. A deleted Integration is gone from Settings, does nothing
+ * more and frees its name, while the Alerts, Response Actions and lookups made through it keep
+ * pointing at it.
  */
 export const integrations = pgTable(
   "integrations",
@@ -820,12 +824,17 @@ export const integrations = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "restrict" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    /** When an Admin deleted it (ADR 0013), and who; null while it is in use. */
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    deletedById: text("deleted_by_id").references(() => user.id, { onDelete: "restrict" }),
   },
   (t) => [
     check("integrations_cloud", sql`(${t.provider} = 'crowdstrike') = (${t.cloud} IS NOT NULL)`),
-    uniqueIndex("integrations_org_name_idx").on(t.organizationId, sql`lower(${t.name})`),
+    // A deleted Integration's name, and its place as the one IPinfo Integration, are free again (ADR 0013).
+    uniqueIndex("integrations_org_name_idx").on(t.organizationId, sql`lower(${t.name})`).where(sql`${t.deletedAt} IS NULL`),
     // An Organization looks IPs up through one IPinfo Integration (ADR 0010).
-    uniqueIndex("integrations_one_ipinfo_idx").on(t.organizationId).where(sql`${t.provider} = 'ipinfo'`),
+    uniqueIndex("integrations_one_ipinfo_idx").on(t.organizationId).where(sql`${t.provider} = 'ipinfo' AND ${t.deletedAt} IS NULL`),
+    check("integrations_deleted", sql`(${t.deletedAt} IS NULL) = (${t.deletedById} IS NULL) AND (${t.deletedAt} IS NULL OR ${t.paused})`),
     check(
       "integrations_gap",
       sql`(${t.lastGapAt} IS NULL) = (${t.lastGapFromOffset} IS NULL) AND (${t.lastGapAt} IS NULL) = (${t.lastGapToOffset} IS NULL)`,

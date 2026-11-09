@@ -70,7 +70,7 @@ export async function requestIdentityEnrichment(db: Db | Tx, assetId: string, no
         await db
           .select({ id: integrations.id })
           .from(integrations)
-          .where(and(eq(integrations.organizationId, account.organizationId), eq(integrations.provider, "crowdstrike")))
+          .where(and(eq(integrations.organizationId, account.organizationId), eq(integrations.provider, "crowdstrike"), isNull(integrations.deletedAt)))
       ).filter((i) => !withIdentities.has(i.id))
     : [];
   const since = new Date(now.getTime() - IDENTITY_ENRICHMENT_MAX_AGE_MS);

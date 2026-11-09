@@ -18,13 +18,13 @@ import { readFalconUpdate } from "./falcon-updates";
  * live signal.
  */
 
-/** The Integrations a worker should be streaming, unless paused: those whose Provider sends Alerts, in Organizations that still exist. */
+/** The Integrations a worker should be streaming, unless paused: those whose Provider sends Alerts, not deleted, in Organizations that still exist. */
 export async function streamTargets(db: Db) {
   return db
     .select({ id: integrations.id, paused: integrations.paused, credentialsRevision: integrations.credentialsRevision })
     .from(integrations)
     .innerJoin(organization, eq(integrations.organizationId, organization.id))
-    .where(and(isNull(organization.deletedAt), inArray(integrations.provider, providersThat("receivesAlerts"))));
+    .where(and(isNull(organization.deletedAt), isNull(integrations.deletedAt), inArray(integrations.provider, providersThat("receivesAlerts"))));
 }
 
 /** The name an Integration's stream is read under: one per Integration, as Falcon requires. */

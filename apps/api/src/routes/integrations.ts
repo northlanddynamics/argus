@@ -4,7 +4,7 @@ import { z } from "zod";
 import { NotPermitted } from "../access/policy";
 import { FALCON_CLOUDS } from "../alerts/vocabulary";
 import type { Deps } from "../deps";
-import { IntegrationNameTaken, type NewIntegration, IntegrationNotFound, InvalidDefaults, NotSupportedByProvider, OneIpinfoIntegration, WrongCredentials } from "../integrations/integrations";
+import { IntegrationHoldsResponseActions, IntegrationNameTaken, type NewIntegration, IntegrationNotFound, InvalidDefaults, NotSupportedByProvider, OneIpinfoIntegration, WrongCredentials } from "../integrations/integrations";
 import { SEVERITIES } from "../cases/vocabulary";
 import { FALCON_IOC_PLATFORMS } from "../response-actions/vocabulary";
 import { type MemberEnv, requireMember } from "../members/membership";
@@ -53,7 +53,7 @@ const enabledBody = z.object({ enabled: z.boolean() });
 
 const notPermitted = { error: "Not permitted" } as const;
 
-/** Integrations (CrowdStrike, Mimecast or IPinfo): every Member sees them and their health; Admins add, rotate, pause, resume them and set their write-back, Response Actions, Response Action defaults and Host containment. */
+/** Integrations (CrowdStrike, Mimecast or IPinfo): every Member sees them and their health; Admins add, rotate, pause, resume and delete them and set their write-back, Response Actions, Response Action defaults and Host containment. */
 export const integrationRoutes = (deps: Deps, { integrations }: Modules) =>
   new Hono<MemberEnv>()
     .use(requireMember(deps.db))
@@ -151,6 +151,17 @@ export const integrationRoutes = (deps: Deps, { integrations }: Modules) =>
         if (e instanceof IntegrationNotFound) return c.json({ error: e.message }, 404);
         if (e instanceof NotSupportedByProvider) return c.json({ error: e.message }, 422);
         if (e instanceof InvalidDefaults) return c.json({ error: e.message }, 422);
+        throw e;
+      }
+    })
+    .delete("/:id", async (c) => {
+      try {
+        await integrations.delete(c.get("membership"), c.req.param("id"));
+        return c.json({ ok: true }, 200);
+      } catch (e) {
+        if (e instanceof NotPermitted) return c.json(notPermitted, 403);
+        if (e instanceof IntegrationNotFound) return c.json({ error: e.message }, 404);
+        if (e instanceof IntegrationHoldsResponseActions) return c.json({ error: e.message }, 409);
         throw e;
       }
     });

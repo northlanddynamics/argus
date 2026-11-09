@@ -59,7 +59,7 @@ export async function requestHostEnrichment(db: Db | Tx, assetId: string, now: D
     await db
       .select({ id: integrations.id })
       .from(integrations)
-      .where(and(eq(integrations.organizationId, host.organizationId), eq(integrations.provider, "crowdstrike")))
+      .where(and(eq(integrations.organizationId, host.organizationId), eq(integrations.provider, "crowdstrike"), isNull(integrations.deletedAt)))
   ).filter((i) => !withDevices.has(i.id));
   const since = new Date(now.getTime() - HOST_ENRICHMENT_MAX_AGE_MS);
   const s = falconHostSnapshots;

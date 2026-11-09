@@ -412,6 +412,32 @@ describe("Sending Response Actions", () => {
   });
 });
 
+describe("Deleting an Integration with Response Actions", () => {
+  test("it is refused while what Argus sent through it is still in place, and allowed once removed", async () => {
+    const a = await acme();
+    const domain = await a.link("domain", "evil.example");
+    const taken = (await a.take(a.ana, domain)).body.responseAction!;
+    const del = () => a.owner.api.integrations[":id"].$delete({ param: { id: a.integrationId } });
+
+    // Pending, then Active: Argus holds it in Falcon.
+    const pending = await del();
+    expect(pending.status).toBe(409);
+    expect(await pending.json()).toMatchObject({ error: "1 Response Action taken through this Integration is still in place; remove it from its Case first" });
+    await a.worker.tick();
+    expect((await del()).status).toBe(409);
+
+    expect((await a.remove(a.ana, taken.id)).status).toBe(200);
+    await a.worker.tick();
+    expect((await a.list(a.ana)).responseActions[0]).toMatchObject({ state: "removed" });
+    expect((await del()).status).toBe(200);
+
+    // The record stays on the Case, under the deleted Integration's name; nothing more is taken through it.
+    expect((await a.list(a.ana)).responseActions[0]).toMatchObject({ integration: { id: a.integrationId, name: "CrowdStrike — Prod" } });
+    expect((await a.list(a.ana)).integrations).toEqual([]);
+    expect((await a.take(a.ana, await a.link("domain", "worse.example"))).status).toBe(400);
+  });
+});
+
 describe("The record of a Response Action", () => {
   test("each state change is on the Timeline and in the Audit Log, without the Integration's name or errors", async () => {
     const a = await acme();

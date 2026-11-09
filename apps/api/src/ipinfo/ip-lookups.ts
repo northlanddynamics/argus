@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import type { IntegrationHealth } from "../alerts/vocabulary";
 import { ipLookups, integrations } from "../db/schema";
 import type { Deps } from "../deps";
@@ -132,7 +132,7 @@ export function ipLookupStore({ db, clock, credentials: sealer, ipinfo }: Pick<D
       const [integration] = await db
         .select()
         .from(integrations)
-        .where(and(eq(integrations.organizationId, me.organizationId), eq(integrations.provider, "ipinfo")))
+        .where(and(eq(integrations.organizationId, me.organizationId), eq(integrations.provider, "ipinfo"), isNull(integrations.deletedAt)))
         .orderBy(asc(integrations.createdAt))
         .limit(1);
       if (!integration) return { ip, state: "unconfigured", reserved: null, details: null, fetchedAt: null, error: null };

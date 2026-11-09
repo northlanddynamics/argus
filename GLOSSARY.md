@@ -103,7 +103,7 @@ Why an Alert was dismissed without being attached to a Case: False Positive, Ben
 _Avoid_: Close reason, suppression
 
 **Integration**:
-An Organization's connection to an external security tool, from a Provider such as CrowdStrike or Mimecast; depending on the Provider it receives Alerts, writes changes to those Alerts back, and takes Response Actions.
+An Organization's connection to an external security tool, from a Provider such as CrowdStrike or Mimecast; depending on the Provider it receives Alerts, writes changes to those Alerts back, and takes Response Actions; deleting one turns it off for good and keeps it, so what came through it still names it.
 _Avoid_: Connector, source, plugin, feed
 
 **Provider**:
