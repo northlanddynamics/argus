@@ -137,3 +137,12 @@ export async function setIgnored(kind: ItemKind, id: string, ignored: boolean) {
   const res = ignored ? await route.$put(param) : await route.$delete(param);
   if (!res.ok) throw new Error(await errorMessage(res, ignored ? "Could not ignore it" : "Could not stop ignoring it"));
 }
+
+/**
+ * Puts the Observable of `type` with this value on the Ignored list, or takes it off, wherever it is
+ * shown: Argus adds it first if the Organization doesn't hold it yet.
+ */
+export async function setIgnoredByValue(type: ObservableType, value: string, ignored: boolean) {
+  const res = await api.observables.ignored.$post({ json: { type, value, ignored } });
+  if (!res.ok) throw new Error(await errorMessage(res, ignored ? "Could not ignore it" : "Could not stop ignoring it"));
+}

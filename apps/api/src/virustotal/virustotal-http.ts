@@ -22,9 +22,6 @@ const BASE_URL = "https://www.virustotal.com/api/v3";
 /** How long a lookup may take before it counts as failed: someone is waiting on it. */
 const REQUEST_TIMEOUT_MS = 8_000;
 
-/** At most this many other names and detections are kept. */
-const MAX_LISTED = 10;
-
 /** A VirusTotal API call failed; the message says how. */
 export class VirustotalError extends Error {}
 
@@ -58,13 +55,12 @@ const statsOf = (v: unknown): AnalysisStats => {
   };
 };
 
-/** The engines `last_analysis_results` says call it malicious, by name, at most ten. */
+/** The engines `last_analysis_results` says call it malicious, by name, every one. */
 const detectionsOf = (v: unknown): Detection[] =>
   Object.entries(obj(v))
     .map(([engine, r]) => ({ engine: str(obj(r).engine_name) ?? engine, category: obj(r).category, result: str(obj(r).result) }))
     .filter((d) => d.category === "malicious" && d.result)
     .toSorted((x, y) => x.engine.localeCompare(y.engine))
-    .slice(0, MAX_LISTED)
     .map((d) => ({ engine: d.engine, result: d.result! }));
 
 const votesOf = (v: unknown) => {
@@ -103,8 +99,7 @@ export function readDomain(body: Record<string, unknown>): DomainReport {
   const dns = (Array.isArray(a.last_dns_records) ? a.last_dns_records.map(obj) : [])
     .map((r) => ({ type: str(r.type)?.toUpperCase() ?? "", value: str(r.value) }))
     .filter((r): r is { type: string; value: string } => DNS_TYPES.includes(r.type) && r.value !== null)
-    .toSorted((x, y) => DNS_TYPES.indexOf(x.type) - DNS_TYPES.indexOf(y.type))
-    .slice(0, MAX_LISTED);
+    .toSorted((x, y) => DNS_TYPES.indexOf(x.type) - DNS_TYPES.indexOf(y.type));
   const popularity = Object.entries(obj(a.popularity_ranks))
     .map(([list, r]) => ({ list, rank: num(obj(r).rank) }))
     .filter((p): p is { list: string; rank: number } => p.rank !== null)
@@ -138,7 +133,7 @@ export function readUrl(body: Record<string, unknown>): UrlReport {
     id: str(data.id),
     url,
     finalUrl: finalUrl && finalUrl !== url ? finalUrl : null,
-    redirects: strings(a.redirection_chain).slice(0, MAX_LISTED),
+    redirects: strings(a.redirection_chain),
     title: str(a.title),
     httpStatus: num(a.last_http_response_code),
     stats: statsOf(a.last_analysis_stats),
@@ -169,9 +164,7 @@ export function readFile(body: Record<string, unknown>): FileReport {
     sha1: str(a.sha1)?.toLowerCase() ?? null,
     sha256: str(a.sha256)?.toLowerCase() ?? null,
     name,
-    names: strings(a.names)
-      .filter((n) => n !== name)
-      .slice(0, MAX_LISTED),
+    names: strings(a.names).filter((n) => n !== name),
     size: num(a.size),
     typeDescription: str(a.type_description),
     stats: statsOf(a.last_analysis_stats),

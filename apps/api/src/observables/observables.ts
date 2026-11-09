@@ -494,42 +494,79 @@ function heldOnceStore<Type extends string>(
     return item;
   }
 
+  /** Puts `item` (locked) on the Ignored list, or takes it off; returns whether anything changed. */
+  async function ignoreItem(tx: Tx, me: Membership, item: { id: string; type: string; value: string }, ignored: boolean, now: Date) {
+    const [entry] = await tx
+      .select({ id: ignoredObservables.id })
+      .from(ignoredObservables)
+      .where(and(eq(kind.ignoredItem, item.id), isNull(ignoredObservables.endedAt)));
+    if (!!entry === ignored) return false;
+    if (entry) {
+      await tx.update(ignoredObservables).set({ endedById: me.userId, endedAt: now }).where(eq(ignoredObservables.id, entry.id));
+    } else {
+      await tx.insert(ignoredObservables).values({
+        id: secureId(),
+        organizationId: me.organizationId,
+        [kind.name === "observable" ? "observableId" : "assetId"]: item.id,
+        ignoredById: me.userId,
+        ignoredAt: now,
+      });
+    }
+    await recordOrgAudit(tx, {
+      organizationId: me.organizationId,
+      occurredAt: now,
+      actor: { type: "member", id: me.userId, name: me.name },
+      category: "ignored-observables",
+      action: ignored ? "ignored_observable.added" : "ignored_observable.removed",
+      target: describe(item.type as Type, item.value),
+    });
+    // Its page and, later, Correlations depend on it.
+    await publish(tx, { kind: "alerts", organizationId: me.organizationId });
+    // So do the Cases it is linked to, which mark it Ignored.
+    const linked = await tx
+      .select({ caseId: links.caseId })
+      .from(links)
+      .where(and(eq(links.itemId, item.id), isNull(links.unlinkedAt)));
+    for (const caseId of new Set(linked.map((l) => l.caseId))) {
+      await publish(tx, { kind: "case", organizationId: me.organizationId, caseId, membersOnly: true });
+    }
+    return true;
+  }
+
   /**
    * Puts item `itemId` on the Ignored list, or takes it off (`ignored` false). Admins only. Doing what
    * is already so changes nothing; returns whether anything changed.
    */
   async function setIgnored(me: Membership, itemId: string, ignored: boolean) {
     if (!organizationPolicy.canManageIgnoredObservables(me)) throw new NotPermitted();
+    return db.transaction(async (tx) => ignoreItem(tx, me, await lockItem(tx, me, itemId), ignored, clock.now()));
+  }
+
+  /**
+   * As `setIgnored`, for the `type` item with this value wherever it is shown, such as in an
+   * Enrichment report, whether or not the Organization holds it yet: ignoring one it doesn't hold
+   * adds it first, so it is ignored when it turns up. Throws `InvalidValue` if the value isn't a
+   * valid `type`.
+   */
+  async function setIgnoredByValue(me: Membership, type: Type, raw: string, ignored: boolean) {
+    if (!organizationPolicy.canManageIgnoredObservables(me)) throw new NotPermitted();
+    const normalised = kind.normalise(type, raw);
+    if (!normalised) throw new InvalidValue(kind.invalid(type));
     const now = clock.now();
     return db.transaction(async (tx) => {
-      const item = await lockItem(tx, me, itemId);
-      const [entry] = await tx
-        .select({ id: ignoredObservables.id })
-        .from(ignoredObservables)
-        .where(and(eq(kind.ignoredItem, itemId), isNull(ignoredObservables.endedAt)));
-      if (!!entry === ignored) return false;
-      if (entry) {
-        await tx.update(ignoredObservables).set({ endedById: me.userId, endedAt: now }).where(eq(ignoredObservables.id, entry.id));
-      } else {
-        await tx.insert(ignoredObservables).values({
-          id: secureId(),
-          organizationId: me.organizationId,
-          [kind.name === "observable" ? "observableId" : "assetId"]: itemId,
-          ignoredById: me.userId,
-          ignoredAt: now,
-        });
+      if (ignored) {
+        await tx
+          .insert(items)
+          .values({ id: secureId(), organizationId: me.organizationId, type, value: normalised.value, matchKey: normalised.key, createdAt: now })
+          .onConflictDoNothing();
       }
-      await recordOrgAudit(tx, {
-        organizationId: me.organizationId,
-        occurredAt: now,
-        actor: { type: "member", id: me.userId, name: me.name },
-        category: "ignored-observables",
-        action: ignored ? "ignored_observable.added" : "ignored_observable.removed",
-        target: describe(item.type as Type, item.value),
-      });
-      // Its page and, later, Correlations depend on it.
-      await publish(tx, { kind: "alerts", organizationId: me.organizationId });
-      return true;
+      const [item] = await tx
+        .select({ id: items.id, type: items.type, value: items.value })
+        .from(items)
+        .where(and(eq(items.organizationId, me.organizationId), eq(items.type, type), eq(items.matchKey, normalised.key)))
+        .for("update");
+      if (!item) return false;
+      return ignoreItem(tx, me, item, ignored, now);
     });
   }
 
@@ -541,6 +578,7 @@ function heldOnceStore<Type extends string>(
     detail,
     open,
     setIgnored,
+    setIgnoredByValue,
 
     /**
      * Links the Organization's `type` item with this value to the Case, first adding it to the

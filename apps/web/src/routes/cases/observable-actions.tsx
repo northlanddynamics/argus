@@ -34,6 +34,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { ObservableIgnoreItem, useObservableIgnore } from "@/components/observable-ignore";
 import { ObservableCopyItems, ObservableLookupItems } from "@/components/observable-menu";
 import { Button } from "@/components/ui/button";
 import {
@@ -277,6 +278,7 @@ export function ObservableActions({
   const caseView = useQuery({ ...caseQuery(number), enabled: wanted });
   const actions = useQuery({ ...responseActionsQuery(number), enabled: wanted });
   const quick = useQuickSend(number);
+  const ignore = useObservableIgnore(observable.type, observable.value);
   const [dialog, setDialog] = useState<Dialog>(null);
   const refresh = () => void queryClient.invalidateQueries({ queryKey: responseActionsKey(number) });
   const retry = useMutation({ mutationFn: (id: string) => retryResponseAction(number, id), onError: (e) => toast.error(e.message), onSettled: refresh });
@@ -499,6 +501,12 @@ export function ObservableActions({
       </kit.Item>
       <ObservableCopyItems Item={kit.Item} type={observable.type} value={observable.value} />
       <ObservableLookupItems Item={kit.Item} type={observable.type} value={observable.value} />
+      {ignore.available && (
+        <>
+          <kit.Separator />
+          <ObservableIgnoreItem Item={kit.Item} ignore={ignore} />
+        </>
+      )}
       {onUnlink && (
         <>
           <kit.Separator />
@@ -531,6 +539,7 @@ export function ObservableActions({
         <ContextMenuContent className="w-56">{items(contextKit)}</ContextMenuContent>
       </ContextMenu>
       {quick.confirm}
+      {ignore.dialog}
       {dialog?.kind === "more" && c && (
         <SendToFalconDialog
           defaultOpen

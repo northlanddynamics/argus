@@ -5,7 +5,8 @@ import { NotPermitted } from "../access/policy";
 import type { Deps } from "../deps";
 import { type CaseWorkEnv, membersOnly, type ParticipantEnv, requireParticipant } from "../members/membership";
 import type { Modules } from "../modules";
-import { ItemNotFound } from "../observables/observables";
+import { InvalidValue, ItemNotFound } from "../observables/observables";
+import { OBSERVABLE_TYPES } from "../observables/vocabulary";
 
 const idParam = z.object({ id: z.string().min(1).max(100) });
 
@@ -42,7 +43,23 @@ const itemRoutes = <Store extends Modules["observables"] | Modules["assets"]>(de
     .delete("/:id/ignored", zValidator("param", idParam), membersOnly, setIgnored(false));
 };
 
-export const observableRoutes = (deps: Deps, { observables }: Modules) => itemRoutes(deps, observables);
+const byValue = z.object({ type: z.enum(OBSERVABLE_TYPES), value: z.string().min(1).max(4096), ignored: z.boolean() });
+
+/**
+ * Observables can also be put on the Ignored list, or taken off, by type and value wherever they are
+ * shown (`POST /ignored`), even one the Organization doesn't hold yet. Admins only.
+ */
+export const observableRoutes = (deps: Deps, { observables }: Modules) =>
+  itemRoutes(deps, observables).post("/ignored", zValidator("json", byValue), membersOnly, async (c) => {
+    const { type, value, ignored } = c.req.valid("json");
+    try {
+      return c.json({ changed: await observables.setIgnoredByValue(c.get("membership"), type, value, ignored) }, 200);
+    } catch (e) {
+      if (e instanceof NotPermitted) return c.json(notPermitted, 403);
+      if (e instanceof InvalidValue) return c.json({ error: e.message }, 400);
+      throw e;
+    }
+  });
 /** A host's or account's Enrichment is fetched from Falcon again when a Member asks (`POST /:id/enrichment`, ADR 0009). */
 export const assetRoutes = (deps: Deps, { assets }: Modules) =>
   itemRoutes(deps, assets).post("/:id/enrichment", zValidator("param", idParam), membersOnly, async (c) => {
