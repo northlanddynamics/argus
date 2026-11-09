@@ -380,7 +380,7 @@ describe("The Falcon API client", () => {
         title: "Controller",
         enabled: true,
         lockoutTime: null,
-        passwordAttributes: { lastChange: "2025-11-02T09:00:00Z", mayNeverExpire: true },
+        passwordAttributes: { lastChange: "2025-11-02T09:00:00Z", mayExpire: false },
       },
     ],
     associations: [
