@@ -94,15 +94,12 @@ export function EnrichmentPanel() {
         showCloseButton={false}
         className="w-full gap-0 overflow-y-auto overscroll-contain p-0 sm:w-[420px] sm:max-w-none"
         onKeyDown={(e) => onPanelKeyDown(e, panel)}
-        // Focus goes to the heading, so Back, ↑ ↓ and ✕ are next; on closing, back to the value it was opened from.
+        // Focus goes to the heading, so Back, ↑ ↓ and ✕ are next; on closing, the provider returns it to the value it was opened from.
         onOpenAutoFocus={(e) => {
           e.preventDefault();
           heading.current?.focus();
         }}
-        onCloseAutoFocus={(e) => {
-          e.preventDefault();
-          panel.returnFocus();
-        }}
+        onCloseAutoFocus={(e) => e.preventDefault()}
       >
         <SheetDescription className="sr-only">What Argus's sources say about it</SheetDescription>
         <PanelFrameProvider value={{ nav: <Nav target={target} headingRef={heading} /> }}>
