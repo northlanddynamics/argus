@@ -281,8 +281,6 @@ function LinkedCard<Type extends string>(props: {
   const addError = add.error;
   const hasActions = !readOnly || !!props.renderRow;
   const colSpan = 6 + (props.status ? 1 : 0) + (hasActions ? 1 : 0) + (selection ? 1 : 0);
-  /** The row's menu, at the end of a narrow row; on a very wide one, just after the date it was added. */
-  const actionCell = props.status ? "text-right @7xl:text-left" : "text-right";
 
   return (
     <Card>
@@ -352,14 +350,13 @@ function LinkedCard<Type extends string>(props: {
             <colgroup>
               {selection && <col className="w-10" />}
               <col className="w-8" />
-              {/* On a very wide page the value shows more of itself, and the status stops at 32rem so the
-                  row's menu, which then takes the slack, stays beside the rest of the row. */}
-              <col className={props.status ? "@xl:w-52 @6xl:w-64 @[100rem]:w-[28rem]" : undefined} />
-              <col className="w-0 @3xl:w-32" />
-              <col className="w-0 @4xl:w-36" />
-              {props.status && <col className={cn("w-0 @xl:w-auto", hasActions && "@7xl:w-[32rem]")} />}
-              <col className="w-0 @xl:w-28" />
-              {hasActions && <col className={cn("w-12", props.status && "@7xl:w-auto")} />}
+              {/* A share of the table never below a minimum, so the value shows more of itself as the screen grows. */}
+              <col className={props.status ? "@xl:w-52 @6xl:w-64 @7xl:w-[20%]" : undefined} />
+              <col className="w-0 @3xl:w-32 @7xl:w-[10%]" />
+              <col className="w-0 @4xl:w-36 @7xl:w-[11.25%]" />
+              {props.status && <col className="w-0 @xl:w-auto" />}
+              <col className="w-0 @xl:w-28 @7xl:w-[8.75%]" />
+              {hasActions && <col className="w-12" />}
             </colgroup>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
@@ -478,10 +475,10 @@ function LinkedCard<Type extends string>(props: {
                       <span className={showXl}><Time iso={item.linkedAt} /></span>
                     </TableCell>
                     {menuButton ? (
-                      <TableCell className={actionCell}>{menuButton}</TableCell>
+                      <TableCell className="text-right">{menuButton}</TableCell>
                     ) : (
                       !readOnly && (
-                        <TableCell className={actionCell}>
+                        <TableCell className="text-right">
                           <Button
                             variant="ghost"
                             size="sm"

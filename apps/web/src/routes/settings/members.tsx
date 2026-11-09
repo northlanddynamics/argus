@@ -101,9 +101,9 @@ export function MembersPage() {
             {/* Set widths, so Members and pending invites line up and the columns hold still as the list changes. */}
             <colgroup>
               <col />
-              <col className="@2xl:w-36" />
-              <col className="@2xl:w-48" />
-              <col className="@2xl:w-32" />
+              <col className="@2xl:w-36 @7xl:w-[11.25%]" />
+              <col className="@2xl:w-48 @7xl:w-[15%]" />
+              <col className="@2xl:w-32 @7xl:w-[10%]" />
               <col className="@2xl:w-28" />
             </colgroup>
             <TableHeader>

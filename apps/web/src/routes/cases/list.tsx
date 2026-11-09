@@ -285,17 +285,17 @@ export function CasesPage() {
         // Wider lists give Case Type, Alerts and Opened columns of their own rather than stretching the Title.
         <Card className="@container py-0">
           <Table className="@4xl:table-fixed">
-            {/* Set widths, so the columns stay put from one view, filter or sort to the next; the Title takes the rest. */}
+            {/* Set widths, a share of the table never below a minimum, so the columns stay put from one view, filter or sort to the next and grow with the screen; the Title takes the rest. */}
             <colgroup>
-              <col className="@4xl:w-20" />
-              <col className="@4xl:w-28" />
+              <col className="@4xl:w-20 @7xl:w-[6.25%]" />
+              <col className="@4xl:w-28 @7xl:w-[8.75%]" />
               <col />
-              <col className="@4xl:w-0 @6xl:w-36" />
-              <col className="@4xl:w-44" />
-              <col className="@4xl:w-52" />
-              <col className="@4xl:w-0 @6xl:w-20" />
-              <col className="@4xl:w-0 @6xl:w-32" />
-              <col className="@4xl:w-32" />
+              <col className="@4xl:w-0 @6xl:w-36 @7xl:w-[11.25%]" />
+              <col className="@4xl:w-44 @7xl:w-[13.75%]" />
+              <col className="@4xl:w-52 @7xl:w-[16.25%]" />
+              <col className="@4xl:w-0 @6xl:w-20 @7xl:w-[6.25%]" />
+              <col className="@4xl:w-0 @6xl:w-32 @7xl:w-[10%]" />
+              <col className="@4xl:w-32 @7xl:w-[10%]" />
             </colgroup>
             <TableCaption className="sr-only">
               {`${viewLabel[view]}, ${filtered ? "filtered, " : ""}sorted by ${sortLabel[sort]}, ${order === "desc" ? "descending" : "ascending"}`}

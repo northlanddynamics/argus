@@ -483,10 +483,10 @@ function CasesCard({ item, actions }: { item: ItemPage; actions: boolean }) {
           {/* Set widths, in the Cases list's order (Severity, then Status), so these lists read the same way. */}
           <colgroup>
             <col />
-            <col className="@3xl:w-28" />
-            <col className="@3xl:w-44" />
-            <col className="@3xl:w-44" />
-            <col className="@3xl:w-32" />
+            <col className="@3xl:w-28 @7xl:w-[8.75%]" />
+            <col className="@3xl:w-44 @7xl:w-[13.75%]" />
+            <col className="@3xl:w-44 @7xl:w-[13.75%]" />
+            <col className="@3xl:w-32 @7xl:w-[10%]" />
             {actions && <col className="@3xl:w-12" />}
           </colgroup>
           <TableHeader className={item.cases.length ? undefined : "sr-only"}>
@@ -561,10 +561,10 @@ function AlertsCard({ item }: { item: ItemPage }) {
           {/* The same widths as the Cases above, so Severity and Status line up between the two. */}
           <colgroup>
             <col />
-            <col className="@3xl:w-28" />
-            <col className="@3xl:w-44" />
-            <col className="@3xl:w-44" />
-            <col className="@3xl:w-32" />
+            <col className="@3xl:w-28 @7xl:w-[8.75%]" />
+            <col className="@3xl:w-44 @7xl:w-[13.75%]" />
+            <col className="@3xl:w-44 @7xl:w-[13.75%]" />
+            <col className="@3xl:w-32 @7xl:w-[10%]" />
           </colgroup>
           <TableHeader className={item.alerts.length ? undefined : "sr-only"}>
             <TableRow className="hover:bg-transparent">
@@ -644,9 +644,9 @@ function ResponseActionsCard({ item, actions }: { item: ItemPage; actions: boole
         <Table aria-label="Response Actions" className="@3xl:table-fixed">
           <colgroup>
             <col className="@3xl:w-[30%]" />
-            <col className="@3xl:w-36" />
+            <col className="@3xl:w-36 @7xl:w-[11.25%]" />
             <col />
-            <col className="@3xl:w-44" />
+            <col className="@3xl:w-44 @7xl:w-[13.75%]" />
             {actions && <col className="@3xl:w-12" />}
           </colgroup>
           <TableHeader className={item.responseActions.length ? undefined : "sr-only"}>

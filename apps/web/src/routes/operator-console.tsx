@@ -56,8 +56,15 @@ export function OperatorConsolePage() {
             <CardHeader>
               <CardTitle>Organizations</CardTitle>
             </CardHeader>
-            <CardContent>
-              <Table>
+            <CardContent className="@container">
+              <Table className="@xl:table-fixed">
+                {/* Once there's room, set widths, a share of the table never below a minimum; the Organization takes the rest. */}
+                <colgroup>
+                  <col />
+                  <col className="@xl:w-48 @7xl:w-[15%]" />
+                  <col className="@xl:w-24 @7xl:w-[7.5%]" />
+                  <col className="@xl:w-32 @7xl:w-[10%]" />
+                </colgroup>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
                     <TableHead>Organization</TableHead>

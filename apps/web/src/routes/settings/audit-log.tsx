@@ -118,9 +118,9 @@ export function OrgAuditLogPage() {
         <Table className="@4xl:table-fixed" aria-label="Organization Audit Log">
           {/* Set widths, so the columns hold still as filters change what's listed; Action takes the rest. */}
           <colgroup>
-            <col className="@4xl:w-36" />
-            <col className="@4xl:w-36" />
-            <col className="@4xl:w-32" />
+            <col className="@4xl:w-36 @7xl:w-[11.25%]" />
+            <col className="@4xl:w-36 @7xl:w-[11.25%]" />
+            <col className="@4xl:w-32 @7xl:w-[10%]" />
             <col />
             <col className="@4xl:w-[26%]" />
           </colgroup>

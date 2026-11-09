@@ -115,7 +115,7 @@ export function BulkLookupPage() {
 
       {results && (
         <Card>
-          <CardContent className="grid gap-3">
+          <CardContent className="@container grid gap-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-sm text-muted-foreground">
                 {plural(results.length, "value")} · {results.filter((r) => r.known).length.toLocaleString()} known ·{" "}
@@ -125,10 +125,19 @@ export function BulkLookupPage() {
                 Link to a Case…
               </Button>
             </div>
-            <Table aria-label="Values found" data-enrichment-list>
+            <Table aria-label="Values found" className="md:table-fixed" data-enrichment-list>
+              {/* Once there's room, set widths, a share of the table never below a minimum; the Value takes the rest. */}
+              <colgroup>
+                <col className="w-10" />
+                <col />
+                <col className="md:w-24 @7xl:w-[7.5%]" />
+                <col className="md:w-24 @7xl:w-[7.5%]" />
+                <col className="w-0 md:w-48 @7xl:w-[15%]" />
+                <col className="w-0 md:w-56 @7xl:w-[17.5%]" />
+              </colgroup>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-8">
+                  <TableHead>
                     <Checkbox
                       aria-label="Select all"
                       checked={allChosen ? true : chosen.length ? "indeterminate" : false}
@@ -206,7 +215,7 @@ function ResultRow({ result: r, selected, onSelect }: { result: LookupResult; se
       </TableCell>
       <TableCell className="text-muted-foreground">{observableTypeLabel[r.type]}</TableCell>
       <TableCell>{r.known ? <Badge>Known</Badge> : <Badge variant="outline">Unknown</Badge>}</TableCell>
-      <TableCell className="hidden max-w-64 whitespace-normal md:table-cell">
+      <TableCell className="hidden whitespace-normal md:table-cell">
         {r.known?.cases.length ? (
           <span className="flex flex-wrap gap-x-2 gap-y-0.5">
             {r.known.cases.slice(0, 5).map((c) => (
@@ -218,7 +227,7 @@ function ResultRow({ result: r, selected, onSelect }: { result: LookupResult; se
           <span className="text-muted-foreground">—</span>
         )}
       </TableCell>
-      <TableCell className="hidden max-w-64 whitespace-normal md:table-cell">
+      <TableCell className="hidden whitespace-normal md:table-cell">
         {r.known?.alerts.length ? (
           <span className="grid gap-0.5">
             {r.known.alerts.slice(0, 3).map((a) => (

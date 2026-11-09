@@ -61,9 +61,9 @@ export function IgnoredObservablesPage() {
             {/* Set widths, so the value takes what's left and the columns hold still as the list changes. */}
             <colgroup>
               <col />
-              <col className="@2xl:w-28" />
-              <col className="@2xl:w-44" />
-              <col className="@2xl:w-32" />
+              <col className="@2xl:w-28 @7xl:w-[8.75%]" />
+              <col className="@2xl:w-44 @7xl:w-[13.75%]" />
+              <col className="@2xl:w-32 @7xl:w-[10%]" />
               <col className="@2xl:w-28" />
             </colgroup>
             <TableHeader>

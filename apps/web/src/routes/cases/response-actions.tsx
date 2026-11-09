@@ -703,11 +703,11 @@ export function ResponseActionsCard({
             {/* Once there's room, set widths, so the columns hold still as Response Actions change state live; the Target takes the rest. */}
             <colgroup>
               <col />
-              <col className="@4xl:w-48" />
-              <col className="@4xl:w-56" />
-              <col className="@4xl:w-36" />
-              <col className="@4xl:w-32" />
-              {canMarkInternal && <col className="@4xl:w-44" />}
+              <col className="@4xl:w-48 @7xl:w-[15%]" />
+              <col className="@4xl:w-56 @7xl:w-[17.5%]" />
+              <col className="@4xl:w-36 @7xl:w-[11.25%]" />
+              <col className="@4xl:w-32 @7xl:w-[10%]" />
+              {canMarkInternal && <col className="@4xl:w-44 @7xl:w-[13.75%]" />}
               <col className="@4xl:w-28" />
             </colgroup>
             {/* Column headings only once there is something under them. */}
