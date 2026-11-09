@@ -4,6 +4,7 @@ import type { Deps } from "../deps";
 import { secureId } from "../ids";
 import type { Membership } from "../members/membership";
 import { normaliseObservable } from "../observables/vocabulary";
+import { inFlight, memberKeys, VIRUSTOTAL_RETRY_MS } from "./member-keys";
 import { type FileReport, type HashType, hashTypeOf, VirustotalRefused } from "./virustotal";
 
 /**
@@ -14,9 +15,7 @@ import { type FileReport, type HashType, hashTypeOf, VirustotalRefused } from ".
  * fetched with the Member's key while they wait. Refresh always fetches.
  *
  * A failed fetch keeps the cached answer and says why. What went wrong is recorded on the key, not
- * the cache, since it is that key's problem: a refused key or a used-up quota is not tried again for
- * `HASH_LOOKUP_RETRY_MS` unless its Member asks for a refresh, so hovering doesn't cost a call each
- * time. Another Member's key is never used.
+ * the cache, since it is that key's problem (`member-keys.ts`).
  */
 
 /** How long a file's report is served without asking VirusTotal again: engines' verdicts change. */
@@ -24,7 +23,7 @@ export const HASH_LOOKUP_FRESH_MS = 24 * 60 * 60_000;
 /** How long "VirusTotal has never seen it" is believed: a file may be submitted at any time. */
 export const HASH_LOOKUP_NOT_FOUND_FRESH_MS = 60 * 60_000;
 /** How soon a key whose last lookup failed is tried again without a refresh. */
-export const HASH_LOOKUP_RETRY_MS = 60_000;
+export const HASH_LOOKUP_RETRY_MS = VIRUSTOTAL_RETRY_MS;
 
 /** A file whose hashes are all known, looked up to check a new key: the EICAR test file. */
 export const VIRUSTOTAL_CHECK_HASH = "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f";
@@ -88,13 +87,12 @@ const answer = (hash: string, hashType: HashType, row: Cached | undefined, hasKe
   hasKey,
 });
 
-export function hashLookupStore({ db, clock, credentials: sealer, virustotal }: Pick<Deps, "db" | "clock" | "credentials" | "virustotal">) {
+export function hashLookupStore(deps: Pick<Deps, "db" | "clock" | "credentials" | "virustotal">) {
+  const { db, clock, credentials: sealer, virustotal } = deps;
+  const keys = memberKeys(deps);
   /** Lookups being answered now, by Member, hash and refresh, so a burst of hovers on one hash costs one call. */
-  const inFlight = new Map<string, Promise<HashLookup>>();
-
-  const findKey = async (me: Membership) => (await db.select().from(virustotalKeys).where(eq(virustotalKeys.memberId, me.memberId)).limit(1))[0];
-
-  const openKey = async (k: Key) => (JSON.parse(await sealer.open(k.key)) as { apiKey: string }).apiKey;
+  const share = inFlight<HashLookup>();
+  const findKey = keys.find;
 
   /** Stores what VirusTotal said about `hash`: under each of the file's hashes when it was found. */
   const store = async (organizationId: string, hash: string, report: FileReport | null) => {
@@ -110,16 +108,10 @@ export function hashLookupStore({ db, clock, credentials: sealer, virustotal }: 
   };
 
   const fetchAndStore = async (me: Membership, key: Key, hash: string, hashType: HashType, cached: Cached | undefined): Promise<HashLookup> => {
-    try {
-      const got = await virustotal({ apiKey: await openKey(key) }).lookup(hash);
-      const row = await store(me.organizationId, hash, got.found ? got.report : null);
-      await db.update(virustotalKeys).set({ lastUsedAt: clock.now(), error: null, errorAt: null }).where(eq(virustotalKeys.id, key.id));
-      return answer(hash, hashType, row, true);
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      await db.update(virustotalKeys).set({ error: message, errorAt: clock.now() }).where(eq(virustotalKeys.id, key.id));
-      return answer(hash, hashType, cached, true, message);
-    }
+    const got = await keys.use(key, (client) => client.lookup(hash));
+    if ("error" in got) return answer(hash, hashType, cached, true, got.error);
+    const row = await store(me.organizationId, hash, got.ok.found ? got.ok.report : null);
+    return answer(hash, hashType, row, true);
   };
 
   /** What is known about `hash`: cached when fresh, else fetched with the Member's own key. */
@@ -137,9 +129,8 @@ export function hashLookupStore({ db, clock, credentials: sealer, virustotal }: 
       if (age < (cached.found ? HASH_LOOKUP_FRESH_MS : HASH_LOOKUP_NOT_FOUND_FRESH_MS)) return answer(hash, hashType, cached, !!key);
     }
     if (!key) return answer(hash, hashType, cached, false);
-    if (!refresh && key.error && key.errorAt && now - key.errorAt.getTime() < HASH_LOOKUP_RETRY_MS) {
-      return answer(hash, hashType, cached, true, key.error);
-    }
+    const cooling = !refresh && keys.coolingDown(key);
+    if (cooling) return answer(hash, hashType, cached, true, cooling);
     return fetchAndStore(me, key, hash, hashType, cached);
   };
 
@@ -155,16 +146,7 @@ export function hashLookupStore({ db, clock, credentials: sealer, virustotal }: 
       const hash = hashType && normaliseObservable(hashType, text)?.value;
       if (!hashType || !hash) throw new InvalidHash();
 
-      // The same Member asking about the same hash again before the first answer is back shares it,
-      // from before the cache is read, so a burst of hovers can't read the cache before the first
-      // fetch stores its answer and then fetch again.
-      const flightKey = `${me.memberId}:${hash}:${refresh}`;
-      let flight = inFlight.get(flightKey);
-      if (!flight) {
-        flight = resolve(me, hash, hashType, refresh).finally(() => inFlight.delete(flightKey));
-        inFlight.set(flightKey, flight);
-      }
-      return flight;
+      return share(`${me.memberId}:${hash}:${refresh}`, () => resolve(me, hash, hashType, refresh));
     },
 
     /** The Member's own key, as they see it, or null. */

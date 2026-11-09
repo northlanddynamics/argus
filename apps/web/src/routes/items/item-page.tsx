@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader, PageTitle } from "@/components/page-header";
+import { DomainDetailsCard } from "@/components/domain-details";
 import { HashDetailsCard } from "@/components/hash-details";
 import { IpDetailsCard, IpText } from "@/components/ip-details";
-import { hasContextPopup } from "@/components/observable-details";
+import { UrlDetailsCard } from "@/components/url-details";
 import { ObservableMenu } from "@/components/observable-menu";
 import { Link, useParams, useRouteContext } from "@tanstack/react-router";
 import { BellOffIcon, CheckIcon, CopyIcon, ExternalLinkIcon, FingerprintIcon, LockIcon, MonitorIcon, RefreshCwIcon, SearchIcon, UserIcon } from "lucide-react";
@@ -185,7 +186,9 @@ function ItemPageView({ kind, id }: { kind: ItemKind; id: string }) {
       </section>
 
       {kind === "observable" && item.type === "ip" && !guest && <IpDetailsCard ip={item.value} admin={canManage(me.organization?.role)} />}
-      {kind === "observable" && item.type !== "ip" && hasContextPopup(item.type) && !guest && <HashDetailsCard hash={item.value} />}
+      {kind === "observable" && (item.type === "md5" || item.type === "sha1" || item.type === "sha256") && !guest && <HashDetailsCard hash={item.value} />}
+      {kind === "observable" && (item.type === "domain" || item.type === "email") && !guest && <DomainDetailsCard type={item.type} value={item.value} />}
+      {kind === "observable" && item.type === "url" && !guest && <UrlDetailsCard url={item.value} />}
       {kind === "asset" && item.type === "host" && !guest && <FalconDevicesCard item={item} />}
       {kind === "asset" && item.type === "account" && !guest && <FalconIdentitiesCard item={item} />}
       <CasesCard item={item} actions={kind === "observable" && !guest} />
