@@ -185,7 +185,7 @@ export function CasesPage() {
   const total = counts?.[view] ?? 0;
 
   return (
-    <div className="grid w-full grid-cols-1 max-w-page gap-4">
+    <div className="grid w-full grid-cols-1 gap-4">
       <PageHeader
         title="Cases"
         actions={
@@ -218,7 +218,7 @@ export function CasesPage() {
           </>
         }
       />
-      <div className="grid gap-3">
+      <div className="grid min-w-0 grid-cols-1 gap-3">
         <Tabs value={view} activationMode="manual">
           <TabsList variant="line" aria-label="Case views" className="w-full justify-start overflow-x-auto overflow-y-hidden border-b">
             {CASE_VIEWS.map((v) => (

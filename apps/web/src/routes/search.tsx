@@ -46,7 +46,7 @@ export function SearchPage() {
 
   return (
     // Results read best first, top to bottom, so the page stays a reading column rather than filling a wide screen.
-    <div className="grid w-full max-w-5xl grid-cols-1 gap-4">
+    <div className="grid w-full grid-cols-1 gap-4">
       <PageHeader title="Search" />
       <SearchForm key={q} initial={q} guest={guest} onSearch={(next) => void setSearch({ q: next })} />
       <div className="flex flex-wrap items-center justify-between gap-2">

@@ -48,7 +48,7 @@ export function DashboardPage() {
   const switching = metrics.isPlaceholderData;
 
   return (
-    <div className="grid w-full max-w-page grid-cols-1 gap-6">
+    <div className="grid w-full grid-cols-1 gap-6">
       <PageHeader
         title="Dashboard"
         description={data && !switching && <>Updated {clock(metrics.dataUpdatedAt)}</>}
@@ -108,7 +108,7 @@ function SkeletonGroup({ figures, className }: { figures: number; className: str
           <Skeleton key={i} className="h-24" />
         ))}
       </div>
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 @4xl:grid-cols-2">
         <Skeleton className="h-72" />
         <Skeleton className="h-72" />
       </div>
@@ -119,8 +119,8 @@ function SkeletonGroup({ figures, className }: { figures: number; className: str
 function DashboardSkeleton() {
   return (
     <div className="grid gap-8">
-      <SkeletonGroup figures={3} className="sm:grid-cols-3" />
-      <SkeletonGroup figures={2} className="sm:grid-cols-2" />
+      <SkeletonGroup figures={3} className="@2xl:grid-cols-3" />
+      <SkeletonGroup figures={2} className="@xl:grid-cols-2" />
     </div>
   );
 }
@@ -132,7 +132,7 @@ function Dashboard({ metrics }: { metrics: DashboardMetrics }) {
   return (
     <>
       <Group title="Cases">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-3">
           <Figure label="Open Cases" value={count(openCases.total)}>
             {count(critical)} Critical ·{" "}
             {openCases.unassigned ? (
@@ -150,14 +150,14 @@ function Dashboard({ metrics }: { metrics: DashboardMetrics }) {
             Opened → Closed · {plural(meanTimeToClose.cases, "Case", "Cases")}
           </Figure>
         </div>
-        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+        <div className="grid grid-cols-1 items-start gap-4 @4xl:grid-cols-2">
           <OpenCasesTable openCases={openCases} />
           <Trend metrics={metrics} />
         </div>
       </Group>
 
       <Group title="Alerts">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 @xl:grid-cols-2">
           <Figure
             label="Alerts awaiting a decision"
             value={
@@ -179,7 +179,7 @@ function Dashboard({ metrics }: { metrics: DashboardMetrics }) {
             {count(alerts.dismissed)} dismissed · {count(alerts.attached)} attached to Cases, of {count(alerts.received)} received in the last {metrics.days} days
           </Figure>
         </div>
-        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+        <div className="grid grid-cols-1 items-start gap-4 @4xl:grid-cols-2">
           <AlertVolume perDay={alerts.perDay} />
           <Dismissals alerts={alerts} />
         </div>

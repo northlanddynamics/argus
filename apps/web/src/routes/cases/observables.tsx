@@ -290,7 +290,7 @@ function LinkedCard<Type extends string>(props: {
       <CardContent className="grid gap-4">
         {!readOnly && (
           <form
-            className="flex max-w-3xl flex-wrap gap-2"
+            className="flex flex-wrap gap-2"
             onSubmit={(e) => {
               e.preventDefault();
               if (value.trim()) add.mutate();

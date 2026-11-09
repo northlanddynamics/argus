@@ -239,7 +239,7 @@ export function AlertQueuePage() {
   });
 
   return (
-    <div className="grid w-full grid-cols-1 max-w-page gap-4">
+    <div className="grid w-full grid-cols-1 gap-4">
       <PageHeader
         title="Alerts"
         description={
@@ -350,7 +350,7 @@ export function AlertQueuePage() {
           </AlertAction>
         </Alert>
       )}
-      <div className={cn("grid items-start gap-4", showing && "lg:grid-cols-[1fr_340px]")}>
+      <div className={cn("grid items-start gap-4", showing && "@4xl:grid-cols-[1fr_340px]")}>
       {!(alerts.isError && !loaded) && (
       <Card className="@container py-0">
           <Table ref={table} className="table-fixed">

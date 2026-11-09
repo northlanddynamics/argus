@@ -55,14 +55,13 @@ export function BulkLookupPage() {
   const allChosen = !!results?.length && chosen.length === results.length;
 
   return (
-    <div className="grid w-full max-w-page grid-cols-1 gap-4">
+    <div className="grid w-full grid-cols-1 gap-4">
       <PageHeader
         title="Bulk Lookup"
         description="Paste an email, a threat report or a list. Argus finds every IP, domain, URL, email address and hash in it, defanged or not, and shows which ones your team has already seen."
       />
-      {/* The form keeps a form's width; only the results table uses a wide page. */}
       <form
-        className="grid max-w-5xl gap-2"
+        className="grid gap-2"
         onSubmit={(e) => {
           e.preventDefault();
           if (preview?.ok) lookup.mutate(text);

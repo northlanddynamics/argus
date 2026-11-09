@@ -87,8 +87,8 @@ function useSectionKeys(sections: readonly (typeof SECTIONS)[number][], params: 
   }, [sections, params, navigate]);
 }
 
-/** Status, Severity, Case Type and Assignee: each field stops at 18rem, and the card hugs them on a wide page. */
-const fieldsCard = "grid gap-4 rounded-xl border bg-card p-4 sm:grid-cols-2 lg:w-fit lg:grid-cols-[repeat(4,minmax(0,18rem))]";
+/** Status, Severity, Case Type and Assignee: two to a row, then four across the page. */
+const fieldsCard = "grid gap-4 rounded-xl border bg-card p-4 @xl:grid-cols-2 @5xl:grid-cols-4";
 
 export const useCaseNumber = () => Number(useParams({ from: "/_app/cases/$number" }).number);
 
@@ -157,7 +157,7 @@ export function CaseLayout() {
     return { title: `Press ${n}`, "aria-keyshortcuts": String(n) };
   };
   return (
-    <div className="grid w-full grid-cols-1 max-w-page gap-4">
+    <div className="grid w-full grid-cols-1 gap-4">
       {found.data === null && (
         <Alert>
           <AlertDescription className="flex flex-wrap items-center justify-between gap-3">

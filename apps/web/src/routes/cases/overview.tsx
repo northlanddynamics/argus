@@ -42,7 +42,7 @@ export function CaseOverviewPage() {
   // On a very wide page the Summary and the open Tasks sit side by side; below 104rem the Tasks would be cut short, so they stack.
   return (
     <div className="@container">
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px] @[104rem]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_300px]">
+      <div className="grid items-start gap-4 @4xl:grid-cols-[minmax(0,1fr)_300px] @[104rem]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_300px]">
         <div className="grid min-w-0 content-start gap-4 @[104rem]:contents">
           <CaseSummaryCard number={number} summary={c.summary} readOnly={isReadOnly(c)} />
           <OpenTasksCard number={number} />

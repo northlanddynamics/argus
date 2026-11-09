@@ -13,7 +13,7 @@ export function GuestSession({ guest }: { guest: GuestInfo }) {
   return (
     <div className="flex items-center gap-2 text-xs text-muted-foreground">
       <span className="rounded-full border px-2 py-0.5 text-foreground">Guest access</span>
-      <span className="hidden sm:inline">Session ends in {timeLeft(guest.sessionEndsAt, now + skew)}</span>
+      <span className="hidden @2xl:inline">Session ends in {timeLeft(guest.sessionEndsAt, now + skew)}</span>
     </div>
   );
 }

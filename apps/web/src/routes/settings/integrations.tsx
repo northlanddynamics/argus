@@ -898,7 +898,7 @@ function ResponseActionDefaults({ integration: i }: { integration: IntegrationVi
         <span className="text-sm font-semibold">{falcon ? "IOC defaults" : i.provider === "umbrella" ? "Destination list defaults" : "Block defaults"}</span>
         {locked && <p className="text-sm text-muted-foreground">Only Admins can change these.</p>}
       </div>
-      <div className="grid gap-2 sm:grid-cols-[10rem_1fr] sm:items-center">
+      <div className="grid gap-2 @lg:grid-cols-[10rem_1fr] @lg:items-center">
         {falcon && (
           <>
             <Label htmlFor={id("severity")}>Severity</Label>
@@ -1091,7 +1091,7 @@ function AddIntegrationDialog({ provider }: { provider: Provider }) {
           )}
         </DialogHeader>
         <form className="grid gap-4" onSubmit={onSubmit}>
-          <div className={falcon ? "grid gap-4 sm:grid-cols-[1fr_auto]" : "grid gap-4"}>
+          <div className={falcon ? "grid gap-4 @lg:grid-cols-[1fr_auto]" : "grid gap-4"}>
             <div className="grid gap-2">
               <Label htmlFor="integration-name">Name</Label>
               <Input

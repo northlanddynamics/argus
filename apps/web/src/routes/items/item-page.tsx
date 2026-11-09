@@ -107,7 +107,7 @@ function ItemPageView({ kind, id }: { kind: ItemKind; id: string }) {
 
   if (page.isPending) {
     return (
-      <div className="grid w-full max-w-page grid-cols-1 gap-4">
+      <div className="grid w-full grid-cols-1 gap-4">
         <Skeleton className="h-16" />
         <Skeleton className="h-40" />
       </div>
@@ -116,14 +116,14 @@ function ItemPageView({ kind, id }: { kind: ItemKind; id: string }) {
   if (page.isError) return <p className="py-8 text-center text-sm text-destructive">{page.error.message}. Try again.</p>;
   if (!item) {
     return (
-      <div className="grid w-full max-w-page grid-cols-1 gap-4">
+      <div className="grid w-full grid-cols-1 gap-4">
         <PageHeader title={`${noun[kind]} not found`} description="It doesn't exist, or it isn't on any Case you can see." />
       </div>
     );
   }
 
   return (
-    <div className="grid w-full max-w-page grid-cols-1 gap-4">
+    <div className="grid w-full grid-cols-1 gap-4">
       <section aria-label={noun[kind]} className="grid gap-1">
         <PageHeader
           heading={
@@ -336,7 +336,7 @@ function FalconDevicesCard({ item }: { item: ItemPage }) {
         {item.falconDevices.length === 0 ? (
           <p className="text-sm text-muted-foreground">No detection has named its Falcon device yet.</p>
         ) : devices.length === 0 ? null : (
-          <div className={devices.length > 1 ? "grid gap-3 md:grid-cols-2" : "grid gap-3"}>
+          <div className={devices.length > 1 ? "grid gap-3 @3xl:grid-cols-2" : "grid gap-3"}>
             {devices.map(({ group, device }) => (
               <section
                 key={`${group.integration.id} ${device.deviceId}`}

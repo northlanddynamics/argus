@@ -205,17 +205,18 @@ Decorative colour is allowed: a tint behind an empty state, a coloured icon, an 
 
 The app frame is shadcn's sidebar layout: a 350px left sidebar (collapsible, its state remembered in the `sidebar_state` cookie) and a content inset with a sticky 56px header. The header holds the sidebar toggle, the breadcrumb trail (Organization / Cases / C-12 / Tasks), the search box, the notification bell and the live indicator.
 
-Every page in the app frame is left-aligned in the content inset, so the breadcrumb, the page heading and the first column share one edge on every page, and spare width on a large monitor falls to the right. Each page takes the width its content earns:
+Every page in the app frame fills the content inset, whatever the screen, so the breadcrumb, the page heading and the first column share one edge and nothing is capped at a fixed width. The content inset (`#content`) is a container, and page layouts respond to its width through container queries (`@xl`, `@4xl` and so on), not to the viewport, so a page lays out the same with the sidebar open or collapsed:
 
-- **Tables and queues** (Cases, a Case, Alerts, Observable and Asset pages, the Dashboard) grow up to 1920px (`max-w-page`, the `--container-page` token in `src/index.css`). A table given more room shows more, not the same thing spread wider: it reveals columns through container queries (the Cases list gives Case Type, Alerts and Opened their own columns from `@6xl`), or sets fixed column widths and lets the last column take the slack, so a row's actions stay beside what they act on (Tasks from `@7xl`).
-- **Reading lists and forms** stay narrow inside them: Search results 1024px (`max-w-5xl`), the Bulk Lookup form 1024px (its results table uses the page width), the Observable and Asset add rows 768px (`max-w-3xl`), and the Case header's four fields at most 18rem each. Settings stays at 1152px (`max-w-6xl`) and Guest home at 768px.
+- **Tables and queues** (Cases, a Case, Alerts, Observable and Asset pages, the Dashboard) use the full width. A table given more room shows more, not the same thing spread wider: it reveals columns through container queries (the Cases list gives Case Type, Alerts and Opened their own columns from `@6xl`), or sets fixed column widths and lets the last column take the slack, so a row's actions stay beside what they act on (Tasks from `@7xl`).
+- **Side-by-side areas** stack when the content is narrow: the Cases split view and the Alert queue's detail pane from `@4xl`, the Case Overview's rail from `@4xl`, the Timeline beside the Discussion from `@5xl`, the Case header's four fields two across from `@xl` and four from `@5xl`, the Dashboard's pairs from `@4xl`, and the Settings nav beside its page from `@3xl`.
+- **Forms and lists** (Search results, Bulk Lookup, Observable and Asset add rows, Settings, Account, Guest home) fill the width too; their inputs stretch and their buttons keep their size.
 - **Prose** keeps a 75ch measure (the Case Summary editor sets it on each block). A Case's Overview puts the Case Summary, the open Tasks and the rail in three columns only once it is 104rem wide, where the open Tasks have room for their titles.
 
 The **Enrichment panel** (what IPinfo or VirusTotal says about an Observable, `docs/wireframes/enrichment-panel.md`) is shadcn's right `Sheet`, 420px wide (full width on a phone), over the whole page, which its stock overlay dims; clicking the page or Esc closes it. Nothing opens on hover.
 
 Dialogs use 672px (`max-w-2xl`) or less. Spacing follows Tailwind's 4px scale, almost entirely in four steps: 4px (tight inline pairs), 8px (the default gap between controls and rows), 12px, and 16px (between page sections and card padding). Sign-in, invitation and Guest sign-in pages centre a single card on the page.
 
-The layout is built and checked on desktop. The sidebar collapses to a sheet on small screens (shadcn default), but no other responsive behaviour is designed.
+The layout is checked from a 375px phone to a 2560px monitor with no horizontal page scroll; wide tables scroll inside their card. The sidebar collapses to a sheet on small screens (shadcn default).
 
 ## Elevation & Depth
 
