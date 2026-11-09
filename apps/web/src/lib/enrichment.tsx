@@ -51,8 +51,6 @@ type Panel = {
   position: () => { index: number; count: number } | null;
   step: (delta: 1 | -1) => void;
   close: () => void;
-  /** Once the panel has gone: focus back on what it was opened from, when that is still on the page. */
-  returnFocus: () => void;
 };
 
 const none = () => {};
@@ -70,7 +68,6 @@ const NO_PANEL: Panel = {
   position: () => null,
   step: none,
   close: none,
-  returnFocus: none,
 };
 
 const EnrichmentContext = createContext<Panel>(NO_PANEL);
@@ -101,31 +98,29 @@ export function EnrichmentProvider({ children }: { children: ReactNode }) {
   /** The page the panel was opened on; focus only goes back there. */
   const openedOn = useRef<string | null>(null);
 
-  /**
-   * Focus back on the value the panel was opened from: the element itself, or, when the page has
-   * redrawn it since, the value as the page now shows it. Runs once per opening.
-   */
-  const returnFocus = useCallback(() => {
-    const back = opener.current;
-    opener.current = null;
-    if (!back) return;
-    if (openedOn.current !== window.location.pathname) return;
-    const key = back.getAttribute("data-enrichment");
-    const target = back.isConnected ? back : key ? document.querySelector<HTMLElement>(`[data-enrichment="${CSS.escape(key)}"]`) : null;
-    target?.focus({ preventScroll: true });
-  }, []);
-
-  // When the panel goes (Esc, ✕, the dimmed page), return focus after the page has redrawn, rather
-  // than rely on the Sheet's own hand-back alone, which comes after it has already unmounted.
+  // When the panel goes (Esc, ✕, the dimmed page), focus goes back to the value it was opened from:
+  // the element itself, or, when the page has redrawn it since, the value as the page now shows it.
+  // The opener is taken now, not when the timer fires, so a late hand-back can't take the opener of
+  // a panel opened again meanwhile (and leave that one with nothing to return to).
   const shown = useRef(currentKey);
   useEffect(() => {
     const was = shown.current;
     shown.current = currentKey;
     if (!was || currentKey) return;
-    // A timer, not an animation frame: frames don't run in a page that isn't being drawn.
-    const timer = setTimeout(returnFocus);
+    const back = opener.current;
+    const on = openedOn.current;
+    opener.current = null;
+    if (!back) return;
+    // After the page has redrawn without the panel; a timer, not an animation frame: frames don't run
+    // in a page that isn't being drawn. Opening it again first clears the timer.
+    const timer = setTimeout(() => {
+      if (on !== window.location.pathname) return;
+      const key = back.getAttribute("data-enrichment");
+      const target = back.isConnected ? back : key ? document.querySelector<HTMLElement>(`[data-enrichment="${CSS.escape(key)}"]`) : null;
+      target?.focus({ preventScroll: true });
+    });
     return () => clearTimeout(timer);
-  }, [currentKey, returnFocus]);
+  }, [currentKey]);
 
   const show = useCallback(
     (target: EnrichmentTarget | null) =>
@@ -186,9 +181,8 @@ export function EnrichmentProvider({ children }: { children: ReactNode }) {
         show(parseEnrichmentKey(next[0]));
       },
       close,
-      returnFocus,
     };
-  }, [available, current, currentKey, history, show, returnFocus]);
+  }, [available, current, currentKey, history, show]);
 
   return <EnrichmentContext.Provider value={panel}>{children}</EnrichmentContext.Provider>;
 }
