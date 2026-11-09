@@ -1,24 +1,21 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { CopyIcon, ExternalLinkIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
-import type { ReactElement, ReactNode } from "react";
+import { RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import { toast } from "sonner";
-import { ObservableMenu } from "@/components/observable-menu";
+import { EnrichmentLayout, KnownLine, SourceSection, ValueHeader } from "@/components/enrichment-parts";
+import { ObservableText } from "@/components/observable-details";
 import { Time } from "@/components/time";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { meQuery } from "@/lib/api";
-import { useHoverCardOpen } from "@/lib/hover-card";
 import { asTypeLabel, type IpDetails, type IpLookup, ipLookupQuery, useRefreshIpLookup } from "@/lib/ip-lookups";
-import { canManage } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 
 /**
- * What IPinfo says about an IP (ADR 0010), as the IP context popup and an IP Observable's page show
- * it; laid out in `docs/wireframes/ip-context-popup.md`.
+ * What IPinfo says about an IP (ADR 0010), as the Enrichment panel and an IP Observable's page show
+ * it; laid out in `docs/wireframes/ip-context-popup.md` and `enrichment-panel.md`.
  */
 
 /** 🇩🇪 for "DE". */
@@ -151,7 +148,7 @@ function Unconfigured({ admin, paused }: { admin: boolean; paused: boolean }) {
 }
 
 /**
- * The body of the popup or card for `ip`'s lookup: details, or why there are none. `showHostname`
+ * The body of the panel or card for `ip`'s lookup: details, or why there are none. `showHostname`
  * puts the reverse DNS name among the rows, for the card, which has no header to show it in.
  */
 export function IpLookupBody({ lookup, loading, error, admin, showHostname = false }: { lookup: IpLookup | undefined; loading: boolean; error: Error | null; admin: boolean; showHostname?: boolean }) {
@@ -183,8 +180,8 @@ export function IpLookupBody({ lookup, loading, error, admin, showHostname = fal
   }
 }
 
-/** "IPinfo · as of 3 hours ago", with Refresh (or Retry after a failure). */
-export function IpLookupFooter({ ip, lookup, loading }: { ip: string; lookup: IpLookup | undefined; loading: boolean }) {
+/** "IPinfo · as of 3 hours ago", with Refresh (or Retry after a failure); `named` false drops "IPinfo ·" where a heading says it. */
+export function IpLookupFooter({ ip, lookup, loading, named = true }: { ip: string; lookup: IpLookup | undefined; loading: boolean; named?: boolean }) {
   const refresh = useRefreshIpLookup(ip);
   if (lookup && (lookup.state === "reserved" || lookup.state === "unconfigured")) return null;
   const busy = loading || refresh.isPending;
@@ -192,7 +189,7 @@ export function IpLookupFooter({ ip, lookup, loading }: { ip: string; lookup: Ip
   return (
     <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
       <span>
-        IPinfo ·{" "}
+        {named && "IPinfo · "}
         {!lookup ? "looking up…" : refresh.isPending ? "refreshing…" : lookup.fetchedAt ? <Time iso={lookup.fetchedAt} prefix="as of" /> : "never looked up"}
       </span>
       {canRefresh && (
@@ -211,83 +208,47 @@ export function IpLookupFooter({ ip, lookup, loading }: { ip: string; lookup: Ip
   );
 }
 
-/** The popup's content; mounted only while it is open, so the lookup starts when it opens. */
-function IpPopup({ ip, admin }: { ip: string; admin: boolean }) {
+/** The Enrichment panel's content for an IP: its header, then what IPinfo says. */
+export function IpEnrichment({ ip, admin }: { ip: string; admin: boolean }) {
   const q = useQuery(ipLookupQuery(ip));
   const lookup = q.data;
   const shown = lookup?.ip ?? ip;
   const publicIp = !lookup || lookup.state !== "reserved";
-  const copy = () =>
-    void navigator.clipboard.writeText(shown).then(
-      () => toast(`Copied ${shown}`),
-      () => toast.error("Couldn't copy to the clipboard"),
-    );
   return (
-    <div className="grid gap-2.5">
-      <div className="grid gap-0.5">
-        <div className="flex items-center gap-1">
-          <span className="min-w-0 flex-1 font-mono text-sm font-medium break-all">{shown}</span>
-          <Button variant="ghost" size="icon-xs" onClick={copy} aria-label="Copy" title="Copy">
-            <CopyIcon aria-hidden />
-          </Button>
-          {publicIp && (
-            <Button variant="ghost" size="icon-xs" asChild>
-              <a href={`https://ipinfo.io/${encodeURIComponent(lookup?.ip ?? ip)}`} target="_blank" rel="noreferrer noopener" aria-label="Open on ipinfo.io" title="Open on ipinfo.io">
-                <ExternalLinkIcon aria-hidden />
-              </a>
-            </Button>
+    <EnrichmentLayout
+      header={
+        <ValueHeader shown={shown} copy={shown} copied={`Copied ${shown}`} href={publicIp ? `https://ipinfo.io/${encodeURIComponent(shown)}` : null} hrefLabel="Open on ipinfo.io">
+          {lookup?.details?.hostname && <span className="font-mono text-xs break-all text-muted-foreground">{lookup.details.hostname}</span>}
+          <KnownLine type="ip" value={ip} />
+        </ValueHeader>
+      }
+    >
+      {lookup?.state === "reserved" ? (
+        <div className="p-4 text-sm">
+          <IpLookupBody lookup={lookup} loading={false} error={null} admin={admin} />
+          {lookup.reserved?.range && (
+            <p className="mt-1 text-muted-foreground">Not looked up: it means nothing outside the network it belongs to, and Argus doesn't send internal addresses to IPinfo.</p>
           )}
         </div>
-        {lookup?.details?.hostname && <span className="font-mono text-xs break-all text-muted-foreground">{lookup.details.hostname}</span>}
-      </div>
-      <div className="border-t pt-2.5">
-        <IpLookupBody lookup={lookup} loading={q.isPending} error={q.error} admin={admin} />
-      </div>
-      {(!lookup || (lookup.state !== "reserved" && lookup.state !== "unconfigured")) && (
-        <div className="border-t pt-2">
-          <IpLookupFooter ip={ip} lookup={lookup} loading={q.isPending} />
-        </div>
+      ) : (
+        <SourceSection title="IPinfo" footer={<IpLookupFooter ip={ip} lookup={lookup} loading={q.isPending} named={false} />}>
+          <IpLookupBody lookup={lookup} loading={q.isPending} error={q.error} admin={admin} />
+        </SourceSection>
       )}
-    </div>
+    </EnrichmentLayout>
   );
 }
 
-/**
- * Wraps an IP as it is shown anywhere (a link to its page, a badge, plain text) so that resting the
- * pointer on it, or focusing it, opens what IPinfo says about it. `children` must be one element that
- * can hold a ref, and focusable to open from the keyboard. `enabled` false leaves it as it is, for
- * lists of values only some of which are IPs. Guests see the IP alone: Argus never
- * spends the Organization's IPinfo quota on their behalf.
- */
-export function IpHoverCard({ ip, enabled = true, children }: { ip: string; enabled?: boolean; children: ReactElement }) {
-  const me = useQuery(meQuery).data;
-  const popup = useHoverCardOpen();
-  const role = me?.organization?.role;
-  if (!enabled || !role) return children;
-  return (
-    <HoverCard openDelay={400} closeDelay={150} {...popup}>
-      <HoverCardTrigger asChild>{children}</HoverCardTrigger>
-      <HoverCardContent className="w-80" side="bottom" align="start" collisionPadding={16}>
-        <IpPopup ip={ip} admin={canManage(role)} />
-      </HoverCardContent>
-    </HoverCard>
-  );
-}
-
-/** Plain IP text, focusable, with the IP context popup and the Observable right-click menu. */
+/** Plain IP text, with the Observable right-click menu, that opens the Enrichment panel. */
 export function IpText({ ip, className }: { ip: string; className?: string }) {
   return (
-    <IpHoverCard ip={ip}>
-      <ObservableMenu observable={{ type: "ip", value: ip }}>
-        <span tabIndex={0} className={cn("font-mono text-xs underline decoration-dotted underline-offset-2 outline-none focus-visible:ring-2 focus-visible:ring-ring/50", className)}>
-          {ip}
-        </span>
-      </ObservableMenu>
-    </IpHoverCard>
+    <ObservableText type="ip" value={ip} className={className}>
+      {ip}
+    </ObservableText>
   );
 }
 
-/** An IP Observable's own page's "IP details": what the popup shows, without needing a hover. */
+/** An IP Observable's own page's "IP details": what the Enrichment panel shows. */
 export function IpDetailsCard({ ip, admin }: { ip: string; admin: boolean }) {
   const q = useQuery(ipLookupQuery(ip));
   return (

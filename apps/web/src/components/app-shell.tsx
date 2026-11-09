@@ -1,6 +1,7 @@
 import { Link, Outlet, useRouteContext, useRouterState } from "@tanstack/react-router";
 import { Fragment, useState } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
+import { EnrichmentPanel } from "@/components/enrichment-panel";
 import { GuestSession } from "@/components/guest-nav";
 import { LiveIndicator } from "@/components/live-indicator";
 import { NotificationBell } from "@/components/notification-bell";
@@ -19,6 +20,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { type Me, useMe } from "@/lib/api";
 import { caseRef } from "@/lib/cases";
+import { EnrichmentProvider } from "@/lib/enrichment";
 import { cn } from "@/lib/utils";
 
 const caseSections: Record<string, string> = {
@@ -107,57 +109,60 @@ export function AppShell() {
   const sidebar = useSidebarOpen(pathname);
   return (
     <TooltipProvider>
-      <SidebarProvider open={sidebar.open} onOpenChange={sidebar.onOpenChange} style={{ "--sidebar-width": "350px" } as React.CSSProperties}>
-        {/* The first stop for the keyboard: past the sidebar and header to the page itself. */}
-        <a
-          href="#content"
-          className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-lg focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:shadow-md focus:ring-3 focus:ring-ring/50 focus:outline-none"
-        >
-          Skip to content
-        </a>
-        <AppSidebar me={me} />
-        <SidebarInset className="min-w-0">
-          <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b bg-background px-4">
-            <SidebarTrigger className="-ml-1" />
-            <Separator orientation="vertical" className="mr-2 data-vertical:h-4 data-vertical:self-center" />
-            <Breadcrumb className="min-w-0">
-              <BreadcrumbList className="flex-nowrap sm:flex-wrap">
-                {crumbs.map((c, i) => (
-                  <Fragment key={c.label}>
-                    {/* On a phone only the current page is shown. */}
-                    {i > 0 && <BreadcrumbSeparator className="hidden sm:block" />}
-                    <BreadcrumbItem
-                      className={cn(
-                        i === 0 && crumbs.length > 1 && "font-medium text-foreground",
-                        i < crumbs.length - 1 ? "hidden sm:inline-flex" : "min-w-0 truncate",
-                      )}
-                    >
-                      {c.to && i < crumbs.length - 1 ? (
-                        <BreadcrumbLink asChild>
-                          <Link to={c.to} params={c.params}>
-                            {c.label}
-                          </Link>
-                        </BreadcrumbLink>
-                      ) : (
-                        <BreadcrumbPage>{c.label}</BreadcrumbPage>
-                      )}
-                    </BreadcrumbItem>
-                  </Fragment>
-                ))}
-              </BreadcrumbList>
-            </Breadcrumb>
-            <div className="ml-auto flex min-w-0 items-center gap-2 sm:gap-4">
-              <SearchPalette />
-              {me.guest && <GuestSession guest={me.guest} />}
-              <LiveIndicator />
-              <NotificationBell />
+      <EnrichmentProvider>
+        <SidebarProvider open={sidebar.open} onOpenChange={sidebar.onOpenChange} style={{ "--sidebar-width": "350px" } as React.CSSProperties}>
+          {/* The first stop for the keyboard: past the sidebar and header to the page itself. */}
+          <a
+            href="#content"
+            className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-lg focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:shadow-md focus:ring-3 focus:ring-ring/50 focus:outline-none"
+          >
+            Skip to content
+          </a>
+          <AppSidebar me={me} />
+          <SidebarInset className="min-w-0">
+            <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b bg-background px-4">
+              <SidebarTrigger className="-ml-1" />
+              <Separator orientation="vertical" className="mr-2 data-vertical:h-4 data-vertical:self-center" />
+              <Breadcrumb className="min-w-0">
+                <BreadcrumbList className="flex-nowrap sm:flex-wrap">
+                  {crumbs.map((c, i) => (
+                    <Fragment key={c.label}>
+                      {/* On a phone only the current page is shown. */}
+                      {i > 0 && <BreadcrumbSeparator className="hidden sm:block" />}
+                      <BreadcrumbItem
+                        className={cn(
+                          i === 0 && crumbs.length > 1 && "font-medium text-foreground",
+                          i < crumbs.length - 1 ? "hidden sm:inline-flex" : "min-w-0 truncate",
+                        )}
+                      >
+                        {c.to && i < crumbs.length - 1 ? (
+                          <BreadcrumbLink asChild>
+                            <Link to={c.to} params={c.params}>
+                              {c.label}
+                            </Link>
+                          </BreadcrumbLink>
+                        ) : (
+                          <BreadcrumbPage>{c.label}</BreadcrumbPage>
+                        )}
+                      </BreadcrumbItem>
+                    </Fragment>
+                  ))}
+                </BreadcrumbList>
+              </Breadcrumb>
+              <div className="ml-auto flex min-w-0 items-center gap-2 sm:gap-4">
+                <SearchPalette />
+                {me.guest && <GuestSession guest={me.guest} />}
+                <LiveIndicator />
+                <NotificationBell />
+              </div>
+            </header>
+            <div id="content" tabIndex={-1} className="flex-1 p-4 outline-none md:p-6">
+              <Outlet />
             </div>
-          </header>
-          <div id="content" tabIndex={-1} className="flex-1 p-4 outline-none md:p-6">
-            <Outlet />
-          </div>
-        </SidebarInset>
-      </SidebarProvider>
+          </SidebarInset>
+        </SidebarProvider>
+        <EnrichmentPanel />
+      </EnrichmentProvider>
       <Toaster position="bottom-right" />
     </TooltipProvider>
   );

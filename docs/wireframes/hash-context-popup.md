@@ -1,5 +1,7 @@
 # Hash context popup: wireframes
 
+> Where these details appear has moved to the Enrichment panel (`enrichment-panel.md`): hover no longer opens a popup. The content and wording of each state below still apply, as a section of the panel.
+
 What a Member sees on hovering (or focusing) an MD5, SHA-1 or SHA-256 in Argus: the hash Observables on a Case and their pages, an Alert's extracted indicators, Bulk Lookup, Response Actions and an Evidence file's SHA-256. The report comes from VirusTotal, looked up with the Member's own API key (ADR 0011), and is cached for the Organization. It follows the IP context popup (`ip-context-popup.md`) in everything but its content.
 
 ## Behaviour

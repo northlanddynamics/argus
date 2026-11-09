@@ -1,7 +1,7 @@
 import type { UseMutationResult } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { type AnalysisStats, type Detection, enginesThatAnalysed } from "api/virustotal/virustotal";
-import { CopyIcon, ExternalLinkIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
+import { RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { Time } from "@/components/time";
@@ -11,13 +11,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 /**
- * What the VirusTotal context popups and cards share, for files (`hash-details.tsx`, ADR 0011) and
+ * What VirusTotal's Enrichment panel content and cards share, for files (`hash-details.tsx`, ADR 0011) and
  * for domains, email addresses and URLs (`domain-details.tsx`, `url-details.tsx`, ADR 0012): the
- * verdict, label-value rows, the header, the footer with Refresh, and the states with no report.
+ * verdict, label-value rows, the footer with Refresh, and the states with no report.
  */
 
-/** How many detections are listed before "and N more". */
+/** How many detections are listed before "and N more" on an Observable's page, and in the Enrichment panel, which has the room for more. */
 const LISTED_DETECTIONS = 3;
+export const PANEL_DETECTIONS = 8;
 
 /** The tone of a detection count: several engines is a finding, one or two may be a false positive. */
 const tone = (s: AnalysisStats) => (s.malicious >= 3 ? "malicious" : s.malicious > 0 || s.suspicious > 0 ? "suspicious" : "clean");
@@ -88,14 +89,14 @@ export function Rows({ rows }: { rows: Row[] }) {
   );
 }
 
-/** The "Detections" row: the first three engines by name, and how many more call it malicious. */
-export function detectionsRow(detections: Detection[], malicious: number): Row {
-  const more = malicious - Math.min(detections.length, LISTED_DETECTIONS);
+/** The "Detections" row: the first `listed` engines by name, and how many more call it malicious. */
+export function detectionsRow(detections: Detection[], malicious: number, listed = LISTED_DETECTIONS): Row {
+  const more = malicious - Math.min(detections.length, listed);
   return {
     label: "Detections",
     value: detections.length > 0 && (
       <>
-        {detections.slice(0, LISTED_DETECTIONS).map((d) => (
+        {detections.slice(0, listed).map((d) => (
           <span key={d.engine} className="block">
             <span className="text-muted-foreground">{d.engine}</span> <span className="font-mono text-xs wrap-anywhere">{d.result}</span>
           </span>
@@ -164,13 +165,26 @@ export type LookupStatus = { state: string; fetchedAt: string | null; hasKey: bo
  * "VirusTotal · as of 3 hours ago", with Refresh (or Retry after a failure), or the way to a key.
  * `what` names the value for Refresh's accessible name.
  */
-export function VirustotalFooter({ what, lookup, loading, refresh }: { what: string; lookup: LookupStatus | undefined; loading: boolean; refresh: UseMutationResult<unknown, Error, void> }) {
+export function VirustotalFooter({
+  what,
+  lookup,
+  loading,
+  refresh,
+  named = true,
+}: {
+  what: string;
+  lookup: LookupStatus | undefined;
+  loading: boolean;
+  refresh: UseMutationResult<unknown, Error, void>;
+  /** False drops "VirusTotal ·" where a heading already says it. */
+  named?: boolean;
+}) {
   if (lookup?.state === "no_key" || lookup?.state === "withheld") return null;
   const busy = loading || refresh.isPending;
   return (
     <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
       <span>
-        VirusTotal ·{" "}
+        {named && "VirusTotal · "}
         {!lookup ? "looking up…" : refresh.isPending ? "refreshing…" : lookup.fetchedAt ? <Time iso={lookup.fetchedAt} prefix="as of" /> : "never looked up"}
       </span>
       {lookup && !lookup.hasKey && <KeyLink>Add your key to refresh</KeyLink>}
@@ -186,36 +200,6 @@ export function VirustotalFooter({ what, lookup, loading, refresh }: { what: str
           {lookup.state === "failed" ? "Retry" : "Refresh"}
         </Button>
       )}
-    </div>
-  );
-}
-
-/**
- * The popup's header: the value whole and wrapped, Copy, and ↗ to it on virustotal.com when there
- * is a page to open. `copy` is what Copy copies, `children` anything shown under it.
- */
-export function PopupHeader({ shown, copy, copied, href, children }: { shown: string; copy: string; copied: string; href: string | null; children?: ReactNode }) {
-  const onCopy = () =>
-    void navigator.clipboard.writeText(copy).then(
-      () => toast(copied),
-      () => toast.error("Couldn't copy to the clipboard"),
-    );
-  return (
-    <div className="grid gap-0.5">
-      <div className="flex items-start gap-1">
-        <span className="min-w-0 flex-1 font-mono text-xs font-medium break-all">{shown}</span>
-        <Button variant="ghost" size="icon-xs" onClick={onCopy} aria-label="Copy" title="Copy">
-          <CopyIcon aria-hidden />
-        </Button>
-        {href && (
-          <Button variant="ghost" size="icon-xs" asChild>
-            <a href={href} target="_blank" rel="noreferrer noopener" aria-label="Open on VirusTotal" title="Open on VirusTotal">
-              <ExternalLinkIcon aria-hidden />
-            </a>
-          </Button>
-        )}
-      </div>
-      {children}
     </div>
   );
 }

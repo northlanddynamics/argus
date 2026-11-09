@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { hasContextPopup, ObservableHoverCard } from "@/components/observable-details";
+import { EnrichmentButton, EnrichmentTarget } from "@/components/observable-details";
 import { Link } from "@tanstack/react-router";
 import { BellOffIcon, type LucideIcon, MonitorIcon, PlusIcon, SirenIcon, UserIcon } from "lucide-react";
 import { type ReactElement, type ReactNode, useId, useState } from "react";
@@ -337,7 +337,7 @@ function LinkedCard<Type extends string>(props: {
         )}
         {/* Columns give way to the value as the space for the table narrows, whatever the window: what was sent first, then who added it, then when. */}
         <div className="@container">
-          <Table className="table-fixed">
+          <Table className="table-fixed" data-enrichment-list>
             {/* Set widths, the same in Observables and Assets, so the two tables line up when stacked; the value takes the rest. */}
             <colgroup>
               {selection && <col className="w-10" />}
@@ -380,7 +380,7 @@ function LinkedCard<Type extends string>(props: {
               {items?.map((item) => {
                 const Icon = props.typeIcon(item.type);
                 const row = (menuButton?: ReactNode) => (
-                  <TableRow key={item.id} data-testid={`${noun.toLowerCase()}-${item.value}`}>
+                  <TableRow key={item.id} data-testid={`${noun.toLowerCase()}-${item.value}`} className="group/row">
                     {selection && (
                       <TableCell>
                         {canTick(item) && (
@@ -407,18 +407,19 @@ function LinkedCard<Type extends string>(props: {
                     {/* The value takes the room that is left, cut short with … when it doesn't fit; its page shows it whole. */}
                     <TableCell>
                       <span className="flex min-w-0 items-center gap-2">
-                        <ObservableHoverCard type={item.type} value={item.value} enabled={props.kind === "observable"}>
+                        <EnrichmentTarget type={item.type} value={item.value} enabled={props.kind === "observable"}>
                           <ItemLink
                             kind={props.kind}
                             id={item.id}
                             fromCase={props.caseNumber}
                             className="min-w-0 truncate font-mono text-xs hover:underline"
-                            title={props.kind === "observable" && hasContextPopup(item.type) ? undefined : props.fullValue(item.type, item.value)}
+                            title={props.fullValue(item.type, item.value)}
                             aria-label={`${typeLabel[item.type]} ${props.fullValue(item.type, item.value)}`}
                           >
                             {shown(item.type, item.value)}
                           </ItemLink>
-                        </ObservableHoverCard>
+                        </EnrichmentTarget>
+                        {props.kind === "observable" && <EnrichmentButton type={item.type as ObservableType} value={item.value} className="-my-1" />}
                         {item.ignored && (
                           <Badge variant="outline" className="shrink-0">
                             <BellOffIcon aria-hidden />

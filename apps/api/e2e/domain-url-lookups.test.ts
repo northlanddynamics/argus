@@ -14,7 +14,7 @@ afterAll(async () => {
 });
 
 const PASSWORD = "correct-horse-battery";
-/** Set to a directory to keep screenshots of the popup. */
+/** Set to a directory to keep screenshots of the Enrichment panel. */
 const SHOTS = process.env.E2E_SCREENSHOTS;
 
 const starting = () => new Response("starting", { status: 503 });
@@ -43,7 +43,7 @@ const DOMAIN = "invoice-portal.biz";
 const EMAIL = "billing@invoice-portal.biz";
 const PHISH_URL = "https://invoice-portal.biz/login?next=%2Finvoice";
 
-test("hovering a domain, an email address or a URL on a Case shows what VirusTotal knows; internal names are never sent", async () => {
+test("opening the Enrichment of a domain, an email address or a URL on a Case shows what VirusTotal knows; internal names are never sent", async () => {
   const { t, baseUrl, stop } = await serveTestApp();
   try {
     await t.inviteOwner("Acme Security", "owner@acme.example");
@@ -91,23 +91,33 @@ test("hovering a domain, an email address or a URL on a Case shows what VirusTot
     const page = await browser.newPage({ deviceScaleFactor: 2 });
     await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
     await page.goto(`${baseUrl}/cases/1/observables`);
-    const popup = page.locator("[data-slot=hover-card-content]");
+    const popup = page.getByRole("dialog", { name: /Enrichment$/ });
+    const show = (value: string) => page.getByRole("button", { name: `Show Enrichment for ${value}` }).click();
     const away = async () => {
-      await page.mouse.move(0, 0);
+      await popup.getByRole("button", { name: "Close" }).click();
       await popup.waitFor({ state: "detached" });
     };
 
     // A domain: the verdict, and that it was registered days ago.
-    await page.getByRole("link", { name: "Domain invoice-portal[.]biz" }).hover();
+    await show("invoice-portal[.]biz");
     await popup.getByText("7/93").waitFor();
     await popup.getByText("Newly registered:").waitFor();
     await popup.getByText("NameCheap, Inc.").waitFor();
     await popup.getByText("Let's Encrypt").waitFor();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/vt-domain.png` });
+
+    // The address it resolves to opens its own Enrichment in the panel; Back returns to the domain.
+    await popup.getByRole("button", { name: "185.220.101.4" }).click();
+    await popup.getByRole("heading", { name: "IP Enrichment" }).waitFor();
+    await popup.getByText("hasn't connected IPinfo").waitFor();
+    expect(await popup.getByRole("button", { name: "Next (J)" }).count()).toBe(0);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/vt-followed.png` });
+    await popup.getByRole("button", { name: "Back" }).click();
+    await popup.getByText("NameCheap, Inc.").waitFor();
     await away();
 
     // An email address shows its domain's report, from the same cached answer.
-    await page.getByRole("link", { name: "Email billing@invoice-portal[.]biz" }).hover();
+    await show("billing@invoice-portal[.]biz");
     await popup.getByText("Its domain, invoice-portal[.]biz").waitFor();
     await popup.getByText("7/93").waitFor();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/vt-email.png` });
@@ -115,7 +125,7 @@ test("hovering a domain, an email address or a URL on a Case shows what VirusTot
     expect(t.virustotal.domainLookups).toEqual([{ apiKey: KEY, domain: DOMAIN }]);
 
     // A URL.
-    await page.getByRole("link", { name: /^URL hxxps:\/\/invoice-portal/ }).hover();
+    await page.getByRole("button", { name: /^Show Enrichment for hxxps:\/\/invoice-portal/ }).click();
     await popup.getByText("Sign in to your account").waitFor();
     await popup.getByText("hxxps://invoice-portal[.]biz/m365/").waitFor();
     await popup.getByText("9/89").waitFor();
@@ -124,7 +134,7 @@ test("hovering a domain, an email address or a URL on a Case shows what VirusTot
     expect(t.virustotal.urlLookups).toEqual([{ apiKey: KEY, url: PHISH_URL }]);
 
     // An internal name is never sent.
-    await page.getByRole("link", { name: "Domain fileserver[.]corp" }).hover();
+    await show("fileserver[.]corp");
     await popup.getByText(".corp names are only meaningful inside a network").waitFor();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/vt-withheld.png` });
     await away();
@@ -132,7 +142,10 @@ test("hovering a domain, an email address or a URL on a Case shows what VirusTot
 
     // The domain's own page shows the report as a card.
     await page.getByRole("link", { name: "Domain invoice-portal[.]biz" }).click();
-    await page.getByText("dns1.registrar-servers.com").waitFor();
+    await page.getByText("dns1[.]registrar-servers[.]com").waitFor();
+    // Its records open their own Enrichment in the panel.
+    await page.getByRole("button", { name: "185.220.101.4" }).click();
+    await popup.getByRole("heading", { name: "IP Enrichment" }).waitFor();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/vt-domain-page.png`, fullPage: true });
   } finally {
     await stop();

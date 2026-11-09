@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
 import { ObservableMenu } from "@/components/observable-menu";
-import { hasContextPopup, ObservableHoverCard } from "@/components/observable-details";
+import { EnrichmentButton, EnrichmentTarget } from "@/components/observable-details";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { XIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -672,17 +672,20 @@ function Extracted({
     <section aria-label={label} className="grid gap-1">
       <h3 className="text-xs font-medium text-muted-foreground">{label}</h3>
       {items.length ? (
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap gap-1" data-enrichment-list>
           {items.map((item) => (
-            <ObservableHoverCard key={item.id} type={item.type ?? ""} value={item.title} enabled={!!item.type}>
-              <ObservableMenu observable={item.observable}>
-                <Badge variant="outline" className="max-w-full truncate font-mono hover:bg-muted" title={item.type && hasContextPopup(item.type) ? undefined : item.title} asChild>
-                  <ItemLink kind={kind} id={item.id}>
-                    {item.text}
-                  </ItemLink>
-                </Badge>
-              </ObservableMenu>
-            </ObservableHoverCard>
+            <span key={item.id} className="group/row inline-flex max-w-full items-center">
+              <EnrichmentTarget type={item.observable?.type ?? ""} value={item.observable?.value ?? ""} enabled={!!item.observable}>
+                <ObservableMenu observable={item.observable}>
+                  <Badge variant="outline" className="max-w-full truncate font-mono hover:bg-muted" title={item.title} asChild>
+                    <ItemLink kind={kind} id={item.id}>
+                      {item.text}
+                    </ItemLink>
+                  </Badge>
+                </ObservableMenu>
+              </EnrichmentTarget>
+              {item.observable && <EnrichmentButton type={item.observable.type} value={item.observable.value} className="size-5" />}
+            </span>
           ))}
         </div>
       ) : (

@@ -23,3 +23,5 @@ Everything ADR 0011 decided for hashes holds: each Member's own key, lookups mad
 - Domains and email addresses gain "Open in VirusTotal" in the Observable menu; a URL's VirusTotal page is linked from its popup once VirusTotal has reported on it, since its page is under an identifier only VirusTotal computes.
 - A URL is sent whole, query string included. Analysts should not add URLs carrying tokens as Observables when they don't want them looked up; Argus withholds only those whose credentials are in the userinfo.
 - The v3 domain and URL APIs are unverified against a live key.
+
+_Update: hover no longer opens anything. The same details now open in the Enrichment panel, docked on the right (`docs/wireframes/enrichment-panel.md`); what is looked up, cached and shown is unchanged._

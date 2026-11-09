@@ -23,3 +23,5 @@ Any IP shown in Argus can be looked up. Hovering or focusing it opens a popup (`
 - The `web` process now calls an external service while serving a request. A slow IPinfo makes the popup slow, never anything else.
 - IP details are not Audit Logged: a lookup reads, and changes nothing in Argus or in IPinfo.
 - Integrations whose credentials are a token, not a client ID and secret, now exist. The hint Admins see is the token's last four characters.
+
+_Update: hover no longer opens anything. The same details now open in the Enrichment panel, docked on the right (`docs/wireframes/enrichment-panel.md`); what is looked up, cached and shown is unchanged._

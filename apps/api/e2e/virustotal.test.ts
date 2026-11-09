@@ -14,7 +14,7 @@ afterAll(async () => {
 });
 
 const PASSWORD = "correct-horse-battery";
-/** Set to a directory to keep screenshots of the popup. */
+/** Set to a directory to keep screenshots of the Enrichment panel. */
 const SHOTS = process.env.E2E_SCREENSHOTS;
 
 const starting = () => new Response("starting", { status: 503 });
@@ -41,7 +41,7 @@ async function signIn(page: Page, baseUrl: string, email: string, code: () => Pr
 const SHA256 = "a3f5c8e1d2b4a6f8e0c2d4b6a8f0e2c4d6b8a0f2e4c6d8b0a2f4e6c8d0b2a4f6";
 const MD5 = "9e107d9d372bb6826bd81d3542a419d6";
 
-test("an Analyst adds their own VirusTotal key; hovering a hash on a Case shows what VirusTotal knows about the file", async () => {
+test("an Analyst adds their own VirusTotal key; opening a hash's Enrichment on a Case shows what VirusTotal knows about the file", async () => {
   const { t, baseUrl, stop } = await serveTestApp();
   try {
     await t.inviteOwner("Acme Security", "owner@acme.example");
@@ -69,8 +69,9 @@ test("an Analyst adds their own VirusTotal key; hovering a hash on a Case shows 
     const page = await browser.newPage({ deviceScaleFactor: 2 });
     await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
     await page.goto(`${baseUrl}/cases/1/observables`);
-    await page.getByRole("link", { name: `SHA-256 ${SHA256}` }).hover();
-    const popup = page.locator("[data-slot=hover-card-content]");
+    const popup = page.getByRole("dialog", { name: /Enrichment$/ });
+    const show = (hash: string) => page.getByRole("button", { name: `Show Enrichment for ${hash}` }).click();
+    await show(SHA256);
     await popup.getByText("No VirusTotal report yet").waitFor();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/vt-no-key.png` });
 
@@ -82,27 +83,30 @@ test("an Analyst adds their own VirusTotal key; hovering a hash on a Case shows 
     await page.getByText("…a1b2").waitFor();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/vt-settings.png`, fullPage: true });
 
-    // Now hovering the hash looks it up with her key.
+    // Now opening the hash's Enrichment looks it up with her key.
     await page.goto(`${baseUrl}/cases/1/observables`);
-    await page.getByRole("link", { name: `SHA-256 ${SHA256}` }).hover();
+    await show(SHA256);
     await popup.getByText("Invoice_0423.pdf.exe").waitFor();
     await popup.getByText("trojan.emotet/generic").waitFor();
     await popup.getByText("61/69").waitFor();
-    await popup.getByText("and 58 more").waitFor();
+    // The panel names more engines than the Observable's page does.
+    await popup.getByText("Microsoft").waitFor();
+    await popup.getByText("and 57 more").waitFor();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/vt-found.png` });
     expect(t.virustotal.lookups.filter((l) => l.hash === SHA256)).toEqual([{ apiKey: "ana-virustotal-key-0000000000000a1b2", hash: SHA256 }]);
 
     await popup.getByRole("button", { name: `Refresh ${SHA256}` }).click();
     await popup.getByText("refreshing…").waitFor({ state: "detached" });
+    // The panel slides in, so the click can land before "refreshing…" shows: wait for the lookup itself.
+    for (let i = 0; i < 50 && t.virustotal.lookups.filter((l) => l.hash === SHA256).length < 2; i++) await page.waitForTimeout(100);
     expect(t.virustotal.lookups.filter((l) => l.hash === SHA256)).toHaveLength(2);
-    await page.mouse.move(0, 0);
-    await popup.waitFor({ state: "detached" });
 
     // A file VirusTotal hasn't seen says so.
-    await page.getByRole("link", { name: `MD5 ${MD5}` }).hover();
+    await page.locator("[data-slot=sheet-overlay]").click();
+    await show(MD5);
     await popup.getByText("VirusTotal has never seen this file.").waitFor();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/vt-not-found.png` });
-    await page.mouse.move(0, 0);
+    await popup.getByRole("button", { name: "Close" }).click();
     await popup.waitFor({ state: "detached" });
 
     // The hash's own page shows the report as a card.
