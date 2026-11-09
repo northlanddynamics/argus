@@ -1,5 +1,7 @@
 # Domain, email and URL context popups: wireframes
 
+> Where these details appear has moved to the Enrichment panel (`enrichment-panel.md`): hover no longer opens a popup. The content and wording of each state below still apply, as a section of the panel.
+
 What a Member sees on hovering (or focusing) a domain, an email address or a URL in Argus: on a Case's Observables and their pages, an Alert's extracted indicators, Bulk Lookup and Response Actions. The report comes from VirusTotal, looked up with the Member's own API key and cached for the Organization (ADR 0012). It follows the hash context popup (`hash-context-popup.md`) in everything but its content; its "no key", "never seen" and "failed" states are the hash popup's C, D and E.
 
 ## Behaviour
