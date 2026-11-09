@@ -171,15 +171,15 @@ const bool = (v: unknown) => (typeof v === "boolean" ? v : null);
 
 /** What Identity Protection's GraphQL API is asked about each identity (`readIdentity` reads it). */
 const IDENTITY_FIELDS = `
-  entityId primaryDisplayName secondaryDisplayName type riskScore riskScoreSeverity watched mostRecentActivity
+  entityId primaryDisplayName secondaryDisplayName type riskScore riskScoreSeverity watched
   riskFactors { type severity }
   roles { type }
   ... on UserEntity {
-    emailAddresses
+    emailAddresses mostRecentActivity
     accounts {
       ... on ActiveDirectoryAccountDescriptor {
         domain samAccountName upn ou department title enabled lockoutTime
-        passwordAttributes { lastChange mayNeverExpire }
+        passwordAttributes { lastChange mayExpire }
       }
     }
   }
@@ -211,6 +211,7 @@ export function readIdentity(node: Record<string, unknown>): FalconIdentity | nu
   });
   const score = typeof node.riskScore === "number" && Number.isFinite(node.riskScore) ? node.riskScore : null;
   const lockout = account.lockoutTime;
+  const mayExpire = bool(password.mayExpire);
   return {
     entityId,
     displayName: text(node.primaryDisplayName),
@@ -226,7 +227,7 @@ export function readIdentity(node: Record<string, unknown>): FalconIdentity | nu
     privilegedGroups: [...new Set(associated.filter((a) => a.type === "GROUP").map((a) => a.name))],
     watched: bool(node.watched),
     passwordLastSet: isoTime(password.lastChange),
-    passwordNeverExpires: bool(password.mayNeverExpire) ?? (factor((t) => t === NEVER_EXPIRES) || null),
+    passwordNeverExpires: mayExpire !== null ? !mayExpire : factor((t) => t === NEVER_EXPIRES) || null,
     lastActivity: isoTime(node.mostRecentActivity),
     email: texts(node.emailAddresses)[0] ?? null,
     department: text(account.department),
