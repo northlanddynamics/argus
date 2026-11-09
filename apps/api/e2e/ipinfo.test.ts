@@ -119,7 +119,15 @@ test("the Owner adds IPinfo; opening an IP's Enrichment on a Case shows what IPi
     await panel.getByText("Frankfurt am Main, Hesse").waitFor();
     await page.keyboard.press("Escape");
     await panel.waitFor({ state: "detached" });
-    expect(await page.evaluate<string | null>("document.activeElement?.getAttribute('aria-label')")).toBe("IP 185.220.101.4");
+    // Radix hands focus back a tick after the panel unmounts, so wait for it rather than read it at once;
+    // on a miss, say what has focus instead.
+    const focused = () => page.evaluate<string>("document.activeElement?.getAttribute('aria-label') ?? (document.activeElement?.outerHTML ?? 'nothing').slice(0, 200)");
+    let has = await focused();
+    for (let waited = 0; has !== "IP 185.220.101.4" && waited < 5000; waited += 100) {
+      await page.waitForTimeout(100);
+      has = await focused();
+    }
+    expect(has).toBe("IP 185.220.101.4");
 
     // The right-click menu opens it too.
     await link.click({ button: "right" });

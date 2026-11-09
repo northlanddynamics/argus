@@ -332,6 +332,20 @@ describe("Overdue Tasks", () => {
     t.clock.advance(2 * DAY);
     expect(await overdueTasks()).toBe(2);
   });
+
+  test("the Case list counts each Case's Tasks and how many are done", async () => {
+    const { owner, open, task, setDone } = await acme();
+    const number = await open();
+    const tasksOf = async () => {
+      const body = await (await owner.api.cases.$get({ query: {} })).json();
+      return "cases" in body ? body.cases.find((c) => c.number === number)?.tasks : undefined;
+    };
+    expect(await tasksOf()).toEqual({ done: 0, total: 0 });
+    const first = await task(owner, number, { title: "Contain host" });
+    await task(owner, number, { title: "Write the report" });
+    await setDone(owner, number, first.id, true);
+    expect(await tasksOf()).toEqual({ done: 1, total: 2 });
+  });
 });
 
 describe("Tasks on a Closed Case", () => {
