@@ -53,7 +53,7 @@ export function CaseRolesCard() {
         <CardTitle>Case Roles catalog</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-4">
-        <form className="grid items-end gap-2 sm:grid-cols-[1fr_auto]" onSubmit={onCreate}>
+        <form className="grid items-end gap-2 @lg:grid-cols-[1fr_auto]" onSubmit={onCreate}>
           <div className="grid gap-2">
             <Label htmlFor="new-case-role">New Case Role</Label>
             <Input id="new-case-role" name="name" required maxLength={60} placeholder="e.g. Lead, Forensics, Comms, Legal" />

@@ -73,7 +73,7 @@ export function FalconIdentitiesCard({ item }: { item: ItemPage }) {
         {item.falconIdentities.length === 0 ? (
           <p className="text-sm text-muted-foreground">No CrowdStrike Integration to look this account up in.</p>
         ) : identities.length === 0 ? null : (
-          <div className={identities.length > 1 ? "grid gap-3 md:grid-cols-2" : "grid gap-3"}>
+          <div className={identities.length > 1 ? "grid gap-3 @3xl:grid-cols-2" : "grid gap-3"}>
             {identities.map(({ group, identity }) => (
               <section
                 key={`${group.integration.id} ${identity.entityId}`}

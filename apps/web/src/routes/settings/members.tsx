@@ -76,7 +76,7 @@ export function MembersPage() {
       <PageHeader title="Members" description="Who's in the Organization and what each person can do. Invite someone by email and choose their role." />
       <Card className="@container">
         <CardContent className="grid gap-4">
-          <form className="grid items-end gap-2 sm:grid-cols-[1fr_auto_auto]" onSubmit={onInvite}>
+          <form className="grid items-end gap-2 @lg:grid-cols-[1fr_auto_auto]" onSubmit={onInvite}>
             <div className="grid gap-2">
               <Label htmlFor="invite-email">Invite by email</Label>
               <Input id="invite-email" name="email" type="email" required placeholder="name@example.com" />
@@ -235,7 +235,7 @@ function OwnershipCard({ members }: { members: { id: string; name: string; email
         <CardDescription>Owner only</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-6">
-        <form className="grid items-end gap-2 sm:grid-cols-[1fr_auto]" onSubmit={onTransfer}>
+        <form className="grid items-end gap-2 @lg:grid-cols-[1fr_auto]" onSubmit={onTransfer}>
           <div className="grid gap-2">
             <Label htmlFor="transfer-to">Transfer ownership to</Label>
             <NativeSelect id="transfer-to" name="memberId" required defaultValue="">
@@ -255,7 +255,7 @@ function OwnershipCard({ members }: { members: { id: string; name: string; email
             Transfer
           </Button>
         </form>
-        <form className="grid items-end gap-2 sm:grid-cols-[1fr_auto]" onSubmit={onDelete}>
+        <form className="grid items-end gap-2 @lg:grid-cols-[1fr_auto]" onSubmit={onDelete}>
           <div className="grid gap-2">
             <Label htmlFor="confirm-name">Type {organizationName} to delete the Organization</Label>
             <Input id="confirm-name" name="confirmName" autoComplete="off" required />

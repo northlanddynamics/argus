@@ -134,7 +134,7 @@ export function AppShell() {
                 <NotificationBell />
               </div>
             </header>
-            <div id="content" tabIndex={-1} className="flex-1 p-4 outline-none md:p-6">
+            <div id="content" tabIndex={-1} className="@container flex-1 p-4 outline-none md:p-6">
               <Outlet />
             </div>
           </SidebarInset>

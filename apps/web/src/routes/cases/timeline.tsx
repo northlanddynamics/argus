@@ -32,7 +32,7 @@ export function CaseTimelinePage() {
   return (
     <div className="grid gap-4">
       {/* Side by side only where both columns have room; below that the Timeline sits above the Discussion. */}
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      <div className="grid items-start gap-6 @5xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <CaseTimeline />
         <CaseDiscussion />
       </div>

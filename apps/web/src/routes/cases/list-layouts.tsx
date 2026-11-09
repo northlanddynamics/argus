@@ -261,10 +261,10 @@ export function CaseSplit({
   onOpen: (number: number) => void;
   justChanged: Set<number>;
 }) {
-  if (!rows) return <CardSkeletons count={4} className="grid gap-2 lg:w-96" />;
+  if (!rows) return <CardSkeletons count={4} className="grid gap-2 @4xl:w-96" />;
   const shown = rows.find((c) => c.number === preview) ?? rows[0];
   return (
-    <div className="grid items-start gap-4 lg:grid-cols-[24rem_minmax(0,1fr)]">
+    <div className="grid items-start gap-4 @4xl:grid-cols-[24rem_minmax(0,1fr)]">
       <div className="grid gap-2" role="list" aria-label="Cases">
         {rows.map((c) => (
           <div role="listitem" key={c.number} className="grid">
@@ -337,7 +337,7 @@ function CasePreview({ row }: { row: CaseRow }) {
           </Link>
         </Button>
       </header>
-      <dl className="grid grid-cols-2 gap-4 border-y py-4 sm:grid-cols-4">
+      <dl className="grid grid-cols-2 gap-4 border-y py-4 @md:grid-cols-4">
         <div className="grid gap-1">
           <dt className="text-xs text-muted-foreground">Status</dt>
           <dd>

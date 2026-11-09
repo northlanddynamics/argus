@@ -12,7 +12,7 @@ import { useRemoveVirustotalKey, useSetVirustotalKey, virustotalKeyQuery } from 
 /** Your settings: what a Member sets for themselves alone. */
 export function AccountPage() {
   return (
-    <div className="grid w-full max-w-3xl content-start gap-4">
+    <div className="grid w-full content-start gap-4">
       <PageHeader title="Your settings" />
       <VirustotalKeyCard />
     </div>
