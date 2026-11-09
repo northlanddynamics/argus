@@ -182,6 +182,10 @@ _Avoid_: IOC check, mass search
 An action Argus takes in an external tool against one Observable or host linked to a Case, through an Integration, such as adding a custom IOC to Falcon, blocking a sender in Mimecast, adding a domain to a Cisco Umbrella destination list or containing a host; always taken from a Case, and removable only by the Case that created it.
 _Avoid_: Block, push, playbook, remediation
 
+**Mail Removal**:
+Taking every message from one email address out of every mailbox Mimecast delivered it to within a lookback, taken as a Response Action; the messages stay in Mimecast's archive, and restoring puts them back once.
+_Avoid_: Purge, clawback, remediation, quarantine, recall
+
 **Containment**:
 Cutting a host off the network through an Integration, taken as a Response Action; lifting it ends it, and an Admin may lift Containment that Argus did not impose.
 _Avoid_: Isolation, quarantine, network contain
