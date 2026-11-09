@@ -255,6 +255,35 @@ describe("Global search", () => {
     expect((await a.ben.api.search.$get({ query: { q: "x", page: "0" } })).status as number).toBe(400);
   });
 
+  test("an empty query lists everything the searcher can see, newest first, a page at a time", async () => {
+    const a = await acme();
+    const secret = await a.open("Insider exfiltration", true);
+    await a.observe(secret, "ip", "10.9.9.9");
+    const older = await a.open("Older Case");
+    await a.observe(older, "ip", "185.220.101.4");
+    await a.observe(older, "sha256", "cd".repeat(32));
+    a.t.clock.advance(60_000);
+    const newer = await a.open("Newer Case");
+
+    const all = await a.searchPage(a.ben, "", { pageSize: "50" });
+    expect(all.counts).toEqual({ cases: 2, alerts: 0, observables: 2, assets: 0 });
+    expect(all.total).toBe(4);
+    expect(all.hits.filter((h) => h.kind === "cases").map((h) => h.kind === "cases" && h.item.number)).toEqual([newer, older]);
+    expect(all.hits.filter((h) => h.kind === "observables").map((h) => h.kind === "observables" && h.item.value).toSorted()).toEqual([
+      "185.220.101.4",
+      "cd".repeat(32),
+    ]);
+
+    const first = await a.searchPage(a.ben, "", { pageSize: "3" });
+    const second = await a.searchPage(a.ben, "", { pageSize: "3", page: "2" });
+    expect([...first.hits, ...second.hits]).toEqual(all.hits);
+
+    expect((await a.searchPage(a.ben, "", { kinds: "observables" })).hits.map((h) => h.kind)).toEqual(["observables", "observables"]);
+    expect((await a.searchPage(a.ana, "")).counts).toMatchObject({ cases: 3, observables: 3 });
+    const res = await a.ben.api.search.$get({ query: {} as { q: string } });
+    expect(res.status as number).toBe(200);
+  });
+
   test("finds Observables by indicator, as analysts paste them, an exact match first", async () => {
     const a = await acme();
     const n = await a.open("Credential phishing from evil.example");
