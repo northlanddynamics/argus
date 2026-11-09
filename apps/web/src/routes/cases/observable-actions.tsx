@@ -313,13 +313,15 @@ export function ObservableActions({
       destinations.push({ ...r.integration, provider: known?.provider, defaults: known?.defaults ?? null });
     }
   }
+  // Umbrella Integrations with Response Actions on but no destination list yet: named, so the menu says why they offer nothing.
+  const awaiting = readOnly ? [] : (actions.data?.awaitingList ?? []).filter((a) => !destinations.some((d) => d.id === a.id));
   // Until the menu has loaded, offer it to anyone who might work the Case; once loaded, only if there is something to do.
   const showTakeAction = !c || (c.can.work && (!readOnly || actionable.length > 0));
 
   const takeActionItems = (kit: MenuKit) => {
     if (caseView.isPending || actions.isPending) return <kit.Item disabled>Loading…</kit.Item>;
     if (actions.isError || caseView.isError) return <kit.Item disabled>Couldn't load the Response Actions</kit.Item>;
-    if (destinations.length === 0) {
+    if (destinations.length === 0 && awaiting.length === 0) {
       return (
         <kit.Item disabled>
           <Twoline title="Response Actions are off" hint="An Admin turns them on under Settings · Integrations" />
@@ -458,6 +460,15 @@ export function ObservableActions({
             </div>
           );
         })}
+        {awaiting.map((a, i) => (
+          <div key={a.id} role="group" aria-label={a.name}>
+            {(destinations.length > 0 || i > 0) && <kit.Separator />}
+            <kit.Label>{a.name}</kit.Label>
+            <kit.Item disabled>
+              <Twoline title="No destination list chosen yet" hint="An Admin chooses one under Settings · Integrations" />
+            </kit.Item>
+          </div>
+        ))}
         {!readOnly && falconEligible.length > 0 && iocType !== null && (
           <>
             <kit.Separator />
