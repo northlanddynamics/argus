@@ -7,7 +7,7 @@ import { UmbrellaCard } from "@/components/umbrella-details";
 import { UrlDetailsCard } from "@/components/url-details";
 import { ObservableMenu } from "@/components/observable-menu";
 import { Link, useParams, useRouteContext } from "@tanstack/react-router";
-import { BellOffIcon, CheckIcon, CopyIcon, ExternalLinkIcon, FingerprintIcon, LockIcon, MonitorIcon, RefreshCwIcon, SearchIcon, UserIcon } from "lucide-react";
+import { BellOffIcon, CheckIcon, CopyIcon, ExternalLinkIcon, FingerprintIcon, LockIcon, MonitorIcon, RefreshCwIcon, SearchIcon, StarIcon, StarOffIcon, UserIcon } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
 import { CaseRef } from "@/components/case-ref";
 import { ItemLink } from "@/components/item-link";
@@ -33,7 +33,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useMe } from "@/lib/api";
-import { alertStatusLabel } from "@/lib/alerts";
+import { alertStatusLabel, alertsKey } from "@/lib/alerts";
 import { caseRef } from "@/lib/cases";
 import { canManage } from "@/lib/roles";
 import {
@@ -48,6 +48,7 @@ import {
   observableTypeLabel,
   refreshEnrichment,
   setIgnored,
+  setImportant,
 } from "@/lib/observables";
 import { falconIocActionLabel, responseActionKindLabel, responseActionStateLabel } from "@/lib/response-actions";
 import { ObservableActions } from "@/routes/cases/observable-actions";
@@ -148,10 +149,22 @@ function ItemPageView({ kind, id }: { kind: ItemKind; id: string }) {
                   Search for this
                 </Link>
               </Button>
+              {kind === "observable" && !guest && <ImportantButton item={item} />}
               {canManage(me.organization?.role) && <IgnoreButton kind={kind} item={item} />}
             </>
           }
         />
+        {item.important && (
+          <p className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+            <Badge variant="outline">
+              <StarIcon aria-hidden />
+              Important
+            </Badge>
+            <span>
+              Marked Important by {item.important.by.name} <Time iso={item.important.at} />, so it relates Alerts to Cases.
+            </span>
+          </p>
+        )}
         {item.ignored && (
           <p className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
             <Badge variant="outline">
@@ -196,6 +209,27 @@ function ItemPageView({ kind, id }: { kind: ItemKind; id: string }) {
       <CasesCard item={item} actions={kind === "observable" && !guest} />
       {!guest && <AlertsCard item={item} />}
       {kind === "observable" && <ResponseActionsCard item={item} actions={!guest} />}
+    </div>
+  );
+}
+
+/**
+ * Members mark an Observable Important, Organization-wide, so it relates Alerts to Cases, or unmark it.
+ * Easily undone, so it doesn't ask first.
+ */
+function ImportantButton({ item }: { item: ItemPage }) {
+  const queryClient = useQueryClient();
+  const toggle = useMutation({
+    mutationFn: () => setImportant(item.id, !item.important),
+    onSettled: () => Promise.all([queryClient.invalidateQueries({ queryKey: [...itemPagesKey] }), queryClient.invalidateQueries({ queryKey: alertsKey })]),
+  });
+  return (
+    <div className="grid justify-items-end gap-1">
+      <Button variant="outline" size="sm" disabled={toggle.isPending} onClick={() => toggle.mutate()}>
+        {item.important ? <StarOffIcon /> : <StarIcon />}
+        {item.important ? "Unmark Important" : "Mark Important"}
+      </Button>
+      {toggle.isError && <p className="text-xs text-destructive">{toggle.error.message}</p>}
     </div>
   );
 }

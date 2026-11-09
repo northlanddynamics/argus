@@ -35,6 +35,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ObservableIgnoreItem, useObservableIgnore } from "@/components/observable-ignore";
+import { ObservableImportantItem, useObservableImportant } from "@/components/observable-important";
 import { ObservableCopyItems, ObservableLookupItems } from "@/components/observable-menu";
 import { Button } from "@/components/ui/button";
 import {
@@ -279,6 +280,7 @@ export function ObservableActions({
   const actions = useQuery({ ...responseActionsQuery(number), enabled: wanted });
   const quick = useQuickSend(number);
   const ignore = useObservableIgnore(observable.type, observable.value);
+  const important = useObservableImportant(observable.type, observable.value);
   const [dialog, setDialog] = useState<Dialog>(null);
   const refresh = () => void queryClient.invalidateQueries({ queryKey: responseActionsKey(number) });
   const retry = useMutation({ mutationFn: (id: string) => retryResponseAction(number, id), onError: (e) => toast.error(e.message), onSettled: refresh });
@@ -512,9 +514,10 @@ export function ObservableActions({
       </kit.Item>
       <ObservableCopyItems Item={kit.Item} type={observable.type} value={observable.value} />
       <ObservableLookupItems Item={kit.Item} type={observable.type} value={observable.value} />
-      {ignore.available && (
+      {(important.available || ignore.available) && (
         <>
           <kit.Separator />
+          <ObservableImportantItem Item={kit.Item} important={important} />
           <ObservableIgnoreItem Item={kit.Item} ignore={ignore} />
         </>
       )}

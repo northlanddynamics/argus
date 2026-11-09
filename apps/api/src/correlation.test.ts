@@ -62,9 +62,13 @@ async function acme() {
     if (!("case" in body)) throw new Error("Could not open a Case");
     return body.case.number;
   };
-  const observe = async (number: number, type: "ip" | "domain", value: string, as: Session = owner) => {
+  /** Links an Observable to Case `number` and, unless `important` is false, marks it Important, as Correlation needs. */
+  const observe = async (number: number, type: "ip" | "domain", value: string, as: Session = owner, { important = true } = {}) => {
     const body = await (await as.api.cases[":number"].observables.$post({ param: param(number), json: { type, value } })).json();
     if (!("observable" in body)) throw new Error(`Could not link ${value}`);
+    if (important && (await ana.api.observables[":id"].important.$put({ param: { id: body.observable.id } })).status !== 200) {
+      throw new Error(`Could not mark ${value} Important`);
+    }
     return body.observable.id;
   };
   const hold = async (number: number, value: string, type: "host" | "account" = "host") => {
@@ -174,6 +178,31 @@ describe("Correlation on the Alert page", () => {
 
     await a.admin.api.observables[":id"].ignored.$delete({ param: { id: ip } });
     expect(await a.suggested(id)).toEqual([`C-${both} 1: 185.220.101.4`, `C-${ipOnly} 1: 185.220.101.4`]);
+  });
+
+  test("only Important Observables cause or count towards a suggestion; Assets need no marking", async () => {
+    const a = await acme();
+    const ipOnly = await a.open("Tor exit traffic");
+    const ip = await a.observe(ipOnly, "ip", "185.220.101.4", a.owner, { important: false });
+    const both = await a.open("Invoice phishing");
+    await a.observe(both, "ip", "185.220.101.4", a.owner, { important: false });
+    await a.observe(both, "domain", "invoice-portal.biz", a.owner, { important: false });
+    await a.hold(both, "FIN-LT-0231");
+    const id = await a.detect();
+    expect(await a.suggested(id)).toEqual([`C-${both} 1: FIN-LT-0231`]);
+    expect(await a.marked([id])).toEqual([`C-${both} +0`]);
+
+    expect((await a.ana.api.observables[":id"].important.$put({ param: { id: ip } })).status).toBe(200);
+    expect(await a.suggested(id)).toEqual([`C-${both} 2: 185.220.101.4, FIN-LT-0231`, `C-${ipOnly} 1: 185.220.101.4`]);
+    expect(await a.marked([id])).toEqual([`C-${both} +1`]);
+
+    // Ignoring wins over Important.
+    await a.admin.api.observables[":id"].ignored.$put({ param: { id: ip } });
+    expect(await a.suggested(id)).toEqual([`C-${both} 1: FIN-LT-0231`]);
+    await a.admin.api.observables[":id"].ignored.$delete({ param: { id: ip } });
+
+    expect((await a.ana.api.observables[":id"].important.$delete({ param: { id: ip } })).status).toBe(200);
+    expect(await a.suggested(id)).toEqual([`C-${both} 1: FIN-LT-0231`]);
   });
 
   test("Cases the viewer can't see are never suggested", async () => {
@@ -391,6 +420,22 @@ describe("Correlation on the Case", () => {
     expect(await res.json()).toEqual({ applied: [fresh], refused: [] });
     expect((await a.alert(fresh)).attached?.case.number).toBe(number);
     expect(await a.related(number)).toEqual([]);
+  });
+
+  test("only Important Observables relate an Alert to the Case", async () => {
+    const a = await acme();
+    const number = await a.open("Invoice phishing");
+    const ip = await a.observe(number, "ip", "185.220.101.4", a.owner, { important: false });
+    const domain = await a.observe(number, "domain", "invoice-portal.biz", a.owner, { important: false });
+    const id = await a.detect();
+    expect(await a.related(number)).toEqual([]);
+
+    await a.ana.api.observables[":id"].important.$put({ param: { id: domain } });
+    expect(await a.related(number)).toEqual([`${id} 1: invoice-portal.biz`]);
+    await a.ana.api.observables[":id"].important.$put({ param: { id: ip } });
+    expect(await a.related(number)).toEqual([`${id} 2: 185.220.101.4, invoice-portal.biz`]);
+    await a.ana.api.observables[":id"].important.$delete({ param: { id: domain } });
+    expect(await a.related(number)).toEqual([`${id} 1: 185.220.101.4`]);
   });
 
   test("Ignored items don't count, and a Case the viewer can't see is not found", async () => {

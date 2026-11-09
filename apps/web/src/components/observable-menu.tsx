@@ -2,6 +2,7 @@ import { CopyIcon, ExternalLinkIcon, PanelRightOpenIcon } from "lucide-react";
 import { type ComponentProps, type ComponentType, type ReactElement, type ReactNode, useRef } from "react";
 import { toast } from "sonner";
 import { ObservableIgnoreItem, useObservableIgnore } from "@/components/observable-ignore";
+import { ObservableImportantItem, useObservableImportant } from "@/components/observable-important";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { hasEnrichment, useEnrichmentPanel } from "@/lib/enrichment";
 import { observableCopies, observableLookups, type ObservableType } from "@/lib/observables";
@@ -40,7 +41,7 @@ export function ObservableLookupItems({ Item, type, value }: { Item: ItemCompone
 /**
  * Right-clicking (or long-pressing) an Observable wherever it is shown offers to show its Enrichment
  * in the Enrichment panel (for types that have one, for Members), to copy it, and to open it where
- * it can be looked up, and, for Admins, to ignore it. `children` must be one element that can hold a ref; the props an outer
+ * it can be looked up, for Members to mark it Important, and, for Admins, to ignore it. `children` must be one element that can hold a ref; the props an outer
  * wrapper (such as `EnrichmentTarget`) gives this are passed on to it, so the two nest.
  * With no `observable`, `children` are left as they are, for lists that mix in Assets.
  */
@@ -68,6 +69,7 @@ function Menu({
 }: { observable: { type: ObservableType; value: string }; children: ReactElement } & Omit<ComponentProps<"span">, "children">) {
   const panel = useEnrichmentPanel();
   const ignore = useObservableIgnore(type, value);
+  const important = useObservableImportant(type, value);
   // The value the menu was opened on, so the panel knows the list it is in and where to return focus.
   const trigger = useRef<HTMLElement | null>(null);
   const lookups = observableLookups(type, value).length > 0;
@@ -105,9 +107,10 @@ function Menu({
               <ObservableLookupItems Item={ContextMenuItem} type={type} value={value} />
             </>
           )}
-          {ignore.available && (
+          {(important.available || ignore.available) && (
             <>
               <ContextMenuSeparator />
+              <ObservableImportantItem Item={ContextMenuItem} important={important} />
               <ObservableIgnoreItem Item={ContextMenuItem} ignore={ignore} />
             </>
           )}

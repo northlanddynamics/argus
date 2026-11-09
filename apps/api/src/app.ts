@@ -16,7 +16,7 @@ import { liveRoutes } from "./routes/live";
 import { meRoutes } from "./routes/me";
 import { metricsRoutes } from "./routes/metrics";
 import { notificationRoutes } from "./routes/notifications";
-import { assetRoutes, ignoredObservableRoutes, observableRoutes } from "./routes/observables";
+import { assetRoutes, ignoredObservableRoutes, importantObservableRoutes, observableRoutes } from "./routes/observables";
 import { operatorRoutes } from "./routes/operator";
 import { organizationRoutes } from "./routes/organization";
 import { responseActionRoutes } from "./routes/response-actions";
@@ -61,6 +61,7 @@ export function createApi(deps: Deps, live: Live = createLive(deps)) {
     .route("/observables", observableRoutes(deps, modules))
     .route("/assets", assetRoutes(deps, modules))
     .route("/ignored-observables", ignoredObservableRoutes(deps, modules))
+    .route("/important-observables", importantObservableRoutes(deps, modules))
     .route("/bulk-lookup", bulkLookupRoutes(deps, modules))
     .route("/integrations", integrationRoutes(deps, modules))
     .route("/ip-lookups", ipLookupRoutes(deps, modules))

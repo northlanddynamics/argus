@@ -111,7 +111,7 @@ The external security tool an Integration connects to, which fixes what that Int
 _Avoid_: Vendor, platform, connector type
 
 **Correlation**:
-A suggestion that an Alert belongs with a Case because the Alert names Observables or Assets already linked to it, names a Falcon device recorded on a host linked to it whatever the host is now called, or names an account whose Identity Protection identity is recorded on an account linked to it whatever either is called; Argus only suggests, and an Analyst decides whether to attach.
+A suggestion that an Alert belongs with a Case because the Alert names Important Observables or Assets already linked to it, names a Falcon device recorded on a host linked to it whatever the host is now called, or names an account whose Identity Protection identity is recorded on an account linked to it whatever either is called; Argus only suggests, and an Analyst decides whether to attach.
 _Avoid_: Match, auto-link, cluster
 
 ### Record of a Case
@@ -165,6 +165,10 @@ _Avoid_: Context, intel, details, lookup
 **Ignored Observable**:
 An Observable (or Asset) an Admin has marked as too common to mean anything, such as a public resolver or the Organization's own mail domain; still held, linked and searchable, but never the basis of a Correlation.
 _Avoid_: Allowlist, whitelist, suppressed, excluded
+
+**Important Observable**:
+An Observable a Member has marked, for the whole Organization, as meaningful enough to relate Alerts to Cases; only Important Observables are the basis of a Correlation, however many others an Alert and a Case share. Assets need no marking.
+_Avoid_: Key observable, flagged, pinned, starred, priority IOC
 
 **Ignored Severity**:
 A Severity an Admin has chosen for a CrowdStrike Integration to skip: its detections of that Severity become no Alert, and leave an Alert already received as it was. At least one Severity is never ignored; pausing the Integration stops Alerts altogether.
