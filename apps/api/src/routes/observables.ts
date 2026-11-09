@@ -44,22 +44,51 @@ const itemRoutes = <Store extends Modules["observables"] | Modules["assets"]>(de
 };
 
 const byValue = z.object({ type: z.enum(OBSERVABLE_TYPES), value: z.string().min(1).max(4096), ignored: z.boolean() });
+const importantByValue = z.object({ type: z.enum(OBSERVABLE_TYPES), value: z.string().min(1).max(4096), important: z.boolean() });
 
 /**
  * Observables can also be put on the Ignored list, or taken off, by type and value wherever they are
  * shown (`POST /ignored`), even one the Organization doesn't hold yet. Admins only.
+ *
+ * Members mark an Observable Important (`PUT /:id/important`), so it drives Correlations, and unmark
+ * it (`DELETE /:id/important`), or do either by type and value (`POST /important`).
  */
-export const observableRoutes = (deps: Deps, { observables }: Modules) =>
-  itemRoutes(deps, observables).post("/ignored", zValidator("json", byValue), membersOnly, async (c) => {
-    const { type, value, ignored } = c.req.valid("json");
+export const observableRoutes = (deps: Deps, { observables }: Modules) => {
+  const setImportant = (important: boolean) => async (c: Context<CaseWorkEnv>) => {
     try {
-      return c.json({ changed: await observables.setIgnoredByValue(c.get("membership"), type, value, ignored) }, 200);
+      const changed = await observables.setImportant(c.get("membership"), c.req.param("id") ?? "", important);
+      return c.json({ changed }, 200);
     } catch (e) {
       if (e instanceof NotPermitted) return c.json(notPermitted, 403);
-      if (e instanceof InvalidValue) return c.json({ error: e.message }, 400);
+      if (e instanceof ItemNotFound) return c.json({ error: e.message }, 404);
       throw e;
     }
-  });
+  };
+  return itemRoutes(deps, observables)
+    .post("/ignored", zValidator("json", byValue), membersOnly, async (c) => {
+      const { type, value, ignored } = c.req.valid("json");
+      try {
+        return c.json({ changed: await observables.setIgnoredByValue(c.get("membership"), type, value, ignored) }, 200);
+      } catch (e) {
+        if (e instanceof NotPermitted) return c.json(notPermitted, 403);
+        if (e instanceof InvalidValue) return c.json({ error: e.message }, 400);
+        throw e;
+      }
+    })
+    .put("/:id/important", zValidator("param", idParam), membersOnly, setImportant(true))
+    .delete("/:id/important", zValidator("param", idParam), membersOnly, setImportant(false))
+    .post("/important", zValidator("json", importantByValue), membersOnly, async (c) => {
+      const { type, value, important } = c.req.valid("json");
+      try {
+        return c.json({ changed: await observables.setImportantByValue(c.get("membership"), type, value, important) }, 200);
+      } catch (e) {
+        if (e instanceof NotPermitted) return c.json(notPermitted, 403);
+        if (e instanceof InvalidValue) return c.json({ error: e.message }, 400);
+        throw e;
+      }
+    });
+};
+
 /** A host's or account's Enrichment is fetched from Falcon again when a Member asks (`POST /:id/enrichment`, ADR 0009). */
 export const assetRoutes = (deps: Deps, { assets }: Modules) =>
   itemRoutes(deps, assets).post("/:id/enrichment", zValidator("param", idParam), membersOnly, async (c) => {
@@ -78,6 +107,19 @@ export const ignoredObservableRoutes = (deps: Deps, { ignoredObservables }: Modu
     .get("/", async (c) => {
       try {
         return c.json({ ignored: await ignoredObservables.list(c.get("participant")) }, 200);
+      } catch (e) {
+        if (e instanceof NotPermitted) return c.json(notPermitted, 403);
+        throw e;
+      }
+    });
+
+/** The Organization's Important Observables, for Members. */
+export const importantObservableRoutes = (deps: Deps, { importantObservables }: Modules) =>
+  new Hono<ParticipantEnv>()
+    .use(requireParticipant(deps))
+    .get("/", async (c) => {
+      try {
+        return c.json({ important: await importantObservables.list(c.get("participant")) }, 200);
       } catch (e) {
         if (e instanceof NotPermitted) return c.json(notPermitted, 403);
         throw e;

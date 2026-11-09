@@ -3,7 +3,7 @@ import type { Db, Tx } from "../db/client";
 import { orgAuditLog } from "../db/schema";
 import { secureId } from "../ids";
 
-export const ORG_AUDIT_CATEGORIES = ["members", "case-roles", "sso", "integrations", "alerts", "teams", "ignored-observables"] as const;
+export const ORG_AUDIT_CATEGORIES = ["members", "case-roles", "sso", "integrations", "alerts", "teams", "ignored-observables", "important-observables"] as const;
 export type OrgAuditCategory = (typeof ORG_AUDIT_CATEGORIES)[number];
 
 export type OrgAuditAction =
@@ -41,6 +41,8 @@ export type OrgAuditAction =
   | "teams.webhook_removed"
   | "ignored_observable.added"
   | "ignored_observable.removed"
+  | "important_observable.added"
+  | "important_observable.removed"
   | "alert.dismissed"
   | "alert.falcon_status_changed"
   | "alert.falcon_assignee_changed"

@@ -53,8 +53,8 @@ import { queueTeamsPost, sendTeamsPosts } from "../teams/teams";
  * detachment, and the Organization Audit Log each dismissal. A Closed Case gains and loses no Alerts.
  *
  * Correlation suggests the Cases an Alert may belong with: the Cases the Member can see, in any
- * Status, linked to an Observable or Asset the Alert names that isn't on the Ignored list, ranked
- * by how many they share. A host also counts as named when the Alert names a Falcon device (`aid`)
+ * Status, linked to an Important Observable or an Asset the Alert names that isn't on the Ignored
+ * list, ranked by how many they share; Observables nobody has marked Important never count. A host also counts as named when the Alert names a Falcon device (`aid`)
  * recorded on it for the Alert's Integration, so a renamed host still correlates, and an account as
  * named when an account the Alert names has the same Identity Protection identity recorded for that
  * Integration (ADR 0009); Assets are never merged. It is worked out as it is read, and never attaches anything: the Member
@@ -120,7 +120,7 @@ export class AlertNotFound extends Error {
 export type AlertFilter = { status?: AlertStatus; severity?: Severity; integrationId?: string; caseNumber?: number };
 
 /**
- * A Case an Alert may belong with: the non-ignored Observables and Assets they share, and how the
+ * A Case an Alert may belong with: the non-ignored Important Observables and Assets they share, and how the
  * Member may attach the Alert to it, if at all. Only Admins reopen a Closed Case to attach it there;
  * otherwise `attach` is null, as it is while the Alert is on a Closed Case itself.
  */
@@ -131,7 +131,7 @@ export type Correlation = {
   attach: "attach" | "reopen_and_attach" | null;
 };
 
-/** A Case's Correlation: a New Alert sharing its non-ignored Observables or Assets. */
+/** A Case's Correlation: a New Alert sharing its non-ignored Important Observables or Assets. */
 export type CaseCorrelation = {
   alert: {
     id: string;
@@ -669,7 +669,7 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
     },
 
     /**
-     * Correlation for Case `number`: the New Alerts sharing its non-ignored Observables or Assets,
+     * Correlation for Case `number`: the New Alerts sharing its non-ignored Important Observables or Assets,
      * most shared first, and how `me` may attach them to it: `attach`, `reopen_and_attach` (an
      * Admin, on a Closed Case) or null. Throws `CaseNotFound` when `me` can't see it.
      */

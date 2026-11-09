@@ -705,8 +705,8 @@ function Extracted({
 }
 
 /**
- * Correlation: the Cases this Alert may belong with, by the Observables and Assets they share (those
- * on the Ignored list aside), strongest first. Argus never attaches on its own: the Member attaches
+ * Correlation: the Cases this Alert may belong with, by the Important Observables and the Assets they
+ * share (those on the Ignored list aside), strongest first. Argus never attaches on its own: the Member attaches
  * from a suggestion, or for a Closed Case an Admin reopens it and attaches in one step; an Analyst
  * only gets the link.
  */
@@ -734,7 +734,7 @@ function RelatedCases({ alert }: { alert: AlertDetail }) {
       ) : related.isError ? (
         <p className="text-destructive">Couldn’t load the related Cases.</p>
       ) : list.length === 0 ? (
-        <p className="text-muted-foreground">No other Case shares its Observables or Assets.</p>
+        <p className="text-muted-foreground">No other Case shares its Important Observables or its Assets.</p>
       ) : (
         <ul className="grid gap-2">
           {list.map((c) => (

@@ -164,6 +164,8 @@ export const organizationPolicy = {
   canManageTeamsChannel: managesOrganization,
   /** Add Observables and Assets to the Ignored list and remove them. */
   canManageIgnoredObservables: managesOrganization,
+  /** Mark Observables Important, so they drive Correlations, and unmark them. Any Member. */
+  canMarkImportantObservables: (actor: Actor) => !isGuest(actor),
   /** Enable, change and disable SAML single sign-on, and see how it is configured. */
   canManageSso: managesOrganization,
   /** Transfer ownership and delete the Organization. */

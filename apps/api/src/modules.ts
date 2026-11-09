@@ -13,7 +13,7 @@ import { ipLookupStore } from "./ipinfo/ip-lookups";
 import { domainUrlLookupStore } from "./virustotal/domain-url-lookups";
 import { hashLookupStore } from "./virustotal/hash-lookups";
 import { bulkLookupStore } from "./observables/bulk-lookup";
-import { assetStore, ignoredObservableStore, observableStore } from "./observables/observables";
+import { assetStore, ignoredObservableStore, importantObservableStore, observableStore } from "./observables/observables";
 import { invitationStore } from "./invitations/invitations";
 import { memberStore } from "./members/members";
 import { metricsStore } from "./metrics/metrics";
@@ -46,6 +46,7 @@ export function createModules(deps: Deps) {
   return {
     ...readers,
     ignoredObservables: ignoredObservableStore(deps),
+    importantObservables: importantObservableStore(deps),
     bulkLookup: bulkLookupStore(deps, readers.observables),
     caseRoles: caseRoleStore(deps),
     discussion: discussionStore(deps),

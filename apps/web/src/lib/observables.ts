@@ -146,3 +146,35 @@ export async function setIgnoredByValue(type: ObservableType, value: string, ign
   const res = await api.observables.ignored.$post({ json: { type, value, ignored } });
   if (!res.ok) throw new Error(await errorMessage(res, ignored ? "Could not ignore it" : "Could not stop ignoring it"));
 }
+
+/** Under the item pages' key, so the same signals refresh it. */
+export const importantKey = [...itemPagesKey, "important"] as const;
+
+/** The Organization's Important Observables: the only Observables that drive a Correlation. Members only. */
+export const importantQuery = queryOptions({
+  queryKey: importantKey,
+  queryFn: async () => {
+    const res = await api["important-observables"].$get();
+    if (!res.ok) throw new Error("Could not load the Important Observables");
+    const body = await res.json();
+    if (!("important" in body)) throw new Error("Unexpected response");
+    return body.important;
+  },
+});
+
+/** Marks an Observable Important, or unmarks it. */
+export async function setImportant(id: string, important: boolean) {
+  const param = { param: { id } };
+  const route = api.observables[":id"].important;
+  const res = important ? await route.$put(param) : await route.$delete(param);
+  if (!res.ok) throw new Error(await errorMessage(res, important ? "Could not mark it Important" : "Could not unmark it"));
+}
+
+/**
+ * Marks the Observable of `type` with this value Important, or unmarks it, wherever it is shown:
+ * Argus adds it first if the Organization doesn't hold it yet.
+ */
+export async function setImportantByValue(type: ObservableType, value: string, important: boolean) {
+  const res = await api.observables.important.$post({ json: { type, value, important } });
+  if (!res.ok) throw new Error(await errorMessage(res, important ? "Could not mark it Important" : "Could not unmark it"));
+}

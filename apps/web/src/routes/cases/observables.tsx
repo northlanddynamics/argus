@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { EnrichmentButton, EnrichmentTarget } from "@/components/observable-details";
 import { Link } from "@tanstack/react-router";
-import { BellOffIcon, type LucideIcon, MonitorIcon, PlusIcon, SirenIcon, UserIcon } from "lucide-react";
+import { BellOffIcon, type LucideIcon, MonitorIcon, PlusIcon, SirenIcon, StarIcon, UserIcon } from "lucide-react";
 import { type ReactElement, type ReactNode, useId, useState } from "react";
 import { toast } from "sonner";
 import { CaseRef } from "@/components/case-ref";
@@ -177,6 +177,8 @@ type Item<Type extends string> = {
   seenIn: { number: number; title: string }[];
   fromAlert: { alert: { id: string; externalId: string; title: string } | null } | null;
   ignored: boolean;
+  /** An Important Observable, one that drives Correlations. Always false for Assets, and for Guests. */
+  important: boolean;
   /** Its link to this Case is hidden from Guests. Members only ever see it set. */
   internal: boolean;
   /** A host's Enrichment; empty for everything else. */
@@ -429,6 +431,12 @@ function LinkedCard<Type extends string>(props: {
                           </ItemLink>
                         </EnrichmentTarget>
                         {props.kind === "observable" && <EnrichmentButton type={item.type as ObservableType} value={item.value} className="-my-1" />}
+                        {item.important && (
+                          <Badge variant="outline" className="shrink-0">
+                            <StarIcon aria-hidden />
+                            Important
+                          </Badge>
+                        )}
                         {item.ignored && (
                           <Badge variant="outline" className="shrink-0">
                             <BellOffIcon aria-hidden />

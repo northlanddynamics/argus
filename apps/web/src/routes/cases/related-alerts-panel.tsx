@@ -14,8 +14,9 @@ import { type CaseView, caseRef } from "@/lib/cases";
 import { assetTypeLabel, observableTypeLabel, shownObservable } from "@/lib/observables";
 
 /**
- * Case page · Related Alerts (Correlation): the New Alerts sharing this Case's Observables or Assets
- * (those on the Ignored list aside), most shared first. Argus never attaches on its own: the Member
+ * Case page · Related Alerts (Correlation): the New Alerts sharing this Case's Important Observables
+ * or its Assets (those on the Ignored list aside), most shared first. An Observable nobody has marked
+ * Important never relates an Alert, however many share it. Argus never attaches on its own: the Member
  * attaches from here, or for a Closed Case an Admin reopens it and attaches in one step. Members only.
  */
 export function RelatedAlertsPanel({ c }: { c: CaseView }) {
@@ -48,7 +49,10 @@ export function RelatedAlertsPanel({ c }: { c: CaseView }) {
         ) : related.isError ? (
           <p className="text-destructive">Couldn’t load the related Alerts.</p>
         ) : list.length === 0 ? (
-          <p className="text-muted-foreground">None of the New Alerts share its Observables or Assets.</p>
+          <div className="grid gap-1">
+            <p className="text-muted-foreground">None of the New Alerts share its Important Observables or its Assets.</p>
+            <p className="text-xs text-muted-foreground">Only Observables marked Important relate Alerts: mark one from its menu.</p>
+          </div>
         ) : (
           <ul className="grid gap-2" aria-label="Related Alerts">
             {list.map((a) => (

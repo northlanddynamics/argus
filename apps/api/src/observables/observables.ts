@@ -1,4 +1,4 @@
-import { and, type AnyColumn, asc, desc, eq, inArray, isNull, ne, notExists, type SQL, sql } from "drizzle-orm";
+import { and, type AnyColumn, asc, desc, eq, exists, inArray, isNull, ne, notExists, type SQL, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { casePolicy, isGuest, type MemberActor, NotPermitted, organizationPolicy, visibleAlerts, visibleCases, visibleItems } from "../access/policy";
 import { recordOrgAudit } from "../audit/org-audit-log";
@@ -23,6 +23,7 @@ import {
   caseObservables,
   cases,
   ignoredObservables,
+  importantObservables,
   integrations,
   observables,
   user,
@@ -61,6 +62,10 @@ import {
  * to mean anything, which never drive a Correlation. Ignoring one changes nothing else about it.
  * Each add and remove is recorded in the Organization Audit Log; removing ends the entry and keeps
  * it (ADR 0003).
+ *
+ * Any Member marks an Observable Important, Organization-wide: only Important Observables drive a
+ * Correlation, so the many common, harmless values Alerts and Cases share don't relate them. Assets
+ * need no marking. Marking and unmarking are recorded in the Organization Audit Log likewise.
  */
 
 /** The value isn't a valid one of its type. */
@@ -88,6 +93,8 @@ export type LinkedView<Type extends string> = {
   seenIn: SeenIn[];
   /** Whether it is on the Organization's Ignored list. Always false for Guests, who aren't told. */
   ignored: boolean;
+  /** Whether it is an Important Observable. Always false for Assets, and for Guests, who aren't told. */
+  important: boolean;
   /**
    * Whether its link to this Case is Internal, hidden from the Case's Guests with everything Argus
    * knows about it. Only Assets are marked so; Guests only ever see links that aren't.
@@ -171,6 +178,8 @@ export type ItemDetail<Type extends string> = {
   alerts: ItemAlert[];
   /** Set while it is on the Ignored list: who added it and when. Never told to Guests. */
   ignored: IgnoredMark | null;
+  /** Set while it is Important: who marked it and when. Always null for Assets, and never told to Guests. */
+  important: IgnoredMark | null;
   /**
    * The Response Actions taken on it from Cases the actor can see, newest first; Guests get no
    * Internal ones and no Integration details. Always empty for Assets.
@@ -202,7 +211,7 @@ export type FalconDevices = {
   lookup: HostLookupView | null;
 };
 
-/** Who put an item on the Ignored list, and when. */
+/** Who put an item on the Ignored list, or marked it Important, and when. */
 export type IgnoredMark = { by: Person; at: string };
 
 /** An entry on the Ignored list, as Admin settings show it. */
@@ -374,11 +383,13 @@ function heldOnceStore<Type extends string>(
             .orderBy(desc(cases.number))
         : [];
       const ignored = new Set(isGuest(me) ? [] : await ignoredAmong(db, kind.ignoredItem, rows.map((r) => r.id)));
+      const important = new Set(isGuest(me) || kind.name !== "observable" ? [] : await importantAmong(db, rows.map((r) => r.id)));
       return rows.map((r) => ({
         id: r.id,
         type: r.type as Type,
         value: r.value,
         ignored: ignored.has(r.id),
+        important: important.has(r.id),
         internal: r.internal,
         falcon: falcon.get(r.id) ?? [],
         linkedBy: { id: r.linkedById, name: r.linkedByName },
@@ -443,6 +454,7 @@ function heldOnceStore<Type extends string>(
           .orderBy(desc(seenAt), desc(alerts.seq));
     if (!caseRows.length && !alertRows.length) throw new ItemNotFound(`${kind.noun} not found`);
     const ignored = isGuest(me) ? null : await ignoredMark(db, kind.ignoredItem, itemId);
+    const important = isGuest(me) || kind.name !== "observable" ? null : await importantMark(db, itemId);
     const subjects = await alertSubjectAssets(db, alertRows.map((a) => ({ id: a.id, host: a.host, userName: null })));
     const times = [...caseRows.map((c) => c.linkedAt.getTime()), ...alertRows.map((a) => a.seenAt.getTime())];
     return {
@@ -463,6 +475,7 @@ function heldOnceStore<Type extends string>(
         case: caseNumber !== null && caseTitle !== null ? { number: caseNumber, title: caseTitle } : null,
       })),
       ignored,
+      important,
       responseActions: await responseActionsOn(me, itemId),
       falconDevices: kind.name === "asset" && item.type === "host" && !isGuest(me) ? await falconDevicesOf(db, itemId) : [],
       falconIdentities: kind.name === "asset" && item.type === "account" && !isGuest(me) ? await falconIdentitiesOf(db, itemId) : [],
@@ -672,8 +685,10 @@ const assetKind: Kind<AssetType> = {
   ignoredItem: ignoredObservables.assetId,
 };
 
-export const observableStore = (deps: { db: Db; clock: Clock }, responseActions?: { onObservable: ResponseActionsOn }) =>
-  heldOnceStore(deps, observableKind, responseActions?.onObservable);
+export const observableStore = (deps: { db: Db; clock: Clock }, responseActions?: { onObservable: ResponseActionsOn }) => ({
+  ...heldOnceStore(deps, observableKind, responseActions?.onObservable),
+  ...importance(deps),
+});
 /**
  * Links the Organization's Observable of `type` with this (normalised) value to Case `current`
  * (locked by `lockCase`) by hand, as a Member linking it would, first adding it to the Organization
@@ -744,6 +759,153 @@ export const ignoredObservableStore = ({ db }: { db: Db }) => ({
 });
 
 export type IgnoredObservableStore = ReturnType<typeof ignoredObservableStore>;
+
+/* Important Observables. */
+
+/** Which of the Observables `itemIds` are Important now. */
+export async function importantAmong(db: Db | Tx, itemIds: string[]): Promise<string[]> {
+  if (!itemIds.length) return [];
+  const rows = await db
+    .select({ id: importantObservables.observableId })
+    .from(importantObservables)
+    .where(and(inArray(importantObservables.observableId, itemIds), isNull(importantObservables.endedAt)));
+  return rows.map((r) => r.id);
+}
+
+async function importantMark(db: Db | Tx, itemId: string): Promise<IgnoredMark | null> {
+  const [entry] = await db
+    .select({ byId: user.id, byName: user.name, at: importantObservables.markedAt })
+    .from(importantObservables)
+    .innerJoin(user, eq(importantObservables.markedById, user.id))
+    .where(and(eq(importantObservables.observableId, itemId), isNull(importantObservables.endedAt)));
+  return entry ? { by: { id: entry.byId, name: entry.byName }, at: entry.at.toISOString() } : null;
+}
+
+/** That Observable `observableId` is Important now, for a query over it. */
+const isImportant = (db: Db | Tx, observableId: AnyColumn) =>
+  exists(
+    db
+      .select({ id: importantObservables.id })
+      .from(importantObservables)
+      .where(and(eq(importantObservables.observableId, observableId), isNull(importantObservables.endedAt))),
+  );
+
+/** Marks `item` (locked) Important, or unmarks it; returns whether anything changed. */
+async function markImportant(tx: Tx, me: Membership, item: { id: string; type: string; value: string }, important: boolean, now: Date) {
+  const [entry] = await tx
+    .select({ id: importantObservables.id })
+    .from(importantObservables)
+    .where(and(eq(importantObservables.observableId, item.id), isNull(importantObservables.endedAt)));
+  if (!!entry === important) return false;
+  if (entry) {
+    await tx.update(importantObservables).set({ endedById: me.userId, endedAt: now }).where(eq(importantObservables.id, entry.id));
+  } else {
+    await tx.insert(importantObservables).values({
+      id: secureId(),
+      organizationId: me.organizationId,
+      observableId: item.id,
+      markedById: me.userId,
+      markedAt: now,
+    });
+  }
+  await recordOrgAudit(tx, {
+    organizationId: me.organizationId,
+    occurredAt: now,
+    actor: { type: "member", id: me.userId, name: me.name },
+    category: "important-observables",
+    action: important ? "important_observable.added" : "important_observable.removed",
+    target: `${observableTypeLabel[item.type as ObservableType]} ${item.value}`,
+  });
+  // Its page and Correlations depend on it, and so do the Cases it is linked to, which mark it Important.
+  await publish(tx, { kind: "alerts", organizationId: me.organizationId });
+  const linked = await tx
+    .select({ caseId: caseObservables.caseId })
+    .from(caseObservables)
+    .where(and(eq(caseObservables.itemId, item.id), isNull(caseObservables.unlinkedAt)));
+  for (const caseId of new Set(linked.map((l) => l.caseId))) {
+    await publish(tx, { kind: "case", organizationId: me.organizationId, caseId, membersOnly: true });
+  }
+  return true;
+}
+
+/** Marking Observables Important and unmarking them, by id or by value. Any Member. */
+function importance({ db, clock }: { db: Db; clock: Clock }) {
+  return {
+    /**
+     * Marks Observable `itemId` Important, or unmarks it (`important` false). Members only. Doing
+     * what is already so changes nothing; returns whether anything changed.
+     */
+    async setImportant(me: Membership, itemId: string, important: boolean) {
+      if (!organizationPolicy.canMarkImportantObservables(me)) throw new NotPermitted();
+      return db.transaction(async (tx) => {
+        const [item] = await tx
+          .select({ id: observables.id, type: observables.type, value: observables.value })
+          .from(observables)
+          .where(and(eq(observables.id, itemId), eq(observables.organizationId, me.organizationId)))
+          .for("update");
+        if (!item) throw new ItemNotFound("Observable not found");
+        return markImportant(tx, me, item, important, clock.now());
+      });
+    },
+
+    /**
+     * As `setImportant`, for the Observable of `type` with this value wherever it is shown, whether
+     * or not the Organization holds it yet: marking one it doesn't hold adds it first, so it is
+     * Important when it turns up. Throws `InvalidValue` if the value isn't a valid `type`.
+     */
+    async setImportantByValue(me: Membership, type: ObservableType, raw: string, important: boolean) {
+      if (!organizationPolicy.canMarkImportantObservables(me)) throw new NotPermitted();
+      const normalised = normaliseObservable(type, raw);
+      if (!normalised) throw new InvalidValue(observableExpected(type));
+      const now = clock.now();
+      return db.transaction(async (tx) => {
+        if (important) {
+          await tx
+            .insert(observables)
+            .values({ id: secureId(), organizationId: me.organizationId, type, value: normalised.value, matchKey: normalised.key, createdAt: now })
+            .onConflictDoNothing();
+        }
+        const [item] = await tx
+          .select({ id: observables.id, type: observables.type, value: observables.value })
+          .from(observables)
+          .where(and(eq(observables.organizationId, me.organizationId), eq(observables.type, type), eq(observables.matchKey, normalised.key)))
+          .for("update");
+        if (!item) return false;
+        return markImportant(tx, me, item, important, now);
+      });
+    },
+  };
+}
+
+/** An Important Observable, as the Organization's list gives it. */
+export type ImportantEntry = { id: string; type: ObservableType; value: string; by: Person; at: string };
+
+/**
+ * The Organization's Important Observables, most recently marked first. Members see them; Guests
+ * can't.
+ */
+export const importantObservableStore = ({ db }: { db: Db }) => ({
+  async list(me: Participant): Promise<ImportantEntry[]> {
+    if (isGuest(me)) throw new NotPermitted();
+    const rows = await db
+      .select({
+        id: observables.id,
+        type: observables.type,
+        value: observables.value,
+        byId: user.id,
+        byName: user.name,
+        at: importantObservables.markedAt,
+      })
+      .from(importantObservables)
+      .innerJoin(observables, eq(importantObservables.observableId, observables.id))
+      .innerJoin(user, eq(importantObservables.markedById, user.id))
+      .where(and(eq(importantObservables.organizationId, me.organizationId), isNull(importantObservables.endedAt)))
+      .orderBy(desc(importantObservables.markedAt), desc(importantObservables.seq));
+    return rows.map((r) => ({ id: r.id, type: r.type as ObservableType, value: r.value, by: { id: r.byId, name: r.byName }, at: r.at.toISOString() }));
+  },
+});
+
+export type ImportantObservableStore = ReturnType<typeof importantObservableStore>;
 
 /* Observables and Assets that Alerts name. */
 
@@ -1063,7 +1225,8 @@ export type SharedItem =
 type SharedLink = { alertId: string; caseId: string; caseNumber: number; caseUpdatedAt: Date; item: SharedItem };
 
 /**
- * What Alerts share with Cases: each non-ignored Observable or Asset that an Alert matching
+ * What Alerts share with Cases: each Important Observable and each Asset, neither on the Ignored
+ * list, that an Alert matching
  * `alertsWhere` names and a Case `me` can see, in any Status, links, other than the Case the Alert
  * is on, each such host shared by Falcon device (`sharedHostsByDevice`) and each such account
  * shared by Identity Protection identity (`sharedAccountsByIdentity`), each item once per Alert and
@@ -1101,6 +1264,8 @@ async function sharedLinks(db: Db | Tx, me: MemberActor, alertsWhere: SQL | unde
                   .from(ignoredObservables)
                   .where(and(eq(kind.ignoredItem, kind.items.id), isNull(ignoredObservables.endedAt))),
               ),
+              // Only an Important Observable relates an Alert to a Case; Assets need no marking.
+              kind.name === "observable" ? isImportant(db, kind.items.id) : undefined,
             ),
           )
           .orderBy(asc(kind.alertLinks.seq))
@@ -1248,16 +1413,16 @@ function groupShared(links: readonly SharedLink[], key: (l: SharedLink) => strin
 
 /**
  * Correlation for Alert `alertId`: each Case `me` can see, in any Status and other than the Case it
- * is on, linked to an Observable or Asset the Alert names that isn't on the Ignored list, with those
- * items in the order the Alert first named them, Observables first.
+ * is on, linked to an Important Observable or an Asset the Alert names that isn't on the Ignored
+ * list, with those items in the order the Alert first named them, Observables first.
  */
 export async function casesSharingAlert(db: Db | Tx, me: MemberActor, alertId: string) {
   return groupShared(await sharedLinks(db, me, eq(alerts.id, alertId)), (l) => l.caseId);
 }
 
 /**
- * Correlation for the Alert queue: for each of `alertIds` that shares a non-ignored Observable or
- * Asset with a Case `me` can see (other than its own), the best such Case (most shared, then most
+ * Correlation for the Alert queue: for each of `alertIds` that shares a non-ignored Important
+ * Observable or Asset with a Case `me` can see (other than its own), the best such Case (most shared, then most
  * recently updated, then newest) and how many others there are.
  */
 export async function bestCasesForAlerts(db: Db | Tx, me: MemberActor, alertIds: readonly string[]) {
@@ -1279,8 +1444,8 @@ export async function bestCasesForAlerts(db: Db | Tx, me: MemberActor, alertIds:
 }
 
 /**
- * Correlation for Case `caseId`: each New Alert naming an Observable or Asset the Case links that
- * isn't on the Ignored list, with those items in the order the Alert first named them, Observables
+ * Correlation for Case `caseId`: each New Alert naming an Important Observable or an Asset the Case
+ * links that isn't on the Ignored list, with those items in the order the Alert first named them, Observables
  * first. The caller has checked that `me` can see the Case.
  */
 export async function newAlertsSharingCase(db: Db | Tx, me: MemberActor, caseId: string) {

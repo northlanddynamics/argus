@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { api } from "@/lib/api";
 import { membersKey } from "@/routes/settings/members";
 
-const categories = { members: "Members", "case-roles": "Case Roles", sso: "Single sign-on", integrations: "Integrations", alerts: "Alerts", teams: "Teams", "ignored-observables": "Ignored Observables" } as const;
+const categories = { members: "Members", "case-roles": "Case Roles", sso: "Single sign-on", integrations: "Integrations", alerts: "Alerts", teams: "Teams", "ignored-observables": "Ignored Observables", "important-observables": "Important Observables" } as const;
 type Category = keyof typeof categories;
 
 const actionLabels: Record<string, string> = {
@@ -50,6 +50,8 @@ const actionLabels: Record<string, string> = {
   "teams.webhook_removed": "Removed the webhook of the",
   "ignored_observable.added": "Added to the Ignored list:",
   "ignored_observable.removed": "Removed from the Ignored list:",
+  "important_observable.added": "Marked Important:",
+  "important_observable.removed": "No longer Important:",
   "alert.dismissed": "Dismissed Alert",
   "alert.falcon_status_changed": "Changed Falcon status of Alert",
   "alert.falcon_assignee_changed": "Changed Falcon assignee of Alert",

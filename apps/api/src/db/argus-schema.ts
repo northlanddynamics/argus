@@ -626,6 +626,42 @@ export const ignoredObservables = pgTable(
 );
 
 /**
+ * The Organization's Important Observables: Observables a Member has marked as meaningful enough
+ * that an Alert sharing them with a Case suggests the two belong together. Only an Important
+ * Observable drives a Correlation; Assets need no marking. An Observable has at most one active
+ * entry; unmarking ends the entry and keeps the row (ADR 0003), and marking it again adds a new one.
+ */
+export const importantObservables = pgTable(
+  "important_observables",
+  {
+    id: text("id").primaryKey(),
+    /** Insertion order, to sort entries marked at the same instant. */
+    seq: bigserial("seq", { mode: "number" }).notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    observableId: text("observable_id")
+      .notNull()
+      .references(() => observables.id, { onDelete: "restrict" }),
+    markedById: text("marked_by_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    markedAt: timestamp("marked_at", { withTimezone: true }).notNull(),
+    endedById: text("ended_by_id").references(() => user.id, { onDelete: "restrict" }),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("important_observables_active_idx")
+      .on(t.observableId)
+      .where(sql`${t.endedAt} IS NULL`),
+    index("important_observables_org_idx")
+      .on(t.organizationId, t.seq)
+      .where(sql`${t.endedAt} IS NULL`),
+    check("important_observables_ended", sql`(${t.endedAt} IS NULL) = (${t.endedById} IS NULL)`),
+  ],
+);
+
+/**
  * Case Links: a typed relationship from one Case (`source`) to another (`target`) in the same
  * Organization, stored once and read from either side (`case-links/vocabulary.ts`). Two Cases have at
  * most one link at a time. Removing a link ends it and keeps the row (ADR 0003).
