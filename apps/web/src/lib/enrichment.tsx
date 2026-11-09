@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useRouter, useRouterState } from "@tanstack/react-router";
 import type { ObservableType } from "api/observables/vocabulary";
-import { createContext, type ReactNode, useCallback, useContext, useMemo, useRef, useState } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { meQuery } from "@/lib/api";
 
 /**
@@ -98,6 +98,33 @@ export function EnrichmentProvider({ children }: { children: ReactNode }) {
   const [history, setHistory] = useState<EnrichmentTarget[]>([]);
   const list = useRef<Element | null>(null);
   const opener = useRef<HTMLElement | null>(null);
+  /** The page the panel was opened on; focus only goes back there. */
+  const openedOn = useRef<string | null>(null);
+
+  /**
+   * Focus back on the value the panel was opened from: the element itself, or, when the page has
+   * redrawn it since, the value as the page now shows it. Runs once per opening.
+   */
+  const returnFocus = useCallback(() => {
+    const back = opener.current;
+    opener.current = null;
+    if (!back) return;
+    if (openedOn.current !== window.location.pathname) return;
+    const key = back.getAttribute("data-enrichment");
+    const target = back.isConnected ? back : key ? document.querySelector<HTMLElement>(`[data-enrichment="${CSS.escape(key)}"]`) : null;
+    target?.focus({ preventScroll: true });
+  }, []);
+
+  // When the panel goes (Esc, ✕, the dimmed page), return focus after the page has redrawn, rather
+  // than rely on the Sheet's own hand-back alone, which comes after it has already unmounted.
+  const shown = useRef(currentKey);
+  useEffect(() => {
+    const was = shown.current;
+    shown.current = currentKey;
+    if (!was || currentKey) return;
+    const frame = requestAnimationFrame(returnFocus);
+    return () => cancelAnimationFrame(frame);
+  }, [currentKey, returnFocus]);
 
   const show = useCallback(
     (target: EnrichmentTarget | null) =>
@@ -117,6 +144,7 @@ export function EnrichmentProvider({ children }: { children: ReactNode }) {
       const from = given ?? document.querySelector(`[data-enrichment="${CSS.escape(enrichmentKey(target))}"]`);
       list.current = from?.closest("[data-enrichment-list]") ?? null;
       opener.current = from instanceof HTMLElement ? from : null;
+      openedOn.current = window.location.pathname;
       setHistory([]);
       show(target);
     };
@@ -157,13 +185,9 @@ export function EnrichmentProvider({ children }: { children: ReactNode }) {
         show(parseEnrichmentKey(next[0]));
       },
       close,
-      returnFocus: () => {
-        const back = opener.current;
-        opener.current = null;
-        if (back?.isConnected) back.focus({ preventScroll: true });
-      },
+      returnFocus,
     };
-  }, [available, current, currentKey, history, show]);
+  }, [available, current, currentKey, history, show, returnFocus]);
 
   return <EnrichmentContext.Provider value={panel}>{children}</EnrichmentContext.Provider>;
 }
