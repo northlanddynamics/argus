@@ -125,3 +125,62 @@ test("right-clicking an Observable copies it defanged or fanged, and opens a has
     stop();
   }
 }, 60_000);
+
+test("an Admin ignores an Observable from its menu wherever it is shown, and from the Enrichment panel; an Analyst can't", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    await owner.api.organization.invitations.$post({ json: { email: "ana@acme.example", role: "analyst" } });
+    const ana = await t.acceptInvite("ana@acme.example", PASSWORD, "Ana Analyst");
+    await owner.api.cases.$post({ json: { title: "Invoice phish", caseType: "phishing", severity: "high" } });
+    await owner.api.cases[":number"].observables.$post({ param: { number: "1" }, json: { type: "ip", value: "185.220.101.4" } });
+
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await signIn(page, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
+    const menu = page.getByRole("menu");
+    const row = page.getByRole("row").filter({ has: page.getByRole("link", { name: "IP 185.220.101.4" }) });
+
+    // On a Case's Observables, from the row's menu: it asks first.
+    await page.goto(`${baseUrl}/cases/1/observables`);
+    await page.getByRole("link", { name: "IP 185.220.101.4" }).click({ button: "right" });
+    await menu.getByRole("menuitem", { name: "Ignore…" }).click();
+    const confirm = page.getByRole("alertdialog", { name: "Ignore this IP?" });
+    await confirm.getByRole("button", { name: "Ignore" }).click();
+    await confirm.waitFor({ state: "detached" });
+    await row.getByText("Ignored").waitFor();
+
+    // In the Enrichment panel it shows as Ignored, and can be taken off the list there.
+    await row.getByRole("button", { name: /^Show Enrichment for/ }).click();
+    const panel = page.getByRole("dialog", { name: "IP Enrichment" });
+    await panel.getByText("Ignored", { exact: true }).waitFor();
+    await panel.getByRole("button", { name: "Stop ignoring" }).click();
+    await panel.getByRole("button", { name: "Ignore…" }).waitFor();
+    await row.getByText("Ignored").waitFor({ state: "detached" });
+    await page.locator("[data-slot=sheet-overlay]").click();
+
+    // In Bulk Lookup, a value Argus doesn't hold yet can be ignored from its menu too.
+    await page.goto(`${baseUrl}/lookup`);
+    await page.getByLabel("Text to look up").fill("seen hxxps://invoice-portal[.]biz/pay");
+    await page.getByRole("button", { name: "Look up", exact: true }).click();
+    await page.getByRole("button", { name: "hxxps://invoice-portal[.]biz/pay", exact: true }).click({ button: "right" });
+    await menu.getByRole("menuitem", { name: "Ignore…" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Ignore" }).click();
+    await page.goto(`${baseUrl}/settings/ignored`);
+    await page.getByText("hxxps://invoice-portal[.]biz/pay").waitFor();
+    await context.close();
+
+    // An Analyst gets no Ignore.
+    const anaContext = await browser.newContext();
+    const anaPage = await anaContext.newPage();
+    await signIn(anaPage, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
+    await anaPage.goto(`${baseUrl}/cases/1/observables`);
+    await anaPage.getByRole("link", { name: "IP 185.220.101.4" }).click({ button: "right" });
+    await anaPage.getByRole("menu").getByRole("menuitem", { name: "Copy" }).waitFor();
+    expect(await anaPage.getByRole("menu").getByRole("menuitem", { name: /ignor/i }).count()).toBe(0);
+    await anaContext.close();
+  } finally {
+    stop();
+  }
+}, 60_000);

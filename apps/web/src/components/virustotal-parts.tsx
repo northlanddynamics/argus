@@ -16,9 +16,14 @@ import { cn } from "@/lib/utils";
  * verdict, label-value rows, the footer with Refresh, and the states with no report.
  */
 
-/** How many detections are listed before "and N more" on an Observable's page, and in the Enrichment panel, which has the room for more. */
-const LISTED_DETECTIONS = 3;
-export const PANEL_DETECTIONS = 8;
+/**
+ * How many of a list (detections, categories, records, names) an Observable's page shows before
+ * "and N more"; the Enrichment panel, with `full`, shows every one.
+ */
+export const LISTED = 3;
+
+/** The first `LISTED` of `items`, or all of them when `full`. */
+export const listed = <T,>(items: T[], full: boolean | undefined) => (full ? items : items.slice(0, LISTED));
 
 /** The tone of a detection count: several engines is a finding, one or two may be a false positive. */
 const tone = (s: AnalysisStats) => (s.malicious >= 3 ? "malicious" : s.malicious > 0 || s.suspicious > 0 ? "suspicious" : "clean");
@@ -57,12 +62,12 @@ export function Verdict({ stats }: { stats: AnalysisStats }) {
 
 export const joined = (parts: (string | null | undefined)[], sep = ", ") => parts.filter(Boolean).join(sep) || null;
 
-/** VirusTotal's tags, at most six. */
-export function Tags({ tags }: { tags: string[] }) {
+/** VirusTotal's tags: at most six, or every one when `full`. */
+export function Tags({ tags, full }: { tags: string[]; full?: boolean }) {
   if (tags.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-1" aria-label="Tags">
-      {tags.slice(0, 6).map((tag) => (
+      {(full ? tags : tags.slice(0, 6)).map((tag) => (
         <Badge key={tag} variant="outline" className="font-mono">
           {tag}
         </Badge>
@@ -89,14 +94,18 @@ export function Rows({ rows }: { rows: Row[] }) {
   );
 }
 
-/** The "Detections" row: the first `listed` engines by name, and how many more call it malicious. */
-export function detectionsRow(detections: Detection[], malicious: number, listed = LISTED_DETECTIONS): Row {
-  const more = malicious - Math.min(detections.length, listed);
+/**
+ * The "Detections" row: the engines by name (the first few, or every one when `full`), and how many
+ * more call it malicious.
+ */
+export function detectionsRow(detections: Detection[], malicious: number, full?: boolean): Row {
+  const shown = listed(detections, full);
+  const more = malicious - shown.length;
   return {
     label: "Detections",
     value: detections.length > 0 && (
       <>
-        {detections.slice(0, listed).map((d) => (
+        {shown.map((d) => (
           <span key={d.engine} className="block">
             <span className="text-muted-foreground">{d.engine}</span> <span className="font-mono text-xs wrap-anywhere">{d.result}</span>
           </span>

@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Time } from "@/components/time";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EnrichmentLayout, FollowValue, KnownLine, SourceSection, ValueHeader } from "@/components/enrichment-parts";
-import { communityRow, detectionsRow, KeyLink, NoKey, PANEL_DETECTIONS, Problem, ReportSkeleton, Rows, Tags, Verdict, VirustotalFooter } from "@/components/virustotal-parts";
+import { communityRow, detectionsRow, KeyLink, listed, NoKey, Problem, ReportSkeleton, Rows, Tags, Verdict, VirustotalFooter } from "@/components/virustotal-parts";
 import { type DomainLookup, type DomainReport, domainLookupQuery, useRefreshDomainLookup } from "@/lib/domain-url-lookups";
 import type { EnrichableType } from "@/lib/enrichment";
 import { defang } from "@/lib/observables";
@@ -22,9 +22,10 @@ const recordType = (type: string): EnrichableType => (type === "A" || type === "
 
 const hasRecords = (r: DomainReport, types: string[]) => r.dns.some((d) => types.includes(d.type));
 
-/** The DNS records of `types`, at most three, each opening its own Enrichment. */
-function Records({ report, types }: { report: DomainReport; types: string[] }) {
-  const found = report.dns.filter((d) => types.includes(d.type)).slice(0, 3);
+/** The DNS records of `types`, at most three or every one when `full`, each opening its own Enrichment. */
+function Records({ report, types, full }: { report: DomainReport; types: string[]; full?: boolean }) {
+  const all = report.dns.filter((d) => types.includes(d.type));
+  const found = listed(all, full);
   return (
     <span className="grid justify-items-start">
       {found.map((d) => {
@@ -36,12 +37,16 @@ function Records({ report, types }: { report: DomainReport; types: string[] }) {
           </FollowValue>
         );
       })}
+      {all.length > found.length && <span className="text-muted-foreground">and {all.length - found.length} more</span>}
     </span>
   );
 }
 
-/** The verdict, a warning when the domain is newly registered, then the report as label-value rows. */
-function Report({ report: r, newlyRegistered, listed }: { report: DomainReport; newlyRegistered: boolean; listed?: number }) {
+/**
+ * The verdict, a warning when the domain is newly registered, then the report as label-value rows;
+ * `full`, for the Enrichment panel, lists everything VirusTotal reported rather than the first few.
+ */
+function Report({ report: r, newlyRegistered, full }: { report: DomainReport; newlyRegistered: boolean; full?: boolean }) {
   const cert = r.certificate;
   return (
     <div className="grid gap-2">
@@ -51,11 +56,11 @@ function Report({ report: r, newlyRegistered, listed }: { report: DomainReport; 
           Newly registered: <Time iso={r.registeredAt!} />
         </Problem>
       )}
-      <Tags tags={r.tags} />
+      <Tags tags={r.tags} full={full} />
       <Rows
         rows={[
-          { label: "Categories", value: r.categories.length > 0 && r.categories.slice(0, 3).join(", ") },
-          detectionsRow(r.detections, r.stats.malicious, listed),
+          { label: "Categories", value: r.categories.length > 0 && listed(r.categories, full).join(", ") },
+          detectionsRow(r.detections, r.stats.malicious, full),
           {
             label: "Registered",
             value: (r.registeredAt || r.registrar) && (
@@ -65,23 +70,42 @@ function Report({ report: r, newlyRegistered, listed }: { report: DomainReport; 
               </>
             ),
           },
-          { label: "Resolves to", value: hasRecords(r, ["A", "AAAA", "CNAME"]) && <Records report={r} types={["A", "AAAA", "CNAME"]} /> },
-          { label: "Mail", value: hasRecords(r, ["MX"]) && <Records report={r} types={["MX"]} /> },
-          { label: "Nameservers", value: hasRecords(r, ["NS"]) && <Records report={r} types={["NS"]} /> },
+          { label: "Resolves to", value: hasRecords(r, ["A", "AAAA", "CNAME"]) && <Records report={r} types={["A", "AAAA", "CNAME"]} full={full} /> },
+          { label: "Mail", value: hasRecords(r, ["MX"]) && <Records report={r} types={["MX"]} full={full} /> },
+          { label: "Nameservers", value: hasRecords(r, ["NS"]) && <Records report={r} types={["NS"]} full={full} /> },
           {
             label: "Certificate",
-            value: cert && (cert.issuer || cert.validFrom) && (
+            value: cert && (cert.issuer || cert.validFrom || (full && (cert.subject || cert.validUntil))) && (
               <>
+                {full && cert.subject && <span className="block font-mono text-xs break-all">{cert.subject}</span>}
                 {cert.issuer && <span className="block">{cert.issuer}</span>}
                 {cert.validFrom && (
                   <span className="block text-muted-foreground">
                     issued <Time iso={cert.validFrom} />
                   </span>
                 )}
+                {full && cert.validUntil && (
+                  <span className="block text-muted-foreground">
+                    expires <Time iso={cert.validUntil} />
+                  </span>
+                )}
               </>
             ),
           },
-          { label: "Popularity", value: rankText(r.popularity) },
+          {
+            label: "Popularity",
+            value: full
+              ? r.popularity.length > 0 && (
+                  <>
+                    {r.popularity.map((p) => (
+                      <span key={p.list} className="block">
+                        #{p.rank.toLocaleString()} in {p.list}
+                      </span>
+                    ))}
+                  </>
+                )
+              : rankText(r.popularity),
+          },
           { label: "Analysed", value: r.lastAnalysisAt && <Time iso={r.lastAnalysisAt} /> },
           communityRow(r.votes, r.reputation),
         ]}
@@ -91,7 +115,7 @@ function Report({ report: r, newlyRegistered, listed }: { report: DomainReport; 
 }
 
 /** The body of the panel or card for a domain's lookup: the report, or why there is none. */
-export function DomainLookupBody({ lookup, loading, error, listed }: { lookup: DomainLookup | undefined; loading: boolean; error: Error | null; listed?: number }) {
+export function DomainLookupBody({ lookup, loading, error, full }: { lookup: DomainLookup | undefined; loading: boolean; error: Error | null; full?: boolean }) {
   if (loading && !lookup) return <ReportSkeleton />;
   if (!lookup) return <Problem>{error?.message ?? "Could not look the domain up"}</Problem>;
   switch (lookup.state) {
@@ -107,11 +131,11 @@ export function DomainLookupBody({ lookup, loading, error, listed }: { lookup: D
           <Problem>
             {lookup.error} · <KeyLink>Your key</KeyLink>
           </Problem>
-          {lookup.report && <Report report={lookup.report} newlyRegistered={lookup.newlyRegistered} listed={listed} />}
+          {lookup.report && <Report report={lookup.report} newlyRegistered={lookup.newlyRegistered} full={full} />}
         </div>
       );
     case "found":
-      return lookup.report && <Report report={lookup.report} newlyRegistered={lookup.newlyRegistered} listed={listed} />;
+      return lookup.report && <Report report={lookup.report} newlyRegistered={lookup.newlyRegistered} full={full} />;
   }
 }
 
@@ -143,7 +167,7 @@ export function DomainEnrichment({ type, value }: { type: "domain" | "email"; va
         </div>
       ) : (
         <SourceSection title="VirusTotal" footer={<DomainFooter value={value} lookup={lookup} loading={q.isPending} named={false} />}>
-          <DomainLookupBody lookup={lookup} loading={q.isPending} error={q.error} listed={PANEL_DETECTIONS} />
+          <DomainLookupBody lookup={lookup} loading={q.isPending} error={q.error} full />
         </SourceSection>
       )}
     </EnrichmentLayout>

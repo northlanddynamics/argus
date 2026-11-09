@@ -216,4 +216,30 @@ describe("Ignored Observables", () => {
     await a.ignore(a.admin, "observables", resolver);
     expect(await live.next()).toEqual({ type: "alerts" });
   });
+
+  test("Admins ignore an Observable by its value wherever it is shown, even one the Organization doesn't hold yet", async () => {
+    const a = await acme();
+    const resolver = await a.observe("ip", "8.8.8.8");
+    const byValue = (as: typeof a.admin, type: "ip" | "domain", value: string, ignored: boolean) =>
+      as.api.observables.ignored.$post({ json: { type, value, ignored } });
+
+    expect((await byValue(a.ana, "ip", "8.8.8.8", true)).status).toBe(403);
+
+    const added = await byValue(a.admin, "ip", " 8.8.8.8 ", true);
+    expect(added.status).toBe(200);
+    expect(await added.json()).toEqual({ changed: true });
+    expect(await (await byValue(a.admin, "ip", "8.8.8.8", true)).json()).toEqual({ changed: false });
+    expect((await a.page(a.ana, "observables", resolver)).ignored?.by.name).toBe("Adam Admin");
+
+    // Defanged, and never seen on a Case or Alert: it is added, so it is ignored when it turns up.
+    expect(await (await byValue(a.admin, "domain", "cdn[.]example", true)).json()).toEqual({ changed: true });
+    expect((await a.ignored()).map((e) => `${e.type} ${e.value}`)).toEqual(["domain cdn.example", "ip 8.8.8.8"]);
+
+    expect(await (await byValue(a.owner, "ip", "8.8.8.8", false)).json()).toEqual({ changed: true });
+    expect(await (await byValue(a.owner, "domain", "never-held.example", false)).json()).toEqual({ changed: false });
+    expect((await a.ignored()).map((e) => e.value)).toEqual(["cdn.example"]);
+    expect((await a.orgAudit()).map((e) => e.action)).toContain("ignored_observable.removed");
+
+    expect((await byValue(a.admin, "ip", "not an ip", true)).status).toBe(400);
+  });
 });

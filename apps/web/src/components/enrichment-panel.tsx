@@ -1,11 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { observableTypeLabel } from "api/observables/vocabulary";
-import { ArrowLeftIcon, ChevronDownIcon, ChevronUpIcon, XIcon } from "lucide-react";
+import { ArrowLeftIcon, BellIcon, BellOffIcon, ChevronDownIcon, ChevronUpIcon, XIcon } from "lucide-react";
 import { type KeyboardEvent, useRef } from "react";
 import { DomainEnrichment } from "@/components/domain-details";
 import { PanelFrameProvider } from "@/components/enrichment-parts";
 import { HashEnrichment } from "@/components/hash-details";
 import { IpEnrichment } from "@/components/ip-details";
+import { useObservableIgnore } from "@/components/observable-ignore";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { UrlEnrichment } from "@/components/url-details";
@@ -36,9 +38,10 @@ function Content({ target, admin }: { target: EnrichmentTarget; admin: boolean }
   }
 }
 
-/** Back, the type, ↑ ↓ through the list it was opened from, and ✕. */
+/** Back, the type (and "Ignored" when it is on the Ignored list), Ignore for Admins, ↑ ↓ through the list it was opened from, and ✕. */
 function Nav({ target, headingRef }: { target: EnrichmentTarget; headingRef: React.Ref<HTMLHeadingElement> }) {
   const panel = useEnrichmentPanel();
+  const ignore = useObservableIgnore(target.type, target.value);
   const at = panel.position();
   return (
     <div className="-mr-2 flex items-center gap-0.5">
@@ -53,6 +56,25 @@ function Nav({ target, headingRef }: { target: EnrichmentTarget; headingRef: Rea
         {observableTypeLabel[target.type]}
         <span className="sr-only"> Enrichment</span>
       </SheetTitle>
+      {ignore.ignored && (
+        <Badge variant="outline" className="mr-1">
+          <BellOffIcon aria-hidden />
+          Ignored
+        </Badge>
+      )}
+      {ignore.available && (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          disabled={ignore.pending}
+          onClick={ignore.request}
+          aria-label={ignore.ignored ? "Stop ignoring" : "Ignore…"}
+          title={ignore.ignored ? "Stop ignoring" : "Ignore…"}
+        >
+          {ignore.ignored ? <BellIcon aria-hidden /> : <BellOffIcon aria-hidden />}
+        </Button>
+      )}
+      {ignore.dialog}
       {at && (
         <>
           <Button variant="ghost" size="icon-sm" disabled={at.index === 0} onClick={() => panel.step(-1)} aria-label="Previous (K)" title="Previous (K)">
