@@ -1,5 +1,5 @@
 import { Link, useMatchRoute, useParams } from "@tanstack/react-router";
-import { BriefcaseIcon, ChartColumnIcon, ListChecksIcon, SettingsIcon, ShieldIcon, SirenIcon } from "lucide-react";
+import { BriefcaseIcon, ChartColumnIcon, ListChecksIcon, SearchIcon, SettingsIcon, ShieldIcon, SirenIcon } from "lucide-react";
 import { type ComponentProps, useState } from "react";
 import { SeverityBadge } from "@/components/case-badges";
 import { NavUser } from "@/components/nav-user";
@@ -87,6 +87,19 @@ function NavRail({ me }: { me: Me }) {
                   >
                     <BriefcaseIcon />
                     <span>{me.guest ? "Your Cases" : "Cases"}</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={!!matchRoute({ to: "/search" })}
+                  tooltip={{ children: "Search", hidden: false, className: "data-closed:animate-none" }}
+                  className="px-2.5 md:px-2"
+                >
+                  <Link to="/search" search={{}} aria-current={matchRoute({ to: "/search" }) ? "page" : undefined} onClick={closeMobile}>
+                    <SearchIcon />
+                    <span>Search</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
