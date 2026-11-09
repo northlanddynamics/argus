@@ -107,16 +107,16 @@ test("right-clicking an Observable copies it defanged or fanged, and opens a has
     const ip = page.getByRole("link", { name: "185.220.101.4" });
     await ip.click({ button: "right" });
     await menu.getByRole("menuitem", { name: /^Show Enrichment/ }).click();
-    await page.getByRole("complementary", { name: "IP Enrichment" }).waitFor();
-    await page.locator("[data-slot=enrichment-scrim]").click();
+    await page.getByRole("dialog", { name: "IP Enrichment" }).waitFor();
+    await page.locator("[data-slot=sheet-overlay]").click();
     await ip.click({ button: "right" });
     await menu.getByRole("menuitem", { name: "Open in IPinfo.io" }).waitFor();
     await closeMenu();
     // A value Argus doesn't hold yet opens its Enrichment when clicked.
     const url = page.getByRole("button", { name: "hxxps://invoice-portal[.]biz/pay", exact: true });
     await url.click();
-    await page.getByRole("complementary", { name: "URL Enrichment" }).waitFor();
-    await page.locator("[data-slot=enrichment-scrim]").click();
+    await page.getByRole("dialog", { name: "URL Enrichment" }).waitFor();
+    await page.locator("[data-slot=sheet-overlay]").click();
     await url.click({ button: "right" });
     await menu.getByRole("menuitem", { name: "Copy fanged" }).click();
     expect(await clipboard()).toBe("https://invoice-portal.biz/pay");

@@ -37,7 +37,7 @@ export function EnrichmentTarget({ type, value, enabled = true, children }: { ty
       onKeyDown={(e: KeyboardEvent<HTMLElement>) => {
         if (!isShortcut(e)) return;
         e.preventDefault();
-        panel.open({ type, value }, { from: e.currentTarget, focus: true });
+        panel.open({ type, value }, { from: e.currentTarget });
       }}
     >
       {children}

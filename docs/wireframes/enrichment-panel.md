@@ -1,6 +1,6 @@
 # Enrichment panel: wireframes
 
-Where a Member sees an Observable's Enrichment from anywhere in Argus: a panel that slides in from the right of the content, in place of the IP, hash, and domain/email/URL context popups. Three lookup sources now hang off hover (IPinfo for IPs, ADR 0010; VirusTotal for hashes, ADR 0011; VirusTotal for domains, email addresses and URLs, ADR 0012). Their reports have grown too tall for a popup that vanishes when the pointer slips, and analysts want to read one report beside the table it came from, compare it with the next row, and follow a value in the report to its own report.
+Where a Member sees an Observable's Enrichment from anywhere in Argus: a panel that slides in from the right over the dimmed page, in place of the IP, hash, and domain/email/URL context popups. Three lookup sources now hang off hover (IPinfo for IPs, ADR 0010; VirusTotal for hashes, ADR 0011; VirusTotal for domains, email addresses and URLs, ADR 0012). Their reports have grown too tall for a popup that vanishes when the pointer slips, and analysts want to read one report beside the table it came from, compare it with the next row, and follow a value in the report to its own report.
 
 What each source shows, and the wording of every state (looking up, never seen, no key, not configured, failed, withheld, private address), is unchanged from `ip-context-popup.md`, `hash-context-popup.md` and `domain-url-context-popup.md`. This document only moves that content into the panel and says how the panel opens, holds still and moves between values. Hover no longer opens anything.
 
@@ -11,44 +11,37 @@ What each source shows, and the wording of every state (looking up, never seen, 
   - **Show Enrichment** at the top of the Observable menu (right-click or long-press on the value), with `I` as its shortcut;
   - `I` while the value has keyboard focus;
   - clicking a value that isn't a link (Bulk Lookup results, Response Action rows, an Evidence file's SHA-256). A value that is a link still opens the Observable's page, as now.
-- **Docked, with the page dimmed.** It sits on the right of the content inset, under the sticky header, full height, 420px wide, with a hairline left border. The page beside it is dimmed (the Sheet's 10% black scrim, over the content only: the header and sidebar stay as they are) so the eye goes to the panel. The page still scrolls under the scrim; clicking it closes the panel. The content inset narrows by 420px rather than being covered, so a table's container queries hide a column instead of cutting off the row's actions (the Layout rule that a table given less room shows less).
+- **A Sheet over the whole page.** It is shadcn's `Sheet` on the right: full height, 420px wide, over the sidebar, header and content, whose overlay dims the whole page (stock: 10% black with a slight blur). Clicking the dimmed page or `Esc` closes it; while it is open the page behind can't be used. The page doesn't narrow.
 - **One panel, swapped in place.** ↑ ↓ or following a value replaces what it shows; the panel doesn't stack. To open a value elsewhere on the page, close the panel first. The row whose value is shown is marked in the table (the selected-row fill), so the Member can see which row the report belongs to.
 - **Steps through the list it came from.** `↑` `↓` buttons in the header (and `J` / `K` while focus is in the panel) move to the previous or next Enrichment-able value in the same table or chip list, skipping Assets and types with no source. Each step is a fresh lookup only if Argus has nothing cached.
 - **Follows a value.** IPs, domains and hashes inside a report (Resolves to, Ends at, Mail, Nameservers) are links that open their own Enrichment in the panel, with **Back** in the header to return. History is kept for the panel's life; closing it clears it.
 - **Lookup starts on open**, exactly as the popups' did: rendering a table of 200 values still costs nothing. Stepping or following a value starts the next lookup.
 - **Survives a reload.** The open value is in the URL (`?enrichment=ip:185.220.101.4`, defanged values decoded), so a reload or a pasted link reopens it. Changing page closes it unless the new page has the same value.
-- **Closes** on `Esc` (with focus in the panel), its `✕`, clicking the dimmed page, or opening the Observable's page. Focus returns to the value that opened it.
-- **Focus.** Opening from the keyboard moves focus to the panel's heading; opening by pointer leaves focus where it was, so the Member can keep clicking down a table.
+- **Closes** on `Esc`, its `✕`, clicking the dimmed page, or opening the Observable's page. Focus returns to the value that opened it.
+- **Focus.** Opening moves focus to the panel's heading, so Back, ↑ ↓ and ✕ are next, and stays in the panel while it is open; closing returns it to the value it was opened from.
 - **Guests** get no panel button, no menu item and no shortcut, as they got no popup: Argus never spends the Organization's IPinfo quota or a Member's VirusTotal key for a Guest.
 - **On an Observable's own page** nothing changes: the IP details and VirusTotal cards stay on the page. Values inside those cards (Resolves to, Ends at) open the panel for themselves.
 
-## A. The panel docked beside a Case's Observables
+## A. The panel over a Case's Observables
 
 ```
-┌ sidebar ┬─────────────────────────────────────────────────────────────────────────────────────────────┐
-│         │ ☰ │ Acme / Cases / C-12 / Observables & Assets          [Search…]  ● Live  🔔                 │
-│         ├──────────────────────────────────────────────────────┬──────────────────────────────────────┤
-│         │ Observables                                [+ Add]   │ IP address                  ↑ ↓   ✕ │
-│         │ ┌──────────────────────────────────────────────────┐ │ 185.220.101.4               [⧉] [↗] │
-│         │ │ ⌂  185.220.101.4                    [⊟]  3 h ago │◀┼─ tor-exit-04.example-relay.net       │
-│         │ │ #  a3f5c8e1d2b4a6f8e0c2…                  1 d ago │ │ In 3 Cases · Open its page →         │
-│         │ │ @  billing@invoice-portal[.]biz           1 d ago │ ├──────────────────────────────────────┤
-│         │ │ ◎  invoice-portal[.]biz                   2 d ago │ │ IPinfo                               │
-│         │ │ 🔗 hxxps://invoice-portal[.]biz/login?…  2 d ago │ │ [Anonymous] [Hosting]                │
-│         │ │ ⌂  10.20.4.17                             2 d ago │ │ Location   Frankfurt am Main, Hesse  │
-│         │ └──────────────────────────────────────────────────┘ │            🇩🇪 Germany · Europe       │
-│         │                                                      │ Network    AS60729 · Stiftung        │
-│         │ Assets                                               │            Erneuerbare Freiheit      │
-│         │ ┌──────────────────────────────────────────────────┐ │ Type       Hosting                   │
-│         │ │ 🖥 WS-FIN-0042                             1 d ago │ │ Time zone  Europe/Berlin (UTC+1)     │
-│         │ └──────────────────────────────────────────────────┘ │ as of 3 h ago             [Refresh]  │
-│         │                                                      │                                      │
-└─────────┴──────────────────────────────────────────────────────┴──────────────────────────────────────┘
-                     ↑ page dimmed; selected row's panel button pressed ↑ 420px, hairline left border, no shadow
+┌ sidebar ┬──────────────────────────────────────────────────────────┬──────────────────────────────────────┐
+│░░░░░░░░░│░☰ │ Acme / Cases / C-12 / Observables & Assets ░░░░░░░░░░│ IP address                  ↑ ↓   ✕ │
+│░░░░░░░░░├──────────────────────────────────────────────────────────┤ 185.220.101.4               [⧉] [↗] │
+│░░░░░░░░░│░Observables░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░[+ Add]│ tor-exit-04.example-relay.net        │
+│░░░░░░░░░│░⌂  185.220.101.4 ░░░░░░░░░░░░░░░░░░░░░░[⊟]░░░░░░3 h ago░░│ In 3 Cases · Open its page →         │
+│░░░░░░░░░│░#  a3f5c8e1d2b4a6f8e0c2…░░░░░░░░░░░░░░░░░░░░░░░░░1 d ago░░├──────────────────────────────────────┤
+│░░░░░░░░░│░@  billing@invoice-portal[.]biz░░░░░░░░░░░░░░░░░░1 d ago░░│ IPinfo                               │
+│░░░░░░░░░│░◎  invoice-portal[.]biz░░░░░░░░░░░░░░░░░░░░░░░░░░2 d ago░░│ [Anonymous] [Hosting]                │
+│░░░░░░░░░│░🔗 hxxps://invoice-portal[.]biz/login?…░░░░░░░░░░2 d ago░░│ Location   Frankfurt am Main, Hesse  │
+│░░░░░░░░░│░⌂  10.20.4.17░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░2 d ago░░│ Network    AS60729 · Stiftung …      │
+│░░░░░░░░░│░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░│ as of 3 h ago             [Refresh]  │
+└─────────┴──────────────────────────────────────────────────────────┴──────────────────────────────────────┘
+  ↑ the whole page, sidebar and header included, is dimmed by the Sheet's overlay   ↑ 420px Sheet, full height
 ```
 
-- The table loses its widest optional column (here "Added by") rather than squeezing the value.
-- The panel button `[⊟]` shows on the pointed-at row and stays shown on the selected row.
+- The page keeps its layout under the overlay; the panel covers its right edge.
+- The row whose value is shown keeps the selected fill and its pressed panel button, visible through the overlay.
 
 ## B. Panel anatomy
 

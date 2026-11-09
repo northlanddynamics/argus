@@ -54,7 +54,7 @@ test("the Owner adds IPinfo; opening an IP's Enrichment on a Case shows what IPi
     const page = await browser.newPage({ deviceScaleFactor: 2 });
     await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
     await page.goto(`${baseUrl}/cases/1/observables`);
-    const panel = page.getByRole("complementary", { name: "IP Enrichment" });
+    const panel = page.getByRole("dialog", { name: "IP Enrichment" });
     const show = (ip: string) => page.getByRole("button", { name: `Show Enrichment for ${ip}` }).click();
     await page.getByRole("link", { name: "IP 185.220.101.4" }).hover();
     await page.waitForTimeout(600);
@@ -95,12 +95,14 @@ test("the Owner adds IPinfo; opening an IP's Enrichment on a Case shows what IPi
     // Refresh asks IPinfo again.
     await panel.getByRole("button", { name: "Refresh 185.220.101.4" }).click();
     await panel.getByText("refreshing…").waitFor({ state: "detached" });
+    // The panel slides in, so the click can land before "refreshing…" shows: wait for the lookup itself.
+    for (let i = 0; i < 50 && t.ipinfo.lookups.filter((l) => l.ip === "185.220.101.4").length < 2; i++) await page.waitForTimeout(100);
     expect(t.ipinfo.lookups.filter((l) => l.ip === "185.220.101.4")).toHaveLength(2);
 
     // ↑ ↓ step to the other IP on the Case; a private address is never sent.
     const order = await page.locator("[data-testid^='observable-']").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-testid")));
-    // The page beside the panel is dimmed; clicking it closes the panel.
-    await page.locator("[data-slot=enrichment-scrim]").click();
+    // The whole page is dimmed behind the panel; clicking it closes the panel.
+    await page.locator("[data-slot=sheet-overlay]").click();
     await panel.waitFor({ state: "detached" });
     await show("185.220.101.4");
     const step = order.indexOf("observable-10.20.4.17") > order.indexOf("observable-185.220.101.4") ? "Next (J)" : "Previous (K)";
@@ -125,7 +127,7 @@ test("the Owner adds IPinfo; opening an IP's Enrichment on a Case shows what IPi
     await panel.getByText("Frankfurt am Main, Hesse").waitFor();
 
     // The IP's own page shows the details as a card.
-    await page.locator("[data-slot=enrichment-scrim]").click();
+    await page.locator("[data-slot=sheet-overlay]").click();
     await link.click();
     await page.getByText("IP details").waitFor();
     await page.getByText("Stiftung Erneuerbare Freiheit").waitFor();

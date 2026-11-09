@@ -69,7 +69,7 @@ test("an Analyst adds their own VirusTotal key; opening a hash's Enrichment on a
     const page = await browser.newPage({ deviceScaleFactor: 2 });
     await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
     await page.goto(`${baseUrl}/cases/1/observables`);
-    const popup = page.getByRole("complementary", { name: /Enrichment$/ });
+    const popup = page.getByRole("dialog", { name: /Enrichment$/ });
     const show = (hash: string) => page.getByRole("button", { name: `Show Enrichment for ${hash}` }).click();
     await show(SHA256);
     await popup.getByText("No VirusTotal report yet").waitFor();
@@ -97,10 +97,12 @@ test("an Analyst adds their own VirusTotal key; opening a hash's Enrichment on a
 
     await popup.getByRole("button", { name: `Refresh ${SHA256}` }).click();
     await popup.getByText("refreshing…").waitFor({ state: "detached" });
+    // The panel slides in, so the click can land before "refreshing…" shows: wait for the lookup itself.
+    for (let i = 0; i < 50 && t.virustotal.lookups.filter((l) => l.hash === SHA256).length < 2; i++) await page.waitForTimeout(100);
     expect(t.virustotal.lookups.filter((l) => l.hash === SHA256)).toHaveLength(2);
 
     // A file VirusTotal hasn't seen says so.
-    await page.locator("[data-slot=enrichment-scrim]").click();
+    await page.locator("[data-slot=sheet-overlay]").click();
     await show(MD5);
     await popup.getByText("VirusTotal has never seen this file.").waitFor();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/vt-not-found.png` });

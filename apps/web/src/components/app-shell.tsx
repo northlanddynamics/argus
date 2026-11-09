@@ -1,7 +1,7 @@
 import { Link, Outlet, useRouteContext, useRouterState } from "@tanstack/react-router";
 import { Fragment, useState } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
-import { EnrichmentPanel, EnrichmentScrim } from "@/components/enrichment-panel";
+import { EnrichmentPanel } from "@/components/enrichment-panel";
 import { GuestSession } from "@/components/guest-nav";
 import { LiveIndicator } from "@/components/live-indicator";
 import { NotificationBell } from "@/components/notification-bell";
@@ -156,18 +156,12 @@ export function AppShell() {
                 <NotificationBell />
               </div>
             </header>
-            {/* The Enrichment panel docks beside the page, which narrows to make room rather than being covered, and dims while it is open. */}
-            <div className="flex flex-1">
-              <div className="relative min-w-0 flex-1">
-                <div id="content" tabIndex={-1} className="relative z-0 p-4 outline-none md:p-6">
-                  <Outlet />
-                </div>
-                <EnrichmentScrim />
-              </div>
-              <EnrichmentPanel />
+            <div id="content" tabIndex={-1} className="flex-1 p-4 outline-none md:p-6">
+              <Outlet />
             </div>
           </SidebarInset>
         </SidebarProvider>
+        <EnrichmentPanel />
       </EnrichmentProvider>
       <Toaster position="bottom-right" />
     </TooltipProvider>

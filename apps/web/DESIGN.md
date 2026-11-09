@@ -207,7 +207,7 @@ Every page in the app frame is left-aligned in the content inset, so the breadcr
 - **Reading lists and forms** stay narrow inside them: Search results 1024px (`max-w-5xl`), the Bulk Lookup form 1024px (its results table uses the page width), the Observable and Asset add rows 768px (`max-w-3xl`), and the Case header's four fields at most 18rem each. Settings stays at 1152px (`max-w-6xl`) and Guest home at 768px.
 - **Prose** keeps a 75ch measure (the Case Summary editor sets it on each block). A Case's Overview puts the Case Summary, the open Tasks and the rail in three columns only once it is 104rem wide, where the open Tasks have room for their titles.
 
-The **Enrichment panel** (what IPinfo or VirusTotal says about an Observable, `docs/wireframes/enrichment-panel.md`) docks on the right of the content inset, 420px wide under the sticky header, with a hairline left border and no shadow: the page narrows beside it rather than being covered, so tables give up a column, and is dimmed with the Sheet's 10% black scrim (clicking it closes the panel). Below `md` it is a full-width sheet. Nothing opens on hover.
+The **Enrichment panel** (what IPinfo or VirusTotal says about an Observable, `docs/wireframes/enrichment-panel.md`) is shadcn's right `Sheet`, 420px wide (full width on a phone), over the whole page, which its stock overlay dims; clicking the page or Esc closes it. Nothing opens on hover.
 
 Dialogs use 672px (`max-w-2xl`) or less. Spacing follows Tailwind's 4px scale, almost entirely in four steps: 4px (tight inline pairs), 8px (the default gap between controls and rows), 12px, and 16px (between page sections and card padding). Sign-in, invitation and Guest sign-in pages centre a single card on the page.
 

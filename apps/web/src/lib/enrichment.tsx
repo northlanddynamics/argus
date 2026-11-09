@@ -32,8 +32,8 @@ export function parseEnrichmentKey(key: unknown): EnrichmentTarget | null {
   return at > 0 && value && hasEnrichment(type) ? { type, value } : null;
 }
 
-/** `from` is the element it was opened from, for its list and to return focus to; by default, the value where the page shows it. */
-type OpenOptions = { from?: Element | null; focus?: boolean };
+/** `from` is the element it was opened from, for the list it is in and to return focus to; by default, the value where the page shows it. */
+type OpenOptions = { from?: Element | null };
 
 type Panel = {
   /** False for Guests: Argus never spends the Organization's quota or a Member's key for them. */
@@ -42,8 +42,6 @@ type Panel = {
   currentKey: string | null;
   /** The values followed to reach `current`, oldest first; Back returns to the last. */
   history: EnrichmentTarget[];
-  /** Bumped when the panel should take focus (opened from the keyboard). */
-  focusRequest: number;
   open: (target: EnrichmentTarget, options?: OpenOptions) => void;
   /** Opens the panel on `target` if it shows `target`'s not already, and closes it if it does. */
   toggle: (target: EnrichmentTarget, options?: OpenOptions) => void;
@@ -53,6 +51,8 @@ type Panel = {
   position: () => { index: number; count: number } | null;
   step: (delta: 1 | -1) => void;
   close: () => void;
+  /** Once the panel has gone: focus back on what it was opened from, when that is still on the page. */
+  returnFocus: () => void;
 };
 
 const none = () => {};
@@ -63,7 +63,6 @@ const NO_PANEL: Panel = {
   current: null,
   currentKey: null,
   history: [],
-  focusRequest: 0,
   open: none,
   toggle: none,
   follow: none,
@@ -71,6 +70,7 @@ const NO_PANEL: Panel = {
   position: () => null,
   step: none,
   close: none,
+  returnFocus: none,
 };
 
 const EnrichmentContext = createContext<Panel>(NO_PANEL);
@@ -96,7 +96,6 @@ export function EnrichmentProvider({ children }: { children: ReactNode }) {
   const current = useMemo(() => (available ? parseEnrichmentKey(raw) : null), [available, raw]);
   const currentKey = current && enrichmentKey(current);
   const [history, setHistory] = useState<EnrichmentTarget[]>([]);
-  const [focusRequest, setFocusRequest] = useState(0);
   const list = useRef<Element | null>(null);
   const opener = useRef<HTMLElement | null>(null);
 
@@ -112,22 +111,18 @@ export function EnrichmentProvider({ children }: { children: ReactNode }) {
   );
 
   const panel = useMemo<Panel>(() => {
-    const open = (target: EnrichmentTarget, { from: given, focus }: OpenOptions = {}) => {
+    const open = (target: EnrichmentTarget, { from: given }: OpenOptions = {}) => {
       if (!available) return;
       // Opened from somewhere that isn't the value itself (a row's menu): the value as the page shows it.
       const from = given ?? document.querySelector(`[data-enrichment="${CSS.escape(enrichmentKey(target))}"]`);
       list.current = from?.closest("[data-enrichment-list]") ?? null;
       opener.current = from instanceof HTMLElement ? from : null;
       setHistory([]);
-      if (focus) setFocusRequest((n) => n + 1);
       show(target);
     };
     const close = () => {
       setHistory([]);
       show(null);
-      const back = opener.current;
-      opener.current = null;
-      if (back?.isConnected) back.focus({ preventScroll: true });
     };
     const position = () => {
       if (!currentKey || history.length) return null;
@@ -140,7 +135,6 @@ export function EnrichmentProvider({ children }: { children: ReactNode }) {
       current,
       currentKey,
       history,
-      focusRequest,
       open,
       toggle: (target, options) => (currentKey === enrichmentKey(target) ? close() : open(target, options)),
       follow: (target) => {
@@ -163,8 +157,13 @@ export function EnrichmentProvider({ children }: { children: ReactNode }) {
         show(parseEnrichmentKey(next[0]));
       },
       close,
+      returnFocus: () => {
+        const back = opener.current;
+        opener.current = null;
+        if (back?.isConnected) back.focus({ preventScroll: true });
+      },
     };
-  }, [available, current, currentKey, history, focusRequest, show]);
+  }, [available, current, currentKey, history, show]);
 
   return <EnrichmentContext.Provider value={panel}>{children}</EnrichmentContext.Provider>;
 }

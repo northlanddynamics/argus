@@ -91,7 +91,7 @@ test("opening the Enrichment of a domain, an email address or a URL on a Case sh
     const page = await browser.newPage({ deviceScaleFactor: 2 });
     await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
     await page.goto(`${baseUrl}/cases/1/observables`);
-    const popup = page.getByRole("complementary", { name: /Enrichment$/ });
+    const popup = page.getByRole("dialog", { name: /Enrichment$/ });
     const show = (value: string) => page.getByRole("button", { name: `Show Enrichment for ${value}` }).click();
     const away = async () => {
       await popup.getByRole("button", { name: "Close" }).click();

@@ -600,8 +600,8 @@ test("an Analyst adds Evidence, sees its SHA-256, views and downloads it, and fi
     await row.getByText(`${sha256.slice(0, 4)}…${sha256.slice(-4)}`).waitFor();
     // Clicking the fingerprint shows the whole hash in the Enrichment panel.
     await row.getByRole("button", { name: `SHA-256 ${sha256}` }).click();
-    await page.getByRole("complementary", { name: "SHA-256 Enrichment" }).getByText(sha256).waitFor();
-    await page.locator("[data-slot=enrichment-scrim]").click();
+    await page.getByRole("dialog", { name: "SHA-256 Enrichment" }).getByText(sha256).waitFor();
+    await page.locator("[data-slot=sheet-overlay]").click();
     expect(await page.getByRole("button", { name: /delete|replace/i }).count()).toBe(0);
 
     // View opens it in a new tab, as text; Download saves it under its own name.
