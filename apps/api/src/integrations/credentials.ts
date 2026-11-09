@@ -53,6 +53,8 @@ export type ProviderCredentials = {
   mimecast: { clientId: string; clientSecret: string };
   /** An IPinfo API access token (ADR 0010). */
   ipinfo: { token: string };
+  /** A Cisco Umbrella API key and secret (ADR 0014). */
+  umbrella: { clientId: string; clientSecret: string };
 };
 
 /** What is sealed for each Provider: its credentials, and nothing else that came with them. */
@@ -60,6 +62,7 @@ const sealedFields: { [P in Provider]: (c: ProviderCredentials[P]) => ProviderCr
   crowdstrike: ({ clientId, clientSecret }) => ({ clientId, clientSecret }),
   mimecast: ({ clientId, clientSecret }) => ({ clientId, clientSecret }),
   ipinfo: ({ token }) => ({ token }),
+  umbrella: ({ clientId, clientSecret }) => ({ clientId, clientSecret }),
 };
 
 /** Seals `credentials` in the shape `provider` takes. */

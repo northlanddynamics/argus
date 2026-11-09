@@ -171,7 +171,7 @@ Pasting free text into Argus to pull out every Observable it contains and see wh
 _Avoid_: IOC check, mass search
 
 **Response Action**:
-An action Argus takes in an external tool against one Observable or host linked to a Case, through an Integration, such as adding a custom IOC to Falcon, blocking a sender in Mimecast or containing a host; always taken from a Case, and removable only by the Case that created it.
+An action Argus takes in an external tool against one Observable or host linked to a Case, through an Integration, such as adding a custom IOC to Falcon, blocking a sender in Mimecast, adding a domain to a Cisco Umbrella destination list or containing a host; always taken from a Case, and removable only by the Case that created it.
 _Avoid_: Block, push, playbook, remediation
 
 **Containment**:

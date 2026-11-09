@@ -30,6 +30,8 @@ export {
   type MimecastAction,
   mimecastActionLabel,
   mimecastTarget,
+  UMBRELLA_ACTIONS,
+  umbrellaTarget,
   type ResponseActionAction,
   responseActionActionLabel,
 } from "api/response-actions/vocabulary";
@@ -56,12 +58,24 @@ export type ResponseAction = ResponseActionsOnCase["responseActions"][number];
 /** An Integration a Member can send to from the Case, with what it sends an IOC with. */
 export type EligibleIntegration = ResponseActionsOnCase["integrations"][number];
 
-/** The tool a Response Action goes to, as the Case names it: "Falcon" or "Mimecast". */
-export const toolOf = (kind: ResponseActionKind) => (kind === "mimecast_blocked_sender" ? "Mimecast" : "Falcon");
+/** The tool a Response Action goes to, as the Case names it: "Falcon", "Mimecast" or "Umbrella". */
+export const toolOf = (kind: ResponseActionKind) => (kind === "mimecast_blocked_sender" ? "Mimecast" : kind === "umbrella_destination" ? "Umbrella" : "Falcon");
 
-/** What it does, as a row names it: "Detect", "Prevent", "Block sender" or "Block domain". */
-export const actionOf = (r: Pick<ResponseAction, "kind" | "falcon" | "target">) =>
-  r.kind === "falcon_containment" ? "Contain" : r.kind === "falcon_containment_lift" ? "Lift containment" : r.falcon ? falconIocActionLabel[r.falcon.action] : r.kind === "mimecast_blocked_sender" ? (r.target.type === "domain" ? "Block domain" : "Block sender") : "Sent";
+/** What it does, as a row names it: "Detect", "Prevent", "Block sender", "Block domain" or "Add to Phishing domains". */
+export const actionOf = (r: Pick<ResponseAction, "kind" | "falcon" | "target" | "destinationList">) =>
+  r.kind === "falcon_containment"
+    ? "Contain"
+    : r.kind === "falcon_containment_lift"
+      ? "Lift containment"
+      : r.falcon
+        ? falconIocActionLabel[r.falcon.action]
+        : r.kind === "mimecast_blocked_sender"
+          ? r.target.type === "domain"
+            ? "Block domain"
+            : "Block sender"
+          : r.kind === "umbrella_destination"
+            ? `Add to ${r.destinationList?.name ?? "destination list"}`
+            : "Sent";
 
 /**
  * "Severity High (from the Case) · every platform", as a menu or dialog says what an IOC goes with;
@@ -69,6 +83,7 @@ export const actionOf = (r: Pick<ResponseAction, "kind" | "falcon" | "target">) 
  */
 export function describeDefaults(d: FalconIocDefaults, caseSeverity?: Severity, provider: Provider = "crowdstrike") {
   if (provider === "mimecast") return d.internal ? "Internal" : "";
+  if (provider === "umbrella") return d.internal ? "Internal" : "";
   const severity =
     d.severity === "case" ? (caseSeverity ? `Severity ${severityLabel[caseSeverity]} (from the Case)` : "Severity from the Case") : `Severity ${severityLabel[d.severity]}`;
   const platforms = d.platforms.length === FALCON_IOC_PLATFORMS.length ? "every platform" : d.platforms.map((p) => falconIocPlatformLabel[p]).join(", ");

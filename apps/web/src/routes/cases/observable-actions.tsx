@@ -8,6 +8,7 @@ import {
   UnlinkIcon,
   ExternalLinkIcon,
   GlobeLockIcon,
+  ListPlusIcon,
   SearchIcon,
   MailXIcon,
   ShieldAlertIcon,
@@ -72,6 +73,7 @@ import {
   type IgnoredInSend,
   MIMECAST_ACTIONS,
   mimecastTarget,
+  UMBRELLA_ACTIONS,
   type ResponseActionAction,
   type ResponseAction,
   responseActionsKey,
@@ -87,12 +89,13 @@ import { DismissDialog, holdingOn, RemoveDialog, SendToFalconDialog } from "@/ro
  * "Take action" on an Observable on a Case, from a ⋯ button and from right-clicking wherever the
  * Observable is shown with its Case: one click sends it to an Integration as a Falcon custom IOC
  * alert (Detect) or block (Prevent), with that Integration's defaults (ADR 0008), or blocks an email
- * address or its domain in Mimecast; Remove, Retry and Dismiss act on what the Case already sent.
+ * address or its domain in Mimecast, or adds a domain to an Umbrella destination list; Remove, Retry
+ * and Dismiss act on what the Case already sent.
  * "More options…" opens the full Falcon send dialog.
  */
 
 type Sendable = { id: string; type: ObservableType; value: string };
-type Destination = Pick<EligibleIntegration, "id" | "name" | "provider" | "defaults">;
+type Destination = Pick<EligibleIntegration, "id" | "name" | "provider" | "defaults" | "destinationList">;
 
 /** What a menu is built from, so the ⋯ menu and the right-click menu hold the same items. */
 type ItemProps = { onSelect?: (event: Event) => void; disabled?: boolean; variant?: "default" | "destructive"; className?: string; children: ReactNode };
@@ -122,13 +125,22 @@ const contextKit: MenuKit = {
 };
 
 /** The one-click actions, as the menu names them: Falcon's Detect is an alert, its Prevent a block. */
-const quickLabel: Record<ResponseActionAction, string> = { detect: "IOC alert", prevent: "IOC block", block_sender: "Block sender", block_domain: "Block domain" };
+const quickLabel: Record<ResponseActionAction, string> = {
+  detect: "IOC alert",
+  prevent: "IOC block",
+  block_sender: "Block sender",
+  block_domain: "Block domain",
+  add_to_destination_list: "Add to destination list",
+};
 const QuickIcon: Record<ResponseActionAction, ComponentType<{ className?: string }>> = {
   detect: ShieldAlertIcon,
   prevent: ShieldBanIcon,
   block_sender: MailXIcon,
   block_domain: GlobeLockIcon,
+  add_to_destination_list: ListPlusIcon,
 };
+/** Whether a destination is Falcon's: one whose Provider is unknown here was a Falcon one. */
+const isFalcon = (d: { provider?: Destination["provider"] }) => d.provider !== "mimecast" && d.provider !== "umbrella";
 const FALCON_QUICK = ["detect", "prevent"] as const satisfies readonly FalconIocAction[];
 
 /** The domain of an email address. */
@@ -217,14 +229,24 @@ function useQuickSend(number: number) {
 
 /** What a Response Action did, as the menu names it: "IOC alert", "Block domain"… */
 const quickOf = (r: ResponseAction) =>
-  r.falcon ? quickLabel[r.falcon.action] : r.kind === "mimecast_blocked_sender" ? quickLabel[r.target.type === "domain" ? "block_domain" : "block_sender"] : "IOC";
+  r.falcon
+    ? quickLabel[r.falcon.action]
+    : r.kind === "mimecast_blocked_sender"
+      ? quickLabel[r.target.type === "domain" ? "block_domain" : "block_sender"]
+      : r.kind === "umbrella_destination"
+        ? `In ${r.destinationList?.name ?? "destination list"}`
+        : "IOC";
 
 /** What this Case sent of the Observable through one Integration, said as what Argus did. */
 function heldLine(r: ResponseAction) {
   const action = quickOf(r);
   if (r.state === "pending") return `${action}: waiting to be sent`;
   if (r.state === "removing") return `${action}: being removed`;
-  if (r.origin === "in_tool") return `${action} in ${r.kind === "mimecast_blocked_sender" ? "Mimecast" : "Falcon"}`;
+  if (r.origin === "in_tool") {
+    return r.kind === "umbrella_destination"
+      ? `${action} in Umbrella already`
+      : `${action} in ${r.kind === "mimecast_blocked_sender" ? "Mimecast" : "Falcon"}`;
+  }
   const at = r.origin === "already_present" ? r.presentFrom?.at : r.sentAt;
   return at ? `${action} sent ${when(at)}` : `${action} sent`;
 }
@@ -273,7 +295,13 @@ export function ObservableActions({
 
   // Every Integration it can go to, then any it was sent through that no longer takes Response Actions.
   // On a Closed Case nothing new is sent, so only those it already sent through are listed.
-  const destinations: { id: string; name: string; provider?: Destination["provider"]; defaults: Destination["defaults"] | null }[] = readOnly
+  const destinations: {
+    id: string;
+    name: string;
+    provider?: Destination["provider"];
+    defaults: Destination["defaults"] | null;
+    destinationList?: Destination["destinationList"];
+  }[] = readOnly
     ? []
     : [...eligible];
   const actionable = readOnly ? mine.filter((r) => r.state !== "removed") : mine;
@@ -320,11 +348,13 @@ export function ObservableActions({
                     <kit.Item variant="destructive" onSelect={() => setDialog({ kind: "remove", r: live })}>
                       <Undo2Icon />
                       <Twoline
-                        title={live.kind === "mimecast_blocked_sender" ? "Remove block…" : "Remove IOC…"}
+                        title={live.kind === "mimecast_blocked_sender" ? "Remove block…" : live.kind === "umbrella_destination" ? "Remove from list…" : "Remove IOC…"}
                         hint={
                           live.kind === "mimecast_blocked_sender"
                             ? "Mimecast stops blocking it"
-                            : live.falcon?.action === "prevent"
+                            : live.kind === "umbrella_destination"
+                              ? `Umbrella's ${live.destinationList?.name ?? "destination list"} no longer holds it`
+                              : live.falcon?.action === "prevent"
                               ? "Falcon stops blocking and detecting it"
                               : "Falcon stops detecting it"
                         }
@@ -381,13 +411,30 @@ export function ObservableActions({
                         </kit.Item>
                       );
                     })}
-                  {!failed && d.defaults && !readOnly && d.provider !== "mimecast" && iocType === null && (
+                  {!failed && d.defaults && !readOnly && d.provider === "umbrella" && observable.type !== "domain" && (
+                    <kit.Item disabled>Umbrella takes domains only</kit.Item>
+                  )}
+                  {!failed &&
+                    d.defaults &&
+                    !readOnly &&
+                    d.provider === "umbrella" &&
+                    observable.type === "domain" &&
+                    UMBRELLA_ACTIONS.map((action) => {
+                      const Icon = QuickIcon[action];
+                      return (
+                        <kit.Item key={action} disabled={quick.sending} onSelect={() => quick.send({ observables: [observable], to: d, action })}>
+                          <Icon />
+                          <Twoline title={quickLabel[action]} hint={d.destinationList ? `${d.destinationList.name} (${d.destinationList.access === "block" ? "Block" : "Allow"})` : undefined} />
+                        </kit.Item>
+                      );
+                    })}
+                  {!failed && d.defaults && !readOnly && isFalcon(d) && iocType === null && (
                     <kit.Item disabled>Falcon takes no {observableTypeLabel[observable.type]}</kit.Item>
                   )}
                   {!failed &&
                     d.defaults &&
                     !readOnly &&
-                    d.provider !== "mimecast" &&
+                    isFalcon(d) &&
                     iocType !== null &&
                     FALCON_QUICK.map((action) => {
                       const Icon = QuickIcon[action];
@@ -621,7 +668,8 @@ export function AssetActions({
 
 /**
  * "Take action on N": the ticked Observables, sent in one click to one Integration as IOC alerts or
- * blocks with its defaults, or, for Mimecast, their email addresses or domains blocked. Those this
+ * blocks with its defaults, or, for Mimecast, their email addresses or domains blocked, or, for
+ * Umbrella, their domains added to its destination list. Those this
  * Case already holds there are left out; "More options…" opens the full Falcon send dialog.
  */
 export function BulkObservableActions({
@@ -647,6 +695,7 @@ export function BulkObservableActions({
     return t !== null && falconAllowsPrevent(t);
   });
   const emails = observables.filter((o) => o.type === "email");
+  const domains = observables.filter((o) => o.type === "domain");
   const falconIntegrations = integrations.filter((i) => i.provider === "crowdstrike");
   return (
     <>
@@ -669,10 +718,16 @@ export function BulkObservableActions({
                     <span className="text-xs font-normal text-muted-foreground">{describeDefaults(d.defaults, severity, d.provider)}</span>
                   )}
                 </DropdownMenuLabel>
-                {(d.provider === "mimecast" ? MIMECAST_ACTIONS : FALCON_QUICK).map((action: ResponseActionAction) => {
+                {(d.provider === "mimecast" ? MIMECAST_ACTIONS : d.provider === "umbrella" ? UMBRELLA_ACTIONS : FALCON_QUICK).map((action: ResponseActionAction) => {
                   const Icon = QuickIcon[action];
                   const going =
-                    d.provider === "mimecast" ? left.filter((o) => emails.includes(o)) : action === "prevent" ? left.filter((o) => hashes.includes(o)) : left;
+                    d.provider === "mimecast"
+                      ? left.filter((o) => emails.includes(o))
+                      : d.provider === "umbrella"
+                        ? left.filter((o) => domains.includes(o))
+                        : action === "prevent"
+                          ? left.filter((o) => hashes.includes(o))
+                          : left;
                   return (
                     <DropdownMenuItem
                       key={action}
@@ -681,11 +736,13 @@ export function BulkObservableActions({
                     >
                       <Icon />
                       <Twoline
-                        title={d.provider === "mimecast" ? quickLabel[action] : `${quickLabel[action]} (${falconIocActionLabel[action as FalconIocAction]})`}
+                        title={isFalcon(d) ? `${quickLabel[action]} (${falconIocActionLabel[action as FalconIocAction]})` : quickLabel[action]}
                         hint={
                           going.length === 0
                             ? d.provider === "mimecast" && left.length > 0
                               ? "Email addresses only, and none are ticked"
+                              : d.provider === "umbrella" && left.length > 0
+                                ? "Domains only, and none are ticked"
                               : action === "prevent" && left.length > 0
                                 ? "Hashes only, and none are ticked"
                                 : "Already sent from this Case"

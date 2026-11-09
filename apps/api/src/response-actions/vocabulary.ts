@@ -11,14 +11,16 @@ import type { ObservableType } from "../observables/vocabulary";
  * `falcon_ioc` and `mimecast_blocked_sender` are taken against an Observable; `falcon_containment`
  * against a host Asset, one Falcon device (`aid`) of it (ADR 0009). So is `falcon_containment_lift`:
  * an Admin lifting containment that Argus didn't impose, which is never removed or dismissed.
+ * `umbrella_destination` is a domain Observable added to a Cisco Umbrella destination list (ADR 0014).
  */
-export const RESPONSE_ACTION_KINDS = ["falcon_ioc", "mimecast_blocked_sender", "falcon_containment", "falcon_containment_lift"] as const;
+export const RESPONSE_ACTION_KINDS = ["falcon_ioc", "mimecast_blocked_sender", "falcon_containment", "falcon_containment_lift", "umbrella_destination"] as const;
 export type ResponseActionKind = (typeof RESPONSE_ACTION_KINDS)[number];
 export const responseActionKindLabel: Record<ResponseActionKind, string> = {
   falcon_ioc: "Falcon custom IOC",
   mimecast_blocked_sender: "Mimecast blocked sender",
   falcon_containment: "Falcon host containment",
   falcon_containment_lift: "Falcon containment lift",
+  umbrella_destination: "Umbrella destination",
 };
 
 /** The kinds taken against a host Asset, and through a CrowdStrike Integration's Host containment setting. */
@@ -29,7 +31,11 @@ export const isHostKind = (kind: ResponseActionKind) => (HOST_KINDS as readonly 
 export const CONTAINMENT_TARGET_TYPE = "device";
 
 /** The kind of Response Action each Provider takes against an Observable. */
-export const providerKind: Record<ActionProvider, ResponseActionKind> = { crowdstrike: "falcon_ioc", mimecast: "mimecast_blocked_sender" };
+export const providerKind: Record<ActionProvider, ResponseActionKind> = {
+  crowdstrike: "falcon_ioc",
+  mimecast: "mimecast_blocked_sender",
+  umbrella: "umbrella_destination",
+};
 
 /**
  * Where a Response Action stands:
@@ -94,13 +100,37 @@ export const MIMECAST_ACTIONS = ["block_sender", "block_domain"] as const;
 export type MimecastAction = (typeof MIMECAST_ACTIONS)[number];
 export const mimecastActionLabel: Record<MimecastAction, string> = { block_sender: "Block sender", block_domain: "Block domain" };
 
+/** What Umbrella does: add a domain to the destination list its Integration adds to (ADR 0014). */
+export const UMBRELLA_ACTIONS = ["add_to_destination_list"] as const;
+export type UmbrellaAction = (typeof UMBRELLA_ACTIONS)[number];
+export const umbrellaActionLabel: Record<UmbrellaAction, string> = { add_to_destination_list: "Add to destination list" };
+
 /** Every action a Response Action can be taken with, whatever its Provider. */
-export const RESPONSE_ACTION_ACTIONS = [...FALCON_IOC_ACTIONS, ...MIMECAST_ACTIONS] as const;
+export const RESPONSE_ACTION_ACTIONS = [...FALCON_IOC_ACTIONS, ...MIMECAST_ACTIONS, ...UMBRELLA_ACTIONS] as const;
 export type ResponseActionAction = (typeof RESPONSE_ACTION_ACTIONS)[number];
-export const responseActionActionLabel: Record<ResponseActionAction, string> = { ...falconIocActionLabel, ...mimecastActionLabel };
+export const responseActionActionLabel: Record<ResponseActionAction, string> = { ...falconIocActionLabel, ...mimecastActionLabel, ...umbrellaActionLabel };
 
 /** The actions each Provider takes. */
-export const providerActions: Record<ActionProvider, readonly ResponseActionAction[]> = { crowdstrike: FALCON_IOC_ACTIONS, mimecast: MIMECAST_ACTIONS };
+export const providerActions: Record<ActionProvider, readonly ResponseActionAction[]> = {
+  crowdstrike: FALCON_IOC_ACTIONS,
+  mimecast: MIMECAST_ACTIONS,
+  umbrella: UMBRELLA_ACTIONS,
+};
+
+/**
+ * A Cisco Umbrella destination list as an Integration, or a Response Action taken through it, records
+ * it (ADR 0014): its id, and its name and access as Umbrella last described them.
+ */
+export type ChosenDestinationList = { id: number; name: string; access: "allow" | "block" };
+
+/**
+ * What Umbrella is sent for an Observable: a domain, as it is held. Null for anything else: Argus
+ * adds only domains to destination lists.
+ */
+export function umbrellaTarget(type: ObservableType, key: string): { type: "domain"; value: string } | null {
+  if (type === "domain") return { type: "domain", value: key };
+  return null;
+}
 
 /** What a Mimecast Blocked Senders entry blocks. */
 export type MimecastTargetType = "email" | "domain";

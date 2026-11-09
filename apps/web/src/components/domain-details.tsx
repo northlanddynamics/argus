@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Time } from "@/components/time";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EnrichmentLayout, FollowValue, KnownLine, SourceSection, ValueHeader } from "@/components/enrichment-parts";
+import { UmbrellaSections } from "@/components/umbrella-details";
 import { communityRow, detectionsRow, KeyLink, NoKey, PANEL_DETECTIONS, Problem, ReportSkeleton, Rows, Tags, Verdict, VirustotalFooter } from "@/components/virustotal-parts";
 import { type DomainLookup, type DomainReport, domainLookupQuery, useRefreshDomainLookup } from "@/lib/domain-url-lookups";
 import type { EnrichableType } from "@/lib/enrichment";
@@ -11,7 +12,8 @@ import { defang } from "@/lib/observables";
  * What VirusTotal says about a domain (ADR 0012), as the Enrichment panel and a domain or email
  * Observable's page show it; laid out in `docs/wireframes/domain-url-context-popup.md` and
  * `enrichment-panel.md`. Its DNS records open their own Enrichment. An email
- * address shows its domain's report: VirusTotal is only ever asked about the domain.
+ * address shows its domain's report: VirusTotal is only ever asked about the domain. Below it, which
+ * Cisco Umbrella destination lists hold the domain (ADR 0014), when the Organization has Umbrella.
  */
 
 /** "#40,210 in Cisco Umbrella": its best rank in a popularity list. */
@@ -146,6 +148,7 @@ export function DomainEnrichment({ type, value }: { type: "domain" | "email"; va
           <DomainLookupBody lookup={lookup} loading={q.isPending} error={q.error} listed={PANEL_DETECTIONS} />
         </SourceSection>
       )}
+      <UmbrellaSections value={value} />
     </EnrichmentLayout>
   );
 }

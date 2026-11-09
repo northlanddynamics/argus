@@ -46,7 +46,7 @@ const until = (iso: string) => {
   return minutes <= 0 ? "due" : `in ${minutes} min`;
 };
 
-/** Settings · Integrations: the Organization's CrowdStrike, Mimecast and IPinfo Integrations and how they are doing. */
+/** Settings · Integrations: the Organization's CrowdStrike, Mimecast, Cisco Umbrella and IPinfo Integrations and how they are doing. */
 export function IntegrationsPage() {
   const integrations = useQuery(integrationsQuery);
   // Health and the last event refresh live.
@@ -59,6 +59,7 @@ export function IntegrationsPage() {
           <>
             {/* IPs are looked up through one IPinfo Integration (ADR 0010). */}
             {integrations.data && !integrations.data.some((i) => i.provider === "ipinfo") && <AddIntegrationDialog provider="ipinfo" />}
+            <AddIntegrationDialog provider="umbrella" />
             <AddIntegrationDialog provider="mimecast" />
             <AddIntegrationDialog provider="crowdstrike" />
           </>
@@ -80,7 +81,8 @@ export function IntegrationsPage() {
         <Card>
           <CardContent className="text-sm text-muted-foreground">
             No Integrations yet. Add a CrowdStrike Integration to receive Falcon detections as Alerts, a Mimecast Integration to block
-            email senders, or IPinfo to see where IP addresses are and who runs them.
+            email senders, Cisco Umbrella to check and add domains to its destination lists, or IPinfo to see where IP addresses are and
+            who runs them.
           </CardContent>
         </Card>
       )}
@@ -352,6 +354,11 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
             body={
               i.provider === "crowdstrike" ? (
                 <>The API client needs IOC Management write scope; without it, sends fail on the Case with a 403.</>
+              ) : i.provider === "umbrella" ? (
+                <>
+                  Members can then add domains linked to a Case to the destination list chosen below. The API key needs the Policies ·
+                  Destination Lists write scope; without it, adds fail on the Case.
+                </>
               ) : (
                 <>The API application's role needs Gateway · Policies · Edit; without it, blocks fail on the Case.</>
               )
@@ -405,6 +412,7 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
             <AlertDescription>{setHostContainment.error.message}</AlertDescription>
           </Alert>
         )}
+        {i.provider === "umbrella" && <DestinationListSetting integration={i} />}
         {responseActions && (
           // Keyed by what is saved, so a change saved elsewhere replaces the form's.
           <ResponseActionDefaults key={JSON.stringify(i.responseActionDefaults)} integration={i} />
@@ -420,8 +428,12 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
         )}
         {i.credentials && i.provider !== "ipinfo" && (
           <p className="text-sm text-muted-foreground">
-            {i.provider === "crowdstrike" && i.cloud ? `Falcon API credentials: ${falconCloudLabel[i.cloud]} cloud` : `${providerLabel[i.provider]} API 2.0 credentials`}{" "}
-            · client <span className="font-mono">{i.credentials.clientIdHint}</span> · set{" "}
+            {i.provider === "crowdstrike" && i.cloud
+              ? `Falcon API credentials: ${falconCloudLabel[i.cloud]} cloud`
+              : i.provider === "umbrella"
+                ? "Umbrella API"
+                : `${providerLabel[i.provider]} API 2.0 credentials`}{" "}
+            · {i.provider === "umbrella" ? "key" : "client"} <span className="font-mono">{i.credentials.clientIdHint}</span> · set{" "}
             {new Date(i.credentials.updatedAt).toLocaleDateString()}
           </p>
         )}
@@ -643,6 +655,107 @@ function HostContainmentSetting(props: {
   );
 }
 
+/**
+ * The destination list a Cisco Umbrella Integration adds domains to (ADR 0014). Every Member sees
+ * which; Admins choose it from Umbrella's lists, read when they open the chooser.
+ */
+function DestinationListSetting({ integration: i }: { integration: IntegrationView }) {
+  const queryClient = useQueryClient();
+  const [choosing, setChoosing] = useState(false);
+  const [picked, setPicked] = useState<string>("");
+  const locked = !i.credentials;
+  const lists = useQuery({
+    queryKey: [...integrationsKey, i.id, "destination-lists"],
+    enabled: choosing,
+    queryFn: async () => {
+      const res = await api.integrations[":id"]["destination-lists"].$get({ param: { id: i.id } });
+      if (!res.ok) throw new Error(await errorMessage(res, "Could not read Umbrella's destination lists"));
+      const body = await res.json();
+      if (!("destinationLists" in body)) throw new Error("Unexpected response");
+      return body.destinationLists;
+    },
+  });
+  const save = useMutation({
+    mutationFn: async (destinationListId: number) =>
+      ok(await api.integrations[":id"]["destination-list"].$put({ param: { id: i.id }, json: { destinationListId } }), "Could not choose the destination list"),
+    onSuccess: () => setChoosing(false),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: integrationsKey }),
+  });
+  const current = i.destinationList;
+  return (
+    <div className="grid gap-2 rounded-lg border p-3" data-testid="destination-list">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="grid gap-0.5">
+          <span className="text-sm font-semibold">Destination list</span>
+          <p className="text-sm text-muted-foreground">
+            {current ? (
+              <>
+                Domains are added to <span className="font-medium text-foreground">{current.name}</span> ({current.access === "block" ? "Block" : "Allow"}
+                ).
+              </>
+            ) : (
+              "None chosen yet: Members can't add domains to Umbrella until an Admin chooses one."
+            )}
+            {locked && " Only Admins can change this."}
+          </p>
+        </div>
+        {!locked && !choosing && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setPicked(current ? String(current.id) : "");
+              save.reset();
+              setChoosing(true);
+            }}
+          >
+            {current ? "Change" : "Choose list"}
+          </Button>
+        )}
+      </div>
+      {choosing && (
+        <form
+          className="flex flex-wrap items-end gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (picked) save.mutate(Number(picked));
+          }}
+        >
+          {lists.isPending && <Skeleton className="h-9 w-64" />}
+          {lists.data && (
+            <div className="grid min-w-64 gap-1">
+              <Label htmlFor={`destination-list-${i.id}`}>Umbrella destination list</Label>
+              <NativeSelect id={`destination-list-${i.id}`} value={picked} onChange={(e) => setPicked(e.target.value)}>
+                <NativeSelectOption value="" disabled>
+                  Choose a list…
+                </NativeSelectOption>
+                {lists.data.map((l) => (
+                  <NativeSelectOption key={l.id} value={String(l.id)}>
+                    {l.name} · {l.access === "block" ? "Block" : "Allow"}
+                    {l.isGlobal ? " · global" : ""}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+            </div>
+          )}
+          {lists.data?.length === 0 && <p className="text-sm text-muted-foreground">Umbrella has no destination lists yet.</p>}
+          <Button type="submit" size="sm" disabled={!picked || save.isPending}>
+            Save
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setChoosing(false)}>
+            Cancel
+          </Button>
+        </form>
+      )}
+      {(lists.error ?? save.error) && (
+        <Alert variant="destructive">
+          <AlertDescription>{(lists.error ?? save.error)!.message}</AlertDescription>
+        </Alert>
+      )}
+    </div>
+  );
+}
+
 /** The Response Actions switch: on, Members may take Response Actions through the Integration from a Case. */
 function ResponseActionsSetting(props: {
   id: string;
@@ -664,7 +777,9 @@ function ResponseActionsSetting(props: {
         <p className="text-sm text-muted-foreground">
           {provider === "crowdstrike"
             ? "Add custom IOCs to Falcon. The API client needs IOC Management write scope."
-            : `Block email senders and domains in ${providerLabel[provider]}.`}
+            : provider === "umbrella"
+              ? "Add domains to a destination list in Cisco Umbrella."
+              : `Block email senders and domains in ${providerLabel[provider]}.`}
           {lockedReason && ` ${lockedReason}`}
         </p>
       </div>
@@ -707,7 +822,7 @@ function ResponseActionDefaults({ integration: i }: { integration: IntegrationVi
       }}
     >
       <div className="grid gap-0.5">
-        <span className="text-sm font-semibold">{falcon ? "IOC defaults" : "Block defaults"}</span>
+        <span className="text-sm font-semibold">{falcon ? "IOC defaults" : i.provider === "umbrella" ? "Destination list defaults" : "Block defaults"}</span>
         {locked && <p className="text-sm text-muted-foreground">Only Admins can change these.</p>}
       </div>
       <div className="grid gap-2 sm:grid-cols-[10rem_1fr] sm:items-center">
@@ -789,7 +904,21 @@ function CredentialFields({ provider = "crowdstrike" }: { provider?: Provider })
       </div>
     );
   }
-  const app = provider === "crowdstrike" ? "API client" : "API application client";
+  const app = provider === "crowdstrike" ? "API client" : provider === "umbrella" ? "API key" : "API application client";
+  if (provider === "umbrella") {
+    return (
+      <>
+        <div className="grid gap-2">
+          <Label htmlFor="falcon-client-id">{app}</Label>
+          <Input id="falcon-client-id" name="clientId" required autoComplete="off" />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="falcon-client-secret">Key secret</Label>
+          <Input id="falcon-client-secret" name="clientSecret" type="password" required autoComplete="new-password" />
+        </div>
+      </>
+    );
+  }
   return (
     <>
       <div className="grid gap-2">
@@ -808,8 +937,8 @@ const credentialsFrom = (form: FormData) => ({ clientId: String(form.get("client
 const tokenFrom = (form: FormData) => ({ token: String(form.get("token")) });
 
 /**
- * Adds a CrowdStrike Integration, a Mimecast one, which has no cloud, Alert stream or write-back, or
- * the IPinfo one, which only looks IPs up (ADR 0010).
+ * Adds a CrowdStrike Integration, a Mimecast or Cisco Umbrella one, which have no cloud, Alert stream
+ * or write-back, or the IPinfo one, which only looks IPs up (ADR 0010).
  */
 function AddIntegrationDialog({ provider }: { provider: Provider }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -819,7 +948,7 @@ function AddIntegrationDialog({ provider }: { provider: Provider }) {
     mutationFn: async (
       json:
         | { provider: "crowdstrike"; name: string; cloud: FalconCloud; clientId: string; clientSecret: string; writeBack: boolean; responseActions: boolean }
-        | { provider: "mimecast"; name: string; clientId: string; clientSecret: string; responseActions: boolean }
+        | { provider: "mimecast" | "umbrella"; name: string; clientId: string; clientSecret: string; responseActions: boolean }
         | { provider: "ipinfo"; name: string; token: string },
     ) => ok(await api.integrations.$post({ json }), "Could not add the Integration"),
     onSuccess: async () => {
@@ -835,7 +964,7 @@ function AddIntegrationDialog({ provider }: { provider: Provider }) {
     add.mutate(
       falcon
         ? { provider, ...common, cloud: form.get("cloud") as FalconCloud, writeBack: form.get("writeBack") === "on" }
-        : { provider: "mimecast", ...common },
+        : { provider: provider === "umbrella" ? "umbrella" : "mimecast", ...common },
     );
   };
   return (
@@ -856,6 +985,12 @@ function AddIntegrationDialog({ provider }: { provider: Provider }) {
             <DialogDescription>
               Copy the API access token from your IPinfo account. Argus uses the Core API: location, network, and the anonymous, hosting,
               anycast, mobile and satellite flags.
+            </DialogDescription>
+          )}
+          {provider === "umbrella" && (
+            <DialogDescription>
+              Create an API key in the Umbrella dashboard (Admin · API Keys) with the Policies · Destination Lists scope, read and write. Once
+              it is added, choose the destination list Argus adds domains to.
             </DialogDescription>
           )}
           {provider === "mimecast" && (

@@ -41,8 +41,10 @@ import {
   falconIocType,
   iocSeverity,
   LIVE_STATES,
+  type ChosenDestinationList,
   type MimecastAction,
   mimecastTarget,
+  umbrellaTarget,
   providerActions,
   providerKind,
   type ResponseActionAction,
@@ -57,7 +59,8 @@ import {
  * Response Actions (ADR 0007): a Member who can work a Case sends one of its Observables to an
  * Integration whose Response Actions setting is on: to CrowdStrike as a Falcon custom IOC, or to
  * Mimecast as an Organization-wide Blocked Senders entry for an email address or its domain (the
- * domain Observable is linked to the Case first if it isn't yet, and is what is blocked). The Response Action is
+ * domain Observable is linked to the Case first if it isn't yet, and is what is blocked), or to Cisco
+ * Umbrella as a domain added to the destination list its Integration adds to (ADR 0014). The Response Action is
  * stored Pending with its outbox row in one transaction, and the worker carries it out
  * (`sender.ts`). Guests never take them, and nobody takes one on a Closed Case.
  *
@@ -253,6 +256,8 @@ export type ResponseActionView = {
   target: { type: string; value: string };
   /** What the IOC was sent with; `platforms` null for one taken before they were configurable, meaning all. */
   falcon: { action: FalconIocAction; severity: Severity; platforms: FalconIocPlatform[] | null } | null;
+  /** The Umbrella destination list the domain went to (ADR 0014). */
+  destinationList: ChosenDestinationList | null;
   /** The Integration it went through. Never told to Guests. */
   integration: { id: string; name: string } | null;
   /** Hidden from Guests. */
@@ -299,6 +304,8 @@ export type ObservableResponseActionView = {
   integration: { id: string; name: string } | null;
   /** What the IOC was sent with; `platforms` null for one taken before they were configurable, meaning all. */
   falcon: { action: FalconIocAction; severity: Severity; platforms: FalconIocPlatform[] | null } | null;
+  /** The Umbrella destination list the domain went to (ADR 0014). */
+  destinationList: ChosenDestinationList | null;
   /** Hidden from Guests. */
   internal: boolean;
   requestedAt: string;
@@ -307,8 +314,17 @@ export type ObservableResponseActionView = {
   sentAt: string | null;
 };
 
-/** The Integrations a Response Action can be sent to, as the Case offers them, with what they send it with. */
-export type EligibleIntegration = { id: string; name: string; provider: ActionProvider; defaults: FalconIocDefaults };
+/**
+ * The Integrations a Response Action can be sent to, as the Case offers them, with what they send it
+ * with: for Cisco Umbrella, the destination list it adds domains to.
+ */
+export type EligibleIntegration = {
+  id: string;
+  name: string;
+  provider: ActionProvider;
+  defaults: FalconIocDefaults;
+  destinationList: ChosenDestinationList | null;
+};
 
 /** A CrowdStrike Integration a Member can contain hosts through, as the Case offers it. */
 export type ContainmentIntegration = { id: string; name: string; internal: boolean };
@@ -362,9 +378,10 @@ export const responseActionLabel = (o: Subject, kind: ResponseActionKind = "falc
 const subjectOf = (o: { type: string; value: string } | null, a: { type: string; value: string } | null): Subject =>
   o ? { type: o.type as ObservableType, value: o.value } : { type: a!.type as AssetType, value: a!.value };
 
-/** What it was sent with: "Detect, severity High", "Block domain, everyone", or "device 8f1c…". */
-const paramsOf = (r: Pick<Row, "kind" | "targetType" | "targetValue" | "falconAction" | "severity" | "falconPlatforms">) =>
+/** What it was sent with: "Detect, severity High", "Block domain, everyone", "destination list Phishing (Block)", or "device 8f1c…". */
+const paramsOf = (r: Pick<Row, "kind" | "targetType" | "targetValue" | "falconAction" | "severity" | "falconPlatforms" | "destinationList">) =>
   isHostKind(r.kind) ? `device ${r.targetValue}` :
+  r.kind === "umbrella_destination" ? `destination list ${r.destinationList!.name} (${r.destinationList!.access === "block" ? "Block" : "Allow"})` :
   r.kind === "mimecast_blocked_sender" ? `${r.targetType === "domain" ? "Block domain" : "Block sender"}, everyone` : [
     falconIocActionLabel[r.falconAction!],
     `severity ${severityLabel[r.severity!]}`,
@@ -456,6 +473,26 @@ function phrasing(r: Row, o: Subject) {
       liftedByLift: `Argus lifted the containment of ${what} in ${tool} at an Admin's request, so this Case no longer records it as contained`,
     };
   }
+  if (r.kind === "umbrella_destination") {
+    const tool = providerLabel.umbrella;
+    const list = `the destination list ${r.destinationList!.name}`;
+    return {
+      tool,
+      send: `add ${what} to ${list} in ${tool} (${paramsOf(r)})`,
+      sent: `Argus added ${what} to ${list} in ${tool} (${paramsOf(r)})`,
+      notSent: `Argus could not add ${what} to ${list} in ${tool}`,
+      alreadySent: `${what} was already added to ${list} in ${tool} by Argus, so nothing was sent again`,
+      inTool: `${what} was already in ${list} in ${tool}, so Argus left it unchanged`,
+      dismissed: `this Case no longer records ${what} as already in ${list} in ${tool}`,
+      remove: `remove ${what} from ${list} in ${tool}`,
+      notRemoved: `Argus could not remove ${what} from ${list} in ${tool}`,
+      removed: `Argus removed ${what} from ${list} in ${tool}`,
+      alreadyGone: `${what} was already gone from ${list} in ${tool}`,
+      reliedOnRemoved: `Argus removed ${what} from ${list} in ${tool} at the request of the Case that added it, so this Case no longer records it as present`,
+      liftedInTool: `${what} was removed from ${list} in ${tool} outside Argus`,
+      liftedByLift: `${what} was removed from ${list} in ${tool}`,
+    };
+  }
   if (r.kind === "mimecast_blocked_sender") {
     const tool = providerLabel.mimecast;
     return {
@@ -521,7 +558,8 @@ function timelineBody(change: StateChange, r: Row, o: Subject, by: string) {
 
 /** What the Case Audit Log says of a change, unless an error says it instead. */
 function auditDetail(change: StateChange, r: Row) {
-  const tool = r.kind === "mimecast_blocked_sender" ? providerLabel.mimecast : `${providerLabel.crowdstrike} Falcon`;
+  const tool =
+    r.kind === "mimecast_blocked_sender" ? providerLabel.mimecast : r.kind === "umbrella_destination" ? providerLabel.umbrella : `${providerLabel.crowdstrike} Falcon`;
   if (r.kind === "falcon_containment_lift") {
     switch (change) {
       case "requested":
@@ -728,7 +766,7 @@ async function liveCreated(
 ) {
   const t = responseActions;
   const [found] = await tx
-    .select({ id: t.id, falconAction: t.falconAction, severity: t.severity, falconPlatforms: t.falconPlatforms })
+    .select({ id: t.id, falconAction: t.falconAction, severity: t.severity, falconPlatforms: t.falconPlatforms, destinationList: t.destinationList })
     .from(t)
     .where(
       and(
@@ -749,11 +787,21 @@ async function liveCreated(
 /** The Integrations in `me`'s Organization that take Response Actions now, of any Provider. */
 async function eligible(db: Db | Tx, organizationId: string): Promise<EligibleIntegration[]> {
   const rows = await db
-    .select({ id: integrations.id, name: integrations.name, provider: integrations.provider, defaults: integrations.responseActionDefaults })
+    .select({
+      id: integrations.id,
+      name: integrations.name,
+      provider: integrations.provider,
+      defaults: integrations.responseActionDefaults,
+      destinationList: integrations.destinationList,
+    })
     .from(integrations)
     .where(and(eq(integrations.organizationId, organizationId), eq(integrations.responseActions, true)))
     .orderBy(asc(integrations.createdAt), asc(integrations.id));
-  return rows.filter((r): r is typeof r & { provider: ActionProvider } => providerCapabilities[r.provider].responseActions);
+  return rows.filter(
+    (r): r is typeof r & { provider: ActionProvider } =>
+      // An Umbrella Integration takes none until an Admin has chosen the destination list it adds to.
+      providerCapabilities[r.provider].responseActions && (r.provider !== "umbrella" || r.destinationList !== null),
+  );
 }
 
 /** The other Cases (than `caseId`) whose Active "already present" records rely on Response Action `id`. */
@@ -900,6 +948,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
       asset: asset ? { id: asset.id, type: asset.type as AssetType, value: asset.value } : null,
       target: { type: row.targetType, value: row.targetValue },
       falcon: row.falconAction && row.severity ? { action: row.falconAction, severity: row.severity, platforms: row.falconPlatforms } : null,
+      destinationList: row.destinationList,
       integration: insider ? { id: row.integrationId, name: integrationName } : null,
       internal: row.internal,
       requestedBy: { id: row.createdById, name: requestedByName },
@@ -1107,6 +1156,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
           .for("share");
         const eligibleNow = await eligible(tx, me.organizationId);
         const offered = new Map(eligibleNow.map((i) => [i.id, i.defaults]));
+        const lists = new Map(eligibleNow.map((i) => [i.id, i.destinationList]));
         if (chosen.length !== integrationIds.length || !chosen.every((i) => offered.has(i.id))) throw new IntegrationNotEligible();
         // Each action is one Provider's: every Integration chosen must be of it.
         for (const id of integrationIds) {
@@ -1127,6 +1177,12 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
           if (provider === "mimecast") {
             const target = mimecastTarget(o.type, o.key, input.action as MimecastAction);
             if (!target) skipped.push({ observable, provider, reason: `Mimecast blocks email senders; it takes no ${observableTypeLabel[o.type]}` });
+            else accepted.push({ ...o, targetType: target.type, targetValue: target.value });
+            continue;
+          }
+          if (provider === "umbrella") {
+            const target = umbrellaTarget(o.type, o.key);
+            if (!target) skipped.push({ observable, provider, reason: `Argus adds only domains to Umbrella destination lists; not an ${observableTypeLabel[o.type]}` });
             else accepted.push({ ...o, targetType: target.type, targetValue: target.value });
             continue;
           }
@@ -1203,6 +1259,8 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
                     falconPlatforms: present ? present.falconPlatforms : offered.get(target.integrationId)!.platforms,
                   }
                 : {}),
+              // The list it goes to is the Integration's now, or, already present, the one it went to.
+              ...(kind === "umbrella_destination" ? { destinationList: present?.destinationList ?? lists.get(target.integrationId)! } : {}),
               state: presentFromId ? "active" : "pending",
               origin: presentFromId ? "already_present" : "created",
               presentFromId,
@@ -1264,6 +1322,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
         case: { number: caseNumber, title: caseTitle },
         integration: insider ? { id: row.integrationId, name: integrationName } : null,
         falcon: row.falconAction && row.severity ? { action: row.falconAction, severity: row.severity, platforms: row.falconPlatforms } : null,
+        destinationList: row.destinationList,
         internal: row.internal,
         requestedAt: row.createdAt.toISOString(),
         stateChangedAt: row.stateChangedAt.toISOString(),

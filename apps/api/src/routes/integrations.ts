@@ -4,7 +4,18 @@ import { z } from "zod";
 import { NotPermitted } from "../access/policy";
 import { FALCON_CLOUDS } from "../alerts/vocabulary";
 import type { Deps } from "../deps";
-import { IntegrationHoldsResponseActions, IntegrationNameTaken, type NewIntegration, IntegrationNotFound, InvalidDefaults, NotSupportedByProvider, OneIpinfoIntegration, WrongCredentials } from "../integrations/integrations";
+import {
+  IntegrationHoldsResponseActions,
+  IntegrationNameTaken,
+  type NewIntegration,
+  IntegrationNotFound,
+  InvalidDefaults,
+  NotSupportedByProvider,
+  OneIpinfoIntegration,
+  ToolUnavailable,
+  UnknownDestinationList,
+  WrongCredentials,
+} from "../integrations/integrations";
 import { SEVERITIES } from "../cases/vocabulary";
 import { FALCON_IOC_PLATFORMS } from "../response-actions/vocabulary";
 import { type MemberEnv, requireMember } from "../members/membership";
@@ -39,6 +50,14 @@ const mimecastBody = z.strictObject({
   responseActions: z.boolean().default(false),
   responseActionDefaults: defaultsBody.optional(),
 });
+/** A Cisco Umbrella API key and secret (ADR 0014): no cloud, no Alert stream and no write-back to choose. */
+const umbrellaBody = z.strictObject({
+  ...credentialsBody.shape,
+  provider: z.literal("umbrella"),
+  name: z.string().trim().min(1).max(80),
+  responseActions: z.boolean().default(false),
+  responseActionDefaults: defaultsBody.optional(),
+});
 /** An IPinfo API token (ADR 0010): it only looks IPs up, so there is nothing else to choose. */
 const tokenBody = z.strictObject({ token: z.string().trim().min(8).max(200) });
 const ipinfoBody = z.strictObject({
@@ -46,14 +65,20 @@ const ipinfoBody = z.strictObject({
   provider: z.literal("ipinfo"),
   name: z.string().trim().min(1).max(80),
 });
-const createBody = z.union([crowdstrikeBody, mimecastBody, ipinfoBody]);
+const createBody = z.union([crowdstrikeBody, mimecastBody, umbrellaBody, ipinfoBody]);
+const destinationListBody = z.object({ destinationListId: z.number().int().positive() });
 const rotateBody = z.union([credentialsBody, tokenBody]);
 const enabledBody = z.object({ enabled: z.boolean() });
 
 
 const notPermitted = { error: "Not permitted" } as const;
 
-/** Integrations (CrowdStrike, Mimecast or IPinfo): every Member sees them and their health; Admins add, rotate, pause, resume and delete them and set their write-back, Response Actions, Response Action defaults and Host containment. */
+/**
+ * Integrations (CrowdStrike, Mimecast, Cisco Umbrella or IPinfo): every Member sees them and their
+ * health; Admins add, rotate, pause, resume and delete them and set their write-back, Response
+ * Actions, Response Action defaults, Host containment and, for Umbrella, the destination list it adds
+ * domains to.
+ */
 export const integrationRoutes = (deps: Deps, { integrations }: Modules) =>
   new Hono<MemberEnv>()
     .use(requireMember(deps.db))
@@ -139,6 +164,30 @@ export const integrationRoutes = (deps: Deps, { integrations }: Modules) =>
         if (e instanceof NotPermitted) return c.json(notPermitted, 403);
         if (e instanceof IntegrationNotFound) return c.json({ error: e.message }, 404);
         if (e instanceof NotSupportedByProvider) return c.json({ error: e.message }, 422);
+        throw e;
+      }
+    })
+    .get("/:id/destination-lists", async (c) => {
+      try {
+        return c.json({ destinationLists: await integrations.destinationLists(c.get("membership"), c.req.param("id")) }, 200);
+      } catch (e) {
+        if (e instanceof NotPermitted) return c.json(notPermitted, 403);
+        if (e instanceof IntegrationNotFound) return c.json({ error: e.message }, 404);
+        if (e instanceof NotSupportedByProvider) return c.json({ error: e.message }, 422);
+        if (e instanceof ToolUnavailable) return c.json({ error: e.message }, 502);
+        throw e;
+      }
+    })
+    .put("/:id/destination-list", zValidator("json", destinationListBody), async (c) => {
+      try {
+        const chosen = await integrations.setDestinationList(c.get("membership"), c.req.param("id"), c.req.valid("json").destinationListId);
+        return c.json({ destinationList: chosen }, 200);
+      } catch (e) {
+        if (e instanceof NotPermitted) return c.json(notPermitted, 403);
+        if (e instanceof IntegrationNotFound) return c.json({ error: e.message }, 404);
+        if (e instanceof NotSupportedByProvider) return c.json({ error: e.message }, 422);
+        if (e instanceof UnknownDestinationList) return c.json({ error: e.message }, 422);
+        if (e instanceof ToolUnavailable) return c.json({ error: e.message }, 502);
         throw e;
       }
     })

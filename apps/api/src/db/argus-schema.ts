@@ -19,6 +19,7 @@ import {
 import type { FalconHost, FalconIdentity } from "../crowdstrike/falcon";
 import type { CaseSummary } from "../cases/case-summary";
 import type { IpDetails } from "../ipinfo/ipinfo";
+import type { ChosenDestinationList } from "../response-actions/vocabulary";
 import type { DomainReport, FileReport, UrlReport } from "../virustotal/virustotal";
 import { CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabulary";
 import { STORED_LINK_TYPES } from "../case-links/vocabulary";
@@ -796,6 +797,12 @@ export const integrations = pgTable(
      * Response Actions, off until an Admin turns it on. Needs Hosts: Write.
      */
     hostContainment: boolean("host_containment").notNull().default(false),
+    /**
+     * The destination list a Cisco Umbrella Integration adds domains to as Response Actions (ADR
+     * 0014), as Umbrella described it when an Admin chose it; null until one is chosen, and for every
+     * other Provider.
+     */
+    destinationList: jsonb("destination_list").$type<ChosenDestinationList>(),
     health: text("health", { enum: INTEGRATION_HEALTH }).notNull(),
     healthDetail: text("health_detail"),
     healthChangedAt: timestamp("health_changed_at", { withTimezone: true }).notNull(),
@@ -830,6 +837,7 @@ export const integrations = pgTable(
   },
   (t) => [
     check("integrations_cloud", sql`(${t.provider} = 'crowdstrike') = (${t.cloud} IS NOT NULL)`),
+    check("integrations_destination_list", sql`${t.provider} = 'umbrella' OR ${t.destinationList} IS NULL`),
     // A deleted Integration's name, and its place as the one IPinfo Integration, are free again (ADR 0013).
     uniqueIndex("integrations_org_name_idx").on(t.organizationId, sql`lower(${t.name})`).where(sql`${t.deletedAt} IS NULL`),
     // An Organization looks IPs up through one IPinfo Integration (ADR 0010).
@@ -1429,6 +1437,8 @@ export const responseActions = pgTable(
     severity: text("severity", { enum: SEVERITIES }),
     /** The platforms the IOC applies to, as its Integration's defaults said when it was taken; null before ADR 0008, meaning all. */
     falconPlatforms: jsonb("falcon_platforms").$type<FalconIocPlatform[]>(),
+    /** The Umbrella destination list the domain goes to, as its Integration said when it was taken (ADR 0014). */
+    destinationList: jsonb("destination_list").$type<ChosenDestinationList>(),
     state: text("state", { enum: RESPONSE_ACTION_STATES }).notNull(),
     externalId: text("external_id"),
     lastError: text("last_error"),
@@ -1466,6 +1476,7 @@ export const responseActions = pgTable(
       ),
     check("response_actions_one_target", sql`(${t.observableId} IS NULL) <> (${t.assetId} IS NULL)`),
     check("response_actions_falcon", sql`(${t.kind} = 'falcon_ioc') = (${t.falconAction} IS NOT NULL AND ${t.severity} IS NOT NULL)`),
+    check("response_actions_destination_list", sql`(${t.kind} = 'umbrella_destination') = (${t.destinationList} IS NOT NULL)`),
     // Containment, and lifting it, are taken against a host; the other kinds against an Observable.
     check("response_actions_containment_target", sql`(${t.kind} IN ('falcon_containment', 'falcon_containment_lift')) = (${t.assetId} IS NOT NULL)`),
     check("response_actions_present_from", sql`(${t.origin} = 'already_present') = (${t.presentFromId} IS NOT NULL)`),

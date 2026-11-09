@@ -64,7 +64,10 @@ export function CaseObservablesPage() {
   const containment = readOnly ? [] : (responseActions.data?.containment ?? []);
   const held = responseActions.data?.responseActions ?? [];
   // Only what is still linked, and a tool takes, counts as selected.
-  const takes = (o: { type: ObservableType; value: string }) => falconTakes(o.type, o.value) || (o.type === "email" && eligible.some((i) => i.provider === "mimecast"));
+  const takes = (o: { type: ObservableType; value: string }) =>
+    falconTakes(o.type, o.value) ||
+    (o.type === "email" && eligible.some((i) => i.provider === "mimecast")) ||
+    (o.type === "domain" && eligible.some((i) => i.provider === "umbrella"));
   const chosen = (observables.data ?? []).filter((o) => selected.includes(o.id) && takes(o));
   return (
     <div className="grid gap-4">

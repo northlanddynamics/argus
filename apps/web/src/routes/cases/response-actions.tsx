@@ -507,12 +507,15 @@ export function RemoveDialog({ number, r, onClose }: { number: number; r: Respon
   const count = relying ? relying.cases.length + relying.otherCases : 0;
   const lifting = r.kind === "falcon_containment";
   const mimecast = r.kind === "mimecast_blocked_sender";
+  const umbrella = r.kind === "umbrella_destination";
   const stops = mimecast
     ? "Mimecast stops blocking it."
-    : r.falcon?.action === "prevent"
-      ? "Falcon stops blocking and detecting it."
-      : "Falcon stops detecting it.";
-  const entry = lifting ? "containment" : mimecast ? "blocked sender entry" : "custom IOC";
+    : umbrella
+      ? `Umbrella's destination list ${r.destinationList?.name ?? ""} no longer holds it.`
+      : r.falcon?.action === "prevent"
+        ? "Falcon stops blocking and detecting it."
+        : "Falcon stops detecting it.";
+  const entry = lifting ? "containment" : mimecast ? "blocked sender entry" : umbrella ? "destination" : "custom IOC";
   const verb = lifting ? "Lift containment" : "Remove";
   return (
     <Dialog

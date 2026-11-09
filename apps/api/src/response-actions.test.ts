@@ -285,7 +285,7 @@ describe("Taking a Falcon IOC Response Action", () => {
     const a = await acme({ responseActions: false });
     const on = await a.add("CrowdStrike — EU", "falcon-client-0002", true);
     expect((await a.list(a.ana)).integrations).toEqual([
-      { id: on, name: "CrowdStrike — EU", provider: "crowdstrike", defaults: { severity: "case", platforms: ["windows", "mac", "linux"], internal: false } },
+      { id: on, name: "CrowdStrike — EU", provider: "crowdstrike", defaults: { severity: "case", platforms: ["windows", "mac", "linux"], internal: false }, destinationList: null },
     ]);
 
     const domain = await a.link("domain", "evil.example");

@@ -29,6 +29,7 @@ export type OrgAuditAction =
   | "integration.response_action_defaults_changed"
   | "integration.host_containment_enabled"
   | "integration.host_containment_disabled"
+  | "integration.destination_list_changed"
   | "integration.stream_gap"
   | "integration.deleted"
   | "sso.enabled"

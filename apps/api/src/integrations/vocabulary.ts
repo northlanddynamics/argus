@@ -4,10 +4,10 @@
  * Provider's capabilities instead.
  */
 
-export const PROVIDERS = ["crowdstrike", "mimecast", "ipinfo"] as const;
+export const PROVIDERS = ["crowdstrike", "mimecast", "ipinfo", "umbrella"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
-export const providerLabel: Record<Provider, string> = { crowdstrike: "CrowdStrike", mimecast: "Mimecast", ipinfo: "IPinfo" };
+export const providerLabel: Record<Provider, string> = { crowdstrike: "CrowdStrike", mimecast: "Mimecast", ipinfo: "IPinfo", umbrella: "Cisco Umbrella" };
 
 export type ProviderCapabilities = {
   /** Receives Alerts from the tool's event stream. */
@@ -18,12 +18,15 @@ export type ProviderCapabilities = {
   responseActions: boolean;
   /** Looks up what is known about an IP address (ADR 0010); at most one such Integration per Organization. */
   looksUpIps: boolean;
+  /** Says which of the tool's destination lists hold a domain (ADR 0014). */
+  checksDomains: boolean;
 };
 
 export const providerCapabilities: Record<Provider, ProviderCapabilities> = {
-  crowdstrike: { receivesAlerts: true, writesBack: true, responseActions: true, looksUpIps: false },
-  mimecast: { receivesAlerts: false, writesBack: false, responseActions: true, looksUpIps: false },
-  ipinfo: { receivesAlerts: false, writesBack: false, responseActions: false, looksUpIps: true },
+  crowdstrike: { receivesAlerts: true, writesBack: true, responseActions: true, looksUpIps: false, checksDomains: false },
+  mimecast: { receivesAlerts: false, writesBack: false, responseActions: true, looksUpIps: false, checksDomains: false },
+  ipinfo: { receivesAlerts: false, writesBack: false, responseActions: false, looksUpIps: true, checksDomains: false },
+  umbrella: { receivesAlerts: false, writesBack: false, responseActions: true, looksUpIps: false, checksDomains: true },
 };
 
 /** The Providers that can do `capability`. */
