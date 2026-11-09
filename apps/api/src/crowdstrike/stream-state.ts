@@ -85,13 +85,18 @@ export async function reportSessionRefresh(db: Db, integrationId: string, at: Da
   await db.update(integrations).set({ sessionRefreshAt: at }).where(eq(integrations.id, integrationId));
 }
 
+/** How stale an Integration's shown last event may get before an event that changes no Alert signals it. */
+export const LAST_EVENT_SIGNAL_MS = 60_000;
+
 /**
  * Processes one event from the Integration's stream, once: an event at or before the stored offset
  * was processed already and is skipped. A detection becomes or updates an Alert, unless its Severity
  * is one the Integration ignores, and a
  * `detection_update` applies a change made in Falcon to the Alerts it names. An event past the
  * next expected offset means Falcon no longer holds those in between: the gap is recorded in the
- * Organization Audit Log, and not backfilled. The offset is stored with the result.
+ * Organization Audit Log, and not backfilled. The offset is stored with the result, and the
+ * Alert queue is signalled only when an Alert changed, a gap was recorded, or the Integration's
+ * last event was more than `LAST_EVENT_SIGNAL_MS` before this one.
  */
 export async function processStreamEvent(db: Db, clock: Clock, integrationId: string, event: StreamEvent) {
   await db.transaction(async (tx) => {
@@ -102,6 +107,7 @@ export async function processStreamEvent(db: Db, clock: Clock, integrationId: st
         name: integrations.name,
         streamOffset: integrations.streamOffset,
         ignoredSeverities: integrations.ignoredSeverities,
+        lastEventAt: integrations.lastEventAt,
       })
       .from(integrations)
       .where(eq(integrations.id, integrationId))
@@ -128,9 +134,9 @@ export async function processStreamEvent(db: Db, clock: Clock, integrationId: st
 
     const detection = readDetection(event);
     // A detection of a Severity the Integration ignores becomes no Alert, and changes none already received.
-    if (detection && !row.ignoredSeverities.includes(detection.severity)) await recordDetection(tx, row, detection, now);
+    const recorded = detection && !row.ignoredSeverities.includes(detection.severity) ? await recordDetection(tx, row, detection, now) : false;
     const update = readFalconUpdate(event, now);
-    if (update) await applyFalconUpdate(tx, row, update, now);
+    const applied = update ? await applyFalconUpdate(tx, row, update, now) : false;
 
     await tx
       .update(integrations)
@@ -140,6 +146,9 @@ export async function processStreamEvent(db: Db, clock: Clock, integrationId: st
         ...(gap && { lastGapAt: now, lastGapFromOffset: gap.fromOffset, lastGapToOffset: gap.toOffset }),
       })
       .where(eq(integrations.id, integrationId));
-    await publish(tx, { kind: "alerts", organizationId: row.organizationId });
+    // Most of a stream is activity that changes no Alert: signalling each would have every open
+    // queue refetch many times a second. The last event's time is kept current to the minute.
+    const lastEventStale = !row.lastEventAt || now.getTime() - row.lastEventAt.getTime() >= LAST_EVENT_SIGNAL_MS;
+    if (recorded || applied || gap || lastEventStale) await publish(tx, { kind: "alerts", organizationId: row.organizationId });
   });
 }

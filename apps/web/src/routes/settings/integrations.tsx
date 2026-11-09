@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
+import { Time } from "@/components/time";
 import { type FormEvent, type ReactNode, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
@@ -531,7 +532,7 @@ function StreamSummary({ integration: i }: { integration: IntegrationView }) {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span>
           <span className="text-muted-foreground">Last event </span>
-          <span className="font-medium">{i.lastEventAt ? ago(i.lastEventAt) : "None yet"}</span>
+          {i.lastEventAt ? <Time iso={i.lastEventAt} className="font-medium" /> : <span className="font-medium">None yet</span>}
         </span>
         <CollapsibleTrigger asChild>
           <Button variant="ghost" size="xs" className="text-muted-foreground">

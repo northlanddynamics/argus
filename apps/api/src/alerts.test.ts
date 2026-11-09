@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
+import { LAST_EVENT_SIGNAL_MS } from "./crowdstrike/stream-state";
 import { createStreamWorker } from "./crowdstrike/stream-worker";
 import { fakeFalcon } from "./test/fake-falcon";
 import { buildTestApp } from "./test/harness";
@@ -522,6 +523,27 @@ describe("Changes made in Falcon", () => {
 
     await falconUpdate(a.stream, ["ldt:1"], { assigned_to_name: "John Smith" }, 1_800_000_000);
     await socket.next((m) => m.type === "case" && m.number === number);
+    await socket.next((m) => m.type === "alerts");
+  });
+
+  test("stream events that change no Alert don't signal Members' live sockets, but keep the last event current to the minute", async () => {
+    const a = await acme();
+    const activity = () => a.stream.emit("AuthActivityAuditEvent", { OperationName: "api_client_authenticated", UserId: "argus" });
+    activity();
+    await a.stream.drained();
+    const socket = await a.t.connect(a.ben);
+
+    // Most of a stream is activity like this; the queue doesn't refetch for it.
+    for (let i = 0; i < 5; i++) activity();
+    a.stream.emit("UserActivityAuditEvent", { OperationName: "detection_update", AuditKeyValues: [{ Key: "composite_id", ValueString: "ldt:unknown" }] });
+    await a.stream.drained();
+    await a.detect("ldt:1", "Credential dumping attempt");
+    await socket.next((m) => m.type === "alerts");
+    expect(socket.messages.filter((m) => m.type === "alerts")).toHaveLength(1);
+
+    // A minute on, the next event signals so the Integration's last event isn't shown stale.
+    a.t.clock.advance(LAST_EVENT_SIGNAL_MS);
+    activity();
     await socket.next((m) => m.type === "alerts");
   });
 
