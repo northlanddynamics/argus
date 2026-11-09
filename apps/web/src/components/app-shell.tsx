@@ -97,19 +97,20 @@ export function AppShell() {
           </a>
           <AppSidebar me={me} />
           <SidebarInset className="min-w-0">
-            <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b bg-background px-4">
+            {/* Sized by its own width, not the viewport: the sidebar and Work queue take a varying share of the screen. */}
+            <header className="@container sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b bg-background px-4">
               <SidebarTrigger className="-ml-1" />
               <Separator orientation="vertical" className="mr-2 data-vertical:h-4 data-vertical:self-center" />
               <Breadcrumb className="min-w-0">
-                <BreadcrumbList className="flex-nowrap sm:flex-wrap">
+                <BreadcrumbList className="flex-nowrap">
                   {crumbs.map((c, i) => (
                     <Fragment key={c.label}>
-                      {/* On a phone only the current page is shown. */}
-                      {i > 0 && <BreadcrumbSeparator className="hidden sm:block" />}
+                      {/* In a narrow header only the current page is shown. */}
+                      {i > 0 && <BreadcrumbSeparator className="hidden @2xl:block" />}
                       <BreadcrumbItem
                         className={cn(
                           i === 0 && crumbs.length > 1 && "font-medium text-foreground",
-                          i < crumbs.length - 1 ? "hidden sm:inline-flex" : "min-w-0 truncate",
+                          i < crumbs.length - 1 ? "hidden @2xl:inline-flex" : "min-w-0 truncate",
                         )}
                       >
                         {c.to && i < crumbs.length - 1 ? (
@@ -126,7 +127,7 @@ export function AppShell() {
                   ))}
                 </BreadcrumbList>
               </Breadcrumb>
-              <div className="ml-auto flex min-w-0 items-center gap-2 sm:gap-4">
+              <div className="ml-auto flex shrink-0 items-center gap-2 @lg:gap-4">
                 <SearchPalette />
                 {me.guest && <GuestSession guest={me.guest} />}
                 <LiveIndicator />

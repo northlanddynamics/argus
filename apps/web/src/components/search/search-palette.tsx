@@ -86,11 +86,11 @@ export function SearchPalette() {
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Search"
-        className="flex h-8 items-center gap-2 rounded-md border bg-muted/40 px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted md:w-64"
+        className="flex h-8 items-center gap-2 rounded-md border bg-muted/40 px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted @2xl:w-64"
       >
         <SearchIcon className="size-4" />
-        <span className="hidden flex-1 text-left md:inline">Search…</span>
-        <Kbd className="hidden md:inline-flex">/</Kbd>
+        <span className="hidden flex-1 text-left @2xl:inline">Search…</span>
+        <Kbd className="hidden @2xl:inline-flex">/</Kbd>
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent

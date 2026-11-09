@@ -66,13 +66,14 @@ export function CaseDiscussion() {
   const readOnly = isReadOnly(c);
   const participating = canParticipate(c);
   return (
-    <section className="grid min-w-0 gap-4" aria-label="Discussion">
+    <section className="grid min-w-0 grid-cols-1 gap-4" aria-label="Discussion">
       <div className="flex min-h-8 items-center">
         <h2 className="text-lg font-semibold">Discussion</h2>
       </div>
       <Card>
-      <CardContent className="grid gap-4">
-        <ol className="grid gap-4" aria-label="Messages">
+      {/* Single fixed-width column: a long token or the composer's placeholder must wrap, not widen the card past the screen. */}
+      <CardContent className="grid grid-cols-1 gap-4">
+        <ol className="grid grid-cols-1 gap-4" aria-label="Messages">
           {messages.data?.map((m) =>
             editing === m.id ? (
               <li key={m.id}>
@@ -153,7 +154,7 @@ function Message({
     onSettled: () => queryClient.invalidateQueries({ queryKey: discussionKey(number) }),
   });
   return (
-    <li className="group/row grid gap-1 border-b pb-4 last:border-b-0" aria-label={`Message from ${m.author.name}`}>
+    <li className="group/row grid min-w-0 grid-cols-1 gap-1 border-b pb-4 last:border-b-0" aria-label={`Message from ${m.author.name}`}>
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
         <span className="font-semibold">{m.author.name}</span>
         {m.falcon && (
@@ -179,7 +180,7 @@ function Message({
       {m.body === null ? (
         <p className="text-sm text-muted-foreground italic">Retracted by {m.author.name}.</p>
       ) : (
-        <p className="text-sm whitespace-pre-wrap">
+        <p className="text-sm wrap-break-word whitespace-pre-wrap">
           {messageParts(m.body, m.mentions).map((part, i) =>
             typeof part === "string" ? (
               part
@@ -373,7 +374,7 @@ function Composer({
 
   return (
     <form
-      className="relative grid gap-2"
+      className="relative grid min-w-0 grid-cols-1 gap-2"
       onSubmit={(e) => {
         e.preventDefault();
         submit();
@@ -398,7 +399,7 @@ function Composer({
           id={listId}
           role="listbox"
           aria-label="People who can see this Case"
-          className="absolute bottom-full left-0 z-10 mb-1 w-64 overflow-hidden rounded-lg border bg-popover text-sm shadow-md"
+          className="absolute bottom-full left-0 z-10 mb-1 w-64 max-w-full overflow-hidden rounded-lg border bg-popover text-sm shadow-md"
         >
           {offered.map((p, i) => (
             <li
