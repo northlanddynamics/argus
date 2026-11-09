@@ -6,28 +6,29 @@ colors:
   foreground: "oklch(0.145 0 0)"
   primary: "oklch(0.205 0 0)"
   primary-foreground: "oklch(0.985 0 0)"
-  muted: "oklch(0.97 0 0)"
-  muted-foreground: "oklch(0.556 0 0)"
-  border: "oklch(0.922 0 0)"
-  ring: "oklch(0.708 0 0)"
-  sidebar: "oklch(0.985 0 0)"
+  muted: "oklch(0.967 0.003 265)"
+  muted-foreground: "oklch(0.52 0.006 265)"
+  border: "oklch(0.92 0.004 265)"
+  ring: "oklch(0.55 0.17 275)"
+  sidebar: "oklch(0.982 0.003 265)"
+  sidebar-accent: "oklch(0.945 0.006 265)"
   destructive: "oklch(0.577 0.245 27.325)"
   notice-surface: "oklch(0.987 0.022 95.277)"
   notice-border: "oklch(0.879 0.169 91.605)"
   notice-ink: "oklch(0.279 0.077 45.635)"
   live: "oklch(0.723 0.219 149.579)"
   reconnecting: "oklch(0.769 0.188 70.08)"
-  overdue-ink: "oklch(0.505 0.213 27.518)"
-  overdue-border: "oklch(0.808 0.114 19.571)"
+  overdue-ink: "oklch(0.52 0.2 355)"
+  overdue-border: "oklch(0.8 0.1 355)"
   mention-surface: "oklch(0.951 0.026 236.824)"
   mention-ink: "oklch(0.391 0.09 240.876)"
   severity-critical: "oklch(0.55 0.21 25)"
   severity-high-surface: "oklch(0.965 0.04 60)"
   severity-high-border: "oklch(0.66 0.17 48)"
   severity-high-ink: "oklch(0.47 0.14 45)"
-  severity-medium-border: "oklch(0.8 0.15 88)"
+  severity-medium-border: "oklch(0.72 0.15 80)"
   severity-medium-ink: "oklch(0.5 0.11 75)"
-  severity-low-border: "oklch(0.75 0.1 250)"
+  severity-low-border: "oklch(0.65 0.12 250)"
   severity-low-ink: "oklch(0.5 0.13 255)"
   operator-chrome: "oklch(0.208 0.042 265.755)"
 typography:
@@ -125,7 +126,7 @@ components:
 
 **Creative North Star: "The Quiet Console"**
 
-Argus is a working tool that Analysts keep open all day, and the design stays out of their way. Surfaces are neutral (white in light mode, near-black in dark mode), and the things that stand out most are those that need attention: a warning, an error, an overdue Task, the live connection, and the people on the Case with you. Colour may also be used decoratively, sparingly and with taste, where it makes the tool more pleasant without competing with those signals. Density is high. Body text is 14px, controls are 32px tall, and the standard gap is 8px, so a Case, its Tasks and its Alerts fit on one desktop screen without scrolling around.
+Argus is a working tool that Analysts keep open all day, and the design stays out of their way. Surfaces are neutral (white in light mode, a near-black slate in dark mode), and the things that stand out most are those that need attention: a warning, an error, an overdue Task, the live connection, and the people on the Case with you. Colour may also be used decoratively, sparingly and with taste, where it makes the tool more pleasant without competing with those signals. Density is high. Body text is 14px, controls are 32px tall, and the standard gap is 8px, so a Case, its Tasks and its Alerts fit on one desktop screen without scrolling around.
 
 The system is shadcn/ui ("radix-nova" style, neutral base colour) kept close to stock on purpose. Buttons, inputs, menus, dialogs, tables and the sidebar behave the way people expect from any modern web app, and no part of the interface needs learning. Argus's own character shows in a few domain markers: Severity shown by a colour ramp and badge weight, the dashed "Internal" badge, monospace Case references, the live-status dot and tinted presence avatars.
 
@@ -148,21 +149,24 @@ The frontmatter lists the light-mode values. Every token also has a dark-mode va
 - **Ink Black** (primary): primary buttons and active selections. A near-black neutral, not a brand hue; the strongest emphasis the UI has.
 
 ### Neutral
+The greys carry a faint cool tint (hue 265, chroma under 0.01), the same family as Operator Slate, so long sessions read softer than pure grey; the page itself stays pure white.
+
 - **Paper White** (background): the page, cards and popovers.
 - **Console Ink** (foreground): all body text and headings.
 - **Soft Grey Wash** (muted): hover fills, secondary buttons, code and backup-code wells.
 - **Quiet Grey Text** (muted-foreground): secondary text, metadata, Case references, "Visible to Guests".
 - **Hairline Grey** (border): every border, divider and input stroke.
-- **Focus Grey** (ring): the focus ring, drawn at 50% opacity.
+- **Focus Indigo** (ring): the focus ring and focused input borders. The one indigo in the UI, so it never reads as a Severity or a signal; a grey ring was too faint on white to find (1.6:1).
 - **Sidebar Mist** (sidebar): the left sidebar, a step off white.
+- **Sidebar Selection** (sidebar-accent): the current page in the icon rail and the open Case in the work queue, a clear step darker than Sidebar Mist.
 
 ### Signal colours
 - **Alarm Red** (destructive): errors, destructive actions (shown as a 10% tint behind red text) and inline `role="alert"` messages.
 - **Amber Notice** (notice-surface, notice-border, notice-ink): the one warning treatment, for "this changed since you saw it", partly applied bulk actions, and confirmations with consequences (closing a Case, write-back settings).
 - **Live Green** (live) and **Reconnecting Amber** (reconnecting): the status dot beside the live-connection label.
-- **Overdue Red** (overdue-ink, overdue-border): the overdue Task badge.
+- **Overdue Rose** (overdue-ink, overdue-border): the overdue Task badge. Rose, not red, so it never reads as a second Critical when the two sit side by side.
 - **Mention Blue** (mention-surface, mention-ink): @mentions highlighted inside Discussion messages.
-- **Severity ramp** (severity-*): the Severity badge only, in the red, orange, yellow, blue, grey order analysts know from Falcon and SIEMs. Strength fades with the Severity: Critical a solid red fill, High an orange tint with a heavy orange outline, Medium a yellow outline with ochre text, Low a blue outline with blue text, Informational a neutral outline with muted text. Its hues stay out of other signals' shapes: Critical is always a filled pill, which Overdue Red (an outline) and Alarm Red (a tint) never are, and Medium is a pill, never an Amber Notice box.
+- **Severity ramp** (severity-*): the Severity badge only, in the red, orange, yellow, blue, grey order analysts know from Falcon and SIEMs. Strength fades with the Severity: Critical a solid red fill, High an orange tint with a heavy orange outline, Medium a yellow outline with ochre text, Low a blue outline with blue text, Informational a neutral outline with muted text. Its hues stay out of other signals' shapes: Critical is always a filled red pill, which Overdue Rose (an outline in another hue) and Alarm Red (a tint) never are, and Medium is a pill, never an Amber Notice box.
 - **Presence tints** (sky, amber, emerald, rose, violet and lime at Tailwind's 200 step): avatar backgrounds, chosen from each person's id so the same person always gets the same tint. They keep the same pastel and dark initials in both themes.
 
 ### Decorative colour
@@ -233,14 +237,14 @@ Familiar and unremarkable: stock shadcn/ui, added with `bunx shadcn@latest add` 
 - **Primary:** Ink Black fill with white text; one per view, for the main action.
 - **Outline / Ghost / Secondary:** white with hairline border, transparent, and grey wash. Hover fills with Soft Grey Wash.
 - **Destructive:** red text on a 10% red tint, never a solid red fill.
-- **Hover / Focus:** primary fades to 80% on hover; focus shows a 3px ring of Focus Grey at 50%; pressing nudges the button down 1px.
+- **Hover / Focus:** primary fades to 80% on hover; focus shows a 3px ring of Focus Indigo at 50%; pressing nudges the button down 1px.
 
 ### Chips (badges)
 - **Style:** pill-shaped, 20px tall, 12px medium text.
 - **Severity:** colour and weight fall together, so it never rests on colour alone: Critical is a solid red pill in semibold, High an orange-tinted pill with a 2px orange outline in semibold, Medium and Low a thin yellow and blue outline with matching text, and Informational a thin neutral outline with muted text (`SeverityBadge` in `src/components/case-badges.tsx`).
 - **Status:** a thin outline; a Closed Case reads "Closed · Benign".
 - **Internal:** a dashed outline at 50% foreground, the marker for anything hidden from Guests.
-- **Overdue:** a thin outline in Overdue Red.
+- **Overdue:** a thin outline in Overdue Rose.
 - **Access:** a thin outline with its icon and the words: a lock and "Restricted", people and "2 Guests".
 - **Tag:** the secondary (grey-fill) pill, "#bec".
 
@@ -253,11 +257,11 @@ Familiar and unremarkable: stock shadcn/ui, added with `bunx shadcn@latest add` 
 
 ### Inputs / Fields
 - **Style:** 32px tall, 10px radius, hairline border, transparent fill, muted placeholder.
-- **Focus:** the border turns Focus Grey with a 3px ring at 50%.
+- **Focus:** the border turns Focus Indigo with a 3px ring at 50%.
 - **Error / Disabled:** `aria-invalid` turns the border red with a faint red ring; disabled fields fade to 50%.
 
 ### Navigation
-- **Sidebar:** shadcn's sidebar in Sidebar Mist: an icon rail, then the work queue. The queue splits open Cases into Assigned to me, Assigned to others and Unassigned; each Member can hide, collapse, sort (Severity or last change) and reorder the sections, remembered per browser. The open Case is a white row with a hairline ring, and rows flash briefly when they change live but hold still under the pointer. It collapses, and the choice is remembered; it starts collapsed in Settings and the Dashboard.
+- **Sidebar:** shadcn's sidebar in Sidebar Mist: an icon rail, then the work queue. The queue splits open Cases into Assigned to me, Assigned to others and Unassigned; each Member can hide, collapse, sort (Severity or last change) and reorder the sections, remembered per browser. The open Case is a Sidebar Selection row with a hairline ring, and rows flash briefly when they change live but hold still under the pointer. It collapses, and the choice is remembered; it starts collapsed in Settings and the Dashboard.
 - **Breadcrumbs:** in the sticky header. The Organization name is medium weight; links are muted until hovered, and the current page is in foreground.
 
 ### Tables
@@ -272,6 +276,13 @@ Familiar and unremarkable: stock shadcn/ui, added with `bunx shadcn@latest add` 
 - **Missing values** are a muted "—". **Counts and sizes** are right-aligned in tabular figures.
 - **Row actions** are muted until the row is pointed at: icon buttons with a tooltip, or a ⋯ menu where there are several.
 - Header, loading and empty rows don't highlight on hover.
+
+### Case list layouts
+The Cases page lays its list out four ways, picked with the Table · Cards · Board · Split switch beside Open Case and remembered per browser (`layout` in the URL wins). Every layout keeps the same tabs, filters, live updates and `j`/`k` keys; the cards are flat (a hairline ring on white, no shadow) and come from `src/routes/cases/list-layouts.tsx`.
+- **Table:** the default; see Tables.
+- **Cards:** every Case as a card, grouped under Severity headings, most severe first. A card has its reference, Overdue and access badges and last change on top, the title, its Case Type and Tags, then Status, Assignee, Alerts and Tasks done below a hairline.
+- **Board:** a column per Status (just Closed in the Closed view, or the filtered Status), each Case as a compact card, an empty column as a dashed "No Cases".
+- **Split:** compact cards beside a preview of the picked one (`preview` in the URL): its details, Case Summary, open Tasks, Alerts and the latest Discussion messages, with Open Case to go to its page. Clicking or moving to a card shows it; Enter opens it.
 
 ### Notices
 - **Style:** shadcn's `Alert` in the Amber Notice treatment, placed inline where the problem is (in the dialog, above the table) rather than as a toast.

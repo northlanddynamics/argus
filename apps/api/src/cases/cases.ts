@@ -373,6 +373,9 @@ export function caseStore(deps: Pick<Deps, "db" | "clock" | "mailer" | "baseUrl"
           // Guests don't learn who else has been let in.
           guests: guest ? sql<null>`null` : sql<number>`(select count(*)::int from ${caseGuests} where ${countingGuests})`,
           alerts: sql<number>`(select count(*)::int from ${alerts} where ${alerts.caseId} = ${cases.id}${guest ? sql` and not ${alerts.internal}` : sql``})`,
+          // Tasks `me` can see, and how many are done.
+          tasksTotal: sql<number>`(select count(*)::int from ${tasks} where ${and(eq(tasks.caseId, cases.id), visibleItems(me, tasks.internal))})`,
+          tasksDone: sql<number>`(select count(*)::int from ${tasks} where ${and(eq(tasks.caseId, cases.id), eq(tasks.done, true), visibleItems(me, tasks.internal))})`,
           // Open Tasks past their due date, among those `me` can see.
           overdueTasks: sql<number>`(select count(*)::int from ${tasks} where ${and(
             eq(tasks.caseId, cases.id),
@@ -392,7 +395,7 @@ export function caseStore(deps: Pick<Deps, "db" | "clock" | "mailer" | "baseUrl"
         (["mine", "unassigned", "open", "closed"] as const).map((v) => countOf(views[v])),
       );
       return {
-        cases: rows.map((row) => ({ ...listItem(row), guests: row.guests, alerts: row.alerts, overdueTasks: row.overdueTasks })),
+        cases: rows.map((row) => ({ ...listItem(row), guests: row.guests, alerts: row.alerts, overdueTasks: row.overdueTasks, tasks: { done: row.tasksDone, total: row.tasksTotal } })),
         counts: { mine, unassigned, open, closed },
       };
     },

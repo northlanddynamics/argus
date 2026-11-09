@@ -945,3 +945,54 @@ test("with the sidebar collapsed, a Case page keeps the navigation rail in view"
     await stop();
   }
 }, 60_000);
+
+test("an Analyst lays the Cases out as Cards, a Board and a Split view with a preview; the choice is remembered", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    const summary = { type: "doc" as const, content: [{ type: "paragraph", content: [{ type: "text", text: "Ransom notes on the Finance share." }] }] };
+    await owner.api.cases.$post({ json: { title: "Ransomware staging on FS-01", caseType: "malware", severity: "critical", summary } });
+    await owner.api.cases.$post({ json: { title: "Vendor portal exposed admin page", caseType: "vulnerability", severity: "low" } });
+    await owner.api.cases[":number"].$patch({ param: { number: "1" }, json: { status: "in_progress" } });
+    const me = await (await owner.api.me.$get()).json();
+    const ownerId = "user" in me ? me.user.id : "";
+    await owner.api.cases[":number"].tasks.$post({ param: { number: "1" }, json: { title: "Isolate FS-01", description: "", ownerId, dueDate: null } });
+    const page = await browser.newPage();
+    await signIn(page, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
+    await page.getByRole("tab", { name: /^All open/ }).click();
+    const layout = page.getByRole("radiogroup", { name: "Layout" });
+
+    // Cards, grouped by Severity.
+    await layout.getByRole("radio", { name: "Cards" }).click();
+    const critical = page.getByRole("region", { name: "Critical Severity" });
+    await critical.getByRole("link", { name: /Ransomware staging on FS-01/ }).waitFor();
+    await critical.getByText("0/1").waitFor();
+    await page.getByRole("region", { name: "Low Severity" }).getByRole("link", { name: /Vendor portal exposed admin page/ }).waitFor();
+
+    // The choice survives a visit without it in the URL.
+    await page.goto(`${baseUrl}/?view=open`);
+    await page.getByRole("region", { name: "Critical Severity" }).waitFor();
+
+    // A Board, a column per Status.
+    await layout.getByRole("radio", { name: "Board" }).click();
+    await page.getByRole("region", { name: "In Progress" }).getByRole("link", { name: /Ransomware staging on FS-01/ }).waitFor();
+    await page.getByRole("region", { name: "New" }).getByRole("link", { name: /Vendor portal exposed admin page/ }).waitFor();
+    await page.getByRole("region", { name: "Awaiting Info" }).getByText("No Cases").waitFor();
+
+    // Split: picking a Case previews it; Enter opens it.
+    await layout.getByRole("radio", { name: "Split" }).click();
+    const preview = page.getByRole("article", { name: /^Preview of C-/ });
+    await preview.waitFor();
+    await page.getByRole("list", { name: "Cases" }).getByRole("link", { name: /Ransomware staging on FS-01/ }).click();
+    await preview.getByRole("heading", { name: "Ransomware staging on FS-01" }).waitFor();
+    await preview.getByText("Ransom notes on the Finance share.").waitFor();
+    await preview.getByRole("list", { name: "Open Tasks" }).getByText("Isolate FS-01").waitFor();
+    await page.getByRole("list", { name: "Cases" }).getByRole("link", { name: /Vendor portal exposed admin page/ }).click();
+    await preview.getByRole("heading", { name: "Vendor portal exposed admin page" }).waitFor();
+    await page.keyboard.press("Enter");
+    await page.waitForURL(`${baseUrl}/cases/2`);
+  } finally {
+    await stop();
+  }
+}, 60_000);

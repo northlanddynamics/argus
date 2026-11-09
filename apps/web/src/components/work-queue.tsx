@@ -301,7 +301,7 @@ export function WorkQueue({ me, current }: { me: Me; current: number | null }) {
 }
 
 export const rowClass =
-  "flex w-full scroll-mt-9 flex-col items-start gap-1.5 border-b px-4 py-3 text-left text-sm outline-none transition-colors duration-700 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-inset data-[active=true]:bg-background data-[active=true]:ring-1 data-[active=true]:ring-foreground/20 data-[active=true]:ring-inset data-[active=true]:focus-visible:ring-2 data-[active=true]:focus-visible:ring-sidebar-ring";
+  "flex w-full scroll-mt-9 flex-col items-start gap-1.5 border-b px-4 py-3 text-left text-sm outline-none transition-colors duration-700 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-inset data-[active=true]:bg-sidebar-accent data-[active=true]:ring-1 data-[active=true]:ring-foreground/20 data-[active=true]:ring-inset data-[active=true]:focus-visible:ring-2 data-[active=true]:focus-visible:ring-sidebar-ring";
 
 function QueueRow({
   c,

@@ -4,7 +4,7 @@ import { useCasePresence } from "@/lib/live";
 
 const tints = ["bg-sky-200", "bg-amber-200", "bg-emerald-200", "bg-rose-200", "bg-violet-200", "bg-lime-200"];
 
-const initials = (name: string) =>
+export const initials = (name: string) =>
   name
     .split(/\s+/)
     .filter(Boolean)
@@ -12,7 +12,17 @@ const initials = (name: string) =>
     .map((part) => part[0]!.toUpperCase())
     .join("");
 
-const tintFor = (id: string) => tints[[...id].reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % tints.length];
+/** The same tint for the same person, in every view. */
+export const tintFor = (id: string) => tints[[...id].reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % tints.length];
+
+/** A small avatar for a person named in a list: their initials on their tint. */
+export function PersonAvatar({ person }: { person: { id: string | null; name: string } }) {
+  return (
+    <Avatar size="sm" className="size-5" aria-hidden>
+      <AvatarFallback className={`text-[9px]! font-semibold text-slate-900 ${tintFor(person.id ?? person.name)}`}>{initials(person.name)}</AvatarFallback>
+    </Avatar>
+  );
+}
 
 /** "Viewing now": who has Case `number` open, live. */
 export function PresenceAvatars({ number }: { number: number }) {

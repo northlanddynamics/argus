@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon, LockIcon, UsersIcon } from "lucide-react";
+import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon, Columns3Icon, LayoutGridIcon, LockIcon, SquareSplitHorizontalIcon, TableIcon, UsersIcon } from "lucide-react";
 import { Fragment, useEffect, useRef } from "react";
 import { Time } from "@/components/time";
 import { SeverityBadge, StatusBadge } from "@/components/case-badges";
@@ -13,6 +13,7 @@ import { FilterBar, FilterSelect } from "@/components/filter-bar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { api } from "@/lib/api";
 import {
   CASE_TYPES,
@@ -30,6 +31,7 @@ import {
 import { normaliseTag, tagLabel, tagsInUseQuery } from "@/lib/tags";
 import { cn } from "@/lib/utils";
 import { useJustChanged } from "@/lib/use-just-changed";
+import { CASE_LAYOUTS, type CaseLayout, CaseBoard, CaseCards, CaseSplit } from "@/routes/cases/list-layouts";
 import { OpenCaseDialog } from "@/routes/cases/open-case-dialog";
 
 /**
@@ -55,6 +57,10 @@ export type CaseListSearch = {
   access?: Access;
   sort?: Sort;
   order?: Order;
+  /** How the Cases are laid out; see `CASE_LAYOUTS`. */
+  layout?: CaseLayout;
+  /** Split only: the Case shown beside the list. */
+  preview?: number;
 };
 
 const pick = <T extends string>(list: readonly T[], value: unknown) => (list.includes(value as T) ? (value as T) : undefined);
@@ -69,7 +75,28 @@ export const validateCaseListSearch = (search: Record<string, unknown>): CaseLis
   access: pick(ACCESS, search.access),
   sort: pick(SORTS, search.sort),
   order: pick(["asc", "desc"] as const, search.order),
+  layout: pick(CASE_LAYOUTS, search.layout),
+  preview: Number.isInteger(Number(search.preview)) && Number(search.preview) > 0 ? Number(search.preview) : undefined,
 });
+
+/** The layout last picked in this browser, used when the URL doesn't name one. */
+const LAYOUT_KEY = "cases-layout";
+const storedLayout = (): CaseLayout | undefined => {
+  try {
+    return pick(CASE_LAYOUTS, localStorage.getItem(LAYOUT_KEY));
+  } catch {
+    return undefined;
+  }
+};
+const storeLayout = (layout: CaseLayout) => {
+  try {
+    localStorage.setItem(LAYOUT_KEY, layout);
+  } catch {
+    // Storage may be unavailable; the URL still carries the layout.
+  }
+};
+const layoutLabel: Record<CaseLayout, string> = { table: "Table", cards: "Cards", board: "Board", split: "Split" };
+const layoutIcon: Record<CaseLayout, typeof TableIcon> = { table: TableIcon, cards: LayoutGridIcon, board: Columns3Icon, split: SquareSplitHorizontalIcon };
 
 const viewLabel: Record<CaseListView, string> = { mine: "My Cases", unassigned: "Unassigned", open: "All open", closed: "Closed" };
 const accessLabel: Record<Access, string> = { restricted: "Restricted", guests: "With Guests" };
@@ -82,7 +109,7 @@ const noFilters = { status: undefined, severity: undefined, caseType: undefined,
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /** j and k move between the Cases in the list, Enter opens the one in focus. */
-function useRowKeys(table: React.RefObject<HTMLTableElement | null>) {
+function useRowKeys(table: React.RefObject<HTMLElement | null>) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || (e.key !== "j" && e.key !== "k")) return;
@@ -94,7 +121,7 @@ function useRowKeys(table: React.RefObject<HTMLTableElement | null>) {
       const next = at === -1 ? 0 : Math.min(Math.max(at + (e.key === "j" ? 1 : -1), 0), links.length - 1);
       e.preventDefault();
       links[next]?.focus();
-      links[next]?.closest("tr")?.scrollIntoView({ block: "nearest" });
+      (links[next]?.closest("tr") ?? links[next])?.scrollIntoView({ block: "nearest" });
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -109,13 +136,16 @@ export function CasesPage() {
   const order = search.order ?? "desc";
   const setSearch = (next: Partial<CaseListSearch>) => navigate({ search: (prev) => ({ ...prev, ...next }) });
   const filtered = FILTERS.some((f) => search[f] !== undefined);
-  const table = useRef<HTMLTableElement>(null);
-  useRowKeys(table);
+  const layout = search.layout ?? storedLayout() ?? "table";
+  const list = useRef<HTMLDivElement>(null);
+  useRowKeys(list);
 
+  // The layout and the previewed Case only change how the list is shown, so they don't refetch it.
+  const { layout: _layout, preview: _preview, ...filters } = search;
   const cases = useQuery({
-    queryKey: [...casesKey, { ...search, view }],
+    queryKey: [...casesKey, { ...filters, view }],
     queryFn: async () => {
-      const res = await api.cases.$get({ query: { ...search, view } });
+      const res = await api.cases.$get({ query: { ...filters, view } });
       if (!res.ok) throw new Error(`The server answered ${res.status}`);
       return res.json();
     },
@@ -156,7 +186,38 @@ export function CasesPage() {
 
   return (
     <div className="grid w-full grid-cols-1 max-w-page gap-4">
-      <PageHeader title="Cases" actions={<OpenCaseDialog />} />
+      <PageHeader
+        title="Cases"
+        actions={
+          <>
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              size="sm"
+              spacing={0}
+              aria-label="Layout"
+              value={layout}
+              onValueChange={(next) => {
+                const picked = pick(CASE_LAYOUTS, next);
+                if (!picked) return;
+                storeLayout(picked);
+                setSearch({ layout: picked, preview: undefined });
+              }}
+            >
+              {CASE_LAYOUTS.map((l) => {
+                const Icon = layoutIcon[l];
+                return (
+                  <ToggleGroupItem key={l} value={l} aria-label={layoutLabel[l]} className="gap-1.5 px-2.5">
+                    <Icon aria-hidden />
+                    <span className="hidden sm:inline">{layoutLabel[l]}</span>
+                  </ToggleGroupItem>
+                );
+              })}
+            </ToggleGroup>
+            <OpenCaseDialog />
+          </>
+        }
+      />
       <div className="grid gap-3">
         <Tabs value={view} activationMode="manual">
           <TabsList variant="line" aria-label="Case views" className="w-full justify-start overflow-x-auto overflow-y-hidden border-b">
@@ -197,10 +258,33 @@ export function CasesPage() {
         </Alert>
       )}
 
-      {!(cases.isError && !rows) && (
+      <div ref={list} className="contents">
+      {!(cases.isError && !rows) && layout !== "table" && rows?.length !== 0 && (
+        <>
+          {layout === "cards" && <CaseCards rows={rows} justChanged={justChanged} />}
+          {layout === "board" && (
+            <CaseBoard rows={rows} statuses={view === "closed" ? ["closed"] : search.status ? [search.status] : OPEN_STATUSES} justChanged={justChanged} />
+          )}
+          {layout === "split" && (
+            <CaseSplit
+              rows={rows}
+              preview={search.preview}
+              onPreview={(preview) => navigate({ search: (prev) => ({ ...prev, preview }), replace: true, resetScroll: false })}
+              onOpen={openCase}
+              justChanged={justChanged}
+            />
+          )}
+        </>
+      )}
+      {!(cases.isError && !rows) && layout !== "table" && rows?.length === 0 && (
+        <Card className="py-10 text-center">
+          <EmptyState view={view} filtered={filtered} unassigned={counts?.unassigned ?? 0} onClear={() => setSearch(noFilters)} />
+        </Card>
+      )}
+      {!(cases.isError && !rows) && layout === "table" && (
         // Wider lists give Case Type, Alerts and Opened columns of their own rather than stretching the Title.
         <Card className="@container py-0">
-          <Table ref={table} className="@4xl:table-fixed">
+          <Table className="@4xl:table-fixed">
             {/* Set widths, so the columns stay put from one view, filter or sort to the next; the Title takes the rest. */}
             <colgroup>
               <col className="@4xl:w-20" />
@@ -326,6 +410,7 @@ export function CasesPage() {
           </Table>
         </Card>
       )}
+      </div>
 
       {rows && rows.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -336,7 +421,7 @@ export function CasesPage() {
           </p>
           <p>
             <kbd className="font-sans font-medium text-foreground">j</kbd> and <kbd className="font-sans font-medium text-foreground">k</kbd> move between
-            Cases, <kbd className="font-sans font-medium text-foreground">Enter</kbd> opens one
+            Cases, <kbd className="font-sans font-medium text-foreground">Enter</kbd> opens one{layout === "split" && ", clicking one shows it beside the list"}
           </p>
         </div>
       )}
