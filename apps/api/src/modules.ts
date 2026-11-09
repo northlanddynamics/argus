@@ -10,6 +10,7 @@ import { alertStore } from "./alerts/alerts";
 import { integrationStore } from "./integrations/integrations";
 import { internalStore } from "./internal/internal";
 import { ipLookupStore } from "./ipinfo/ip-lookups";
+import { domainUrlLookupStore } from "./virustotal/domain-url-lookups";
 import { hashLookupStore } from "./virustotal/hash-lookups";
 import { bulkLookupStore } from "./observables/bulk-lookup";
 import { assetStore, ignoredObservableStore, observableStore } from "./observables/observables";
@@ -57,6 +58,7 @@ export function createModules(deps: Deps) {
     integrations: integrationStore(deps),
     ipLookups: ipLookupStore(deps),
     hashLookups: hashLookupStore(deps),
+    domainUrlLookups: domainUrlLookupStore(deps),
     alerts: alertStore(deps),
     notifications: notificationStore(deps),
     teamsChannel: teamsChannelStore(deps),

@@ -1,6 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 import { reservedRange } from "api/ipinfo/ipinfo";
 import { defang, type ObservableType } from "api/observables/vocabulary";
+import { withheldDomain } from "api/virustotal/virustotal";
 import { api, errorMessage } from "@/lib/api";
 import { shortHash } from "@/lib/evidence";
 
@@ -61,11 +62,17 @@ export function observableCopies(type: ObservableType, value: string) {
 }
 
 /**
- * Where an Observable can be looked up outside Argus: a hash in VirusTotal, a public IP on
- * IPinfo.io. Reserved IPs mean nothing outside their own network, so have none (as in ADR 0010).
+ * Where an Observable can be looked up outside Argus: a hash or a domain (an email address's, too)
+ * in VirusTotal, a public IP on IPinfo.io. Reserved IPs and internal names mean nothing outside
+ * their own network, so have none (as in ADR 0010 and ADR 0012). A URL's VirusTotal page is under an
+ * identifier only VirusTotal knows, so its popup links it once VirusTotal has reported on it.
  */
 export function observableLookups(type: ObservableType, value: string): { label: string; href: string }[] {
   if (HASHES.includes(type)) return [{ label: "Open in VirusTotal", href: `https://www.virustotal.com/gui/file/${encodeURIComponent(value)}` }];
+  if (type === "domain" || type === "email") {
+    const domain = type === "email" ? value.slice(value.lastIndexOf("@") + 1) : value;
+    return withheldDomain(domain) ? [] : [{ label: "Open in VirusTotal", href: `https://www.virustotal.com/gui/domain/${encodeURIComponent(domain)}` }];
+  }
   if (type === "ip" && !reservedRange(value)) return [{ label: "Open in IPinfo.io", href: `https://ipinfo.io/${encodeURIComponent(value)}` }];
   return [];
 }

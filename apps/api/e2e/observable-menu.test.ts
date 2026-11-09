@@ -40,7 +40,7 @@ async function signIn(page: Page, baseUrl: string, email: string, code: () => Pr
 
 const SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
-test("right-clicking an Observable copies it defanged or fanged, and opens a hash in VirusTotal or a public IP on IPinfo.io", async () => {
+test("right-clicking an Observable copies it defanged or fanged, and opens a hash or domain in VirusTotal or a public IP on IPinfo.io", async () => {
   const { t, baseUrl, stop } = await serveTestApp();
   try {
     await t.inviteOwner("Acme Security", "owner@acme.example");
@@ -67,12 +67,12 @@ test("right-clicking an Observable copies it defanged or fanged, and opens a has
     };
     const clipboard = () => page.evaluate<string>("navigator.clipboard.readText()");
 
-    // A domain on the Case's Observables: both copies, and nowhere to look it up.
+    // A domain on the Case's Observables: both copies, and VirusTotal.
     await page.goto(`${baseUrl}/cases/1/observables`);
     await page.getByRole("link", { name: "Domain invoice-portal[.]biz" }).click({ button: "right" });
     await menu.getByRole("menuitem", { name: "Copy defanged" }).waitFor();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/case-domain.png` });
-    expect(await menu.getByRole("menuitem", { name: /^Open in/ }).count()).toBe(0);
+    expect(await menu.getByRole("menuitem", { name: /^Open in/ }).allTextContents()).toEqual(["Open in VirusTotal"]);
     await menu.getByRole("menuitem", { name: "Copy defanged" }).click();
     expect(await clipboard()).toBe("invoice-portal[.]biz");
     await page.getByRole("link", { name: "Domain invoice-portal[.]biz" }).click({ button: "right" });

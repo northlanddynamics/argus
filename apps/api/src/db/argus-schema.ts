@@ -19,7 +19,7 @@ import {
 import type { FalconHost, FalconIdentity } from "../crowdstrike/falcon";
 import type { CaseSummary } from "../cases/case-summary";
 import type { IpDetails } from "../ipinfo/ipinfo";
-import type { FileReport } from "../virustotal/virustotal";
+import type { DomainReport, FileReport, UrlReport } from "../virustotal/virustotal";
 import { CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabulary";
 import { STORED_LINK_TYPES } from "../case-links/vocabulary";
 import { ASSET_TYPES, OBSERVABLE_TYPES } from "../observables/vocabulary";
@@ -907,6 +907,31 @@ export const hashLookups = pgTable(
   (t) => [
     uniqueIndex("hash_lookups_hash_idx").on(t.organizationId, t.hash),
     check("hash_lookups_report", sql`${t.found} = (${t.report} IS NOT NULL)`),
+  ],
+);
+
+/**
+ * What VirusTotal said about each domain and URL an Organization's Members looked up (ADR 0012),
+ * one row per Organization, kind and value (a domain in lowercase ASCII, or a URL as Argus
+ * normalises it), replaced on every fetch. `found` false means VirusTotal had never seen it. As for
+ * `hash_lookups`, only answers are stored: why a lookup failed belongs to the key that made it.
+ */
+export const virustotalLookups = pgTable(
+  "virustotal_lookups",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    kind: text("kind", { enum: ["domain", "url"] }).notNull(),
+    value: text("value").notNull(),
+    found: boolean("found").notNull(),
+    report: jsonb("report").$type<DomainReport | UrlReport>(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    uniqueIndex("virustotal_lookups_value_idx").on(t.organizationId, t.kind, t.value),
+    check("virustotal_lookups_report", sql`${t.found} = (${t.report} IS NOT NULL)`),
   ],
 );
 

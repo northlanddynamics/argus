@@ -1,8 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
-import { HashText } from "@/components/hash-details";
 import { IpText } from "@/components/ip-details";
-import { hasContextPopup, ObservableHoverCard } from "@/components/observable-details";
+import { hasContextPopup, ObservableHoverCard, ObservableText } from "@/components/observable-details";
 import { ObservableMenu } from "@/components/observable-menu";
 import { Link } from "@tanstack/react-router";
 import { useDeferredValue, useMemo, useState } from "react";
@@ -196,9 +195,9 @@ function ResultRow({ result: r, selected, onSelect }: { result: LookupResult; se
         ) : r.type === "ip" ? (
           <IpText ip={r.value} className="no-underline" />
         ) : hasContextPopup(r.type) ? (
-          <HashText hash={r.value} className="no-underline">
+          <ObservableText type={r.type} value={r.value} className="no-underline">
             {shown}
-          </HashText>
+          </ObservableText>
         ) : (
           <ObservableMenu observable={r}>
             <span>{shown}</span>

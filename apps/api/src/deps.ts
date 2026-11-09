@@ -28,7 +28,7 @@ export type Deps = {
   credentials: CredentialSealer;
   /** Makes IPinfo clients, to look IPs up while a Member waits (ADR 0010). */
   ipinfo: IpinfoConnector;
-  /** Makes VirusTotal clients, one per Member's key, to look hashes up while they wait (ADR 0011). */
+  /** Makes VirusTotal clients, one per Member's key, to look hashes, domains and URLs up while they wait (ADR 0011, 0012). */
   virustotal: VirustotalConnector;
 };
 

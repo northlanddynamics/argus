@@ -1,5 +1,6 @@
 import { type QueryClient, queryOptions, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, errorMessage } from "@/lib/api";
+import { domainLookupsKey, urlLookupsKey } from "@/lib/domain-url-lookups";
 
 export { type FileReport, type HashType, enginesThatAnalysed } from "api/virustotal/virustotal";
 
@@ -50,11 +51,13 @@ export const virustotalKeyQuery = queryOptions({
   },
 });
 
-/** After the key changes, lookups that had none, or failed with the old one, are asked again. */
+/** After the key changes, lookups that had none, or failed with the old one, are asked again: hashes, domains and URLs. */
 const keyChanged = (queryClient: QueryClient) =>
   Promise.all([
     queryClient.invalidateQueries({ queryKey: virustotalKeyKey }),
     queryClient.invalidateQueries({ queryKey: hashLookupsKey }),
+    queryClient.invalidateQueries({ queryKey: domainLookupsKey }),
+    queryClient.invalidateQueries({ queryKey: urlLookupsKey }),
   ]);
 
 /** Sets or replaces the Member's own key; VirusTotal checks it first. */

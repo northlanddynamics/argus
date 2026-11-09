@@ -344,6 +344,13 @@
       "when": 1794162590892,
       "tag": "0048_virustotal",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1794183567282,
+      "tag": "0049_virustotal_lookups",
+      "breakpoints": true
     }
   ]
 }
