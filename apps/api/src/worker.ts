@@ -13,11 +13,12 @@ import { mimecastHttpClient } from "./mimecast/mimecast-http";
 import { createNotificationWorker } from "./notifications/notifications";
 import { createResponseActionSender } from "./response-actions/sender";
 import { createTeamsSender } from "./teams/teams";
+import { createUmbrellaHealthChecker } from "./umbrella/health";
 
 /**
  * The `worker` process (ADR 0001): same image as `web`, started with `bun apps/api/src/worker.ts`.
  * Holds the CrowdStrike Event Streams connections, sends write-backs and Response Actions to Falcon,
- * sends Response Actions to Mimecast and checks Mimecast and IPinfo Integrations' credentials, fetches Alerts' comments and hosts' and accounts' Enrichment from Falcon, notifies owners of overdue Tasks and retries Teams channel posts;
+ * sends Response Actions to Mimecast and Cisco Umbrella and checks Mimecast, Umbrella and IPinfo Integrations' credentials, fetches Alerts' comments and hosts' and accounts' Enrichment from Falcon, notifies owners of overdue Tasks and retries Teams channel posts;
  * run as many as you like, each stream is owned by one, and each write-back, Response Action,
  * comment fetch, Enrichment fetch, notification and Teams post is made by one.
  */
@@ -31,9 +32,10 @@ const comments = createCommentSyncer(deps, { connect });
 const hosts = createHostEnricher(deps, { connect });
 const identities = createIdentityEnricher(deps, { connect });
 const mimecast = (credentials: Parameters<typeof mimecastHttpClient>[0]) => mimecastHttpClient(credentials);
-const responseActions = createResponseActionSender(deps, { connect, mimecast });
+const responseActions = createResponseActionSender(deps, { connect, mimecast, umbrella: deps.umbrella });
 const mimecastHealth = createMimecastHealthChecker(deps, { connect: mimecast });
 const ipinfoHealth = createIpinfoHealthChecker(deps, { connect: deps.ipinfo });
+const umbrellaHealth = createUmbrellaHealthChecker(deps, { connect: deps.umbrella });
 const notifications = createNotificationWorker(deps);
 const teams = createTeamsSender(deps);
 
@@ -47,6 +49,7 @@ const tick = () =>
     responseActions.tick().catch((e: unknown) => console.error("worker: response actions:", e)),
     mimecastHealth.tick().catch((e: unknown) => console.error("worker: mimecast health:", e)),
     ipinfoHealth.tick().catch((e: unknown) => console.error("worker: ipinfo health:", e)),
+    umbrellaHealth.tick().catch((e: unknown) => console.error("worker: umbrella health:", e)),
     notifications.tick().catch((e: unknown) => console.error("worker: notifications:", e)),
     teams.tick().catch((e: unknown) => console.error("worker: teams:", e)),
   ]);

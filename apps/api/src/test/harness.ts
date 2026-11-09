@@ -17,6 +17,7 @@ import { type ClientMessage, LIVE_PATH, type ServerMessage } from "../realtime/m
 import { postgresSignals } from "../realtime/signals";
 import { captureTeams } from "../teams/teams-webhook";
 import { fakeIpinfo } from "./fake-ipinfo";
+import { fakeUmbrella } from "./fake-umbrella";
 import { fakeVirustotal } from "./fake-virustotal";
 import { createTestDb } from "./db";
 
@@ -60,6 +61,7 @@ export async function buildTestApp({
   const evidence = memoryEvidenceStorage();
   const ipinfo = fakeIpinfo();
   const virustotal = fakeVirustotal();
+  const umbrella = fakeUmbrella();
   const deps: Deps = {
     db,
     auth,
@@ -72,6 +74,7 @@ export async function buildTestApp({
     credentials: credentialSealer("test-credentials-secret"),
     ipinfo: ipinfo.connect,
     virustotal: virustotal.connect,
+    umbrella: umbrella.connect,
   };
 
   /**
@@ -281,6 +284,8 @@ export async function buildTestApp({
     ipinfo,
     /** The VirusTotal every Member's hash lookups go to (`test/fake-virustotal.ts`). */
     virustotal,
+    /** The Cisco Umbrella every Umbrella Integration's web-process calls go to (`test/fake-umbrella.ts`). */
+    umbrella,
     /** Evidence files as stored, by storage key. */
     evidenceObjects: evidence.objects,
     live,

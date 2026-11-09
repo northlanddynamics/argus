@@ -11,6 +11,7 @@ import { guestGrantsOf } from "../guests/grants";
 import { openCredentials } from "../integrations/credentials";
 import { providerCapabilities } from "../integrations/vocabulary";
 import type { BlockedSenderType, MimecastConnector } from "../mimecast/mimecast";
+import { findExact, type UmbrellaConnector } from "../umbrella/umbrella";
 import { notify } from "../notifications/notifications";
 import type { AssetType, ObservableType } from "../observables/vocabulary";
 import { publish } from "../realtime/signals";
@@ -19,7 +20,8 @@ import { containmentLiftedBy, recordStateChange, type Subject } from "./response
 
 /**
  * The worker's half of Response Actions (ADR 0007): sends what the outbox holds, to Falcon as custom
- * IOCs or to Mimecast as Organization-wide Blocked Senders entries, as the Falcon
+ * IOCs, to Mimecast as Organization-wide Blocked Senders entries, or to Cisco Umbrella as domains in
+ * the destination list each was taken with (ADR 0014), as the Falcon
  * write-back sender does (`crowdstrike/write-back.ts`). Each attempt is claimed with
  * `FOR UPDATE SKIP LOCKED`, so however many workers run, each is made by one. A failure is retried
  * with backoff; when the attempts run out the Response Action is Failed, and the Member who took it
@@ -55,7 +57,10 @@ export const responseActionRetryDelayMs = (attempts: number) => Math.min(30_000 
 /** Who the Case Audit Log says made a change the worker made. */
 const ARGUS = { type: "system" as const, name: "Argus" };
 
-/** `C-12: Phishing at Acme`, and a link to the Case: the IOC's description in Falcon, and the blocked sender's in Mimecast. */
+/**
+ * `C-12: Phishing at Acme`, and a link to the Case: the IOC's description in Falcon, and the blocked
+ * sender's in Mimecast. Umbrella's comment has it on one line.
+ */
 export const iocDescription = (c: { number: number; title: string }, baseUrl: string) =>
   `${caseRef(c.number)}: ${c.title}\n${new URL(`/cases/${c.number}`, baseUrl)}`;
 
@@ -89,12 +94,12 @@ const refetchHost = (tx: Tx, r: { organizationId: string; integrationId: string;
     .onConflictDoUpdate({ target: [falconHostSnapshots.integrationId, falconHostSnapshots.deviceId], set: { due: true } });
 
 /**
- * `connect` makes Falcon clients and `mimecast` Mimecast ones; a Response Action through a Provider
- * the sender has no connector for fails its attempt.
+ * `connect` makes Falcon clients, `mimecast` Mimecast ones and `umbrella` Cisco Umbrella ones; a
+ * Response Action through a Provider the sender has no connector for fails its attempt.
  */
 export function createResponseActionSender(
   { db, clock, credentials, baseUrl }: Pick<Deps, "db" | "clock" | "credentials" | "baseUrl">,
-  { connect, mimecast }: { connect?: FalconConnector; mimecast?: MimecastConnector },
+  { connect, mimecast, umbrella }: { connect?: FalconConnector; mimecast?: MimecastConnector; umbrella?: UmbrellaConnector },
 ) {
   const falconTool = async (integrationId: string) => {
     const found = await streamConnection(db, credentials, integrationId);
@@ -153,6 +158,28 @@ export function createResponseActionSender(
     return { revision: row.credentialsRevision, tool };
   };
 
+  /**
+   * Umbrella names what Argus added by the list and the destination's id in it, so removal reaches
+   * the list it was added to whatever the Integration adds to now: `1234/56`.
+   */
+  const umbrellaTool = async (row: typeof integrations.$inferSelect) => {
+    if (!umbrella) throw new Error("This worker can't reach Cisco Umbrella");
+    const client = umbrella(await openCredentials(credentials, "umbrella", row.credentials));
+    const tool: Tool = {
+      holds: async (r) => !!findExact(await client.destinations(r.destinationList!.id), r.targetValue),
+      create: async (r, c) =>
+        `${r.destinationList!.id}/${await client.addDestination(r.destinationList!.id, {
+          destination: r.targetValue,
+          comment: iocDescription(c, baseUrl).replace("\n", " "),
+        })}`,
+      remove: async (r) => {
+        const [listId, id] = r.externalId.split("/");
+        return client.removeDestination(Number(listId), id!);
+      },
+    };
+    return { revision: row.credentialsRevision, tool };
+  };
+
   /** One client per Integration, until its credentials are rotated. */
   const clients = new Map<string, { revision: number; tool: Tool }>();
   const clientFor = async (integrationId: string) => {
@@ -160,7 +187,8 @@ export function createResponseActionSender(
     if (!row) return null;
     const cached = clients.get(integrationId);
     if (cached?.revision === row.credentialsRevision) return cached.tool;
-    const made = row.provider === "mimecast" ? await mimecastTool(row) : await falconTool(integrationId);
+    const made =
+      row.provider === "mimecast" ? await mimecastTool(row) : row.provider === "umbrella" ? await umbrellaTool(row) : await falconTool(integrationId);
     if (!made) return null;
     clients.set(integrationId, made);
     return made.tool;

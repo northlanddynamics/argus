@@ -7,12 +7,19 @@ import type { Tx } from "../db/client";
 import { integrations, responseActions as responseActionsTable } from "../db/schema";
 import type { Deps } from "../deps";
 import { secureId } from "../ids";
-import { type ProviderCredentials, sealCredentials } from "./credentials";
+import { openCredentials, type ProviderCredentials, sealCredentials } from "./credentials";
 import { type Provider, providerCapabilities, providerLabel } from "./vocabulary";
 import type { Membership } from "../members/membership";
 import { publish } from "../realtime/signals";
 import { SEVERITIES, type Severity, severityLabel } from "../cases/vocabulary";
-import { DEFAULT_FALCON_IOC_DEFAULTS, type FalconIocDefaults, FALCON_IOC_PLATFORMS, falconIocPlatformLabel } from "../response-actions/vocabulary";
+import {
+  type ChosenDestinationList,
+  DEFAULT_FALCON_IOC_DEFAULTS,
+  type FalconIocDefaults,
+  FALCON_IOC_PLATFORMS,
+  falconIocPlatformLabel,
+} from "../response-actions/vocabulary";
+import { type DestinationList, destinationListAccessLabel } from "../umbrella/umbrella";
 
 /**
  * Integrations as Admins manage them: add one, rotate its credentials, pause and resume it, allow or
@@ -22,7 +29,9 @@ import { DEFAULT_FALCON_IOC_DEFAULTS, type FalconIocDefaults, FALCON_IOC_PLATFOR
  * Member sees the Organization's Integrations and how their streams are doing; only Admins see which
  * credentials are in use.
  * The stream itself is the worker's (`crowdstrike/stream-worker.ts`); so is checking the credentials
- * of a Provider with no stream, such as Mimecast (`mimecast/health.ts`).
+ * of a Provider with no stream, such as Mimecast (`mimecast/health.ts`) or Cisco Umbrella
+ * (`umbrella/health.ts`). Choosing a Cisco Umbrella Integration's destination list (ADR 0014) asks
+ * Umbrella for its lists while the Admin waits.
  */
 
 /** The Response Actions taken through each Integration, by where they stand, with the latest failure. */
@@ -100,9 +109,25 @@ export class OneIpinfoIntegration extends Error {
 /** The credentials given aren't the kind the Integration's Provider takes. */
 export class WrongCredentials extends Error {
   constructor(provider: Provider) {
-    super(provider === "ipinfo" ? "IPinfo takes an API token" : `${providerLabel[provider]} takes a client ID and secret`);
+    super(
+      provider === "ipinfo"
+        ? "IPinfo takes an API token"
+        : provider === "umbrella"
+          ? "Cisco Umbrella takes an API key and secret"
+          : `${providerLabel[provider]} takes a client ID and secret`,
+    );
   }
 }
+
+/** Umbrella holds no destination list with the id asked for. */
+export class UnknownDestinationList extends Error {
+  constructor() {
+    super("Umbrella has no destination list with that id");
+  }
+}
+
+/** Umbrella couldn't be asked for the Integration's destination lists; the message says why. */
+export class ToolUnavailable extends Error {}
 
 const uniqueViolationOf = (e: unknown) => {
   const cause = (e as { cause?: { code?: string; constraint_name?: string } }).cause;
@@ -115,7 +140,7 @@ const hintOf = (clientId: string) => `…${clientId.slice(-4)}`;
 /** What identifies the credentials to Admins: the client id's last four, or the token's. */
 const credentialsHint = (c: ProviderCredentials[Provider]) => hintOf("token" in c ? c.token : c.clientId);
 /** "client …a1b2" or "token …a1b2", as the Org Audit Log says it. */
-const credentialsLabel = (provider: Provider, hint: string) => `${provider === "ipinfo" ? "token" : "client"} ${hint}`;
+const credentialsLabel = (provider: Provider, hint: string) => `${provider === "ipinfo" ? "token" : provider === "umbrella" ? "key" : "client"} ${hint}`;
 /** Whether `c` is the kind of credentials `provider` takes. */
 const fits = (provider: Provider, c: ProviderCredentials[Provider]) => (provider === "ipinfo") === "token" in c;
 
@@ -159,6 +184,18 @@ export type NewIntegration =
       responseActionDefaults?: FalconIocDefaults;
     }
   | {
+      /**
+       * No Alert stream and no write-back (ADR 0014): it checks domains against its destination lists,
+       * and adds them to the one an Admin chooses once it is added.
+       */
+      provider: "umbrella";
+      name: string;
+      credentials: ProviderCredentials["umbrella"];
+      responseActions: boolean;
+      /** Only whether its Response Actions start Internal applies. */
+      responseActionDefaults?: FalconIocDefaults;
+    }
+  | {
       /** Only looks IPs up (ADR 0010): no Alerts, write-back or Response Actions. One per Organization. */
       provider: "ipinfo";
       name: string;
@@ -168,6 +205,8 @@ export type NewIntegration =
 const writeBackLabel = (on: boolean) => (on ? "write-back on" : "read only");
 const responseActionsLabel = (on: boolean) => (on ? "Response Actions on" : "Response Actions off");
 const hostContainmentLabel = (on: boolean) => (on ? "Host containment on" : "Host containment off");
+/** "Phishing domains (Block, 1234)", as the Org Audit Log names a destination list. */
+const destinationListLabel = (l: ChosenDestinationList | null) => (l ? `${l.name} (${destinationListAccessLabel[l.access]}, ${l.id})` : "none");
 /**
  * "Severity from the Case · Windows, macOS, Linux · visible to Guests", as the Org Audit Log says it.
  * Only the last applies to a Provider that takes no Falcon IOCs.
@@ -190,8 +229,29 @@ const normalized = (d: FalconIocDefaults): FalconIocDefaults => ({
   internal: d.internal,
 });
 
-export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, "db" | "clock" | "credentials">) {
+export function integrationStore({ db, clock, credentials: sealer, umbrella }: Pick<Deps, "db" | "clock" | "credentials" | "umbrella">) {
   const seal = (provider: Provider, c: ProviderCredentials[Provider]) => sealCredentials(sealer, provider, c);
+
+  /** Umbrella Integration `id` of `me`'s Organization, unless deleted, with a client for it. */
+  const umbrellaOf = async (me: Membership, id: string) => {
+    const [row] = await db
+      .select()
+      .from(integrations)
+      .where(and(eq(integrations.id, id), eq(integrations.organizationId, me.organizationId), isNull(integrations.deletedAt)))
+      .limit(1);
+    if (!row) throw new IntegrationNotFound();
+    if (row.provider !== "umbrella") throw new NotSupportedByProvider(row.provider, "destination lists");
+    return umbrella(await openCredentials(sealer, "umbrella", row.credentials));
+  };
+
+  /** Umbrella's destination lists, through `client`; `ToolUnavailable` when it can't be asked. */
+  const listsFrom = async (client: Awaited<ReturnType<typeof umbrellaOf>>): Promise<DestinationList[]> => {
+    try {
+      return await client.destinationLists();
+    } catch (e) {
+      throw new ToolUnavailable(e instanceof Error ? e.message : String(e));
+    }
+  };
 
   return {
     /** The Organization's Integrations, oldest first; deleted ones are left out. */
@@ -227,6 +287,8 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
         responseActionDefaults: row.responseActionDefaults,
         /** Whether Members may contain hosts through it (ADR 0009). */
         hostContainment: row.hostContainment,
+        /** The Umbrella destination list it adds domains to (ADR 0014); null until an Admin chooses one. */
+        destinationList: row.destinationList,
         /** The Severities of detections it receives no Alert for, in Severity order; none for a Provider that sends no Alerts. */
         ignoredSeverities: orderedSeverities(row.ignoredSeverities),
         health: row.health,
@@ -443,6 +505,52 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
         });
         await publish(tx, { kind: "alerts", organizationId: me.organizationId });
       });
+    },
+
+    /**
+     * The destination lists of Cisco Umbrella Integration `id`, as Umbrella holds them now, for an
+     * Admin choosing the one it adds domains to (ADR 0014). Throws `ToolUnavailable` when Umbrella
+     * can't be asked. Admins only.
+     */
+    async destinationLists(me: Membership, id: string) {
+      if (!organizationPolicy.canManageIntegrations(me)) throw new NotPermitted();
+      const lists = await listsFrom(await umbrellaOf(me, id));
+      return lists.toSorted((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
+    },
+
+    /**
+     * Chooses the destination list Cisco Umbrella Integration `id` adds domains to as Response Actions
+     * (ADR 0014), checked against Umbrella and recorded as it describes it. Response Actions already
+     * taken keep the list they were taken with. Throws `UnknownDestinationList` when Umbrella holds no
+     * such list, `ToolUnavailable` when it can't be asked. Admins only. Choosing the list already
+     * chosen changes nothing, but refreshes its name.
+     */
+    async setDestinationList(me: Membership, id: string, listId: number) {
+      if (!organizationPolicy.canManageIntegrations(me)) throw new NotPermitted();
+      const found = (await listsFrom(await umbrellaOf(me, id))).find((l) => l.id === listId);
+      if (!found) throw new UnknownDestinationList();
+      const next: ChosenDestinationList = { id: found.id, name: found.name, access: found.access };
+      await db.transaction(async (tx) => {
+        const row = await find(tx, me, id);
+        if (JSON.stringify(row.destinationList) === JSON.stringify(next)) return;
+        const now = clock.now();
+        await tx.update(integrations).set({ destinationList: next }).where(eq(integrations.id, id));
+        // A new name for the same list is not a change an Admin made.
+        if (row.destinationList?.id !== next.id) {
+          await recordOrgAudit(tx, {
+            organizationId: me.organizationId,
+            occurredAt: now,
+            actor: actorOf(me),
+            category: "integrations",
+            action: "integration.destination_list_changed",
+            target: row.name,
+            before: destinationListLabel(row.destinationList),
+            after: destinationListLabel(next),
+          });
+        }
+        await publish(tx, { kind: "alerts", organizationId: me.organizationId });
+      });
+      return next;
     },
 
     /**

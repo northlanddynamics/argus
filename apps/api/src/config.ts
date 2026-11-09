@@ -7,6 +7,7 @@ import type { Deps, EvidenceConfig } from "./deps";
 import { s3EvidenceStorage } from "./evidence/s3-storage";
 import { credentialSealer } from "./integrations/credentials";
 import { ipinfoHttpClient } from "./ipinfo/ipinfo-http";
+import { umbrellaHttpClient } from "./umbrella/umbrella-http";
 import { virustotalHttpClient } from "./virustotal/virustotal-http";
 import { unconfiguredEvidenceStorage } from "./evidence/storage";
 import { consoleMailer, smtpMailer } from "./mail";
@@ -59,6 +60,7 @@ export function depsFromEnv(): Deps & { close: () => Promise<void> } {
     credentials: credentialSealer(process.env.CREDENTIALS_SECRET ?? authSecret),
     ipinfo: (credentials) => ipinfoHttpClient(credentials),
     virustotal: (credentials) => virustotalHttpClient(credentials),
+    umbrella: (credentials) => umbrellaHttpClient(credentials),
     close,
   };
 }
