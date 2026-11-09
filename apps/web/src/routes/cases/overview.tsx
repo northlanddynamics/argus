@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useRouteContext } from "@tanstack/react-router";
 import { useState } from "react";
 import { RichTextEditor } from "@/components/rich-text-editor";
 import { InternalBadge } from "@/components/visibility";
@@ -10,6 +10,7 @@ import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle }
 import { api, errorMessage } from "@/lib/api";
 import { type CaseSummary, type CaseView, caseKey, caseQuery, casesKey, resolutionLabel, isReadOnly } from "@/lib/cases";
 import { useCaseNumber } from "@/routes/cases/case-layout";
+import { TaskDialog } from "@/routes/cases/task-dialog";
 import { CaseAlertsPanel } from "@/routes/cases/alerts-panel";
 import { RelatedAlertsPanel } from "@/routes/cases/related-alerts-panel";
 import { CaseRolesPanel } from "@/routes/cases/case-roles-panel";
@@ -82,7 +83,7 @@ export function CaseOverviewPage() {
           </div>
         </Card>
         <div className="min-w-0 @3xl:col-start-3 @3xl:row-span-2 @3xl:row-start-1">
-          <OpenTasksCard number={number} />
+          <OpenTasksCard number={number} readOnly={isReadOnly(c)} />
         </div>
         <div className="min-w-0 @3xl:col-span-2">
           <CaseSummaryCard number={number} summary={c.summary} readOnly={isReadOnly(c)} />
@@ -96,9 +97,15 @@ export function CaseOverviewPage() {
 const byUrgency = (a: TaskView, b: TaskView) =>
   Number(b.overdue) - Number(a.overdue) || (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999");
 
-/** The open Tasks, most urgent first: the Case's next actions, on the page Analysts land on. */
-function OpenTasksCard({ number }: { number: number }) {
+/**
+ * The open Tasks, most urgent first: the Case's next actions, on the page Analysts land on. Each opens
+ * in the Task dialog, as from the Tasks tab, unless the Case is read-only.
+ */
+function OpenTasksCard({ number, readOnly }: { number: number; readOnly: boolean }) {
+  const { me } = useRouteContext({ from: "/_app/cases/$number" });
   const tasks = useQuery(tasksQuery(number));
+  /** The Task open in the dialog, if any. */
+  const [opened, setOpened] = useState<TaskView | null>(null);
   const open = (tasks.data ?? []).filter((t) => !t.done).toSorted(byUrgency);
   const params = { number: String(number) };
   return (
@@ -125,7 +132,17 @@ function OpenTasksCard({ number }: { number: number }) {
                 {/* Titles wrap rather than truncate; owner and due date drop below when the card is narrow. On a
                     wide card the title stops at 36rem, as on the Tasks tab, so owner and due date stay beside it. */}
                 <span className="flex min-w-48 flex-1 items-baseline gap-2 @3xl:max-w-[36rem]">
-                  <span className="font-medium">{t.title}</span>
+                  {readOnly ? (
+                    <span className="font-medium">{t.title}</span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="rounded-sm text-left font-medium outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+                      onClick={() => setOpened(t)}
+                    >
+                      {t.title}
+                    </button>
+                  )}
                   {t.internal && <InternalBadge />}
                 </span>
                 <span className="shrink-0 truncate text-muted-foreground @3xl:w-40" title={t.owner.name}>
@@ -148,6 +165,9 @@ function OpenTasksCard({ number }: { number: number }) {
           <p className="mt-2 text-muted-foreground">and {open.length - OPEN_TASKS_SHOWN} more on the Tasks tab.</p>
         )}
       </CardContent>
+      {opened && (
+        <TaskDialog key={opened.id} number={number} task={opened} defaultOwnerId={me.user.id} onClose={() => setOpened(null)} />
+      )}
     </Card>
   );
 }

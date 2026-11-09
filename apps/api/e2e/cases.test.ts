@@ -382,6 +382,14 @@ test("an Admin adds a Case Role; an Analyst gives it on a Case, works its Tasks 
     await dialog.getByRole("button", { name: "Save" }).click();
     await page.getByTestId("task-Capture memory image (FIN-LT-0231)").getByText("2026-01-06").waitFor();
 
+    // The Overview's open Tasks open in the same dialog.
+    await page.getByRole("tab", { name: "Overview" }).click();
+    await page.getByRole("list", { name: "Open Tasks" }).getByRole("button", { name: "Capture memory image (FIN-LT-0231)" }).click();
+    dialog = page.getByRole("dialog", { name: "Edit Task" });
+    await dialog.getByLabel("Title").fill("Capture memory image of FIN-LT-0231");
+    await dialog.getByRole("button", { name: "Save" }).click();
+    await page.getByRole("list", { name: "Open Tasks" }).getByRole("button", { name: "Capture memory image of FIN-LT-0231" }).waitFor();
+
     // Everything is in the Audit Log.
     await page.getByRole("tab", { name: "Audit Log" }).click();
     for (const action of ["Gave Case Role to Ben Analyst", "Created Task Capture memory image", "Completed Task Contain host", "Changed Task due date"]) {
