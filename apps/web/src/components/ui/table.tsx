@@ -3,17 +3,34 @@
 import * as React from "react"
 import { cn } from "cn"
 
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+import { useColumnResize, type ColumnResizer } from "@/hooks/use-column-resize"
+
+const ColumnResizeContext = React.createContext<ColumnResizer | null>(null)
+
+function Table({ className, ref, ...props }: React.ComponentProps<"table">) {
+  const tableRef = React.useRef<HTMLTableElement | null>(null)
+  const resizer = useColumnResize(tableRef)
+  const setRef = React.useCallback(
+    (node: HTMLTableElement | null) => {
+      tableRef.current = node
+      if (typeof ref === "function") return ref(node)
+      if (ref) ref.current = node
+    },
+    [ref]
+  )
   return (
     <div
       data-slot="table-container"
       className="relative w-full overflow-x-auto"
     >
-      <table
-        data-slot="table"
-        className={cn("w-full caption-bottom text-sm", className)}
-        {...props}
-      />
+      <ColumnResizeContext value={resizer}>
+        <table
+          ref={setRef}
+          data-slot="table"
+          className={cn("w-full caption-bottom text-sm", className)}
+          {...props}
+        />
+      </ColumnResizeContext>
     </div>
   )
 }
@@ -64,16 +81,43 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
   )
 }
 
-function TableHead({ className, ...props }: React.ComponentProps<"th">) {
+function TableHead({
+  className,
+  children,
+  ...props
+}: React.ComponentProps<"th">) {
+  const resizer = React.useContext(ColumnResizeContext)
+  React.useLayoutEffect(() => {
+    resizer?.changed()
+    return () => resizer?.changed()
+  }, [resizer, props.colSpan])
   return (
     <th
       data-slot="table-head"
       className={cn(
-        "h-10 px-2 text-left align-middle font-medium whitespace-nowrap text-foreground [&:has([role=checkbox])]:pr-0",
+        "relative h-10 px-2 text-left align-middle font-medium whitespace-nowrap text-foreground [&:has([role=checkbox])]:pr-0",
         className
       )}
       {...props}
-    />
+    >
+      {children}
+      {resizer && (
+        // Drag to resize the column; double-click to put it back.
+        <span
+          aria-hidden
+          data-slot="table-resize-handle"
+          title="Drag to resize · double-click to reset"
+          className="absolute inset-y-0 right-0 z-10 w-2 cursor-col-resize touch-none select-none after:absolute after:inset-y-2.5 after:right-0 after:w-px after:rounded-full after:bg-border after:opacity-0 after:transition-opacity in-[tr:hover]:after:opacity-100 hover:after:bg-muted-foreground/60 data-resizing:after:inset-y-0 data-resizing:after:bg-ring data-resizing:after:opacity-100 in-data-resize-hidden:hidden"
+          onPointerDown={(event) =>
+            resizer.start(event, event.currentTarget.parentElement as HTMLTableCellElement)
+          }
+          onDoubleClick={(event) =>
+            resizer.reset(event.currentTarget.parentElement as HTMLTableCellElement)
+          }
+          onClick={(event) => event.stopPropagation()}
+        />
+      )}
+    </th>
   )
 }
 
