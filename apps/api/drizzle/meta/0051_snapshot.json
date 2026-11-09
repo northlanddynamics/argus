@@ -1,5 +1,5 @@
 {
-  "id": "e5e5f13d-6491-4c0f-89f8-e48c279d712f",
+  "id": "98588f6b-1fc8-4ab9-92ea-3deaedbfef44",
   "prevId": "63ae3698-6a88-40af-bbe0-1b29e107e2f7",
   "version": "7",
   "dialect": "postgresql",
@@ -4751,11 +4751,12 @@
           "notNull": true,
           "default": false
         },
-        "destination_list": {
-          "name": "destination_list",
+        "ignored_severities": {
+          "name": "ignored_severities",
           "type": "jsonb",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true,
+          "default": "'[]'::jsonb"
         },
         "health": {
           "name": "health",
@@ -4948,10 +4949,6 @@
         "integrations_cloud": {
           "name": "integrations_cloud",
           "value": "(\"integrations\".\"provider\" = 'crowdstrike') = (\"integrations\".\"cloud\" IS NOT NULL)"
-        },
-        "integrations_destination_list": {
-          "name": "integrations_destination_list",
-          "value": "\"integrations\".\"provider\" = 'umbrella' OR \"integrations\".\"destination_list\" IS NULL"
         },
         "integrations_deleted": {
           "name": "integrations_deleted",
@@ -5798,12 +5795,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "destination_list": {
-          "name": "destination_list",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
         "state": {
           "name": "state",
           "type": "text",
@@ -6167,10 +6158,6 @@
         "response_actions_falcon": {
           "name": "response_actions_falcon",
           "value": "(\"response_actions\".\"kind\" = 'falcon_ioc') = (\"response_actions\".\"falcon_action\" IS NOT NULL AND \"response_actions\".\"severity\" IS NOT NULL)"
-        },
-        "response_actions_destination_list": {
-          "name": "response_actions_destination_list",
-          "value": "(\"response_actions\".\"kind\" = 'umbrella_destination') = (\"response_actions\".\"destination_list\" IS NOT NULL)"
         },
         "response_actions_containment_target": {
           "name": "response_actions_containment_target",

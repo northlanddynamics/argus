@@ -5,6 +5,7 @@ import { NotPermitted } from "../access/policy";
 import { FALCON_CLOUDS } from "../alerts/vocabulary";
 import type { Deps } from "../deps";
 import {
+  IgnoresEverySeverity,
   IntegrationHoldsResponseActions,
   IntegrationNameTaken,
   type NewIntegration,
@@ -69,6 +70,8 @@ const createBody = z.union([crowdstrikeBody, mimecastBody, umbrellaBody, ipinfoB
 const destinationListBody = z.object({ destinationListId: z.number().int().positive() });
 const rotateBody = z.union([credentialsBody, tokenBody]);
 const enabledBody = z.object({ enabled: z.boolean() });
+/** The Severities of detections to receive no Alert for; none to receive them all. */
+const ignoredSeveritiesBody = z.object({ severities: z.array(z.enum(SEVERITIES)) });
 
 
 const notPermitted = { error: "Not permitted" } as const;
@@ -76,8 +79,8 @@ const notPermitted = { error: "Not permitted" } as const;
 /**
  * Integrations (CrowdStrike, Mimecast, Cisco Umbrella or IPinfo): every Member sees them and their
  * health; Admins add, rotate, pause, resume and delete them and set their write-back, Response
- * Actions, Response Action defaults, Host containment and, for Umbrella, the destination list it adds
- * domains to.
+ * Actions, Response Action defaults, Host containment, ignored Severities and, for Umbrella, the
+ * destination list it adds domains to.
  */
 export const integrationRoutes = (deps: Deps, { integrations }: Modules) =>
   new Hono<MemberEnv>()
@@ -164,6 +167,18 @@ export const integrationRoutes = (deps: Deps, { integrations }: Modules) =>
         if (e instanceof NotPermitted) return c.json(notPermitted, 403);
         if (e instanceof IntegrationNotFound) return c.json({ error: e.message }, 404);
         if (e instanceof NotSupportedByProvider) return c.json({ error: e.message }, 422);
+        throw e;
+      }
+    })
+    .put("/:id/ignored-severities", zValidator("json", ignoredSeveritiesBody), async (c) => {
+      try {
+        await integrations.setIgnoredSeverities(c.get("membership"), c.req.param("id"), c.req.valid("json").severities);
+        return c.json({ ok: true }, 200);
+      } catch (e) {
+        if (e instanceof NotPermitted) return c.json(notPermitted, 403);
+        if (e instanceof IntegrationNotFound) return c.json({ error: e.message }, 404);
+        if (e instanceof NotSupportedByProvider) return c.json({ error: e.message }, 422);
+        if (e instanceof IgnoresEverySeverity) return c.json({ error: e.message }, 422);
         throw e;
       }
     })

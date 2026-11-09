@@ -18,7 +18,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  ago,
   ALERT_STATUSES,
   type AlertKind,
   alertKindLabel,
@@ -246,7 +245,7 @@ export function AlertQueuePage() {
           <ul aria-label="Integrations">
             {streams?.map((i) => (
               <li key={i.id}>
-                {i.name}: {healthWord(i)}, {i.lastEventAt ? `last event ${ago(i.lastEventAt)}` : "no events yet"}
+                {i.name}: {healthWord(i)}, {i.lastEventAt ? <Time iso={i.lastEventAt} prefix="last event" /> : "no events yet"}
               </li>
             ))}
             {streams?.length === 0 && (
@@ -272,7 +271,14 @@ export function AlertQueuePage() {
                 <li key={i.id}>
                   {i.name}: {healthWord(i)}
                   {i.healthDetail && ` (${i.healthDetail})`}
-                  {i.lastEventAt ? `, last event ${ago(i.lastEventAt)}` : ", no events yet"}.
+                  {i.lastEventAt ? (
+                    <>
+                      , <Time iso={i.lastEventAt} prefix="last event" />
+                    </>
+                  ) : (
+                    ", no events yet"
+                  )}
+                  .
                 </li>
               ))}
             </ul>
