@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
 import { Link, Outlet, useMatchRoute, useNavigate, useParams, useRouteContext } from "@tanstack/react-router";
-import { useEffect, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo } from "react";
 import { LockIcon } from "lucide-react";
 import { SeverityBadge, StatusBadge } from "@/components/case-badges";
 import { PresenceAvatars } from "@/components/presence-avatars";
@@ -32,7 +32,6 @@ import {
   isReadOnly,
   SEVERITIES,
   type Severity,
-  severityLabel,
   REOPENED_STATUS,
   resolutionLabel,
   STATUSES,
@@ -42,11 +41,13 @@ import {
 import { useActiveGuestNames } from "@/components/visibility";
 import { tasksQuery } from "@/lib/tasks";
 import { instant } from "@/lib/when";
+import { evidenceQuery } from "@/lib/evidence";
+import { assetsQuery, observablesQuery } from "@/lib/observables";
+import { Time } from "@/components/time";
 import { CaseAccessDialog } from "@/routes/cases/case-access-dialog";
 import { CloseCaseDialog } from "@/routes/cases/close-case-dialog";
 import { ExportReportDialog } from "@/routes/cases/export-report-dialog";
 import { membersKey } from "@/routes/settings/members";
-import { cn } from "@/lib/utils";
 
 /** The Case's sections, each its own route under the Case. */
 const SECTIONS = [
@@ -88,10 +89,21 @@ function useSectionKeys(sections: readonly (typeof SECTIONS)[number][], params: 
 }
 
 /**
- * Status, Severity, Case Type and Assignee: two to a row, then four across the page. On a very wide
- * page each stops at 20rem, so the menus stay a size a choice from a short list needs.
+ * Status, Severity, Case Type and Assignee: a muted label beside a small menu, in one line under the
+ * title that wraps when the page is narrow. They change a few times in a Case's life, so they take a
+ * line, not a card.
  */
-const fieldsCard = "grid gap-4 rounded-xl border bg-card p-4 @xl:grid-cols-2 @5xl:grid-cols-4 @[96rem]:grid-cols-[repeat(4,minmax(0,20rem))]";
+const fieldClass = "flex w-auto flex-none items-center gap-1.5";
+const labelClass = "text-xs font-normal text-muted-foreground";
+
+/** A tab's count: "1/6" Tasks done, 2 Evidence files, 9 Observables and Assets. */
+function TabCount({ children }: { children: ReactNode }) {
+  return (
+    <Badge variant="secondary" className="tabular-nums">
+      {children}
+    </Badge>
+  );
+}
 
 export const useCaseNumber = () => Number(useParams({ from: "/_app/cases/$number" }).number);
 
@@ -110,6 +122,11 @@ export function CaseLayout() {
   const tasks = useQuery({ ...tasksQuery(number), enabled: !!found.data });
   const overdue = tasks.data?.filter((t) => t.overdue && !t.done).length ?? 0;
   const guestNames = useActiveGuestNames(number, !!found.data?.can.work);
+  // What the tabs count. Shared with the tabs themselves, so opening one costs no second request.
+  const evidence = useQuery({ ...evidenceQuery(number), enabled: !!found.data });
+  const observables = useQuery({ ...observablesQuery(number), enabled: !!found.data });
+  const assets = useQuery({ ...assetsQuery(number), enabled: !!found.data });
+  const scope = (observables.data?.length ?? 0) + (assets.data?.length ?? 0);
 
   const change = useMutation({
     mutationFn: async (json: Changes) => {
@@ -175,27 +192,9 @@ export function CaseLayout() {
       )}
       {c && (
         <>
-          <section className="grid gap-4" aria-label="Case">
+          <section className="grid gap-3" aria-label="Case">
             <PageHeader
               title={c.title}
-              description={
-                <p className="flex flex-wrap items-center gap-1.5 font-mono text-xs">
-                  {caseRef(c.number)}
-                  <span className="contents font-sans">
-                    <SeverityBadge severity={c.severity} />
-                    {overdue > 0 && (
-                      <Badge variant="outline" className="border-overdue-border text-overdue">
-                        {overdue} overdue
-                      </Badge>
-                    )}
-                    {c.restricted && (
-                      <Badge variant="outline">
-                        <LockIcon aria-hidden /> Restricted
-                      </Badge>
-                    )}
-                  </span>
-                </p>
-              }
               actions={
                 <>
                   <PresenceAvatars number={c.number} />
@@ -213,6 +212,143 @@ export function CaseLayout() {
                 </>
               }
             />
+            {/* One line under the title on every tab: the reference, the four fields, and how old the Case is. */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+              <span className="flex items-center gap-1.5">
+                <span className="font-mono text-xs text-muted-foreground">{caseRef(c.number)}</span>
+                {c.restricted && (
+                  <Badge variant="outline">
+                    <LockIcon aria-hidden /> Restricted
+                  </Badge>
+                )}
+              </span>
+              {isReadOnly(c) ? (
+                <dl className="contents" aria-label="Case details">
+                  <div className={fieldClass}>
+                    <dt className={labelClass}>Status</dt>
+                    <dd>
+                      <StatusBadge status={c.status} resolution={c.resolution} />
+                    </dd>
+                  </div>
+                  <div className={fieldClass}>
+                    <dt className={labelClass}>Severity</dt>
+                    <dd>
+                      <SeverityBadge severity={c.severity} />
+                    </dd>
+                  </div>
+                  <div className={fieldClass}>
+                    <dt className={labelClass}>Type</dt>
+                    <dd>{caseTypeLabel[c.caseType]}</dd>
+                  </div>
+                  <div className={fieldClass}>
+                    <dt className={labelClass}>Assignee</dt>
+                    <dd>{c.assignee?.name ?? "Unassigned"}</dd>
+                  </div>
+                </dl>
+              ) : (
+                <>
+                  <Field orientation="horizontal" className={fieldClass}>
+                    <FieldLabel htmlFor="case-status" className={labelClass}>
+                      Status
+                    </FieldLabel>
+                    <Select
+                      value={c.status}
+                      disabled={locked}
+                      onValueChange={(value) => change.mutate({ status: value as Changes["status"] })}
+                    >
+                      <SelectTrigger id="case-status" size="sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {STATUSES.filter((s) => s !== "closed").map((s) => (
+                          <SelectItem key={s} value={s}>
+                            {statusLabel[s]}
+                          </SelectItem>
+                        ))}
+                        {/* Closing needs a Resolution, so it has its own dialog. */}
+                        <SelectSeparator />
+                        <SelectGroup>
+                          <SelectLabel>To close it, use Close Case</SelectLabel>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field orientation="horizontal" className={fieldClass}>
+                    <FieldLabel htmlFor="case-severity" className={labelClass}>
+                      Severity
+                    </FieldLabel>
+                    <Select value={c.severity} disabled={locked} onValueChange={(value) => change.mutate({ severity: value as Severity })}>
+                      <SelectTrigger id="case-severity" size="sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {SEVERITIES.map((s) => (
+                          <SelectItem key={s} value={s}>
+                            <SeverityBadge severity={s} />
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field orientation="horizontal" className={fieldClass}>
+                    <FieldLabel htmlFor="case-type" className={labelClass}>
+                      Type
+                    </FieldLabel>
+                    <Select value={c.caseType} disabled={locked} onValueChange={(value) => change.mutate({ caseType: value as CaseType })}>
+                      <SelectTrigger id="case-type" size="sm" aria-label="Case Type">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CASE_TYPES.map((t) => (
+                          <SelectItem key={t} value={t}>
+                            {caseTypeLabel[t]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field orientation="horizontal" className={fieldClass}>
+                    <FieldLabel htmlFor="case-assignee" className={labelClass}>
+                      Assignee
+                    </FieldLabel>
+                    <Select
+                      value={c.assignee?.id ?? UNASSIGNED}
+                      disabled={locked}
+                      onValueChange={(value) => change.mutate({ assigneeId: value === UNASSIGNED ? null : value })}
+                    >
+                      <SelectTrigger id="case-assignee" size="sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
+                        {/* A former Member stays selectable until someone changes it. */}
+                        {c.assignee && !members.data?.members.some((m) => m.userId === c.assignee?.id) && (
+                          <SelectItem value={c.assignee.id}>{c.assignee.name}</SelectItem>
+                        )}
+                        {members.data?.members.map((m) => (
+                          <SelectItem key={m.userId} value={m.userId}>
+                            {m.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {c.assignee?.id !== me.user.id && (
+                      <Button variant="link" size="xs" className="h-auto p-0 text-xs" disabled={locked} onClick={() => change.mutate({ assigneeId: me.user.id })}>
+                        Assign to me
+                      </Button>
+                    )}
+                  </Field>
+                </>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Opened <Time iso={c.openedAt} /> by {c.openedBy.name} · updated <Time iso={c.updatedAt} />
+              </p>
+            </div>
+            {me.guest && c.status !== "closed" && (
+              <p className="text-xs text-muted-foreground">
+                You're a Guest on this Case: you can post in the Discussion, complete the Tasks you own and add Evidence.
+              </p>
+            )}
             {c.closed && c.resolution && (
               <Alert className="border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80">
                 <AlertTitle>Closed · {resolutionLabel[c.resolution]}</AlertTitle>
@@ -228,137 +364,6 @@ export function CaseLayout() {
                   )}
                 </AlertDescription>
               </Alert>
-            )}
-            {isReadOnly(c) ? (
-              <dl className={cn("text-sm", fieldsCard)} aria-label="Case details">
-                <div className="grid gap-1.5">
-                  <dt className="text-xs text-muted-foreground">Status</dt>
-                  <dd>
-                    <StatusBadge status={c.status} resolution={c.resolution} />
-                  </dd>
-                </div>
-                <div className="grid gap-1.5">
-                  <dt className="text-xs text-muted-foreground">Severity</dt>
-                  <dd>
-                    <SeverityBadge severity={c.severity} />
-                  </dd>
-                </div>
-                <div className="grid gap-1.5">
-                  <dt className="text-xs text-muted-foreground">Case Type</dt>
-                  <dd>{caseTypeLabel[c.caseType]}</dd>
-                </div>
-                <div className="grid gap-1.5">
-                  <dt className="text-xs text-muted-foreground">Assignee</dt>
-                  <dd>{c.assignee?.name ?? "Unassigned"}</dd>
-                </div>
-                {me.guest && c.status !== "closed" && (
-                  <div className="col-span-full text-xs text-muted-foreground">
-                    You're a Guest on this Case: you can post in the Discussion, complete the Tasks you own and add Evidence.
-                  </div>
-                )}
-              </dl>
-            ) : (
-            <div className={fieldsCard}>
-              <Field className="gap-1.5">
-                <FieldLabel htmlFor="case-status" className="text-xs font-normal text-muted-foreground">
-                  Status
-                </FieldLabel>
-                <Select
-                  value={c.status}
-                  disabled={locked}
-                  onValueChange={(value) => change.mutate({ status: value as Changes["status"] })}
-                >
-                  <SelectTrigger id="case-status" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {STATUSES.filter((s) => s !== "closed").map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {statusLabel[s]}
-                      </SelectItem>
-                    ))}
-                    {/* Closing needs a Resolution, so it has its own dialog. */}
-                    <SelectSeparator />
-                    <SelectGroup>
-                      <SelectLabel>To close it, use Close Case</SelectLabel>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field className="gap-1.5">
-                <FieldLabel htmlFor="case-severity" className="text-xs font-normal text-muted-foreground">
-                  Severity
-                </FieldLabel>
-                <Select value={c.severity} disabled={locked} onValueChange={(value) => change.mutate({ severity: value as Severity })}>
-                  <SelectTrigger id="case-severity" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SEVERITIES.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {severityLabel[s]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field className="gap-1.5">
-                <FieldLabel htmlFor="case-type" className="text-xs font-normal text-muted-foreground">
-                  Case Type
-                </FieldLabel>
-                <Select value={c.caseType} disabled={locked} onValueChange={(value) => change.mutate({ caseType: value as CaseType })}>
-                  <SelectTrigger id="case-type" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CASE_TYPES.map((t) => (
-                      <SelectItem key={t} value={t}>
-                        {caseTypeLabel[t]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field className="gap-1.5">
-                <div className="flex h-4 items-center justify-between gap-2">
-                  <FieldLabel htmlFor="case-assignee" className="text-xs font-normal text-muted-foreground">
-                    Assignee
-                  </FieldLabel>
-                  {c.assignee?.id !== me.user.id && (
-                    <Button
-                      variant="link"
-                      size="xs"
-                      className="h-auto p-0 text-xs"
-                      disabled={locked}
-                      onClick={() => change.mutate({ assigneeId: me.user.id })}
-                    >
-                      Assign to me
-                    </Button>
-                  )}
-                </div>
-                <Select
-                  value={c.assignee?.id ?? UNASSIGNED}
-                  disabled={locked}
-                  onValueChange={(value) => change.mutate({ assigneeId: value === UNASSIGNED ? null : value })}
-                >
-                  <SelectTrigger id="case-assignee" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
-                    {/* A former Member stays selectable until someone changes it. */}
-                    {c.assignee && !members.data?.members.some((m) => m.userId === c.assignee?.id) && (
-                      <SelectItem value={c.assignee.id}>{c.assignee.name}</SelectItem>
-                    )}
-                    {members.data?.members.map((m) => (
-                      <SelectItem key={m.userId} value={m.userId}>
-                        {m.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-            </div>
             )}
             {(change.error ?? reopen.error) && (
               <Alert variant="destructive">
@@ -381,9 +386,9 @@ export function CaseLayout() {
               <TabsTrigger value="/cases/$number/tasks" className="h-8 flex-none" asChild {...keyFor("/cases/$number/tasks")}>
                 <Link to="/cases/$number/tasks" params={params}>
                   Tasks
-                  <Badge variant="secondary" className="tabular-nums">
+                  <TabCount>
                     {c.tasks.done}/{c.tasks.total}
-                  </Badge>
+                  </TabCount>
                   {overdue > 0 && (
                     <Badge variant="outline" className="border-overdue-border text-overdue tabular-nums">
                       {overdue} overdue
@@ -394,11 +399,13 @@ export function CaseLayout() {
               <TabsTrigger value="/cases/$number/evidence" className="h-8 flex-none" asChild {...keyFor("/cases/$number/evidence")}>
                 <Link to="/cases/$number/evidence" params={params}>
                   Evidence
+                  {evidence.data != null && evidence.data.length > 0 && <TabCount>{evidence.data.length}</TabCount>}
                 </Link>
               </TabsTrigger>
               <TabsTrigger value="/cases/$number/observables" className="h-8 flex-none" asChild {...keyFor("/cases/$number/observables")}>
                 <Link to="/cases/$number/observables" params={params}>
                   Observables &amp; Assets
+                  {scope > 0 && <TabCount>{scope}</TabCount>}
                 </Link>
               </TabsTrigger>
               {c.can.readAuditLog && (

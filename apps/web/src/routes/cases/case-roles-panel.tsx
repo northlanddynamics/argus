@@ -76,7 +76,7 @@ export function CaseRolesPanel({ number, caseRoles, readOnly }: { number: number
         <RailTitle>Case Roles</RailTitle>
         {!readOnly && !adding && (
           <div>
-            <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
+            <Button variant="link" size="xs" className="h-auto px-0" onClick={() => setAdding(true)}>
               + Assign
             </Button>
           </div>

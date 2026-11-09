@@ -149,7 +149,7 @@ function LinkCaseDialog({ number }: { number: number }) {
       }}
     >
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
+        <Button variant="link" size="xs" className="h-auto px-0">
           + Link
         </Button>
       </DialogTrigger>

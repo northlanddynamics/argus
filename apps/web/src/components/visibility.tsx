@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { namesOf, useGuests } from "@/lib/guests";
 import { type InternalItem, useMarkInternal } from "@/lib/internal";
-import { cn } from "@/lib/utils";
+import { cn, REVEAL } from "@/lib/utils";
 
 /** The "Internal" marker: shown on items hidden from the Case's Guests. */
 export function InternalBadge() {
@@ -71,6 +71,7 @@ export function Visibility({
   internal,
   label,
   canMark,
+  quiet = false,
 }: {
   number: number;
   item: InternalItem;
@@ -78,6 +79,11 @@ export function Visibility({
   /** What the item is called, for the menu's accessible name and the confirmation. */
   label: string;
   canMark: boolean;
+  /**
+   * In a list where most items aren't Internal: "Visible to Guests" waits until the row (`group/row`)
+   * is pointed at or focused, so the Internal ones stand out. Internal always shows.
+   */
+  quiet?: boolean;
 }) {
   const mark = useMarkInternal(number);
   const [confirming, setConfirming] = useState(false);
@@ -98,9 +104,9 @@ export function Visibility({
     );
 
   const state = internal ? <InternalBadge /> : <VisibleLabel />;
-  if (!canMark) return state;
+  if (!canMark) return quiet && !internal ? <span className={REVEAL}>{state}</span> : state;
   return (
-    <span className="inline-flex flex-wrap items-center gap-2">
+    <span className={cn("inline-flex flex-wrap items-center gap-2", quiet && !internal && !mark.error && REVEAL)}>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button

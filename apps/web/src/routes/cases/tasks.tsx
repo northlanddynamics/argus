@@ -12,7 +12,7 @@ import { api, errorMessage } from "@/lib/api";
 import { RowIconButton } from "@/components/row-icon-button";
 import { Visibility } from "@/components/visibility";
 import { canMarkInternal, canParticipate, caseKey, caseQuery, isReadOnly } from "@/lib/cases";
-import { type TaskView, tasksKey, tasksQuery } from "@/lib/tasks";
+import { byUrgency, type TaskView, tasksKey, tasksQuery } from "@/lib/tasks";
 import { useContainerWidth } from "@/hooks/use-container-width";
 import { cn } from "@/lib/utils";
 import { useCaseNumber } from "@/routes/cases/case-layout";
@@ -60,10 +60,11 @@ export function CaseTasksPage() {
   /** Guests see only what isn't Internal, so they get no Visibility column. */
   const membersView = c.can.markInternal;
   const columns = membersView ? 6 : 5;
-  const list = tasks.data ?? [];
+  /** Open Tasks first, most urgent first, as on the Overview; done ones after, as listed. */
+  const list = (tasks.data ?? []).toSorted((a, b) => Number(a.done) - Number(b.done) || (a.done ? 0 : byUrgency(a, b)));
   const owner = (t: TaskView) => `${t.owner.name}${t.owner.id === me.user.id && me.guest ? " (you)" : ""}`;
   const visibility = (t: TaskView) => (
-    <Visibility number={number} item={{ kind: "task", id: t.id }} internal={t.internal} label={t.title} canMark={canMarkInternal(c)} />
+    <Visibility number={number} item={{ kind: "task", id: t.id }} internal={t.internal} label={t.title} canMark={canMarkInternal(c)} quiet />
   );
   // On a wide page the columns take set widths and the last one takes the slack, so Owner, Due and Edit stay beside the title.
   return (

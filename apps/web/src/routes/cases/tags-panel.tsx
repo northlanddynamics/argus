@@ -64,7 +64,7 @@ export function TagsPanel({ number, tags, readOnly }: { number: number; tags: st
       <RailHeader>
         <RailTitle>Tags</RailTitle>
         {!readOnly && !adding && (
-          <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
+          <Button variant="link" size="xs" className="h-auto px-0" onClick={() => setAdding(true)}>
             + Tag
           </Button>
         )}
