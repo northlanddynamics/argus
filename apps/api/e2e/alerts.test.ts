@@ -258,6 +258,7 @@ test("an Analyst drags selected Alerts, or a single one, onto a Case in the work
     await page.getByTestId("alert-ldt:3").waitFor({ state: "detached" });
     await page.getByText("1 selected").waitFor();
     const attached = await (await ana.api.cases[":number"].alerts.$get({ param: { number: String(number) } })).json();
+    if (!("alerts" in attached)) throw new Error("Could not load the Case's Alerts");
     expect(attached.alerts.map((a) => a.externalId).toSorted()).toEqual(["ldt:1", "ldt:2", "ldt:3"]);
   } finally {
     await stop();
