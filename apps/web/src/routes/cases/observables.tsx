@@ -279,7 +279,10 @@ function LinkedCard<Type extends string>(props: {
     onSettled: refresh,
   });
   const addError = add.error;
-  const colSpan = 6 + (props.status ? 1 : 0) + (readOnly && !props.renderRow ? 0 : 1) + (selection ? 1 : 0);
+  const hasActions = !readOnly || !!props.renderRow;
+  const colSpan = 6 + (props.status ? 1 : 0) + (hasActions ? 1 : 0) + (selection ? 1 : 0);
+  /** The row's menu, at the end of a narrow row; on a very wide one, just after the date it was added. */
+  const actionCell = props.status ? "text-right @7xl:text-left" : "text-right";
 
   return (
     <Card>
@@ -349,12 +352,14 @@ function LinkedCard<Type extends string>(props: {
             <colgroup>
               {selection && <col className="w-10" />}
               <col className="w-8" />
-              <col className={props.status ? "@xl:w-52 @6xl:w-64" : undefined} />
+              {/* On a very wide page the value shows more of itself, and the status stops at 32rem so the
+                  row's menu, which then takes the slack, stays beside the rest of the row. */}
+              <col className={props.status ? "@xl:w-52 @6xl:w-64 @[100rem]:w-[28rem]" : undefined} />
               <col className="w-0 @3xl:w-32" />
               <col className="w-0 @4xl:w-36" />
-              {props.status && <col className="w-0 @xl:w-auto" />}
+              {props.status && <col className={cn("w-0 @xl:w-auto", hasActions && "@7xl:w-[32rem]")} />}
               <col className="w-0 @xl:w-28" />
-              {(!readOnly || props.renderRow) && <col className="w-12" />}
+              {hasActions && <col className={cn("w-12", props.status && "@7xl:w-auto")} />}
             </colgroup>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
@@ -473,10 +478,10 @@ function LinkedCard<Type extends string>(props: {
                       <span className={showXl}><Time iso={item.linkedAt} /></span>
                     </TableCell>
                     {menuButton ? (
-                      <TableCell className="text-right">{menuButton}</TableCell>
+                      <TableCell className={actionCell}>{menuButton}</TableCell>
                     ) : (
                       !readOnly && (
-                        <TableCell className="text-right">
+                        <TableCell className={actionCell}>
                           <Button
                             variant="ghost"
                             size="sm"
