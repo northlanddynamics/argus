@@ -397,6 +397,29 @@ describe("Dismissing Alerts", () => {
   });
 });
 
+describe("Opening an Alert in CrowdStrike", () => {
+  test("the queue, the Alert and its Case carry the Falcon console link its detection sent; links elsewhere are dropped", async () => {
+    const a = await acme();
+    const link = "https://falcon.crowdstrike.com/activity-v2/detections/ldt:1";
+    a.stream.detection("EppDetectionSummaryEvent", "ldt:1", { Name: "Credential dumping attempt", FalconHostLink: link });
+    a.stream.detection("EppDetectionSummaryEvent", "ldt:2", { Name: "Phish", FalconHostLink: "https://evil.example/falcon" });
+    a.stream.detection("EppDetectionSummaryEvent", "ldt:3", { Name: "Script", FalconHostLink: "javascript:alert(1)" });
+    await a.detect("ldt:4", "No link");
+    expect((await a.alert("ldt:1")).falconUrl).toBe(link);
+    expect((await a.alert("ldt:2")).falconUrl).toBeNull();
+    expect((await a.alert("ldt:3")).falconUrl).toBeNull();
+    expect((await a.alert("ldt:4")).falconUrl).toBeNull();
+    const one = await a.alert("ldt:1");
+    expect((await a.detail(one.id)).falconUrl).toBe(link);
+
+    const number = await a.open();
+    await a.attach(number, await a.select("ldt:1"));
+    const body = await (await a.ana.api.cases[":number"].alerts.$get({ param: param(number) })).json();
+    if (!("alerts" in body)) throw new Error("Could not list the Case's Alerts");
+    expect(body.alerts.map((x) => x.falconUrl)).toEqual([link]);
+  });
+});
+
 describe("Live updates", () => {
   test("attaching, detaching and dismissing reach Members' live sockets as Alert queue and Case changes", async () => {
     const a = await acme();
