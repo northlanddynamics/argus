@@ -49,10 +49,7 @@ export function IgnoredObservablesPage() {
 
   return (
     <>
-      <PageHeader
-        title="Ignored Observables"
-        description="Values too common to mean anything, such as public resolvers or your own mail domain. They stay linked and searchable, but never suggest which Case an Alert belongs with. Add one from its page."
-      />
+      <PageHeader title="Ignored Observables" />
       {error && (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>

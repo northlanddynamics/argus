@@ -158,7 +158,7 @@ function ItemPageView({ kind, id }: { kind: ItemKind; id: string }) {
             </Badge>
             <span>
               Added to the Ignored list by {item.ignored.by.name}{" "}
-              <Time iso={item.ignored.at} />. It never suggests which Case an Alert belongs with.
+              <Time iso={item.ignored.at} />.
             </span>
           </p>
         )}
@@ -191,11 +191,6 @@ function ItemPageView({ kind, id }: { kind: ItemKind; id: string }) {
       <CasesCard item={item} actions={kind === "observable" && !guest} />
       {!guest && <AlertsCard item={item} />}
       {kind === "observable" && <ResponseActionsCard item={item} actions={!guest} />}
-      <p className="max-w-prose text-xs text-muted-foreground">
-        {guest
-          ? "Only the Cases you've been given access to are shown."
-          : "Only Cases and Alerts you can see are shown or counted. First and last seen come from when it was linked to those Cases and when those Alerts were raised."}
-      </p>
     </div>
   );
 }
@@ -234,11 +229,7 @@ function IgnoreButton({ kind, item }: { kind: ItemKind; item: ItemPage }) {
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Ignore this {typeLabel(kind, item)}?</AlertDialogTitle>
-          <p className="font-mono text-xs [overflow-wrap:anywhere]">{shown(kind, item)}</p>
-          <AlertDialogDescription>
-            It goes on the Organization's Ignored list, for every Case: it will never suggest which Case an Alert belongs with, and
-            sending it as a Response Action asks first. It stays linked and searchable, and an Admin can stop ignoring it at any time.
-          </AlertDialogDescription>
+          <AlertDialogDescription className="font-mono text-xs [overflow-wrap:anywhere]">{shown(kind, item)}</AlertDialogDescription>
         </AlertDialogHeader>
         {error}
         <AlertDialogFooter>

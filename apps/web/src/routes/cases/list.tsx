@@ -187,7 +187,7 @@ export function CasesPage() {
           <AlertDescription>
             {rows
               ? "The list below may be out of date. Try again, or reload the page."
-              : "No Cases are shown because the list didn't load, not because there are none. Try again, or reload the page."}
+              : "Try again, or reload the page."}
           </AlertDescription>
           <AlertAction>
             <Button variant="outline" size="sm" disabled={cases.isFetching} onClick={() => cases.refetch()}>

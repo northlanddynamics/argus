@@ -100,7 +100,7 @@ export function ContainHostDialog({
           <DialogTitle>{lift ? `Lift the containment of ${asset.value}?` : `Contain ${asset.value}?`}</DialogTitle>
           <DialogDescription>
             {lift
-              ? "Falcon puts the host back on the network. Any Argus records of its containment, on any Case, end."
+              ? "Falcon puts the host back on the network."
               : "Falcon cuts the host off from the network, except for Falcon itself, until containment is lifted. Check the host groups: a server or domain controller going offline affects everyone who relies on it."}
           </DialogDescription>
         </DialogHeader>
@@ -163,7 +163,7 @@ export function ContainHostDialog({
 
         {!lift && picked && isContained(picked) && (
           <Alert className={notice}>
-            <AlertDescription>Falcon already reports this device {containmentLabel[picked.containment!].toLowerCase()}. Argus records it and sends nothing.</AlertDescription>
+            <AlertDescription>Falcon already reports this device {containmentLabel[picked.containment!].toLowerCase()}.</AlertDescription>
           </Alert>
         )}
         {lift && picked && fresh(picked) && (

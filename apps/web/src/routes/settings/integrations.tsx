@@ -267,12 +267,6 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
       </CardHeader>
       <CardContent className="grid gap-4">
         {receivesAlerts && <StreamSummary integration={i} />}
-        {i.capabilities.looksUpIps && (
-          <p className="text-sm text-muted-foreground">
-            Hovering an IP anywhere in Argus shows what IPinfo Core knows about it: location, network, and whether it is anonymous or
-            hosting. Each address is looked up once and kept for a week; private and reserved addresses are never sent.
-          </p>
-        )}
         {!receivesAlerts && !i.paused && (
           <p className="text-sm text-muted-foreground">
             {i.capabilities.looksUpIps
@@ -304,7 +298,7 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
             <AlertTitle>Gap in the stream, noticed {new Date(i.lastGap.at).toLocaleString()}</AlertTitle>
             <AlertDescription>
               Falcon could no longer replay events {i.lastGap.fromOffset.toLocaleString()}–{i.lastGap.toOffset.toLocaleString()}, so
-              Alerts raised then may be missing. Not backfilled.
+              Alerts raised then may be missing.
             </AlertDescription>
           </Alert>
         )}
@@ -821,7 +815,6 @@ function AddIntegrationDialog({ provider }: { provider: Provider }) {
               <ul className="grid gap-1 text-sm">
                 <li>
                   <span className="font-medium">Event Streams: Read</span>
-                  <span className="text-muted-foreground"> — always, to receive detections as Alerts</span>
                 </li>
                 <li>
                   <span className="font-medium">Alerts: Write</span>

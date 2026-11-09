@@ -227,11 +227,7 @@ export function WorkQueue({ me, current }: { me: Me; current: number | null }) {
         {cases.isError && (
           <Alert variant="destructive" className="m-3 w-auto">
             <AlertTitle>Cases couldn't be loaded</AlertTitle>
-            <AlertDescription>
-              {all
-                ? "The queue may be out of date."
-                : "No Cases are shown because the queue didn't load, not because there are none."}
-            </AlertDescription>
+            {all && <AlertDescription>The queue may be out of date.</AlertDescription>}
             <AlertAction>
               <Button variant="outline" size="sm" disabled={cases.isFetching} onClick={() => cases.refetch()}>
                 Try again

@@ -51,12 +51,7 @@ export function DashboardPage() {
     <div className="grid w-full max-w-page grid-cols-1 gap-6">
       <PageHeader
         title="Dashboard"
-        description={
-          <>
-            Refreshes live · counts only the Cases you can see · days in UTC
-            {data && !switching && <> · updated {clock(metrics.dataUpdatedAt)}</>}
-          </>
-        }
+        description={data && !switching && <>Updated {clock(metrics.dataUpdatedAt)}</>}
         actions={
           <ToggleGroup
             type="single"
@@ -465,7 +460,7 @@ function AlertVolume({ perDay }: { perDay: DashboardMetrics["alerts"]["perDay"] 
           <p id="alert-volume-reading" className="h-5 text-xs text-muted-foreground tabular-nums" aria-live="polite">
             {shown
               ? `${dayLabel(reading!)}${isToday(reading!) ? " so far" : ""}: ${plural(shown.count, "Alert", "Alerts")}`
-              : `Most in a day: ${count(max)} · hover or use the arrow keys for each day`}
+              : `Most in a day: ${count(max)}`}
           </p>
           <div className={cn("flex h-44 items-end border-b border-border", perDay.length > 30 ? "gap-px" : "gap-0.5")} aria-hidden>
             {perDay.map((d, i) => (
@@ -624,7 +619,7 @@ function Trend({ metrics }: { metrics: DashboardMetrics }) {
             <p id="trend-reading" className="h-5 text-xs text-muted-foreground tabular-nums" aria-live="polite">
               {shown
                 ? `${pointLabel(reading!)}: acknowledge ${formatDuration(shown.meanTimeToAcknowledgeMs)} · close ${formatDuration(shown.meanTimeToCloseMs)}`
-                : `Mean per ${stretch} · hover or use the arrow keys for values`}
+                : `Mean per ${stretch}`}
             </p>
             {width > 0 && (
               <svg width={W} height={TREND_H} className="block" aria-hidden>

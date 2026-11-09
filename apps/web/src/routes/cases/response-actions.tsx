@@ -76,11 +76,11 @@ const HOLDING = new Set<ResponseAction["state"]>(["pending", "active", "removing
 /** This Case's Response Actions on Observable `id` that still hold it in an Integration. */
 export const holdingOn = (held: readonly ResponseAction[], id: string) => held.filter((r) => r.observable?.id === id && HOLDING.has(r.state));
 
-/** Where the IOC goes and with what: one Integration's defaults, or each Integration's own. */
+/** What the IOC goes with, as a clause to follow "globally": one Integration's defaults, or nothing when several are ticked. */
 function sentWith(integrations: readonly Eligible[], severity: Severity) {
   const [only] = integrations;
-  if (integrations.length === 1 && only) return `${describeDefaults(only.defaults, severity)}`;
-  return "with each Integration's severity and platforms";
+  if (integrations.length === 1 && only) return `, ${describeDefaults(only.defaults, severity)}`;
+  return "";
 }
 
 /** Whether a send starts Internal: so when every Integration it goes to says so by default. */
@@ -258,7 +258,7 @@ export function SendToFalconDialog({
             ) : (
               <>{observables.length} Observables are</>
             )}{" "}
-            added to Falcon globally, {sentWith(integrationIds.length ? integrations.filter((i) => integrationIds.includes(i.id)) : integrations, severity)}, with a
+            added to Falcon globally{sentWith(integrationIds.length ? integrations.filter((i) => integrationIds.includes(i.id)) : integrations, severity)}, with a
             link back to <span className="font-mono">{caseRef(number)}</span>.
           </DialogDescription>
         </DialogHeader>
@@ -287,7 +287,6 @@ export function SendToFalconDialog({
             {integrations.length > 1 ? (
               <FieldSet>
                 <FieldLegend variant="label">Integrations</FieldLegend>
-                <FieldDescription>One Response Action is taken per Observable for each ticked Integration.</FieldDescription>
                 {integrations.map((i) => (
                   <Field key={i.id} orientation="horizontal" className="w-auto">
                     <Checkbox
