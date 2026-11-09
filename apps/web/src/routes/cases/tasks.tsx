@@ -13,8 +13,24 @@ import { RowIconButton } from "@/components/row-icon-button";
 import { Visibility } from "@/components/visibility";
 import { canMarkInternal, canParticipate, caseKey, caseQuery, isReadOnly } from "@/lib/cases";
 import { type TaskView, tasksKey, tasksQuery } from "@/lib/tasks";
+import { useContainerWidth } from "@/hooks/use-container-width";
+import { cn } from "@/lib/utils";
 import { useCaseNumber } from "@/routes/cases/case-layout";
 import { TaskDialog } from "@/routes/cases/task-dialog";
+
+/** A column that gives way on a narrow card: no width and no padding until it has room. */
+const from2xl = "overflow-hidden px-0 @2xl:px-2";
+const from4xl = "overflow-hidden px-0 @4xl:px-2";
+
+/** When a Task is due: an Overdue badge, the date, or `none`. */
+const due = (t: TaskView, none: string) =>
+  t.overdue ? (
+    <Badge variant="outline" className="border-overdue-border text-overdue">
+      Overdue · {t.dueDate}
+    </Badge>
+  ) : (
+    (t.dueDate ?? <span className="text-muted-foreground">{none}</span>)
+  );
 
 /** Case · Tasks: who owns what, when it's due, what's done, and (for Members) what Guests can see. */
 export function CaseTasksPage() {
@@ -25,6 +41,7 @@ export function CaseTasksPage() {
   const tasks = useQuery(tasksQuery(number));
   /** The open dialog: a Task being edited, "new", or none. */
   const [editing, setEditing] = useState<TaskView | "new" | null>(null);
+  const { ref, fits } = useContainerWidth<HTMLDivElement>();
 
   const setDone = useMutation({
     mutationFn: async ({ id, done }: { id: string; done: boolean }) => {
@@ -44,9 +61,13 @@ export function CaseTasksPage() {
   const membersView = c.can.markInternal;
   const columns = membersView ? 6 : 5;
   const list = tasks.data ?? [];
+  const owner = (t: TaskView) => `${t.owner.name}${t.owner.id === me.user.id && me.guest ? " (you)" : ""}`;
+  const visibility = (t: TaskView) => (
+    <Visibility number={number} item={{ kind: "task", id: t.id }} internal={t.internal} label={t.title} canMark={canMarkInternal(c)} />
+  );
   // On a wide page the columns take set widths and the last one takes the slack, so Owner, Due and Edit stay beside the title.
   return (
-    <Card className="@container">
+    <Card ref={ref} className="@container">
       <CardHeader>
         <CardTitle>
           Tasks{" "}
@@ -69,24 +90,25 @@ export function CaseTasksPage() {
             <AlertDescription>{setDone.error.message}</AlertDescription>
           </Alert>
         )}
-        <Table className="@3xl:table-fixed">
-          {/* Set widths, so the columns hold still as Tasks are added and done. On a wide page the Task
-              column stops at 36rem and the last one takes the slack, keeping Owner, Due and Edit beside the title. */}
+        <Table className="table-fixed">
+          {/* Set widths, so the columns hold still as Tasks are added and done. On a narrow card Owner and
+              Due, then Visibility, give way and show under the title instead; on a wide page the Task column
+              stops at 36rem and the last one takes the slack, keeping Owner, Due and Edit beside the title. */}
           <colgroup>
-            <col className="@3xl:w-14" />
+            <col className="w-14" />
             <col className="@7xl:w-[36rem]" />
-            <col className="@3xl:w-48" />
-            <col className="@3xl:w-44" />
-            {membersView && <col className="@3xl:w-44" />}
-            <col className="@3xl:w-12 @7xl:w-auto" />
+            <col className="w-0 @2xl:w-36 @4xl:w-44" />
+            <col className="w-0 @2xl:w-40" />
+            {membersView && <col className="w-0 @4xl:w-44" />}
+            <col className="w-12 @7xl:w-auto" />
           </colgroup>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <TableHead>Done</TableHead>
               <TableHead>Task</TableHead>
-              <TableHead>Owner</TableHead>
-              <TableHead>Due</TableHead>
-              {membersView && <TableHead>Visibility</TableHead>}
+              <TableHead className={from2xl}>{fits("2xl") && "Owner"}</TableHead>
+              <TableHead className={from2xl}>{fits("2xl") && "Due"}</TableHead>
+              {membersView && <TableHead className={from4xl}>{fits("4xl") && "Visibility"}</TableHead>}
               <TableHead>
                 <span className="sr-only">Edit</span>
               </TableHead>
@@ -103,34 +125,27 @@ export function CaseTasksPage() {
                     onCheckedChange={(checked) => setDone.mutate({ id: t.id, done: checked === true })}
                   />
                 </TableCell>
-                <TableCell className="whitespace-normal">
+                <TableCell className="whitespace-normal [overflow-wrap:anywhere]">
                   <div className="font-medium">{t.title}</div>
                   {t.description && <div className="text-xs text-muted-foreground">{t.description}</div>}
-                </TableCell>
-                <TableCell className="truncate" title={t.owner.name}>
-                  {t.owner.name}
-                  {t.owner.id === me.user.id && me.guest ? " (you)" : ""}
-                </TableCell>
-                <TableCell className="tabular-nums">
-                  {t.overdue ? (
-                    <Badge variant="outline" className="border-overdue-border text-overdue">
-                      Overdue · {t.dueDate}
-                    </Badge>
-                  ) : (
-                    (t.dueDate ?? <span className="text-muted-foreground">—</span>)
+                  {/* What the columns that have given way hold, under the title. */}
+                  {(!fits("2xl") || (membersView && !fits("4xl"))) && (
+                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                      {!fits("2xl") && (
+                        <>
+                          <span>{owner(t)}</span>
+                          <span className="tabular-nums">{due(t, "No due date")}</span>
+                        </>
+                      )}
+                      {membersView && !fits("4xl") && visibility(t)}
+                    </div>
                   )}
                 </TableCell>
-                {membersView && (
-                  <TableCell>
-                    <Visibility
-                      number={number}
-                      item={{ kind: "task", id: t.id }}
-                      internal={t.internal}
-                      label={t.title}
-                      canMark={canMarkInternal(c)}
-                    />
-                  </TableCell>
-                )}
+                <TableCell className={cn(from2xl, "truncate")} title={t.owner.name}>
+                  {fits("2xl") && owner(t)}
+                </TableCell>
+                <TableCell className={cn(from2xl, "tabular-nums")}>{fits("2xl") && due(t, "—")}</TableCell>
+                {membersView && <TableCell className={from4xl}>{fits("4xl") && visibility(t)}</TableCell>}
                 <TableCell className="text-right @7xl:text-left">
                   {!readOnly && (
                     <RowIconButton label="Edit Task" aria-label={`Edit ${t.title}`} onClick={() => setEditing(t)}>

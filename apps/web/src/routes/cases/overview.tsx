@@ -40,9 +40,10 @@ export function CaseOverviewPage() {
   /** Guests see neither who holds Case Roles nor the Cases this one is linked to. */
   const member = c.can.work;
   // On a very wide page the Summary and the open Tasks sit side by side; below 104rem the Tasks would be cut short, so they stack.
+  // The Summary's column stops at its 75ch measure there, and the open Tasks take the rest.
   return (
     <div className="@container">
-      <div className="grid items-start gap-4 @4xl:grid-cols-[minmax(0,1fr)_300px] @[104rem]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_300px]">
+      <div className="grid items-start gap-4 @4xl:grid-cols-[minmax(0,1fr)_300px] @[104rem]:grid-cols-[minmax(0,44rem)_minmax(0,1fr)_300px]">
         <div className="grid min-w-0 content-start gap-4 @[104rem]:contents">
           <CaseSummaryCard number={number} summary={c.summary} readOnly={isReadOnly(c)} />
           <OpenTasksCard number={number} />
@@ -96,7 +97,7 @@ function OpenTasksCard({ number }: { number: number }) {
   const open = (tasks.data ?? []).filter((t) => !t.done).toSorted(byUrgency);
   const params = { number: String(number) };
   return (
-    <Card size="sm">
+    <Card size="sm" className="@container">
       <CardHeader>
         <CardTitle>
           <h2>Open Tasks</h2>
@@ -116,13 +117,16 @@ function OpenTasksCard({ number }: { number: number }) {
           <ul className="grid divide-y" aria-label="Open Tasks">
             {open.slice(0, OPEN_TASKS_SHOWN).map((t) => (
               <li key={t.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-2 first:pt-0 last:pb-0">
-                {/* Titles wrap rather than truncate; owner and due date drop below when the card is narrow. */}
-                <span className="flex min-w-48 flex-1 items-baseline gap-2">
+                {/* Titles wrap rather than truncate; owner and due date drop below when the card is narrow. On a
+                    wide card the title stops at 36rem, as on the Tasks tab, so owner and due date stay beside it. */}
+                <span className="flex min-w-48 flex-1 items-baseline gap-2 @3xl:max-w-[36rem]">
                   <span className="font-medium">{t.title}</span>
                   {t.internal && <InternalBadge />}
                 </span>
-                <span className="shrink-0 text-muted-foreground">{t.owner.name}</span>
-                <span className="min-w-32 shrink-0 text-right tabular-nums">
+                <span className="shrink-0 truncate text-muted-foreground @3xl:w-40" title={t.owner.name}>
+                  {t.owner.name}
+                </span>
+                <span className="shrink-0 tabular-nums @xl:min-w-32 @xl:text-right">
                   {t.overdue ? (
                     <Badge variant="outline" className="border-overdue-border text-overdue">
                       Overdue · {t.dueDate}

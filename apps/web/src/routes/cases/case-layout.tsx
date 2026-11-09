@@ -87,8 +87,11 @@ function useSectionKeys(sections: readonly (typeof SECTIONS)[number][], params: 
   }, [sections, params, navigate]);
 }
 
-/** Status, Severity, Case Type and Assignee: two to a row, then four across the page. */
-const fieldsCard = "grid gap-4 rounded-xl border bg-card p-4 @xl:grid-cols-2 @5xl:grid-cols-4";
+/**
+ * Status, Severity, Case Type and Assignee: two to a row, then four across the page. On a very wide
+ * page each stops at 20rem, so the menus stay a size a choice from a short list needs.
+ */
+const fieldsCard = "grid gap-4 rounded-xl border bg-card p-4 @xl:grid-cols-2 @5xl:grid-cols-4 @[96rem]:grid-cols-[repeat(4,minmax(0,20rem))]";
 
 export const useCaseNumber = () => Number(useParams({ from: "/_app/cases/$number" }).number);
 
@@ -249,7 +252,7 @@ export function CaseLayout() {
                   <dd>{c.assignee?.name ?? "Unassigned"}</dd>
                 </div>
                 {me.guest && c.status !== "closed" && (
-                  <div className="text-xs text-muted-foreground sm:col-span-2 lg:col-span-4">
+                  <div className="col-span-full text-xs text-muted-foreground">
                     You're a Guest on this Case: you can post in the Discussion, complete the Tasks you own and add Evidence.
                   </div>
                 )}

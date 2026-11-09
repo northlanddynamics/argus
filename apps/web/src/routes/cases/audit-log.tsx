@@ -26,6 +26,7 @@ import {
 } from "@/lib/cases";
 import { defang, observableTypeLabel } from "@/lib/observables";
 import { promotedSources, timelineQuery } from "@/lib/timeline";
+import { useContainerWidth } from "@/hooks/use-container-width";
 import { useCaseNumber } from "@/routes/cases/case-layout";
 import { QUIET_ACTION } from "@/routes/cases/rail";
 import { PromoteDialog } from "@/routes/cases/timeline-entry-form";
@@ -143,6 +144,17 @@ const entryText = (e: Entry) => {
 };
 
 
+/** "New → In Progress": what an entry changed. An addition or removal has no before and after to show. */
+function BeforeAfter({ entry: e }: { entry: Entry }) {
+  if (e.before === null && e.after === null) return null;
+  return (
+    <span className="font-mono">
+      {e.before !== null && <span className="text-muted-foreground line-through">{shown(e.action, e.before)}</span>}
+      {e.before !== null && " "}→ {shown(e.action, e.after)}
+    </span>
+  );
+}
+
 export function CaseAuditLogPage() {
   const number = useCaseNumber();
   const { data: c } = useQuery(caseQuery(number));
@@ -152,6 +164,7 @@ export function CaseAuditLogPage() {
   const [actor, setActor] = useState("");
   const [action, setAction] = useState<CaseAuditAction | "">("");
   const [from, setFrom] = useState("");
+  const { ref, fits } = useContainerWidth<HTMLDivElement>();
 
   const entries = useQuery({
     queryKey: ["cases", number, "audit-log", { actor, action, from }],
@@ -190,22 +203,24 @@ export function CaseAuditLogPage() {
           <DatePicker id="audit-from" value={from} onChange={setFrom} placeholder="Any time" className={DATE_FILTER} />
         </FilterField>
       </FilterBar>
-      <Card className="@container py-0">
-        <Table className="@4xl:table-fixed" aria-label="Case Audit Log">
-          {/* Set widths, so the columns hold still as filters change what's listed; Action takes the rest. */}
+      <Card ref={ref} className="@container py-0">
+        <Table className="table-fixed" aria-label="Case Audit Log">
+          {/* Set widths, so the columns hold still as filters change what's listed; Action takes the rest.
+              On a narrow card When, Actor and Before → After give way and show under the Action instead; on
+              a wide page Action and Before → After stop at 40rem and the last column takes the slack. */}
           <colgroup>
-            <col className="@4xl:w-36" />
-            <col className="@4xl:w-36" />
-            <col />
-            <col className="@4xl:w-[28%]" />
-            <col className="@4xl:w-32" />
+            <col className="w-0 @xl:w-32 @4xl:w-36" />
+            <col className="w-0 @2xl:w-36" />
+            <col className="@7xl:w-[40rem]" />
+            <col className="w-0 @5xl:w-[28%] @7xl:w-[40rem]" />
+            <col className="w-28 @4xl:w-32 @7xl:w-auto" />
           </colgroup>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead className="pl-4">When</TableHead>
-              <TableHead>Actor</TableHead>
-              <TableHead>Action</TableHead>
-              <TableHead>Before → After</TableHead>
+              <TableHead className="overflow-hidden px-0 @xl:pl-4">{fits("xl") && "When"}</TableHead>
+              <TableHead className="overflow-hidden px-0 @2xl:px-2">{fits("2xl") && "Actor"}</TableHead>
+              <TableHead className="pl-4 @xl:pl-2">Action</TableHead>
+              <TableHead className="overflow-hidden px-0 @5xl:px-2">{fits("5xl") && "Before → After"}</TableHead>
               <TableHead className="pr-4">
                 <span className="sr-only">Promote</span>
               </TableHead>
@@ -215,34 +230,40 @@ export function CaseAuditLogPage() {
             {entries.isPending &&
               Array.from({ length: 6 }, (_, i) => (
                 <TableRow key={i} className="hover:bg-transparent" aria-hidden>
-                  <TableCell className="pl-4"><Skeleton className="h-4 w-24" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-3/5" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-2/5" /></TableCell>
+                  <TableCell className="overflow-hidden px-0 @xl:pl-4"><Skeleton className="hidden h-4 w-24 @xl:block" /></TableCell>
+                  <TableCell className="overflow-hidden px-0 @2xl:px-2"><Skeleton className="hidden h-4 w-24 @2xl:block" /></TableCell>
+                  <TableCell className="pl-4 @xl:pl-2"><Skeleton className="h-4 w-3/5" /></TableCell>
+                  <TableCell className="overflow-hidden px-0 @5xl:px-2"><Skeleton className="hidden h-4 w-2/5 @5xl:block" /></TableCell>
                   <TableCell className="pr-4" />
                 </TableRow>
               ))}
             {entries.data?.map((e) => (
               <TableRow key={e.id} className="group/row">
-                <TableCell className="truncate pl-4 text-muted-foreground">
-                  <Time iso={e.occurredAt} />
+                <TableCell className="truncate px-0 text-muted-foreground @xl:pl-4">{fits("xl") && <Time iso={e.occurredAt} />}</TableCell>
+                <TableCell className="truncate px-0 @2xl:px-2" title={e.actor.name}>
+                  {fits("2xl") && e.actor.name}
                 </TableCell>
-                <TableCell className="truncate" title={e.actor.name}>{e.actor.name}</TableCell>
                 {/* Hashes and URLs wrap anywhere, so the full value stays on the record without widening the table. */}
-                <TableCell className="min-w-48 whitespace-normal [overflow-wrap:anywhere]">
+                <TableCell className="pl-4 whitespace-normal [overflow-wrap:anywhere] @xl:pl-2">
                   {actionLabel[e.action] ?? e.action}
                   {e.target !== null && <span className="font-medium"> {shownTarget(e.action, e.target)}</span>}
-                </TableCell>
-                <TableCell className="min-w-48 font-mono text-xs whitespace-normal [overflow-wrap:anywhere]">
-                  {/* An addition or removal has no before and after to show. */}
-                  {(e.before !== null || e.after !== null) && (
-                    <>
-                      {e.before !== null && <span className="text-muted-foreground line-through">{shown(e.action, e.before)}</span>}
-                      {e.before !== null && " "}→ {shown(e.action, e.after)}
-                    </>
+                  {/* What the columns that have given way hold, under the Action. */}
+                  {(!fits("2xl") || (!fits("5xl") && (e.before !== null || e.after !== null))) && (
+                    <div className="mt-1 grid gap-1 text-xs">
+                      {!fits("5xl") && <BeforeAfter entry={e} />}
+                      {!fits("2xl") && (
+                        <span className="flex flex-wrap gap-x-3 text-muted-foreground">
+                          <span className="text-foreground">{e.actor.name}</span>
+                          {!fits("xl") && <Time iso={e.occurredAt} />}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </TableCell>
-                <TableCell className="pr-4 text-right">
+                <TableCell className="overflow-hidden px-0 font-mono text-xs whitespace-normal [overflow-wrap:anywhere] @5xl:px-2">
+                  {fits("5xl") && <BeforeAfter entry={e} />}
+                </TableCell>
+                <TableCell className="pr-4 text-right @7xl:text-left">
                   {promoted.has(e.id) ? (
                     <span className="text-xs text-muted-foreground">On the Timeline</span>
                   ) : (
