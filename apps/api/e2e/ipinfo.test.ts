@@ -112,22 +112,29 @@ test("the Owner adds IPinfo; opening an IP's Enrichment on a Case shows what IPi
     expect(t.ipinfo.lookups.some((l) => l.ip === "10.20.4.17")).toBe(false);
 
     // From the keyboard: I on a focused value opens it, Esc closes it and returns focus to the value.
+    // Closing hands focus back a tick after the panel has gone, so wait for it rather than read it at
+    // once; on a miss, say what has focus instead.
+    const focused = () => page.evaluate<string>("document.activeElement?.getAttribute('aria-label') ?? (document.activeElement?.outerHTML ?? 'nothing').slice(0, 200)");
+    const focusReturnsTo = async (label: string) => {
+      let has = await focused();
+      for (let waited = 0; has !== label && waited < 5000; waited += 100) {
+        await page.waitForTimeout(100);
+        has = await focused();
+      }
+      expect(has).toBe(label);
+    };
+    // ✕ returns focus to the row's button it was opened from; wait for that before focusing the value,
+    // or the hand-back can take focus from it before I is pressed.
     await panel.getByRole("button", { name: "Close" }).click();
+    await panel.waitFor({ state: "detached" });
+    await focusReturnsTo("Show Enrichment for 185.220.101.4");
     const link = page.getByRole("link", { name: "IP 185.220.101.4" });
     await link.focus();
     await page.keyboard.press("i");
     await panel.getByText("Frankfurt am Main, Hesse").waitFor();
     await page.keyboard.press("Escape");
     await panel.waitFor({ state: "detached" });
-    // Radix hands focus back a tick after the panel unmounts, so wait for it rather than read it at once;
-    // on a miss, say what has focus instead.
-    const focused = () => page.evaluate<string>("document.activeElement?.getAttribute('aria-label') ?? (document.activeElement?.outerHTML ?? 'nothing').slice(0, 200)");
-    let has = await focused();
-    for (let waited = 0; has !== "IP 185.220.101.4" && waited < 5000; waited += 100) {
-      await page.waitForTimeout(100);
-      has = await focused();
-    }
-    expect(has).toBe("IP 185.220.101.4");
+    await focusReturnsTo("IP 185.220.101.4");
 
     // The right-click menu opens it too.
     await link.click({ button: "right" });
