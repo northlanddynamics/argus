@@ -16,8 +16,8 @@ const PAGE_SIZE = 20;
 
 /**
  * Every result of a search as one list, best first across kinds, a page at a time: the same compact
- * rows and kind toggles as the search box. The query, kinds and page live in the URL, so a search
- * can be shared.
+ * rows and kind toggles as the search box. With no query it lists everything, newest first. The
+ * query, kinds and page live in the URL, so a search can be shared.
  */
 export function SearchPage() {
   const search = useSearch({ from: "/_app/search" });
@@ -50,12 +50,11 @@ export function SearchPage() {
       <PageHeader title="Search" />
       <SearchForm key={q} initial={q} guest={guest} onSearch={(next) => void setSearch({ q: next })} />
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <KindFilter kinds={kinds} onChange={(next) => void setSearch({ kinds: next })} counts={q ? counts : undefined} className="flex-wrap" />
+        <KindFilter kinds={kinds} onChange={(next) => void setSearch({ kinds: next })} counts={counts} className="flex-wrap" />
         <p className="text-xs text-muted-foreground">{SEARCH_SYNTAX}</p>
       </div>
 
-      {!q && <p className="py-8 text-center text-sm text-muted-foreground">Type what you're looking for and press Enter.</p>}
-      {q && results.isError && (
+      {results.isError && (
         <p className="py-8 text-center text-sm">
           <span className="text-destructive">Could not search.</span>{" "}
           <Button variant="link" size="sm" className="h-auto p-0" onClick={() => void results.refetch()}>
@@ -63,12 +62,17 @@ export function SearchPage() {
           </Button>
         </p>
       )}
-      {q && results.isPending && (
+      {results.isPending && (
         <div className="grid grid-cols-1 gap-2">
           {[0, 1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-11" />
           ))}
         </div>
+      )}
+      {!q && data && !data.total && (
+        <p className="py-8 text-center text-sm text-muted-foreground">
+          Nothing {kinds.length ? `in ${kinds.map((k) => searchKindLabel[k]).join(", ")} ` : ""}to show yet.
+        </p>
       )}
       {q && data && !data.total && (
         <div className="grid gap-1 py-8 text-center text-sm">
@@ -88,7 +92,7 @@ export function SearchPage() {
           </p>
         </div>
       )}
-      {q && data && data.total > 0 && !data.hits.length && (
+      {data && data.total > 0 && !data.hits.length && (
         <p className="py-8 text-center text-sm text-muted-foreground">
           There {pages === 1 ? "is only 1 page" : `are only ${pages} pages`} of results.{" "}
           <Link to="/search" search={pageSearch(1)} className="underline">
@@ -100,7 +104,7 @@ export function SearchPage() {
       {data && data.hits.length > 0 && (
         <div className={results.isPlaceholderData ? "grid grid-cols-1 gap-3 opacity-60 transition-opacity" : "grid grid-cols-1 gap-3"}>
           <p className="px-1 text-xs text-muted-foreground tabular-nums" aria-live="polite">
-            {data.total === 1 ? "1 result" : `${first}–${first + data.hits.length - 1} of ${data.total} results, best first`}
+            {data.total === 1 ? "1 result" : `${first}–${first + data.hits.length - 1} of ${data.total} results, ${q ? "best" : "newest"} first`}
           </p>
           <ul aria-label="Results" className="divide-y rounded-lg border">
             {data.hits.map((hit) => (

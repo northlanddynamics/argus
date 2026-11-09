@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 
 export { SEARCH_KINDS, type SearchKind, searchKindLabel } from "api/search/vocabulary";
 
-/** A search: the words, the kinds to list (every kind when empty) and which page. */
+/** A search: the words (everything, newest first, when empty), the kinds to list (every kind when empty) and which page. */
 export type SearchParams = { q: string; kinds: SearchKind[]; page?: number; pageSize?: number };
 
 export const searchQuery = ({ q, kinds, page = 1, pageSize }: SearchParams) =>
@@ -23,7 +23,6 @@ export const searchQuery = ({ q, kinds, page = 1, pageSize }: SearchParams) =>
       if (!res.ok) throw new Error("Could not search");
       return (await res.json()).results;
     },
-    enabled: q.trim().length > 0,
     placeholderData: keepPreviousData,
     staleTime: 10_000,
   });

@@ -18,7 +18,8 @@ import { SEARCH_DEFAULT_PAGE_SIZE, SEARCH_KINDS, type SearchKind } from "./vocab
  * is typed ("invo" finds invoice-portal.biz); whole-word matches rank higher.
  *
  * Every kind is ranked on one scale and returned as one list, best first, a page at a time, with how
- * many of each kind match. Typing a Case's reference ("C-12", or "12") puts that Case first.
+ * many of each kind match. Typing a Case's reference ("C-12", or "12") puts that Case first. An empty
+ * query lists everything the actor can see, newest first, a page at a time.
  *
  * Observables and Assets are also found by indicator (`indicators.ts`), as analysts paste them: the
  * query is refanged and normalised as stored values are, and an exact match ranks above any text
@@ -257,16 +258,17 @@ export function searchStore({ db }: { db: Db }) {
       const pageSize = options.pageSize ?? SEARCH_DEFAULT_PAGE_SIZE;
       const wanted = options.kinds?.length ? SEARCH_KINDS.filter((k) => options.kinds!.includes(k)) : [...SEARCH_KINDS];
       const none: SearchResults = { hits: [], total: 0, counts: noCounts(), page, pageSize };
-      if (!text) return none;
-      const parsed = await parse(refangWords(text));
-      const number = caseNumberIn(text);
-      if (!parsed && number === null) return none;
+      // With no query, everything the actor can see matches: a listing rather than a search.
+      const browsing = !text;
+      const parsed = browsing ? null : await parse(refangWords(text));
+      const number = browsing ? null : caseNumberIn(text);
+      if (!browsing && !parsed && number === null) return none;
       const indicator = readIndicator(text);
 
       // Cast, not `to_tsquery`, which would split the parsed words again.
       const exact = sql`${parsed?.exact ?? ""}::tsquery`;
       const prefix = sql`${parsed?.prefix ?? ""}::tsquery`;
-      const matches = (column: SQL | AnyColumn) => (parsed ? sql`${column} @@ ${prefix}` : sql`false`);
+      const matches = (column: SQL | AnyColumn) => (browsing ? sql`true` : parsed ? sql`${column} @@ ${prefix}` : sql`false`);
       const rank = (column: AnyColumn) =>
         parsed ? sql`(2 * ts_rank_cd(${column}, ${exact}) + ts_rank_cd(${column}, ${prefix}))` : sql`0`;
 
@@ -288,7 +290,7 @@ export function searchStore({ db }: { db: Db }) {
           (() => {
             const { exact: named, related, weak } = observableIndicator(indicator);
             // IPs and hashes are found only as indicators: a text match on one is a partial match.
-            const byText = and(notInArray(observables.type, [...EXACT_ONLY_TYPES]), matches(observables.search));
+            const byText = browsing ? sql`true` : and(notInArray(observables.type, [...EXACT_ONLY_TYPES]), matches(observables.search));
             return sql`select 'observables', 2, ${observables.id},
               (case when ${named} then ${EXACT_INDICATOR_RANK} when ${related} then ${RELATED_INDICATOR_RANK}
                 else ${rank(observables.search)} end)::real,
@@ -320,7 +322,7 @@ export function searchStore({ db }: { db: Db }) {
             wanted.map((k) => sql`${k}`),
             sql`, `,
           )})
-          order by rank desc, kind_order, at desc, id
+          order by ${browsing ? sql`at desc, kind_order, id` : sql`rank desc, kind_order, at desc, id`}
           limit ${pageSize} offset ${(page - 1) * pageSize}`,
       );
       const idsOf = (kind: SearchKind) => pageRows.filter((r) => r.kind === kind).map((r) => r.id);

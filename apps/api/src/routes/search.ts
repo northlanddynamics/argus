@@ -7,7 +7,8 @@ import type { Modules } from "../modules";
 import { SEARCH_KINDS, SEARCH_MAX_PAGE_SIZE } from "../search/vocabulary";
 
 const searchQuery = z.object({
-  q: z.string().max(200),
+  /** What to look for; everything the participant can see, newest first, when empty or left out. */
+  q: z.string().max(200).optional().default(""),
   /** Comma-separated kinds to list, such as `cases,alerts`; every kind when left out. */
   kinds: z
     .string()
