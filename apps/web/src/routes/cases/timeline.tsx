@@ -51,7 +51,7 @@ function CaseTimeline() {
   if (!c) return null;
   const readOnly = isReadOnly(c);
   return (
-    <section className="grid min-w-0 gap-4" aria-label="Timeline">
+    <section className="grid min-w-0 grid-cols-1 gap-4" aria-label="Timeline">
       <div className="flex min-h-8 items-center justify-between gap-2">
         <h2 className="text-lg font-semibold">Timeline</h2>
         {!readOnly && !composing && (
@@ -72,9 +72,9 @@ function CaseTimeline() {
           </CardContent>
         </Card>
       )}
-      <ol className="grid gap-3" aria-label="Timeline Entries">
+      <ol className="grid grid-cols-1 gap-3" aria-label="Timeline Entries">
         {entries.data?.map((e) => (
-          <li key={e.id} aria-label={`Timeline Entry: ${e.body}`} className="group/row">
+          <li key={e.id} aria-label={`Timeline Entry: ${e.body}`} className="group/row min-w-0">
             <Card>
               <CardContent>
                 {editing === e.id ? (
@@ -125,7 +125,7 @@ function Entry({
   const o = e.occurredAt;
   const live = !e.retracted;
   return (
-    <div className="grid gap-2">
+    <div className="grid min-w-0 grid-cols-1 gap-2">
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="font-semibold">{describeOccurredAt(o)}</h3>
         <Badge variant="outline">{o.kind === "approximate" ? `Approximate ${precisionLabel(o.precisionMinutes)}` : occurredKindLabel[o.kind]}</Badge>
@@ -175,23 +175,25 @@ function Entry({
           </div>
         )}
       </div>
-      <p className={`text-sm whitespace-pre-wrap ${live ? "" : "text-muted-foreground line-through"}`}>{e.body}</p>
+      <p className={`text-sm wrap-break-word whitespace-pre-wrap ${live ? "" : "text-muted-foreground line-through"}`}>{e.body}</p>
       {e.citations.length > 0 && (
         <ul className="flex flex-wrap gap-2" aria-label="Cites">
           {e.citations.map((c) => (
-            <li key={`${c.kind}:${c.id}`}>
-              <Badge variant="secondary">{c.label.replace(/^Task: /, "Task · ")}</Badge>
+            <li key={`${c.kind}:${c.id}`} className="min-w-0 max-w-full">
+              <Badge variant="secondary" className="max-w-full" title={c.label}>
+                <span className="truncate">{c.label.replace(/^Task: /, "Task · ")}</span>
+              </Badge>
             </li>
           ))}
         </ul>
       )}
       {e.retracted ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs wrap-break-word text-muted-foreground">
           Retracted by {e.retracted.by.name}
           {e.retracted.reason && ` — ${e.retracted.reason}`}.
         </p>
       ) : (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs wrap-break-word text-muted-foreground">
           Recorded {utc(e.recordedAt)} by {e.recordedBy.name}
           {e.source && ` · ${sourceText(e.source)}`}
           {e.editedAt && " · edited"}

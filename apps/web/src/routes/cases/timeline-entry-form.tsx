@@ -120,7 +120,7 @@ function EntryForm({
   };
 
   return (
-    <form className="grid gap-4" onSubmit={submit} aria-label={submitLabel}>
+    <form className="grid min-w-0 grid-cols-1 gap-4" onSubmit={submit} aria-label={submitLabel}>
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-medium" id={id("kind")}>
           Occurred at
