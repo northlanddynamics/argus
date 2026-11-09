@@ -139,7 +139,7 @@ export function CaseObservablesPage() {
           unlink={(id) => api.cases[":number"].assets[":id"].$delete({ param: { number: n, id } })}
           status={
             (assets.data ?? []).some((a) => a.type === "host")
-              ? { heading: "Falcon", render: (item) => <HostFalcon falcon={item.falcon} /> }
+              ? { heading: "Falcon", render: (item) => <HostFalcon falcon={item.falcon} assetId={item.id} caseNumber={number} /> }
               : undefined
           }
           renderRow={(item, row, unlink) => (
@@ -338,18 +338,22 @@ function LinkedCard<Type extends string>(props: {
             <AlertDescription>{unlink.error.message}</AlertDescription>
           </Alert>
         )}
-        {/* Columns give way to the value as the space for the table narrows, whatever the window: what was sent first, then who added it, then when. */}
+        {/* Columns give way as the space for the table narrows, whatever the window: when it was added first, the other Cases first, then who added it, then the status and when. */}
         <div className="@container">
           <Table className="table-fixed" data-enrichment-list>
-            {/* Set widths, the same in Observables and Assets, so the two tables line up when stacked; the value takes the rest. */}
+            {/*
+              Set widths, the same in Observables and Assets, so the two tables line up when stacked. The
+              value is cut short (its page and its title show it whole) so the status column, which says
+              the most, takes the rest; with no status column, or no room for it, the value does.
+            */}
             <colgroup>
               {selection && <col className="w-10" />}
               <col className="w-8" />
-              <col />
-              <col className="w-0 @3xl:w-40" />
-              <col className="w-0 @3xl:w-44" />
-              {props.status && <col className="w-0 @xl:w-52" />}
-              <col className="w-0 @4xl:w-32" />
+              <col className={props.status ? "@xl:w-52 @6xl:w-64" : undefined} />
+              <col className="w-0 @3xl:w-32" />
+              <col className="w-0 @4xl:w-36" />
+              {props.status && <col className="w-0 @xl:w-auto" />}
+              <col className="w-0 @xl:w-28" />
               {(!readOnly || props.renderRow) && <col className="w-12" />}
             </colgroup>
             <TableHeader>
@@ -369,9 +373,9 @@ function LinkedCard<Type extends string>(props: {
                 </TableHead>
                 <TableHead>{props.valueHeading}</TableHead>
                 <TableHead className={from3xl}><span className={show3xl}>Added by</span></TableHead>
-                <TableHead className={from3xl}><span className={show3xl}>Seen in other Cases</span></TableHead>
+                <TableHead className={from4xl}><span className={show4xl}>Seen in other Cases</span></TableHead>
                 {props.status && <TableHead className={fromXl}><span className={showXl}>{props.status.heading}</span></TableHead>}
-                <TableHead className={from4xl}><span className={show4xl}>Added</span></TableHead>
+                <TableHead className={fromXl}><span className={showXl}>Added</span></TableHead>
                 {(!readOnly || props.renderRow) && (
                   <TableHead>
                     <span className="sr-only">Actions</span>
@@ -455,8 +459,8 @@ function LinkedCard<Type extends string>(props: {
                       )}
                       </div>
                     </TableCell>
-                    <TableCell className={cn(from3xl, "whitespace-normal")}>
-                      <div className={show3xl}>
+                    <TableCell className={cn(from4xl, "whitespace-normal")}>
+                      <div className={show4xl}>
                         {item.seenIn.length === 0 ? <span className="text-muted-foreground">—</span> : <SeenIn seenIn={item.seenIn} />}
                       </div>
                     </TableCell>
@@ -465,8 +469,8 @@ function LinkedCard<Type extends string>(props: {
                         <div className={showXl}>{props.status.render(item)}</div>
                       </TableCell>
                     )}
-                    <TableCell className={cn(from4xl, "truncate text-muted-foreground")}>
-                      <span className={show4xl}><Time iso={item.linkedAt} /></span>
+                    <TableCell className={cn(fromXl, "truncate text-muted-foreground")}>
+                      <span className={showXl}><Time iso={item.linkedAt} /></span>
                     </TableCell>
                     {menuButton ? (
                       <TableCell className="text-right">{menuButton}</TableCell>
