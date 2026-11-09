@@ -11,13 +11,13 @@ What each source shows, and the wording of every state (looking up, never seen, 
   - **Show Enrichment** at the top of the Observable menu (right-click or long-press on the value), with `I` as its shortcut;
   - `I` while the value has keyboard focus;
   - clicking a value that isn't a link (Bulk Lookup results, Response Action rows, an Evidence file's SHA-256). A value that is a link still opens the Observable's page, as now.
-- **Non-modal and docked.** It sits on the right of the content inset, under the sticky header, full height, 420px wide, with a hairline left border and no backdrop. The page behind it stays usable: scrolling, selecting text, opening another value. The content inset narrows by 420px rather than being covered, so a table's container queries hide a column instead of cutting off the row's actions (the Layout rule that a table given less room shows less).
-- **One panel, swapped in place.** Opening a second value replaces the first; the panel doesn't stack or reopen. The row whose value is shown is marked in the table (the selected-row fill), so the Member can see which row the report belongs to.
+- **Docked, with the page dimmed.** It sits on the right of the content inset, under the sticky header, full height, 420px wide, with a hairline left border. The page beside it is dimmed (the Sheet's 10% black scrim, over the content only: the header and sidebar stay as they are) so the eye goes to the panel. The page still scrolls under the scrim; clicking it closes the panel. The content inset narrows by 420px rather than being covered, so a table's container queries hide a column instead of cutting off the row's actions (the Layout rule that a table given less room shows less).
+- **One panel, swapped in place.** ↑ ↓ or following a value replaces what it shows; the panel doesn't stack. To open a value elsewhere on the page, close the panel first. The row whose value is shown is marked in the table (the selected-row fill), so the Member can see which row the report belongs to.
 - **Steps through the list it came from.** `↑` `↓` buttons in the header (and `J` / `K` while focus is in the panel) move to the previous or next Enrichment-able value in the same table or chip list, skipping Assets and types with no source. Each step is a fresh lookup only if Argus has nothing cached.
 - **Follows a value.** IPs, domains and hashes inside a report (Resolves to, Ends at, Mail, Nameservers) are links that open their own Enrichment in the panel, with **Back** in the header to return. History is kept for the panel's life; closing it clears it.
 - **Lookup starts on open**, exactly as the popups' did: rendering a table of 200 values still costs nothing. Stepping or following a value starts the next lookup.
 - **Survives a reload.** The open value is in the URL (`?enrichment=ip:185.220.101.4`, defanged values decoded), so a reload or a pasted link reopens it. Changing page closes it unless the new page has the same value.
-- **Closes** on `Esc` (with focus in the panel), its `✕`, or opening the Observable's page. Focus returns to the value that opened it.
+- **Closes** on `Esc` (with focus in the panel), its `✕`, clicking the dimmed page, or opening the Observable's page. Focus returns to the value that opened it.
 - **Focus.** Opening from the keyboard moves focus to the panel's heading; opening by pointer leaves focus where it was, so the Member can keep clicking down a table.
 - **Guests** get no panel button, no menu item and no shortcut, as they got no popup: Argus never spends the Organization's IPinfo quota or a Member's VirusTotal key for a Guest.
 - **On an Observable's own page** nothing changes: the IP details and VirusTotal cards stay on the page. Values inside those cards (Resolves to, Ends at) open the panel for themselves.
@@ -44,7 +44,7 @@ What each source shows, and the wording of every state (looking up, never seen, 
 │         │ └──────────────────────────────────────────────────┘ │ as of 3 h ago             [Refresh]  │
 │         │                                                      │                                      │
 └─────────┴──────────────────────────────────────────────────────┴──────────────────────────────────────┘
-                     ↑ selected-row fill, panel button stays shown   ↑ 420px, hairline left border, no shadow
+                     ↑ page dimmed; selected row's panel button pressed ↑ 420px, hairline left border, no shadow
 ```
 
 - The table loses its widest optional column (here "Added by") rather than squeezing the value.

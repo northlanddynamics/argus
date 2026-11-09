@@ -99,8 +99,9 @@ test("the Owner adds IPinfo; opening an IP's Enrichment on a Case shows what IPi
 
     // ↑ ↓ step to the other IP on the Case; a private address is never sent.
     const order = await page.locator("[data-testid^='observable-']").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-testid")));
-    await show("185.220.101.4");
-    await panel.waitFor({ state: "detached" }); // Pressing it again closes the panel.
+    // The page beside the panel is dimmed; clicking it closes the panel.
+    await page.locator("[data-slot=enrichment-scrim]").click();
+    await panel.waitFor({ state: "detached" });
     await show("185.220.101.4");
     const step = order.indexOf("observable-10.20.4.17") > order.indexOf("observable-185.220.101.4") ? "Next (J)" : "Previous (K)";
     await panel.getByRole("button", { name: step }).click();
@@ -123,7 +124,8 @@ test("the Owner adds IPinfo; opening an IP's Enrichment on a Case shows what IPi
     await page.getByRole("menuitem", { name: /^Show Enrichment/ }).click();
     await panel.getByText("Frankfurt am Main, Hesse").waitFor();
 
-    // The IP's own page shows the details as a card, and following its link closes the panel.
+    // The IP's own page shows the details as a card.
+    await page.locator("[data-slot=enrichment-scrim]").click();
     await link.click();
     await page.getByText("IP details").waitFor();
     await page.getByText("Stiftung Erneuerbare Freiheit").waitFor();

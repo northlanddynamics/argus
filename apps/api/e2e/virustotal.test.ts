@@ -100,6 +100,7 @@ test("an Analyst adds their own VirusTotal key; opening a hash's Enrichment on a
     expect(t.virustotal.lookups.filter((l) => l.hash === SHA256)).toHaveLength(2);
 
     // A file VirusTotal hasn't seen says so.
+    await page.locator("[data-slot=enrichment-scrim]").click();
     await show(MD5);
     await popup.getByText("VirusTotal has never seen this file.").waitFor();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/vt-not-found.png` });

@@ -16,8 +16,8 @@ import { canManage } from "@/lib/roles";
 
 /**
  * The Enrichment panel (`docs/wireframes/enrichment-panel.md`): what Argus's sources say about one
- * Observable, docked on the right of the content beside the page it was opened from, which stays
- * usable and narrows to make room. Below `md` it is a full-width sheet instead.
+ * Observable, docked on the right of the content beside the page it was opened from, which narrows
+ * to make room and dims (`EnrichmentScrim`). Below `md` it is a full-width sheet instead.
  */
 
 const PANEL_HEADING = "enrichment-panel-heading";
@@ -83,6 +83,18 @@ function onPanelKeyDown(e: KeyboardEvent, panel: ReturnType<typeof useEnrichment
     e.preventDefault();
     panel.close();
   }
+}
+
+/**
+ * Dims the page beside the docked panel while it is open, so the eye goes to the panel. Clicking
+ * the dimmed page closes the panel; ↑ ↓ (J, K) still step through the list beneath it. On a phone
+ * the sheet brings its own backdrop.
+ */
+export function EnrichmentScrim() {
+  const panel = useEnrichmentPanel();
+  const mobile = useIsMobile();
+  if (!panel.current || mobile) return null;
+  return <div data-slot="enrichment-scrim" aria-hidden className="absolute inset-0 z-1 bg-black/10 duration-100 animate-in fade-in-0" onClick={panel.close} />;
 }
 
 export function EnrichmentPanel() {
