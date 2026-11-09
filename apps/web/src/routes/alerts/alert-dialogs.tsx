@@ -157,6 +157,10 @@ async function bulk(res: Response, fallback: string): Promise<BulkResult> {
   return (await res.json()) as BulkResult;
 }
 
+/** Attaches the selected Alerts to Case `number`, moving any attached elsewhere. */
+export const attachAlerts = async (number: number, selection: AlertSelection) =>
+  bulk(await api.alerts.attach.$post({ json: { case: number, alerts: selection } }), "Couldn't attach the Alerts");
+
 /**
  * "Open Case from N Alerts": a new Case with the selected Alerts attached. Severity defaults to the
  * highest of theirs; the title and Case Type start from the most serious Alert.
@@ -289,8 +293,7 @@ export function AttachAlertsDialog({
   const queryClient = useQueryClient();
 
   const attach = useMutation({
-    mutationFn: async (number: number) =>
-      bulk(await api.alerts.attach.$post({ json: { case: number, alerts: selection } }), "Couldn't attach the Alerts"),
+    mutationFn: (number: number) => attachAlerts(number, selection),
     onSuccess: async (result, number) => {
       await queryClient.invalidateQueries({ queryKey: alertsKey });
       onOpenChange(false);

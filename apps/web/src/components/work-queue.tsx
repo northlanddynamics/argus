@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { ChevronRightIcon, LockIcon, SlidersHorizontalIcon, UsersIcon } from "lucide-react";
-import { type FocusEvent, type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { type DragEvent, type FocusEvent, type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { SeverityBadge } from "@/components/case-badges";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +24,7 @@ import {
 import { SidebarContent, SidebarHeader, SidebarInput, useSidebar } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { type AlertDrag, alertCount, endAlertDrag, useAlertDrag } from "@/lib/alert-drag";
 import { api, type Me } from "@/lib/api";
 import { caseRef, casesKey, SEVERITIES, severityLabel, statusLabel } from "@/lib/cases";
 import { tagLabel } from "@/lib/tags";
@@ -159,6 +160,7 @@ export function WorkQueue({ me, current }: { me: Me; current: number | null }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const all = cases.data?.cases;
   const justChanged = useJustChanged(all);
+  const drag = useAlertDrag();
   useMinuteTick();
 
   const filtering = search.trim() !== "";
@@ -189,6 +191,10 @@ export function WorkQueue({ me, current }: { me: Me; current: number | null }) {
 
   const freeze = () => setFrozen((f) => f ?? new Map(sections.flatMap((s) => s.items.map((c, i) => [c.number, i] as const))));
   const thaw = () => setFrozen(null);
+  // Alerts dragged in hold the order still too, so the Case under the pointer stays put; it lets go once the drag ends elsewhere.
+  useEffect(() => {
+    if (!drag && !nav.current?.matches(":hover") && !nav.current?.contains(document.activeElement)) setFrozen(null);
+  }, [drag]);
   const onBlur = (e: FocusEvent) => {
     if (!nav.current?.contains(e.relatedTarget as Node | null) && !nav.current?.matches(":hover")) thaw();
   };
@@ -246,7 +252,13 @@ export function WorkQueue({ me, current }: { me: Me; current: number | null }) {
             onFocus={freeze}
             onBlur={onBlur}
             onKeyDown={onKeyDown}
+            onDragEnter={() => drag && freeze()}
           >
+            {drag && (
+              <p role="status" className="border-b bg-sidebar-accent px-4 py-2 text-xs text-sidebar-accent-foreground">
+                Drop on a Case to attach {alertCount(drag.count)}
+              </p>
+            )}
             {sections.length === 0 && (
               <p className="p-4 text-sm text-muted-foreground">Every section is hidden. Show one from the settings above.</p>
             )}
@@ -275,6 +287,7 @@ export function WorkQueue({ me, current }: { me: Me; current: number | null }) {
                               changed={justChanged.has(c.number)}
                               onFocus={() => setLastFocused(c.number)}
                               onOpen={() => setOpenMobile(false)}
+                              drag={drag}
                             />
                           </li>
                         );
@@ -311,6 +324,7 @@ function QueueRow({
   changed,
   onFocus,
   onOpen,
+  drag,
 }: {
   c: OpenCase;
   active: boolean;
@@ -319,7 +333,18 @@ function QueueRow({
   changed: boolean;
   onFocus: () => void;
   onOpen: () => void;
+  /** Alerts being dragged from the Alert queue, which this Case takes when they're dropped on it. */
+  drag: AlertDrag | null;
 }) {
+  const [hovered, setOver] = useState(false);
+  // A drag that ends elsewhere (Escape, or dropped outside) leaves no Case marked.
+  const over = hovered && drag !== null;
+  const accept = (e: DragEvent) => {
+    if (!drag) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setOver(true);
+  };
   return (
     <Link
       to="/cases/$number"
@@ -329,9 +354,21 @@ function QueueRow({
       aria-current={active ? (exact ? "page" : "location") : undefined}
       aria-label={accessibleName(c)}
       tabIndex={tabbable ? 0 : -1}
-      className={cn(rowClass, changed && "bg-sidebar-accent duration-0")}
+      className={cn(rowClass, changed && "bg-sidebar-accent duration-0", over && "bg-sidebar-accent ring-2 ring-sidebar-ring duration-0 ring-inset")}
       onFocus={onFocus}
       onClick={onOpen}
+      onDragEnter={accept}
+      onDragOver={accept}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false);
+      }}
+      onDrop={(e) => {
+        if (!drag) return;
+        e.preventDefault();
+        setOver(false);
+        drag.drop(c.number);
+        endAlertDrag();
+      }}
     >
       <span className="flex w-full items-center gap-2">
         <span className="font-mono text-xs text-muted-foreground">{caseRef(c.number)}</span>
