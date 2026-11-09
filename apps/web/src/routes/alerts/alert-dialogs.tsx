@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { type FormEvent, type ReactNode, useState } from "react";
+import { SearchIcon } from "lucide-react";
 import { RichTextEditor } from "@/components/rich-text-editor";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
+import { useDebounced } from "@/hooks/use-debounced";
 import {
   type AlertDetail,
   type AlertSelection,
@@ -45,14 +47,17 @@ type DialogProps = { open: boolean; onOpenChange: (open: boolean) => void; onClo
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-/** The open Cases the Member can see, newest first, matching `filter` by number or title. */
+/** How many Cases the picker offers at once. */
+const PICKER_TOP = 3;
+
+/** The open Cases the Member can see, most recently opened first, matching `filter` by number or title. */
 function useOpenCases(enabled: boolean, filter: string) {
   const cases = useQuery({
     queryKey: [...casesKey, "attach-candidates"],
     queryFn: async () => {
       const res = await api.cases.$get({ query: { view: "open" } });
       if (!res.ok) throw new Error("Couldn't load Cases");
-      return (await res.json()).cases.toSorted((a, b) => b.number - a.number);
+      return (await res.json()).cases.toSorted((a, b) => b.openedAt.localeCompare(a.openedAt) || b.number - a.number);
     },
     enabled,
   });
@@ -61,7 +66,10 @@ function useOpenCases(enabled: boolean, filter: string) {
   return { ...cases, matching };
 }
 
-/** Cases to choose one from, as radio cards; `children` adds choices of its own to the same group. */
+/**
+ * Cases to choose one from, as radio cards: the three most recently opened, or the top three matches
+ * for what's typed in the search box. `children` adds choices of its own to the same group.
+ */
 export function CasePicker({
   enabled,
   value,
@@ -76,13 +84,26 @@ export function CasePicker({
   children?: ReactNode;
 }) {
   const [filter, setFilter] = useState("");
-  const cases = useOpenCases(enabled, filter);
-  const shown = cases.matching?.filter((c) => c.number !== exclude).slice(0, 20);
+  const settled = useDebounced(filter, 200);
+  const cases = useOpenCases(enabled, settled);
+  const shown = cases.matching?.filter((c) => c.number !== exclude).slice(0, PICKER_TOP);
   return (
     <div className="grid gap-2">
-      <Label htmlFor="case-filter">Find a Case</Label>
-      <Input id="case-filter" placeholder="C-1041 or words in the title" value={filter} onChange={(e) => setFilter(e.target.value)} />
-      <RadioGroup aria-label="Case" value={value ?? ""} onValueChange={onChange} className="max-h-64 overflow-y-auto p-0.5">
+      <Label htmlFor="case-filter">Search Cases</Label>
+      <div className="relative">
+        <SearchIcon aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          id="case-filter"
+          type="search"
+          className="pl-8"
+          placeholder="C-1041 or words in the title"
+          autoComplete="off"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        />
+      </div>
+      <p className="text-xs text-muted-foreground">{settled.trim() ? "Top matches" : "Most recently opened"}</p>
+      <RadioGroup aria-label="Case" value={value ?? ""} onValueChange={onChange} className="p-0.5">
         {shown?.map((c) => (
           <FieldLabel key={c.number} htmlFor={`case-${c.number}`}>
             <Field orientation="horizontal">

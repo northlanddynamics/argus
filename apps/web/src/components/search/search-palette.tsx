@@ -9,21 +9,12 @@ import { hitObservable, SearchHitRow, useOpenHit } from "@/components/search/sea
 import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
+import { useDebounced } from "@/hooks/use-debounced";
 import { useMe } from "@/lib/api";
 import { hitKey, noMatchHint, SEARCH_KINDS, SEARCH_SYNTAX, type SearchKind, searchKindLabel, searchQuery } from "@/lib/search";
 
 /** How many results the search box shows before "See all results". */
 const TOP = 5;
-
-/** `value`, once it has stopped changing for `ms`. */
-function useDebounced<T>(value: T, ms: number) {
-  const [settled, setSettled] = useState(value);
-  useEffect(() => {
-    const timer = setTimeout(() => setSettled(value), ms);
-    return () => clearTimeout(timer);
-  }, [value, ms]);
-  return settled;
-}
 
 const isTyping = (target: EventTarget | null) =>
   target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
