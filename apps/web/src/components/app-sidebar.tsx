@@ -47,7 +47,7 @@ export function AppSidebar({ me, ...props }: { me: Me } & ComponentProps<typeof 
 }
 
 function NavRail({ me }: { me: Me }) {
-  const { setOpen, setOpenMobile } = useSidebar();
+  const { setOpenMobile } = useSidebar();
   const closeMobile = () => setOpenMobile(false);
   const matchRoute = useMatchRoute();
   const onCases = !!matchRoute({ to: "/" }) || !!matchRoute({ to: "/cases/$number", fuzzy: true });
@@ -83,10 +83,7 @@ function NavRail({ me }: { me: Me }) {
                   <Link
                     to="/"
                     aria-current={onCases ? (matchRoute({ to: "/" }) ? "page" : "location") : undefined}
-                    onClick={() => {
-                      setOpen(true);
-                      closeMobile();
-                    }}
+                    onClick={closeMobile}
                   >
                     <BriefcaseIcon />
                     <span>{me.guest ? "Your Cases" : "Cases"}</span>
