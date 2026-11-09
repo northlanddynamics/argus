@@ -161,17 +161,17 @@ export function CaseEvidencePage() {
           ),
         )}
         <Table className="table-fixed" data-enrichment-list>
-          {/* Set widths, so the columns line up row to row. On a narrow card they give way, who added it
-              first, and show under the file name instead; on a wide page File stops at 36rem and the last
-              column takes the slack, keeping the rest beside the name. */}
+          {/* Set widths, a share of the table never below a minimum, so the columns line up row to row and
+              grow with the screen; File takes the rest. On a narrow card they give way, who added it first,
+              and show under the file name instead. */}
           <colgroup>
-            <col className="@7xl:w-[36rem]" />
-            <col className="w-0 @md:w-24" />
-            <col className="w-0 @6xl:w-40" />
-            <col className="w-0 @5xl:w-32" />
-            <col className="w-0 @3xl:w-44" />
-            {membersView && <col className="w-0 @4xl:w-44" />}
-            <col className="w-20 @7xl:w-auto" />
+            <col />
+            <col className="w-0 @md:w-24 @7xl:w-[7.5%]" />
+            <col className="w-0 @6xl:w-40 @7xl:w-[12.5%]" />
+            <col className="w-0 @5xl:w-32 @7xl:w-[10%]" />
+            <col className="w-0 @3xl:w-44 @7xl:w-[13.75%]" />
+            {membersView && <col className="w-0 @4xl:w-44 @7xl:w-[13.75%]" />}
+            <col className="w-20" />
           </colgroup>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
@@ -221,7 +221,7 @@ export function CaseEvidencePage() {
                 <TableCell className={cn(from5xl, "truncate text-muted-foreground")}>{fits("5xl") && <Time iso={e.addedAt} />}</TableCell>
                 <TableCell className={from3xl}>{fits("3xl") && hash(e)}</TableCell>
                 {membersView && <TableCell className={from4xl}>{fits("4xl") && visibility(e)}</TableCell>}
-                <TableCell className="text-right @7xl:text-left">
+                <TableCell className="text-right">
                   <span className="inline-flex gap-1">
                     <RowIconButton label="View in a new tab" asChild>
                       <a href={evidenceUrl(number, e.id, "view")} target="_blank" rel="noopener noreferrer" aria-label={`View ${e.name}`}>

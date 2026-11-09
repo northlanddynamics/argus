@@ -299,7 +299,15 @@ function OpenCasesTable({ openCases }: { openCases: DashboardMetrics["openCases"
   return (
     <Panel title="Open Cases by Severity and Status">
       <div className="overflow-x-auto">
-        <Table>
+        {/* Severity a share of the table never below a minimum; the counts split the rest evenly. */}
+        <Table className="min-w-lg table-fixed">
+          <colgroup>
+            <col className="w-28" />
+            {OPEN_STATUSES.map((status) => (
+              <col key={status} />
+            ))}
+            <col />
+          </colgroup>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <TableHead>Severity</TableHead>

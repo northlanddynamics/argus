@@ -26,15 +26,16 @@ function columnOf(cell: HTMLTableCellElement) {
 /**
  * Drag-to-resize columns for a table. Until a column is dragged the table's own CSS (its
  * `colgroup` and container queries) decides every width. Once one is, the table switches to a
- * fixed layout: dragged columns keep the width they were given, the others hold the width the CSS
- * gave them, columns the CSS has collapsed stay collapsed, and one flexible column (the row's
- * subject, or the widest column of a table without a `colgroup`; the last column once the subject
- * has been dragged too) takes up the slack, so the table still fills its card and only scrolls
- * once the columns no longer fit. Widths are applied straight to the DOM and laid out again
+ * fixed layout: dragged columns keep the share of the table they were given (never below
+ * MIN_COLUMN), the others hold the width the CSS gives them, columns the CSS has collapsed stay
+ * collapsed, and one flexible column (the row's subject, or the widest column of a table without a
+ * `colgroup`; the last column once the subject has been dragged too) takes up the slack, so the
+ * table still fills its card and only scrolls once the columns no longer fit. Widths are applied straight to the DOM and laid out again
  * whenever the table's container changes size. They last until the page is left.
  */
 export function useColumnResize(tableRef: RefObject<HTMLTableElement | null>): ColumnResizer {
-  // Dragged widths by column index, valid for as long as the table has `count` columns.
+  // Dragged widths by column index, as a share of the table's container so they grow and shrink
+  // with the screen, valid for as long as the table has `count` columns.
   const user = useRef({ widths: new Map<number, number>(), count: 0 });
   const frame = useRef(0);
 
@@ -62,6 +63,11 @@ export function useColumnResize(tableRef: RefObject<HTMLTableElement | null>): C
       head.toggleAttribute("data-resize-hidden", head.colSpan > 1 || head.getBoundingClientRect().width < 12);
     }
     if (state.widths.size === 0) return;
+    const room = table.parentElement?.clientWidth ?? table.getBoundingClientRect().width;
+    const dragged = (i: number) => {
+      const share = state.widths.get(i);
+      return share === undefined ? undefined : Math.max(MIN_COLUMN, Math.round(share * room));
+    };
 
     // Each column's width as laid out, from the first row with a cell per column.
     const row = [...table.rows].find((r) => r.cells.length === count && [...r.cells].every((c) => c.colSpan === 1));
@@ -99,13 +105,13 @@ export function useColumnResize(tableRef: RefObject<HTMLTableElement | null>): C
         if (el) el.style.width = "auto";
         return;
       }
-      const w = state.widths.get(i) ?? width;
+      const w = dragged(i) ?? width;
       if (el) el.style.width = `${w}px`;
       fixed += w;
     });
     table.style.tableLayout = "fixed";
     // The flexible column keeps a width it was dragged to as its least, else up to MIN_FLEX.
-    const least = flex < 0 ? 0 : (state.widths.get(flex) ?? Math.min(MIN_FLEX, natural[flex]));
+    const least = flex < 0 ? 0 : (dragged(flex) ?? Math.min(MIN_FLEX, natural[flex]));
     table.style.minWidth = `${fixed + least}px`;
   }, [tableRef]);
 
@@ -142,7 +148,8 @@ export function useColumnResize(tableRef: RefObject<HTMLTableElement | null>): C
       root.style.userSelect = "none";
 
       const move = (e: PointerEvent) => {
-        user.current.widths.set(index, Math.max(MIN_COLUMN, Math.round(startWidth + e.clientX - startX)));
+        const room = head.closest("table")?.parentElement?.clientWidth || 1;
+        user.current.widths.set(index, Math.max(MIN_COLUMN, startWidth + e.clientX - startX) / room);
         layout();
       };
       const end = () => {

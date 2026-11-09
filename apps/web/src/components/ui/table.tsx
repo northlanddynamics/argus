@@ -107,7 +107,7 @@ function TableHead({
           aria-hidden
           data-slot="table-resize-handle"
           title="Drag to resize · double-click to reset"
-          className="absolute inset-y-0 right-0 z-10 w-2 cursor-col-resize touch-none select-none after:absolute after:inset-y-2.5 after:right-0 after:w-px after:rounded-full after:bg-border after:opacity-0 after:transition-opacity in-[tr:hover]:after:opacity-100 hover:after:bg-muted-foreground/60 data-resizing:after:inset-y-0 data-resizing:after:bg-ring data-resizing:after:opacity-100 in-data-resize-hidden:hidden"
+          className="absolute inset-y-0 right-0 z-10 w-2 cursor-col-resize touch-none select-none after:absolute after:inset-y-2.5 after:right-0 after:w-px after:rounded-full after:bg-border after:opacity-0 after:transition-opacity in-[tr:hover]:after:opacity-100 hover:after:bg-muted-foreground/60 data-resizing:after:inset-y-0 data-resizing:after:bg-ring data-resizing:after:opacity-100 in-data-resize-hidden:hidden in-[tbody]:hidden in-[tfoot]:hidden"
           onPointerDown={(event) =>
             resizer.start(event, event.currentTarget.parentElement as HTMLTableCellElement)
           }

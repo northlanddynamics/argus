@@ -91,16 +91,16 @@ export function CaseTasksPage() {
           </Alert>
         )}
         <Table className="table-fixed">
-          {/* Set widths, so the columns hold still as Tasks are added and done. On a narrow card Owner and
-              Due, then Visibility, give way and show under the title instead; on a wide page the Task column
-              stops at 36rem and the last one takes the slack, keeping Owner, Due and Edit beside the title. */}
+          {/* Set widths, a share of the table never below a minimum, so the columns hold still as Tasks are
+              added and done and grow with the screen; the Task takes the rest. On a narrow card Owner and
+              Due, then Visibility, give way and show under the title instead. */}
           <colgroup>
             <col className="w-14" />
-            <col className="@7xl:w-[36rem]" />
-            <col className="w-0 @2xl:w-36 @4xl:w-44" />
-            <col className="w-0 @2xl:w-40" />
-            {membersView && <col className="w-0 @4xl:w-44" />}
-            <col className="w-12 @7xl:w-auto" />
+            <col />
+            <col className="w-0 @2xl:w-36 @4xl:w-44 @7xl:w-[13.75%]" />
+            <col className="w-0 @2xl:w-40 @7xl:w-[12.5%]" />
+            {membersView && <col className="w-0 @4xl:w-44 @7xl:w-[13.75%]" />}
+            <col className="w-12" />
           </colgroup>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
@@ -146,7 +146,7 @@ export function CaseTasksPage() {
                 </TableCell>
                 <TableCell className={cn(from2xl, "tabular-nums")}>{fits("2xl") && due(t, "—")}</TableCell>
                 {membersView && <TableCell className={from4xl}>{fits("4xl") && visibility(t)}</TableCell>}
-                <TableCell className="text-right @7xl:text-left">
+                <TableCell className="text-right">
                   {!readOnly && (
                     <RowIconButton label="Edit Task" aria-label={`Edit ${t.title}`} onClick={() => setEditing(t)}>
                       <PencilIcon />

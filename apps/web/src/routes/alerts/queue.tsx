@@ -357,11 +357,11 @@ export function AlertQueuePage() {
             {/* Column widths live here, so the header row can turn into the selection toolbar without moving them. */}
             <colgroup>
               <col className="w-10" />
-              <col className="w-28" />
+              <col className="w-28 @7xl:w-[8.75%]" />
               <col />
-              <col className="w-0 @3xl:w-40" />
-              <col className="w-0 @3xl:w-36" />
-              <col className="w-32" />
+              <col className="w-0 @3xl:w-40 @7xl:w-[12.5%]" />
+              <col className="w-0 @3xl:w-36 @7xl:w-[11.25%]" />
+              <col className="w-32 @7xl:w-[10%]" />
             </colgroup>
             <TableHeader>
               <TableRow className={cn("hover:bg-transparent", selected.size > 0 && "bg-muted/50")}>

@@ -205,15 +205,15 @@ export function CaseAuditLogPage() {
       </FilterBar>
       <Card ref={ref} className="@container py-0">
         <Table className="table-fixed" aria-label="Case Audit Log">
-          {/* Set widths, so the columns hold still as filters change what's listed; Action takes the rest.
-              On a narrow card When, Actor and Before → After give way and show under the Action instead; on
-              a wide page Action and Before → After stop at 40rem and the last column takes the slack. */}
+          {/* Set widths, a share of the table never below a minimum, so the columns hold still as filters
+              change what's listed and grow with the screen; Action takes the rest. On a narrow card When,
+              Actor and Before → After give way and show under the Action instead. */}
           <colgroup>
-            <col className="w-0 @xl:w-32 @4xl:w-36" />
-            <col className="w-0 @2xl:w-36" />
-            <col className="@7xl:w-[40rem]" />
-            <col className="w-0 @5xl:w-[28%] @7xl:w-[40rem]" />
-            <col className="w-28 @4xl:w-32 @7xl:w-auto" />
+            <col className="w-0 @xl:w-32 @4xl:w-36 @7xl:w-[11.25%]" />
+            <col className="w-0 @2xl:w-36 @7xl:w-[11.25%]" />
+            <col />
+            <col className="w-0 @5xl:w-[28%]" />
+            <col className="w-28 @4xl:w-32" />
           </colgroup>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
@@ -263,7 +263,7 @@ export function CaseAuditLogPage() {
                 <TableCell className="overflow-hidden px-0 font-mono text-xs whitespace-normal [overflow-wrap:anywhere] @5xl:px-2">
                   {fits("5xl") && <BeforeAfter entry={e} />}
                 </TableCell>
-                <TableCell className="pr-4 text-right @7xl:text-left">
+                <TableCell className="pr-4 text-right">
                   {promoted.has(e.id) ? (
                     <span className="text-xs text-muted-foreground">On the Timeline</span>
                   ) : (
