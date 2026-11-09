@@ -30,8 +30,8 @@ const when = instant;
 const OPEN_TASKS_SHOWN = 5;
 
 /**
- * Case · Overview: what the Case is about and what needs doing next, with its details, links and
- * Tags in the rail beside it.
+ * Case · Overview: the Case's details, links and Tags, with what needs doing next beside them and
+ * what the Case is about underneath.
  */
 export function CaseOverviewPage() {
   const number = useCaseNumber();
@@ -39,49 +39,54 @@ export function CaseOverviewPage() {
   if (!c) return null;
   /** Guests see neither who holds Case Roles nor the Cases this one is linked to. */
   const member = c.can.work;
-  // On a very wide page the Summary and the open Tasks sit side by side; below 104rem the Tasks would be cut short, so they stack.
-  // The Summary's column stops at its 75ch measure there, and the open Tasks take the rest.
+  // Wide: Details take two thirds with the open Tasks beside them, and the Summary sits under the Details.
+  // Narrower, everything stacks: Details, then Tasks, then Summary.
   return (
     <div className="@container">
-      <div className="grid items-start gap-4 @4xl:grid-cols-[minmax(0,1fr)_300px] @[104rem]:grid-cols-[minmax(0,44rem)_minmax(0,1fr)_300px]">
-        <div className="grid min-w-0 content-start gap-4 @[104rem]:contents">
-          <CaseSummaryCard number={number} summary={c.summary} readOnly={isReadOnly(c)} />
+      <div className="grid items-start gap-4 @3xl:grid-cols-3 @3xl:grid-rows-[auto_1fr]">
+        {/* The rail's sections flow into columns as the Details card widens, so it doesn't run long and thin. */}
+        <Card className="@container gap-0 py-1 @3xl:col-span-2">
+          <div className="divide-y *:break-inside-avoid @xl:columns-2 @xl:gap-0 @xl:divide-y-0 @xl:[column-rule:1px_solid_var(--color-border)] @5xl:columns-3">
+            <RailSection>
+              <RailHeader>
+                <RailTitle>Details</RailTitle>
+              </RailHeader>
+              <RailBody>
+                <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+                  <dt className="text-muted-foreground">Opened</dt>
+                  <dd>
+                    {when(c.openedAt)}
+                    <span className="block text-muted-foreground">by {c.openedBy.name}</span>
+                  </dd>
+                  <dt className="text-muted-foreground">Updated</dt>
+                  <dd>{when(c.updatedAt)}</dd>
+                  {c.closed && c.resolution && (
+                    <>
+                      <dt className="text-muted-foreground">Closed</dt>
+                      <dd>
+                        {when(c.closed.at)}
+                        <span className="block text-muted-foreground">by {c.closed.by.name}</span>
+                      </dd>
+                      <dt className="text-muted-foreground">Resolution</dt>
+                      <dd>{resolutionLabel[c.resolution]}</dd>
+                    </>
+                  )}
+                </dl>
+              </RailBody>
+            </RailSection>
+            {member && <CaseRolesPanel number={number} caseRoles={c.caseRoles} readOnly={isReadOnly(c)} />}
+            <CaseAlertsPanel c={c} />
+            <RelatedAlertsPanel c={c} />
+            {member && <LinkedCasesPanel number={number} readOnly={isReadOnly(c)} />}
+            <TagsPanel number={number} tags={c.tags} readOnly={isReadOnly(c)} />
+          </div>
+        </Card>
+        <div className="min-w-0 @3xl:col-start-3 @3xl:row-span-2 @3xl:row-start-1">
           <OpenTasksCard number={number} />
         </div>
-        <Card className="gap-0 divide-y py-1">
-          <RailSection>
-            <RailHeader>
-              <RailTitle>Details</RailTitle>
-            </RailHeader>
-            <RailBody>
-              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-                <dt className="text-muted-foreground">Opened</dt>
-                <dd>
-                  {when(c.openedAt)}
-                  <span className="block text-muted-foreground">by {c.openedBy.name}</span>
-                </dd>
-                <dt className="text-muted-foreground">Updated</dt>
-                <dd>{when(c.updatedAt)}</dd>
-                {c.closed && c.resolution && (
-                  <>
-                    <dt className="text-muted-foreground">Closed</dt>
-                    <dd>
-                      {when(c.closed.at)}
-                      <span className="block text-muted-foreground">by {c.closed.by.name}</span>
-                    </dd>
-                    <dt className="text-muted-foreground">Resolution</dt>
-                    <dd>{resolutionLabel[c.resolution]}</dd>
-                  </>
-                )}
-              </dl>
-            </RailBody>
-          </RailSection>
-          {member && <CaseRolesPanel number={number} caseRoles={c.caseRoles} readOnly={isReadOnly(c)} />}
-          <CaseAlertsPanel c={c} />
-          <RelatedAlertsPanel c={c} />
-          {member && <LinkedCasesPanel number={number} readOnly={isReadOnly(c)} />}
-          <TagsPanel number={number} tags={c.tags} readOnly={isReadOnly(c)} />
-        </Card>
+        <div className="min-w-0 @3xl:col-span-2">
+          <CaseSummaryCard number={number} summary={c.summary} readOnly={isReadOnly(c)} />
+        </div>
       </div>
     </div>
   );
