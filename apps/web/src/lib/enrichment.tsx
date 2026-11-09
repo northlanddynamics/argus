@@ -122,8 +122,9 @@ export function EnrichmentProvider({ children }: { children: ReactNode }) {
     const was = shown.current;
     shown.current = currentKey;
     if (!was || currentKey) return;
-    const frame = requestAnimationFrame(returnFocus);
-    return () => cancelAnimationFrame(frame);
+    // A timer, not an animation frame: frames don't run in a page that isn't being drawn.
+    const timer = setTimeout(returnFocus);
+    return () => clearTimeout(timer);
   }, [currentKey, returnFocus]);
 
   const show = useCallback(
