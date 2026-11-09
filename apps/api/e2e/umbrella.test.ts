@@ -73,14 +73,25 @@ test("the Owner adds Cisco Umbrella and chooses its list; an Analyst adds a doma
     await card.getByText("Connected").waitFor();
     const lists = card.getByTestId("destination-list");
     await lists.getByText("None chosen yet").waitFor();
+
+    // Until a list is chosen, right-clicking a domain on a Case says why Umbrella offers nothing.
+    await owner.api.cases.$post({ json: { title: "Phishing at Acme", caseType: "phishing", severity: "high" } });
+    await owner.api.cases[":number"].observables.$post({ param: { number: "1" }, json: { type: "domain", value: "invoice-portal.biz" } });
+    await ownerPage.goto(`${baseUrl}/cases/1/observables`);
+    await ownerPage.getByTestId("observable-invoice-portal.biz").getByRole("cell").first().click({ button: "right" });
+    await ownerPage.getByRole("menuitem", { name: "Take action" }).click();
+    const waiting = ownerPage.getByRole("group", { name: "Umbrella" }).getByRole("menuitem", { name: /^No destination list chosen yet/ });
+    expect(await waiting.getAttribute("aria-disabled")).toBe("true");
+    await ownerPage.keyboard.press("Escape");
+    await ownerPage.keyboard.press("Escape");
+    await ownerPage.goto(`${baseUrl}/settings/integrations`);
+    await lists.getByText("None chosen yet").waitFor();
     await lists.getByRole("button", { name: "Choose list" }).click();
     await lists.getByLabel("Umbrella destination list").selectOption({ label: "Phishing domains · Block" });
     await lists.getByRole("button", { name: "Save" }).click();
     await lists.getByText("Phishing domains").waitFor();
     if (SHOTS) await card.screenshot({ path: `${SHOTS}/umbrella-settings.png` });
 
-    await ana.api.cases.$post({ json: { title: "Phishing at Acme", caseType: "phishing", severity: "high" } });
-    await ana.api.cases[":number"].observables.$post({ param: { number: "1" }, json: { type: "domain", value: "invoice-portal.biz" } });
 
     // Ana adds the domain to the list in one click from its row.
     const page = await browser.newPage();

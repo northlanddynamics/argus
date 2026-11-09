@@ -180,9 +180,10 @@ describe("Adding a Cisco Umbrella Integration", () => {
 });
 
 describe("Adding a domain to an Umbrella destination list", () => {
-  test("Umbrella isn't offered on a Case until an Admin has chosen its destination list", async () => {
+  test("Umbrella isn't offered on a Case until an Admin has chosen its destination list, but is named as waiting for one", async () => {
     const a = await acme({ chooseList: false });
     expect((await a.list()).integrations).toEqual([]);
+    expect((await a.list()).awaitingList).toEqual([{ id: a.umbrellaId, name: "Umbrella" }]);
     const domain = await a.link("domain", "evil.example");
     expect((await a.take(a.ana, domain)).status).toBe(400);
 
@@ -196,6 +197,7 @@ describe("Adding a domain to an Umbrella destination list", () => {
         destinationList: { id: a.phishing, name: "Phishing domains", access: "block" },
       },
     ]);
+    expect((await a.list()).awaitingList).toEqual([]);
   });
 
   test("a domain goes to the chosen list once the worker sends it, with a comment naming the Case", async () => {

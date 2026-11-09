@@ -784,6 +784,25 @@ async function liveCreated(
   return found ?? null;
 }
 
+/**
+ * The Cisco Umbrella Integrations in `me`'s Organization with Response Actions on but no destination
+ * list chosen yet: not offered until an Admin chooses one, but named on the Case so it can say why.
+ */
+async function awaitingList(db: Db | Tx, organizationId: string): Promise<{ id: string; name: string }[]> {
+  return db
+    .select({ id: integrations.id, name: integrations.name })
+    .from(integrations)
+    .where(
+      and(
+        eq(integrations.organizationId, organizationId),
+        eq(integrations.provider, "umbrella"),
+        eq(integrations.responseActions, true),
+        isNull(integrations.destinationList),
+      ),
+    )
+    .orderBy(asc(integrations.createdAt), asc(integrations.id));
+}
+
 /** The Integrations in `me`'s Organization that take Response Actions now, of any Provider. */
 async function eligible(db: Db | Tx, organizationId: string): Promise<EligibleIntegration[]> {
   const rows = await db
@@ -973,7 +992,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
   const store = {
     /**
      * The Response Actions on Case `number` that `me` may see, and, for Members, the Integrations they
-     * can send to and those they can contain hosts through. Throws `CaseNotFound` when `me` can't see the Case.
+     * can send to, the Umbrella ones still waiting for a destination list, and those they can contain hosts through. Throws `CaseNotFound` when `me` can't see the Case.
      */
     async list(me: Participant, number: number) {
       const caseId = await visibleCaseId(me, number);
@@ -981,6 +1000,7 @@ export function responseActionStore({ db, clock }: { db: Db; clock: Clock }) {
       return {
         responseActions: await select(me, caseId),
         integrations: member ? await eligible(db, me.organizationId) : [],
+        awaitingList: member ? await awaitingList(db, me.organizationId) : [],
         containment: member ? await containing(db, me.organizationId) : [],
       };
     },
