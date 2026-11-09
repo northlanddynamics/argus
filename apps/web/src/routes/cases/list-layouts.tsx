@@ -13,7 +13,7 @@ import type { api } from "@/lib/api";
 import { caseAlertsQuery } from "@/lib/alerts";
 import { caseQuery, caseRef, caseTypeLabel, SEVERITIES, severityLabel, type Status, statusLabel, summaryText } from "@/lib/cases";
 import { discussionQuery, messageParts } from "@/lib/discussion";
-import { type TaskView, tasksQuery } from "@/lib/tasks";
+import { byUrgency, tasksQuery } from "@/lib/tasks";
 import { tagLabel } from "@/lib/tags";
 import { cn } from "@/lib/utils";
 
@@ -283,9 +283,6 @@ export function CaseSplit({
     </div>
   );
 }
-
-const byUrgency = (a: TaskView, b: TaskView) =>
-  Number(b.overdue) - Number(a.overdue) || (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999");
 
 function PreviewSection({ title, count, action, children }: { title: string; count?: ReactNode; action?: ReactNode; children: ReactNode }) {
   return (

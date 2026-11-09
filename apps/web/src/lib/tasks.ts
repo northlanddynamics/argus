@@ -16,3 +16,7 @@ export const tasksQuery = (number: number) =>
   });
 
 export type TaskView = NonNullable<Awaited<ReturnType<ReturnType<typeof tasksQuery>["queryFn"] & {}>>>[number];
+
+/** Overdue first, then by due date (none last), then as listed. */
+export const byUrgency = (a: TaskView, b: TaskView) =>
+  Number(b.overdue) - Number(a.overdue) || (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999");

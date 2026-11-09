@@ -20,7 +20,7 @@ export function CaseAlertsPanel({ c }: { c: CaseView }) {
   return (
     <RailSection>
       <RailHeader>
-        <RailTitle>Alerts</RailTitle>
+        <RailTitle>Alerts{alerts.data?.length ? ` · ${alerts.data.length}` : ""}</RailTitle>
         {member && (
           <div>
             <Button variant="link" size="xs" className="h-auto px-0" asChild>
@@ -33,32 +33,40 @@ export function CaseAlertsPanel({ c }: { c: CaseView }) {
       </RailHeader>
       <RailBody>
         {alerts.data?.length ? (
-          <ul className="grid gap-3 text-sm" aria-label="Attached Alerts">
+          <ul className="grid gap-2.5" aria-label="Attached Alerts">
             {alerts.data.map((a) => (
               <AlertMenu key={a.id} falconUrl={a.falconUrl}>
-              <li className="grid gap-0.5">
-                <span className="flex items-center gap-2">
-                  <SeverityBadge severity={a.severity} />
-                  <span className="truncate" title={a.title}>
-                    {a.title}
+                {/* One line for the Alert, one for its reference: a Falcon composite ID is long and has
+                    nowhere to break, so it is cut short with the whole of it on hover. */}
+                <li className="grid min-w-0 gap-1">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <SeverityBadge severity={a.severity} />
+                    <span className="truncate" title={a.title}>
+                      {a.title}
+                    </span>
                   </span>
-                </span>
-                <span className="font-mono text-xs text-muted-foreground">{a.externalId}</span>
-                {member && (
-                  <Visibility
-                    number={c.number}
-                    item={{ kind: "alert", id: a.id }}
-                    internal={a.internal}
-                    label={a.externalId}
-                    canMark={canMarkInternal(c)}
-                  />
-                )}
-              </li>
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="min-w-0 truncate font-mono text-xs text-muted-foreground" title={a.externalId ?? undefined}>
+                      {a.externalId}
+                    </span>
+                    {member && (
+                      <span className="ml-auto shrink-0">
+                        <Visibility
+                          number={c.number}
+                          item={{ kind: "alert", id: a.id }}
+                          internal={a.internal}
+                          label={a.externalId ?? a.title}
+                          canMark={canMarkInternal(c)}
+                        />
+                      </span>
+                    )}
+                  </span>
+                </li>
               </AlertMenu>
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-muted-foreground">No Alerts attached.</p>
+          <p className="text-muted-foreground">No Alerts attached.</p>
         )}
       </RailBody>
     </RailSection>

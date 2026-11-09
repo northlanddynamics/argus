@@ -14,7 +14,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldContent, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
@@ -35,7 +35,7 @@ import { personRoleLabel } from "@/lib/roles";
 import { instant } from "@/lib/when";
 import { promotedSources, timelineQuery } from "@/lib/timeline";
 import { useCaseNumber } from "@/routes/cases/case-layout";
-import { QUIET_ACTION } from "@/routes/cases/rail";
+import { cn, REVEAL } from "@/lib/utils";
 import { PromoteDialog } from "@/routes/cases/timeline-entry-form";
 
 /**
@@ -66,17 +66,24 @@ export function CaseDiscussion() {
   const readOnly = isReadOnly(c);
   const participating = canParticipate(c);
   return (
-    <section className="grid min-w-0 grid-cols-1 gap-4" aria-label="Discussion">
-      <div className="flex min-h-8 items-center">
-        <h2 className="text-lg font-semibold">Discussion</h2>
-      </div>
-      <Card>
+    <section className="min-w-0" aria-label="Discussion">
+      <Card size="sm">
+      <CardHeader>
+        <CardTitle className="flex flex-wrap items-baseline gap-x-2">
+          <h2>Discussion</h2>
+          {!!messages.data?.length && (
+            <span className="text-xs font-normal text-muted-foreground">
+              {messages.data.length} {messages.data.length === 1 ? "message" : "messages"}
+            </span>
+          )}
+        </CardTitle>
+      </CardHeader>
       {/* Single fixed-width column: a long token or the composer's placeholder must wrap, not widen the card past the screen. */}
-      <CardContent className="grid grid-cols-1 gap-4">
-        <ol className="grid grid-cols-1 gap-4" aria-label="Messages">
+      <CardContent className="grid grid-cols-1 gap-3">
+        <ol className="grid grid-cols-1" aria-label="Messages">
           {messages.data?.map((m) =>
             editing === m.id ? (
-              <li key={m.id}>
+              <li key={m.id} className="py-3 first:pt-0">
                 <EditMessage number={number} message={m} onDone={() => setEditing(null)} />
               </li>
             ) : (
@@ -93,7 +100,7 @@ export function CaseDiscussion() {
               />
             ),
           )}
-          {messages.data?.length === 0 && <li className="text-sm text-muted-foreground">No messages yet.</li>}
+          {messages.data?.length === 0 && <li className="pb-3 text-sm text-muted-foreground">No messages yet.</li>}
         </ol>
         {participating && (
           <Composer
@@ -154,9 +161,9 @@ function Message({
     onSettled: () => queryClient.invalidateQueries({ queryKey: discussionKey(number) }),
   });
   return (
-    <li className="group/row grid min-w-0 grid-cols-1 gap-1 border-b pb-4 last:border-b-0" aria-label={`Message from ${m.author.name}`}>
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
-        <span className="font-semibold">{m.author.name}</span>
+    <li className="group/row relative grid min-w-0 grid-cols-1 gap-1 border-b py-3 first:pt-0 last:border-b-0" aria-label={`Message from ${m.author.name}`}>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+        <span className="font-medium">{m.author.name}</span>
         {m.falcon && (
           <Badge variant="outline">
             Synced from Falcon
@@ -167,14 +174,48 @@ function Message({
         </time>
         {m.editedAt && !m.retractedAt && <span className="text-xs text-muted-foreground">· edited</span>}
         {promoted && <span className="text-xs text-muted-foreground">· on the Timeline</span>}
-        {(m.internal || canMark) && m.body !== null && (
-          <Visibility
-            number={number}
-            item={{ kind: "discussion_message", id: m.id }}
-            internal={m.internal}
-            label={`message from ${m.author.name}`}
-            canMark={canMark}
-          />
+        {m.internal && m.body !== null && (
+          <Visibility number={number} item={{ kind: "discussion_message", id: m.id }} internal label={`message from ${m.author.name}`} canMark={canMark} />
+        )}
+        {/* What can be done to a message floats over the end of its first line when the row is pointed
+            at or focused, so it takes no room of its own. */}
+        {m.body !== null && ((!m.internal && canMark) || (participating && (!readOnly || m.can.edit || m.can.retract))) && (
+          <div className={cn("absolute top-2 right-0 flex items-center gap-1 bg-card pl-2 group-first/row:-top-1", REVEAL)}>
+            {!m.internal && canMark && (
+              <Visibility number={number} item={{ kind: "discussion_message", id: m.id }} internal={false} label={`message from ${m.author.name}`} canMark />
+            )}
+            {participating && !readOnly && !promoted && (
+              <Button variant="ghost" size="xs" onClick={onPromote}>
+                Promote to Timeline
+              </Button>
+            )}
+            {participating && m.can.edit && (
+              <Button variant="ghost" size="xs" onClick={onEdit}>
+                Edit
+              </Button>
+            )}
+            {participating && m.can.retract && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="ghost" size="xs">
+                    Retract
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent size="sm">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Retract your message?</AlertDialogTitle>
+                    <AlertDialogDescription>Others see that it was retracted.</AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Keep it</AlertDialogCancel>
+                    <AlertDialogAction variant="destructive" disabled={retract.isPending} onClick={() => retract.mutate()}>
+                      Retract message
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+          </div>
         )}
       </div>
       {m.body === null ? (
@@ -191,41 +232,6 @@ function Message({
             ),
           )}
         </p>
-      )}
-      {participating && m.body !== null && (
-        <div className="-ml-2 flex flex-wrap gap-1">
-          {!readOnly && !promoted && (
-            <Button variant="ghost" size="sm" className={QUIET_ACTION} onClick={onPromote}>
-              Promote to Timeline
-            </Button>
-          )}
-          {m.can.edit && (
-            <Button variant="ghost" size="sm" className={QUIET_ACTION} onClick={onEdit}>
-              Edit
-            </Button>
-          )}
-          {m.can.retract && (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="ghost" size="sm" className={QUIET_ACTION}>
-                  Retract
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent size="sm">
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Retract your message?</AlertDialogTitle>
-                  <AlertDialogDescription>Others see that it was retracted.</AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Keep it</AlertDialogCancel>
-                  <AlertDialogAction variant="destructive" disabled={retract.isPending} onClick={() => retract.mutate()}>
-                    Retract message
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
-        </div>
       )}
       {retract.error && (
         <Alert variant="destructive">
