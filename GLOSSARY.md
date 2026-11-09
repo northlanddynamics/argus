@@ -166,6 +166,10 @@ _Avoid_: Context, intel, details, lookup
 An Observable (or Asset) an Admin has marked as too common to mean anything, such as a public resolver or the Organization's own mail domain; still held, linked and searchable, but never the basis of a Correlation.
 _Avoid_: Allowlist, whitelist, suppressed, excluded
 
+**Ignored Severity**:
+A Severity an Admin has chosen for a CrowdStrike Integration to skip: its detections of that Severity become no Alert, and leave an Alert already received as it was. At least one Severity is never ignored; pausing the Integration stops Alerts altogether.
+_Avoid_: Severity filter, minimum severity, threshold, muted
+
 **Bulk Lookup**:
 Pasting free text into Argus to pull out every Observable it contains and see which are already known, and where.
 _Avoid_: IOC check, mass search

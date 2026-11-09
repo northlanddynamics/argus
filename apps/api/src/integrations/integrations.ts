@@ -11,13 +11,13 @@ import { type ProviderCredentials, sealCredentials } from "./credentials";
 import { type Provider, providerCapabilities, providerLabel } from "./vocabulary";
 import type { Membership } from "../members/membership";
 import { publish } from "../realtime/signals";
-import { severityLabel } from "../cases/vocabulary";
+import { SEVERITIES, type Severity, severityLabel } from "../cases/vocabulary";
 import { DEFAULT_FALCON_IOC_DEFAULTS, type FalconIocDefaults, FALCON_IOC_PLATFORMS, falconIocPlatformLabel } from "../response-actions/vocabulary";
 
 /**
  * Integrations as Admins manage them: add one, rotate its credentials, pause and resume it, allow or
  * deny write-back to Falcon, turn Response Actions on or off and set what they are sent with, turn
- * Host containment on or off (ADR 0009), delete it (ADR 0013), each recorded in the Organization
+ * Host containment on or off (ADR 0009), choose the Severities of detections it ignores, delete it (ADR 0013), each recorded in the Organization
  * Audit Log. What an Integration can do comes from its Provider (`vocabulary.ts`, ADR 0007). Every
  * Member sees the Organization's Integrations and how their streams are doing; only Admins see which
  * credentials are in use.
@@ -62,6 +62,13 @@ export class NotSupportedByProvider extends Error {
 
 /** The defaults asked for can't be used, such as no platform at all. */
 export class InvalidDefaults extends Error {}
+
+/** Ignoring every Severity would receive no Alerts at all: pausing the Integration does that. */
+export class IgnoresEverySeverity extends Error {
+  constructor() {
+    super("Leave at least one Severity unignored; to stop receiving Alerts, pause the Integration");
+  }
+}
 
 /**
  * Response Actions taken through the Integration may still be held in its tool, so it can't be deleted
@@ -171,6 +178,11 @@ export const defaultsLabel = (d: FalconIocDefaults, provider: Provider = "crowds
     d.platforms.length === FALCON_IOC_PLATFORMS.length ? "every platform" : d.platforms.map((p) => falconIocPlatformLabel[p]).join(", "),
     d.internal ? "Internal" : "visible to Guests",
   ].join(" · ");
+/** The ignored Severities in Severity order, without repeats, so equal choices compare equal. */
+const orderedSeverities = (severities: readonly Severity[]) => SEVERITIES.filter((s) => severities.includes(s));
+/** "Ignoring Low, Informational" or "Ignoring none", as the Org Audit Log says it. */
+const ignoredSeveritiesLabel = (severities: readonly Severity[]) =>
+  `Ignoring ${severities.length ? orderedSeverities(severities).map((s) => severityLabel[s]).join(", ") : "none"}`;
 /** In a fixed order and without repeats, so equal defaults compare equal. */
 const normalized = (d: FalconIocDefaults): FalconIocDefaults => ({
   severity: d.severity,
@@ -215,6 +227,8 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
         responseActionDefaults: row.responseActionDefaults,
         /** Whether Members may contain hosts through it (ADR 0009). */
         hostContainment: row.hostContainment,
+        /** The Severities of detections it receives no Alert for, in Severity order; none for a Provider that sends no Alerts. */
+        ignoredSeverities: orderedSeverities(row.ignoredSeverities),
         health: row.health,
         healthDetail: row.healthDetail,
         healthChangedAt: row.healthChangedAt.toISOString(),
@@ -426,6 +440,37 @@ export function integrationStore({ db, clock, credentials: sealer }: Pick<Deps, 
           target: row.name,
           before: hostContainmentLabel(row.hostContainment),
           after: hostContainmentLabel(hostContainment),
+        });
+        await publish(tx, { kind: "alerts", organizationId: me.organizationId });
+      });
+    },
+
+    /**
+     * Sets the Severities of detections the Integration's stream skips: from now on, a detection of
+     * one of them becomes no Alert, and an Alert already received is left as it was. Alerts already
+     * received stay. Only for a Provider that sends Alerts, and not every Severity: pausing the
+     * Integration is how to stop receiving Alerts. Admins only. Doing what is already so changes nothing.
+     */
+    async setIgnoredSeverities(me: Membership, id: string, severities: readonly Severity[]) {
+      if (!organizationPolicy.canManageIntegrations(me)) throw new NotPermitted();
+      const next = orderedSeverities(severities);
+      if (next.length === SEVERITIES.length) throw new IgnoresEverySeverity();
+      await db.transaction(async (tx) => {
+        const row = await find(tx, me, id);
+        if (!providerCapabilities[row.provider].receivesAlerts) throw new NotSupportedByProvider(row.provider, "ignoring Severities");
+        const before = orderedSeverities(row.ignoredSeverities);
+        if (before.join() === next.join()) return;
+        const now = clock.now();
+        await tx.update(integrations).set({ ignoredSeverities: next }).where(eq(integrations.id, id));
+        await recordOrgAudit(tx, {
+          organizationId: me.organizationId,
+          occurredAt: now,
+          actor: actorOf(me),
+          category: "integrations",
+          action: "integration.ignored_severities_changed",
+          target: row.name,
+          before: ignoredSeveritiesLabel(before),
+          after: ignoredSeveritiesLabel(next),
         });
         await publish(tx, { kind: "alerts", organizationId: me.organizationId });
       });

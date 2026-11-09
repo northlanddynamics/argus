@@ -1,0 +1,1 @@
+ALTER TABLE "integrations" ADD COLUMN "ignored_severities" jsonb DEFAULT '[]'::jsonb NOT NULL;

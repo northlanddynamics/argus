@@ -87,7 +87,8 @@ export async function reportSessionRefresh(db: Db, integrationId: string, at: Da
 
 /**
  * Processes one event from the Integration's stream, once: an event at or before the stored offset
- * was processed already and is skipped. A detection becomes or updates an Alert, and a
+ * was processed already and is skipped. A detection becomes or updates an Alert, unless its Severity
+ * is one the Integration ignores, and a
  * `detection_update` applies a change made in Falcon to the Alerts it names. An event past the
  * next expected offset means Falcon no longer holds those in between: the gap is recorded in the
  * Organization Audit Log, and not backfilled. The offset is stored with the result.
@@ -100,6 +101,7 @@ export async function processStreamEvent(db: Db, clock: Clock, integrationId: st
         organizationId: integrations.organizationId,
         name: integrations.name,
         streamOffset: integrations.streamOffset,
+        ignoredSeverities: integrations.ignoredSeverities,
       })
       .from(integrations)
       .where(eq(integrations.id, integrationId))
@@ -125,7 +127,8 @@ export async function processStreamEvent(db: Db, clock: Clock, integrationId: st
     }
 
     const detection = readDetection(event);
-    if (detection) await recordDetection(tx, row, detection, now);
+    // A detection of a Severity the Integration ignores becomes no Alert, and changes none already received.
+    if (detection && !row.ignoredSeverities.includes(detection.severity)) await recordDetection(tx, row, detection, now);
     const update = readFalconUpdate(event, now);
     if (update) await applyFalconUpdate(tx, row, update, now);
 
