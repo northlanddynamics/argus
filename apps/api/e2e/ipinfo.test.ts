@@ -56,9 +56,13 @@ test("the Owner adds IPinfo; opening an IP's Enrichment on a Case shows what IPi
     await page.goto(`${baseUrl}/cases/1/observables`);
     const panel = page.getByRole("dialog", { name: "IP Enrichment" });
     const show = (ip: string) => page.getByRole("button", { name: `Show Enrichment for ${ip}` }).click();
+    // Resting the pointer on an IP shows a hover card, not the panel.
+    const card = page.getByTestId("ip-hover-card");
     await page.getByRole("link", { name: "IP 185.220.101.4" }).hover();
-    await page.waitForTimeout(600);
-    expect(await panel.count()).toBe(0); // Nothing opens on hover.
+    await card.getByText("your Organization hasn't connected IPinfo").waitFor();
+    expect(await panel.count()).toBe(0);
+    await page.mouse.move(0, 0);
+    await card.waitFor({ state: "detached" });
     await show("185.220.101.4");
     await panel.getByText("your Organization hasn't connected IPinfo").waitFor();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/d-unconfigured.png` });
@@ -76,8 +80,16 @@ test("the Owner adds IPinfo; opening an IP's Enrichment on a Case shows what IPi
     expect(await ownerPage.getByRole("button", { name: "+ Add IPinfo Integration" }).count()).toBe(0);
     if (SHOTS) await ownerPage.screenshot({ path: `${SHOTS}/settings.png`, fullPage: true });
 
-    // Now opening the IP's Enrichment looks it up.
+    // Now hovering the IP looks it up, once, and the panel reads the same cached answer.
     await page.reload();
+    await page.getByRole("link", { name: "IP 185.220.101.4" }).hover();
+    await card.getByText("Frankfurt am Main, Hesse").waitFor();
+    await card.getByText("tor-exit-04.example-relay.net").waitFor();
+    await card.getByText("Anonymous").waitFor();
+    await card.getByText(/as of/).waitFor();
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/hover-card.png` });
+    await page.mouse.move(0, 0);
+    await card.waitFor({ state: "detached" });
     await show("185.220.101.4");
     await panel.getByText("Frankfurt am Main, Hesse").waitFor();
     await panel.getByText("tor-exit-04.example-relay.net").waitFor();

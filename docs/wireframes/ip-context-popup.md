@@ -1,6 +1,6 @@
 # IP context popup: wireframes
 
-> Where these details appear has moved to the Enrichment panel (`enrichment-panel.md`): hover no longer opens a popup. The content and wording of each state below still apply, as a section of the panel.
+> These details show in two places: this hover card, on resting the pointer on an IP, and the Enrichment panel (`enrichment-panel.md`), opened on purpose. The content and wording of each state below apply to both. The hover card opens on pointer hover only; from the keyboard, `I` opens the panel instead.
 
 What an Analyst sees on hovering (or focusing) any IP address in Argus: the IP Observables on a Case and their pages, an Alert's extracted indicators, search results, Bulk Lookup, Response Actions, and a host's IPs in its Falcon Enrichment. The details come from the Organization's IPinfo Integration (IPinfo Core, ADR 0010) and are cached in Argus, so hovering the same address again costs no lookup.
 

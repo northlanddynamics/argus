@@ -25,3 +25,5 @@ Any IP shown in Argus can be looked up. Hovering or focusing it opens a popup (`
 - Integrations whose credentials are a token, not a client ID and secret, now exist. The hint Admins see is the token's last four characters.
 
 _Update: hover no longer opens anything. The same details now open in the Enrichment panel, docked on the right (`docs/wireframes/enrichment-panel.md`); what is looked up, cached and shown is unchanged._
+
+_Update: resting the pointer on an IP opens the hover card again, beside the Enrichment panel; focus does not open it._
