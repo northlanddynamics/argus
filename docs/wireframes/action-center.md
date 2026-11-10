@@ -7,6 +7,8 @@ Interactive version: https://claude.ai/artifact/PrJiJ8ew6JKZjtm1rSSEfV
 ## Behaviour
 
 - **Where it lives.** "Actions" in the main sidebar under Alerts, at `/actions`. Members only: Guests get no nav item and the route refuses them, as they get no lookups or Response Actions today.
+- **Two tabs.** **Actions** (`/actions`) and **Action Log** (`/actions/log`), each with its own URL so the log can be bookmarked and linked. The breadcrumb names the open tab. The Action Log tab shows how many rows it holds, or how many are new since the Member last opened it.
+- **Running stays on Actions.** A run closes its dialog (a lookup keeps it open to show the result) and shows a toast: "IOC alert: 2 values queued, no Case · View in Action Log". Opening the Action Log tab highlights the new rows and clears the count.
 - **Value box.** Pasting a value highlights the actions that take its type and dims the rest. Defanged values (`hxxps`, `[.]`) are refanged as Bulk Lookup does. `Enter` opens the first highlighted action that can run, with the value filled in.
 - **One card per action per Integration.** Two Falcon tenants show two "IOC alert" cards, each naming its Integration. A card lists the types it takes and whether it can run now: Ready, Response Actions off, no destination list chosen, no VirusTotal key, paused. A card that can't run still opens its dialog, which says why and where an Admin fixes it.
 - **Three groups**, by what an action changes:
@@ -18,7 +20,7 @@ Interactive version: https://claude.ai/artifact/PrJiJ8ew6JKZjtm1rSSEfV
 - **Same rules as from a Case.** The Integration's one-click defaults (severity, platforms, destination list) are shown in the dialog. "Already present" still records and sends nothing. Contain host still refetches and confirms the host. Admin-only actions are marked "Admin" and disabled for Analysts.
 - **Lookups** show their result in the dialog, each value opening in the Enrichment panel.
 
-### Action Log
+### Action Log tab
 
 - **Every run of every action**, whoever took it and wherever from: this page, a Case's ⋯ menu, an Observable's page, the Enrichment panel's Refresh. One row per value per action, newest first, kept for good.
 - **Columns**: When, Action (with the reason for a Case-less Response Action), Value, Through (Integration), Case, By, From, State, ⋯.
@@ -28,7 +30,7 @@ Interactive version: https://claude.ai/artifact/PrJiJ8ew6JKZjtm1rSSEfV
 - **Linking later.** A row with no Case offers "Link to Case…". Linking moves a Response Action onto that Case: it then appears on its Timeline and is removable from it.
 - **Restricted Cases.** A row on a Restricted Case the Member can't see shows "Restricted Case" with no number.
 
-## A. The page
+## A. Actions tab
 
 ```
 ┌ sidebar ──┬──────────────────────────────────────────────────────────────────────────────────┐
@@ -36,7 +38,9 @@ Interactive version: https://claude.ai/artifact/PrJiJ8ew6JKZjtm1rSSEfV
 │ Dashboard ├──────────────────────────────────────────────────────────────────────────────────┤
 │ Search    │ Action Center                                                                    │
 │ Alerts    │ Look up, respond to and mark any value, with or without a Case.                  │
-│▌Actions   │ ┌──────────────────────────────────────────────────────────────────────────────┐ │
+│▌Actions   │ ▔Actions▔   Action Log (2 new)                                                   │
+│           │ ─────────────────────────────────────────────────────────────────────────────────│
+│           │ ┌──────────────────────────────────────────────────────────────────────────────┐ │
 │           │ │ Value [ invoice-portal[.]biz                          ]  Domain · 6 actions  │ │
 │ Your Cases│ └──────────────────────────────────────────────────────────────────────────────┘ │
 │ C-12 …    │ RESPOND · writes to an external tool; removable                                  │
@@ -51,8 +55,21 @@ Interactive version: https://claude.ai/artifact/PrJiJ8ew6JKZjtm1rSSEfV
 │           │   · Host & identity details                                                      │
 │           │ MARK · changes how Argus treats the value                                        │
 │           │   Mark Important · Ignore [Admin]                                                │
-│           │                                                                                  │
-│           │ Action Log    [All|Linked|No Case] [All kinds|Respond|Look up|Mark] Action▾ By▾  │
+│           │                          ┌───────────────────────────────────────────────────┐   │
+│           │                          │ IOC alert: 2 values queued, no Case  View in Log │   │  ← toast after a run
+└───────────┴──────────────────────────┴───────────────────────────────────────────────────┴───┘
+```
+
+## B. Action Log tab
+
+```
+┌ sidebar ──┬──────────────────────────────────────────────────────────────────────────────────┐
+│ Argus     │ Acme / Actions / Action Log                                                      │
+│ …         ├──────────────────────────────────────────────────────────────────────────────────┤
+│▌Actions   │ Action Center                                                                    │
+│           │  Actions   ▔Action Log▔ (9)                                                      │
+│           │ ─────────────────────────────────────────────────────────────────────────────────│
+│           │ [All|Linked|No Case] [All kinds|Respond|Look up|Mark] Action▾ By▾ State▾  9 of 9 │
 │           │ When     Action            Value              Through   Case       By   State    │
 │           │ 4 min    IOC alert         185.220.101.4      Falcon US-1 C-12     Ada  ● Active  │
 │           │ 22 min   Block sender      billing@invoice-…  Mimecast  No Case ·  Sam  ● Active  │
@@ -63,7 +80,7 @@ Interactive version: https://claude.ai/artifact/PrJiJ8ew6JKZjtm1rSSEfV
 └───────────┴──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## B. The run dialog
+## C. The run dialog
 
 ```
 ┌──────────────────────────────────────────────────────┐
