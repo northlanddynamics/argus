@@ -111,6 +111,28 @@ async function acme() {
   return { t, owner, ana, ben, stream, detect, queue, alert, select, detail, open, view, caseAudit, lastAlertAudit, openFrom, attach, dismiss, move, detach };
 }
 
+describe("The Alert queue", () => {
+  test("lists matching Alerts a page at a time, newest first, with how many match in all", async () => {
+    const a = await acme();
+    for (const n of [1, 2, 3, 4, 5]) await a.detect(`ldt:${n}`, `Detection ${n}`, n === 5 ? "Low" : "High");
+    const page = async (query: Record<string, string>) => {
+      const body = await (await a.ana.api.alerts.$get({ query })).json();
+      if (!("alerts" in body)) throw new Error("Could not list Alerts");
+      return [body.alerts.map((x) => x.externalId), body.total, body.page, body.pageSize];
+    };
+
+    expect(await page({ pageSize: "2" })).toEqual([["ldt:5", "ldt:4"], 5, 1, 2]);
+    expect(await page({ pageSize: "2", page: "2" })).toEqual([["ldt:3", "ldt:2"], 5, 2, 2]);
+    expect(await page({ pageSize: "2", page: "3" })).toEqual([["ldt:1"], 5, 3, 2]);
+    expect(await page({ pageSize: "2", page: "4" })).toEqual([[], 5, 4, 2]);
+    // The total counts what the filters match, not what the page shows.
+    expect(await page({ pageSize: "2", severity: "high" })).toEqual([["ldt:4", "ldt:3"], 4, 1, 2]);
+    expect((await page({}))[3]).toBe(50);
+    expect((await a.ana.api.alerts.$get({ query: { pageSize: "201" } })).status as number).toBe(400);
+    expect((await a.ana.api.alerts.$get({ query: { page: "0" } })).status as number).toBe(400);
+  });
+});
+
 describe("Opening a Case from Alerts", () => {
   test("one Case opens from the selected Alerts, with the highest of their Severities, and they become Attached", async () => {
     const a = await acme();

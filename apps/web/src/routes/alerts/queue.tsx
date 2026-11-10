@@ -1,10 +1,10 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
 import { AlertMenu } from "@/components/alert-menu";
 import { ObservableMenu } from "@/components/observable-menu";
 import { EnrichmentButton, EnrichmentTarget } from "@/components/observable-details";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { XIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, XIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { CaseRef } from "@/components/case-ref";
@@ -50,8 +50,11 @@ import {
   OpenCaseFromAlertsDialog,
 } from "@/routes/alerts/alert-dialogs";
 
-/** `status` is New unless the URL says otherwise; "any" shows every Status. `alert` is the Alert shown in full. */
-export type AlertQueueSearch = { status?: AlertStatus | "any"; severity?: Severity; integration?: string; alert?: string };
+/**
+ * `status` is New unless the URL says otherwise; "any" shows every Status. `page` is which page of the
+ * queue, from 1. `alert` is the Alert shown in full.
+ */
+export type AlertQueueSearch = { status?: AlertStatus | "any"; severity?: Severity; integration?: string; page?: number; alert?: string };
 
 const pick = <T extends string>(list: readonly T[], value: unknown) => (list.includes(value as T) ? (value as T) : undefined);
 
@@ -60,10 +63,12 @@ export const validateAlertQueueSearch = (search: Record<string, unknown>): Alert
   status: pick([...ALERT_STATUSES, "any"] as const, search.status),
   severity: pick(SEVERITIES, search.severity),
   integration: typeof search.integration === "string" && search.integration ? search.integration : undefined,
+  page: Number.isInteger(Number(search.page)) && Number(search.page) > 1 ? Number(search.page) : undefined,
   alert: typeof search.alert === "string" && search.alert ? search.alert : undefined,
 });
 
-/** When an Alert arrived, compactly: "Nov 3, 14:02". */
+/** Alerts on a page of the queue. */
+const PAGE_SIZE = 50;
 
 type BulkKind = "open" | "attach" | "dismiss";
 /** An Alert as the Member saw it when they picked it for an action. */
@@ -127,6 +132,7 @@ export function AlertQueuePage() {
   const search = useSearch({ from: "/_app/alerts" });
   const navigate = useNavigate({ from: "/alerts" });
   const status = search.status ?? "new";
+  const page = search.page ?? 1;
   const setSearch = (next: Partial<AlertQueueSearch>) => navigate({ search: (prev) => ({ ...prev, ...next }) });
 
   const integrations = useQuery(integrationsQuery);
@@ -134,16 +140,36 @@ export function AlertQueuePage() {
   const streams = integrations.data?.filter((i) => i.capabilities.receivesAlerts);
   const alerts = useQuery({
     // Not keyed on the Alert shown in the panel: opening one mustn't reload the queue.
-    queryKey: [...alertsKey, { status, severity: search.severity, integration: search.integration }],
+    queryKey: [...alertsKey, { status, severity: search.severity, integration: search.integration, page }],
     queryFn: async () => {
       const res = await api.alerts.$get({
-        query: { ...(status !== "any" && { status }), severity: search.severity, integration: search.integration },
+        query: {
+          ...(status !== "any" && { status }),
+          severity: search.severity,
+          integration: search.integration,
+          page: String(page),
+          pageSize: String(PAGE_SIZE),
+        },
       });
       if (!res.ok) throw new Error("Could not load Alerts");
       return res.json();
     },
+    // Moving between pages keeps the last one in place until the next arrives.
+    placeholderData: keepPreviousData,
   });
-  const limit = alerts.data?.limit ?? null;
+  const total = alerts.data?.total ?? 0;
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const first = (page - 1) * PAGE_SIZE + 1;
+  /** Row indexes are per page, so a shift-click range never starts from a row on another one. */
+  const toPage = (p: number) => {
+    anchor.current = null;
+    void setSearch({ page: p > 1 ? p : undefined });
+  };
+  // Acting on the last page's Alerts can leave it empty: go back to the last page that has any.
+  const pastTheEnd = !alerts.isPlaceholderData && !!alerts.data && alerts.data.alerts.length === 0 && page > 1;
+  useEffect(() => {
+    if (pastTheEnd) void navigate({ search: (prev) => ({ ...prev, page: pages > 1 ? pages : undefined }), replace: true });
+  }, [pastTheEnd, pages, navigate]);
 
   /** Selected Alerts: id → the Alert as shown when it was selected, so changes since are caught. */
   const [selected, setSelected] = useState<Map<string, Picked>>(new Map());
@@ -151,10 +177,13 @@ export function AlertQueuePage() {
   const showing = search.alert ?? null;
   const setShowing = (alert: string | null) => setSearch({ alert: alert ?? undefined });
   const filtered = status !== "new" || search.severity !== undefined || search.integration !== undefined;
-  /** Changes the filters; the last action's notice is about Alerts that may no longer be shown, so it goes. */
+  /**
+   * Changes the filters, starting again from the first page; the last action's notice is about Alerts
+   * that may no longer be shown, so it goes.
+   */
   const filter = (next: Partial<AlertQueueSearch>) => {
     setOutcome(null);
-    setSearch(next);
+    setSearch({ ...next, page: undefined });
   };
   /** The bulk action being confirmed, and the Alerts it acts on: the selection, or the one in the panel. */
   // Kept after the dialog closes (`open` false): its outcome arrives then, and is told about these Alerts.
@@ -177,7 +206,7 @@ export function AlertQueuePage() {
   /** Integrations that aren't bringing Alerts in: paused, disconnected or in error. */
   const unhealthy = streams?.filter((i) => i.paused || i.health === "error" || i.health === "disconnected") ?? [];
   const allSelected = rows.length > 0 && rows.every((a) => selected.has(a.id));
-  /** Selected Alerts the current filters don't show. */
+  /** Selected Alerts this page doesn't show: on other pages, or not matching the filters. */
   const hiddenSelected = [...selected.keys()].filter((id) => !rows.some((a) => a.id === id)).length;
   const setPicked = (list: readonly AlertRow[], on: boolean) =>
     setSelected((prev) => {
@@ -387,7 +416,7 @@ export function AlertQueuePage() {
       {/* The Alert panel takes two fifths of the page beside the queue, never less than 26rem. */}
       <div className={cn("grid items-start gap-4", showing && "@4xl:grid-cols-[minmax(0,3fr)_minmax(26rem,2fr)]")}>
       {!(alerts.isError && !loaded) && (
-      <Card className="@container py-0">
+      <Card className={cn("@container py-0 transition-opacity", alerts.isPlaceholderData && "opacity-60")}>
           <Table ref={table} className="table-fixed">
             {/* Column widths live here, so the header row can turn into the selection toolbar without moving them. */}
             <colgroup>
@@ -413,7 +442,7 @@ export function AlertQueuePage() {
                     <div role="toolbar" aria-label="Selected Alerts" className="flex items-center gap-2">
                       <span className="mr-1 font-medium tabular-nums">
                         {selected.size} selected
-                        {hiddenSelected > 0 && <span className="font-normal text-muted-foreground">{` · ${hiddenSelected} not shown by these filters`}</span>}
+                        {hiddenSelected > 0 && <span className="font-normal text-muted-foreground">{` · ${hiddenSelected} not shown here`}</span>}
                       </span>
                       <Button size="sm" onClick={() => act("open")}>
                         Open Case
@@ -582,12 +611,26 @@ export function AlertQueuePage() {
       )}
       {showing && <AlertPanel id={showing} onClose={closePanel} onAct={(kind, a) => act(kind, new Map([[a.id, pickedOf(a)]]))} />}
       </div>
+      {loaded && loaded.length > 0 && pages > 1 && (
+        <nav aria-label="Pages" className="flex items-center justify-between gap-2">
+          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => toPage(page - 1)}>
+            <ChevronLeftIcon /> Newer
+          </Button>
+          <span className="text-sm text-muted-foreground tabular-nums">
+            Page {page} of {pages}
+          </span>
+          <Button variant="outline" size="sm" disabled={page >= pages} onClick={() => toPage(page + 1)}>
+            Older <ChevronRightIcon />
+          </Button>
+        </nav>
+      )}
       {loaded && loaded.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        <p role="status">
-          {limit !== null && loaded.length >= limit
-            ? `Showing the newest ${limit} Alerts. Narrow the filters to see older ones.`
-            : `${loaded.length} ${status === "any" ? (loaded.length === 1 ? "Alert" : "Alerts") : `${alertStatusLabel[status]} ${loaded.length === 1 ? "Alert" : "Alerts"}`}`}
+        <p role="status" className="tabular-nums">
+          {pages > 1 ? `${first}–${first + loaded.length - 1} of ` : ""}
+          {total} {status === "any" ? "" : `${alertStatusLabel[status]} `}
+          {total === 1 ? "Alert" : "Alerts"}
+          {pages > 1 && ", newest first"}
         </p>
         <p>
           <Key>j</Key> <Key>k</Key> move · <Key>x</Key> selects · <Key>Enter</Key> opens · <Key>Esc</Key> closes · with Alerts selected,{" "}

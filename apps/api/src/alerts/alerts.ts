@@ -151,8 +151,13 @@ export type CaseCorrelation = {
   shared: SharedItem[];
 };
 
-/** The most Alerts the queue shows at once, newest first. */
-export const QUEUE_LIMIT = 500;
+/** How many Alerts a page of the queue holds, unless the request asks for another size. */
+export const QUEUE_PAGE_SIZE = 50;
+/** The most Alerts one page of the queue may hold. */
+export const QUEUE_MAX_PAGE_SIZE = 200;
+
+/** Which page of the queue, from 1, and how many Alerts a page holds. */
+export type QueuePage = { page?: number; pageSize?: number };
 
 /**
  * Records a detection from `integration`: a new Alert with Status New, or, for a `CompositeId` already
@@ -553,10 +558,25 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
     });
 
   return {
-    /** The Alert queue: the Organization's Alerts `me` can see that match `filter`, newest first. */
-    async list(me: Membership, filter: AlertFilter = {}) {
+    /**
+     * The Alert queue: the Organization's Alerts `me` can see that match `filter`, newest first, a page
+     * at a time, with how many match in all.
+     */
+    async list(me: Membership, filter: AlertFilter = {}, paging: QueuePage = {}) {
+      const page = Math.max(1, paging.page ?? 1);
+      const pageSize = Math.min(Math.max(1, paging.pageSize ?? QUEUE_PAGE_SIZE), QUEUE_MAX_PAGE_SIZE);
       let caseId: string | undefined;
       if (filter.caseNumber !== undefined) caseId = (await caseNumbered(db, me, filter.caseNumber)).id;
+      const matching = and(
+        eq(alerts.organizationId, me.organizationId),
+        visibleAlerts(me, alerts.caseId),
+        filter.status ? eq(alerts.status, filter.status) : undefined,
+        filter.severity ? eq(alerts.severity, filter.severity) : undefined,
+        filter.integrationId ? eq(alerts.integrationId, filter.integrationId) : undefined,
+        caseId ? eq(alerts.caseId, caseId) : undefined,
+      );
+      const [counted] = await db.select({ total: sql<number>`count(*)::int` }).from(alerts).where(matching);
+      const total: number = counted?.total ?? 0;
       const rows = await db
         .select({
           id: alerts.id,
@@ -581,18 +601,10 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
         .from(alerts)
         .innerJoin(integrations, eq(alerts.integrationId, integrations.id))
         .leftJoin(cases, eq(alerts.caseId, cases.id))
-        .where(
-          and(
-            eq(alerts.organizationId, me.organizationId),
-            visibleAlerts(me, alerts.caseId),
-            filter.status ? eq(alerts.status, filter.status) : undefined,
-            filter.severity ? eq(alerts.severity, filter.severity) : undefined,
-            filter.integrationId ? eq(alerts.integrationId, filter.integrationId) : undefined,
-            caseId ? eq(alerts.caseId, caseId) : undefined,
-          ),
-        )
+        .where(matching)
         .orderBy(desc(alerts.receivedAt), desc(alerts.seq))
-        .limit(QUEUE_LIMIT);
+        .limit(pageSize)
+        .offset((page - 1) * pageSize);
       const best = await bestCasesForAlerts(
         db,
         me,
@@ -606,7 +618,7 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
         ).map((c) => [c.id, { number: c.number, title: c.title }]),
       );
       const subjects = await alertSubjectAssets(db, rows);
-      return rows.map(({ integrationId, integrationName, detectedAt, receivedAt, caseNumber, caseTitle, falconLink, ...row }) => {
+      const shown = rows.map(({ integrationId, integrationName, detectedAt, receivedAt, caseNumber, caseTitle, falconLink, ...row }) => {
         const top = best.get(row.id);
         const related = top && bestCases.get(top.caseId);
         return {
@@ -624,6 +636,7 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
           receivedAt: receivedAt.toISOString(),
         };
       });
+      return { alerts: shown, total, page, pageSize };
     },
 
     /**
