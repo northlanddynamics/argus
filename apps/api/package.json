@@ -20,7 +20,8 @@
     "./case-reports/vocabulary": "./src/case-reports/vocabulary.ts",
     "./search/vocabulary": "./src/search/vocabulary.ts",
     "./metrics/vocabulary": "./src/metrics/vocabulary.ts",
-    "./response-actions/vocabulary": "./src/response-actions/vocabulary.ts"
+    "./response-actions/vocabulary": "./src/response-actions/vocabulary.ts",
+    "./action-center/vocabulary": "./src/action-center/vocabulary.ts"
   },
   "scripts": {
     "dev": "bun --watch src/server.ts",

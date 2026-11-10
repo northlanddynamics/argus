@@ -25,6 +25,7 @@ import { CASE_TYPES, RESOLUTIONS, SEVERITIES, type Severity, STATUSES } from "..
 import { STORED_LINK_TYPES } from "../case-links/vocabulary";
 import { ASSET_TYPES, OBSERVABLE_TYPES } from "../observables/vocabulary";
 import { PROVIDERS } from "../integrations/vocabulary";
+import { LOG_ACTIONS, LOG_OUTCOMES, LOG_SOURCES } from "../action-center/vocabulary";
 import { NOTIFICATION_KINDS } from "../notifications/vocabulary";
 import { TEAMS_POST_KINDS } from "../teams/vocabulary";
 import { type Citation, PROMOTION_SOURCES } from "../timeline/vocabulary";
@@ -1453,6 +1454,10 @@ export const teamsPosts = pgTable(
  * one Pending or Active `created` Response Action exists per Integration, kind and target, so Argus
  * never sends the same thing twice. `dismissed_by_id` and `dismissed_at` say who dismissed an
  * "already present" record from its Case, and when.
+ *
+ * One taken from the Action Center without a Case (ADR 0016) has no `case_id` and must carry a
+ * `reason`, which the tool is sent in place of the Case's reference; linking it to a Case later sets
+ * `case_id` for good.
  */
 export const responseActions = pgTable(
   "response_actions",
@@ -1462,9 +1467,10 @@ export const responseActions = pgTable(
     organizationId: text("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "restrict" }),
-    caseId: text("case_id")
-      .notNull()
-      .references(() => cases.id, { onDelete: "restrict" }),
+    /** The Case it was taken from, or linked to later; null for one taken from the Action Center without a Case (ADR 0016). */
+    caseId: text("case_id").references(() => cases.id, { onDelete: "restrict" }),
+    /** Why it was taken, for one without a Case: what the tool is sent in place of the Case's reference. */
+    reason: text("reason"),
     /** What it was taken against: exactly one Observable or one Asset (`response_actions_one_target`). */
     observableId: text("observable_id").references(() => observables.id, { onDelete: "restrict" }),
     assetId: text("asset_id").references(() => assets.id, { onDelete: "restrict" }),
@@ -1523,6 +1529,8 @@ export const responseActions = pgTable(
     check("response_actions_present_from", sql`(${t.origin} = 'already_present') = (${t.presentFromId} IS NOT NULL)`),
     check("response_actions_dismissed", sql`(${t.dismissedAt} IS NULL) = (${t.dismissedById} IS NULL)`),
     check("response_actions_removal_requested", sql`(${t.removalRequestedAt} IS NULL) = (${t.removalRequestedById} IS NULL)`),
+    check("response_actions_case_or_reason", sql`${t.caseId} IS NOT NULL OR ${t.reason} IS NOT NULL`),
+    index("response_actions_no_case_idx").on(t.organizationId, t.seq).where(sql`${t.caseId} IS NULL`),
   ],
 );
 
@@ -1555,5 +1563,45 @@ export const responseActionOutbox = pgTable(
   (t) => [
     index("response_action_outbox_due_idx").on(t.nextAttemptAt).where(sql`${t.state} = 'pending'`),
     index("response_action_outbox_action_idx").on(t.responseActionId, t.seq),
+  ],
+);
+
+/**
+ * The Action Log (ADR 0016): one row per action run on one value, whoever ran it and wherever from.
+ * A `response_action` row points at its Response Action, whose state it shows, and is written in the
+ * transaction that takes it; a mark or a lookup row records how it went (`outcome`, and why it failed
+ * in `detail`). `value_type` and `value` name what it ran on as it was then, `observable_id` or
+ * `asset_id` the item when Argus holds it. Rows are never deleted; `case_id` is set once, when the
+ * run is linked to a Case after the fact, or from the start.
+ */
+export const actionLog = pgTable(
+  "action_log",
+  {
+    id: text("id").primaryKey(),
+    seq: bigserial("seq", { mode: "number" }).notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    action: text("action", { enum: LOG_ACTIONS }).notNull(),
+    responseActionId: text("response_action_id").references(() => responseActions.id, { onDelete: "restrict" }),
+    observableId: text("observable_id").references(() => observables.id, { onDelete: "restrict" }),
+    assetId: text("asset_id").references(() => assets.id, { onDelete: "restrict" }),
+    valueType: text("value_type").notNull(),
+    value: text("value").notNull(),
+    integrationId: text("integration_id").references(() => integrations.id, { onDelete: "restrict" }),
+    caseId: text("case_id").references(() => cases.id, { onDelete: "restrict" }),
+    source: text("source", { enum: LOG_SOURCES }).notNull(),
+    outcome: text("outcome", { enum: LOG_OUTCOMES }),
+    detail: text("detail"),
+    actorId: text("actor_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    index("action_log_org_idx").on(t.organizationId, t.seq),
+    uniqueIndex("action_log_response_action_idx").on(t.responseActionId).where(sql`${t.responseActionId} IS NOT NULL`),
+    check("action_log_response_action", sql`(${t.action} = 'response_action') = (${t.responseActionId} IS NOT NULL)`),
+    check("action_log_outcome", sql`(${t.action} = 'response_action') = (${t.outcome} IS NULL)`),
   ],
 );

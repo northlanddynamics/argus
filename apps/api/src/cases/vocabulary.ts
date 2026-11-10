@@ -117,6 +117,7 @@ export const CASE_AUDIT_ACTIONS = [
   "response_action.removal_retried",
   "response_action.removal_failed",
   "response_action.removed",
+  "response_action.linked",
 ] as const;
 export type CaseAuditAction = (typeof CASE_AUDIT_ACTIONS)[number];
 

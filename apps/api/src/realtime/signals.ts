@@ -32,6 +32,8 @@ export type Signal =
   | { kind: "members"; organizationId: string }
   /** The Organization's Alerts or Integrations changed. */
   | { kind: "alerts"; organizationId: string }
+  /** The Action Log changed (ADR 0016): a run was logged, or a Response Action it shows changed. */
+  | { kind: "actions"; organizationId: string }
   /** These people's notifications changed (a new one, or one marked read). */
   | { kind: "notifications"; organizationId: string; userIds: string[] };
 

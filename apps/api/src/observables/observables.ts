@@ -1,4 +1,6 @@
 import { and, type AnyColumn, asc, desc, eq, exists, inArray, isNull, ne, notExists, type SQL, sql } from "drizzle-orm";
+import { logRun } from "../action-center/action-log";
+import type { LogSource } from "../action-center/vocabulary";
 import { alias } from "drizzle-orm/pg-core";
 import { casePolicy, isGuest, type MemberActor, NotPermitted, organizationPolicy, visibleAlerts, visibleCases, visibleItems } from "../access/policy";
 import { recordOrgAudit } from "../audit/org-audit-log";
@@ -508,12 +510,28 @@ function heldOnceStore<Type extends string>(
   }
 
   /** Puts `item` (locked) on the Ignored list, or takes it off; returns whether anything changed. */
-  async function ignoreItem(tx: Tx, me: Membership, item: { id: string; type: string; value: string }, ignored: boolean, now: Date) {
+  async function ignoreItem(tx: Tx, me: Membership, item: { id: string; type: string; value: string }, ignored: boolean, now: Date, { source, caseId }: { source: LogSource; caseId: string | null }) {
     const [entry] = await tx
       .select({ id: ignoredObservables.id })
       .from(ignoredObservables)
       .where(and(eq(kind.ignoredItem, item.id), isNull(ignoredObservables.endedAt)));
-    if (!!entry === ignored) return false;
+    const logged = (outcome: "done" | "unchanged") =>
+      logRun(tx, {
+        organizationId: me.organizationId,
+        action: ignored ? "ignore" : "unignore",
+        observableId: kind.name === "observable" ? item.id : null,
+        valueType: item.type,
+        value: item.value,
+        caseId,
+        source,
+        outcome,
+        actorId: me.userId,
+        at: now,
+      });
+    if (!!entry === ignored) {
+      await logged("unchanged");
+      return false;
+    }
     if (entry) {
       await tx.update(ignoredObservables).set({ endedById: me.userId, endedAt: now }).where(eq(ignoredObservables.id, entry.id));
     } else {
@@ -540,9 +558,10 @@ function heldOnceStore<Type extends string>(
       .select({ caseId: links.caseId })
       .from(links)
       .where(and(eq(links.itemId, item.id), isNull(links.unlinkedAt)));
-    for (const caseId of new Set(linked.map((l) => l.caseId))) {
-      await publish(tx, { kind: "case", organizationId: me.organizationId, caseId, membersOnly: true });
+    for (const linkedCaseId of new Set(linked.map((l) => l.caseId))) {
+      await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: linkedCaseId, membersOnly: true });
     }
+    await logged("done");
     return true;
   }
 
@@ -550,9 +569,9 @@ function heldOnceStore<Type extends string>(
    * Puts item `itemId` on the Ignored list, or takes it off (`ignored` false). Admins only. Doing what
    * is already so changes nothing; returns whether anything changed.
    */
-  async function setIgnored(me: Membership, itemId: string, ignored: boolean) {
+  async function setIgnored(me: Membership, itemId: string, ignored: boolean, { source = "elsewhere", caseId = null }: { source?: LogSource; caseId?: string | null } = {}) {
     if (!organizationPolicy.canManageIgnoredObservables(me)) throw new NotPermitted();
-    return db.transaction(async (tx) => ignoreItem(tx, me, await lockItem(tx, me, itemId), ignored, clock.now()));
+    return db.transaction(async (tx) => ignoreItem(tx, me, await lockItem(tx, me, itemId), ignored, clock.now(), { source, caseId }));
   }
 
   /**
@@ -561,7 +580,7 @@ function heldOnceStore<Type extends string>(
    * adds it first, so it is ignored when it turns up. Throws `InvalidValue` if the value isn't a
    * valid `type`.
    */
-  async function setIgnoredByValue(me: Membership, type: Type, raw: string, ignored: boolean) {
+  async function setIgnoredByValue(me: Membership, type: Type, raw: string, ignored: boolean, { source = "elsewhere", caseId = null }: { source?: LogSource; caseId?: string | null } = {}) {
     if (!organizationPolicy.canManageIgnoredObservables(me)) throw new NotPermitted();
     const normalised = kind.normalise(type, raw);
     if (!normalised) throw new InvalidValue(kind.invalid(type));
@@ -579,7 +598,7 @@ function heldOnceStore<Type extends string>(
         .where(and(eq(items.organizationId, me.organizationId), eq(items.type, type), eq(items.matchKey, normalised.key)))
         .for("update");
       if (!item) return false;
-      return ignoreItem(tx, me, item, ignored, now);
+      return ignoreItem(tx, me, item, ignored, now, { source, caseId });
     });
   }
 
@@ -791,12 +810,28 @@ const isImportant = (db: Db | Tx, observableId: AnyColumn) =>
   );
 
 /** Marks `item` (locked) Important, or unmarks it; returns whether anything changed. */
-async function markImportant(tx: Tx, me: Membership, item: { id: string; type: string; value: string }, important: boolean, now: Date) {
+async function markImportant(tx: Tx, me: Membership, item: { id: string; type: string; value: string }, important: boolean, now: Date, { source, caseId }: { source: LogSource; caseId: string | null }) {
   const [entry] = await tx
     .select({ id: importantObservables.id })
     .from(importantObservables)
     .where(and(eq(importantObservables.observableId, item.id), isNull(importantObservables.endedAt)));
-  if (!!entry === important) return false;
+  const logged = (outcome: "done" | "unchanged") =>
+    logRun(tx, {
+      organizationId: me.organizationId,
+      action: important ? "mark_important" : "unmark_important",
+      observableId: item.id,
+      valueType: item.type,
+      value: item.value,
+      caseId,
+      source,
+      outcome,
+      actorId: me.userId,
+      at: now,
+    });
+  if (!!entry === important) {
+    await logged("unchanged");
+    return false;
+  }
   if (entry) {
     await tx.update(importantObservables).set({ endedById: me.userId, endedAt: now }).where(eq(importantObservables.id, entry.id));
   } else {
@@ -822,9 +857,10 @@ async function markImportant(tx: Tx, me: Membership, item: { id: string; type: s
     .select({ caseId: caseObservables.caseId })
     .from(caseObservables)
     .where(and(eq(caseObservables.itemId, item.id), isNull(caseObservables.unlinkedAt)));
-  for (const caseId of new Set(linked.map((l) => l.caseId))) {
-    await publish(tx, { kind: "case", organizationId: me.organizationId, caseId, membersOnly: true });
+  for (const linkedCaseId of new Set(linked.map((l) => l.caseId))) {
+    await publish(tx, { kind: "case", organizationId: me.organizationId, caseId: linkedCaseId, membersOnly: true });
   }
+  await logged("done");
   return true;
 }
 
@@ -835,7 +871,7 @@ function importance({ db, clock }: { db: Db; clock: Clock }) {
      * Marks Observable `itemId` Important, or unmarks it (`important` false). Members only. Doing
      * what is already so changes nothing; returns whether anything changed.
      */
-    async setImportant(me: Membership, itemId: string, important: boolean) {
+    async setImportant(me: Membership, itemId: string, important: boolean, { source = "elsewhere", caseId = null }: { source?: LogSource; caseId?: string | null } = {}) {
       if (!organizationPolicy.canMarkImportantObservables(me)) throw new NotPermitted();
       return db.transaction(async (tx) => {
         const [item] = await tx
@@ -844,7 +880,7 @@ function importance({ db, clock }: { db: Db; clock: Clock }) {
           .where(and(eq(observables.id, itemId), eq(observables.organizationId, me.organizationId)))
           .for("update");
         if (!item) throw new ItemNotFound("Observable not found");
-        return markImportant(tx, me, item, important, clock.now());
+        return markImportant(tx, me, item, important, clock.now(), { source, caseId });
       });
     },
 
@@ -853,7 +889,7 @@ function importance({ db, clock }: { db: Db; clock: Clock }) {
      * or not the Organization holds it yet: marking one it doesn't hold adds it first, so it is
      * Important when it turns up. Throws `InvalidValue` if the value isn't a valid `type`.
      */
-    async setImportantByValue(me: Membership, type: ObservableType, raw: string, important: boolean) {
+    async setImportantByValue(me: Membership, type: ObservableType, raw: string, important: boolean, { source = "elsewhere", caseId = null }: { source?: LogSource; caseId?: string | null } = {}) {
       if (!organizationPolicy.canMarkImportantObservables(me)) throw new NotPermitted();
       const normalised = normaliseObservable(type, raw);
       if (!normalised) throw new InvalidValue(observableExpected(type));
@@ -871,7 +907,7 @@ function importance({ db, clock }: { db: Db; clock: Clock }) {
           .where(and(eq(observables.organizationId, me.organizationId), eq(observables.type, type), eq(observables.matchKey, normalised.key)))
           .for("update");
         if (!item) return false;
-        return markImportant(tx, me, item, important, now);
+        return markImportant(tx, me, item, important, now, { source, caseId });
       });
     },
   };

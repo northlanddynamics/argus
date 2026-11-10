@@ -71,6 +71,7 @@ function crumbsWithin(pathname: string, search: Record<string, unknown>, me: Me)
   if (area === "observables") return [{ label: "Observable" }];
   if (area === "assets") return [{ label: "Asset" }];
   if (area === "dashboard") return [{ label: "Dashboard" }];
+  if (area === "actions") return id === "log" ? [{ label: "Action Center", to: "/actions" }, { label: "Action Log" }] : [{ label: "Action Center" }];
   if (area === "settings") return [{ label: "Settings", to: "/settings" }, ...(id && settingsSections[id] ? [{ label: settingsSections[id] }] : [])];
   return [{ label: cases }];
 }

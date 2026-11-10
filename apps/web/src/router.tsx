@@ -164,6 +164,28 @@ const bulkLookupRoute = createRoute({
   component: lazyRouteComponent(() => import("@/routes/bulk-lookup"), "BulkLookupPage"),
 });
 
+/** The Action Center (ADR 0016): Members only, with the Actions and Action Log tabs. */
+const actionCenterRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/actions",
+  beforeLoad: ({ context }) => {
+    if (!context.me.organization || context.me.guest) throw redirect({ to: "/" });
+  },
+  component: lazyRouteComponent(() => import("@/routes/action-center"), "ActionCenterLayout"),
+});
+
+const actionsTabRoute = createRoute({
+  getParentRoute: () => actionCenterRoute,
+  path: "/",
+  component: lazyRouteComponent(() => import("@/routes/action-center"), "ActionsTab"),
+});
+
+const actionLogTabRoute = createRoute({
+  getParentRoute: () => actionCenterRoute,
+  path: "/log",
+  component: lazyRouteComponent(() => import("@/routes/action-center"), "ActionLogTab"),
+});
+
 /** Global search, for Members and Guests; the API decides what each finds. */
 const searchRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -260,6 +282,7 @@ export const router = createRouter({
       dashboardRoute,
       searchRoute,
       bulkLookupRoute,
+      actionCenterRoute.addChildren([actionsTabRoute, actionLogTabRoute]),
       accountRoute,
       observableRoute,
       assetRoute,

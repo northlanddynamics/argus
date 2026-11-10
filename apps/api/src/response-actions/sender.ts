@@ -65,12 +65,19 @@ export const iocDescription = (c: { number: number; title: string }, baseUrl: st
   `${caseRef(c.number)}: ${c.title}\n${new URL(`/cases/${c.number}`, baseUrl)}`;
 
 /**
+ * What the tool is told of a Response Action: its Case's reference, or, taken from the Action Center
+ * without a Case (ADR 0016), the reason given and a link to the Action Log.
+ */
+export const describedFor = (c: { number: number; title: string } | null, reason: string | null, baseUrl: string) =>
+  c ? iocDescription(c, baseUrl) : `Argus: ${reason ?? "taken from the Action Center"}\n${new URL("/actions/log", baseUrl)}`;
+
+/**
  * A tool as the sender uses it, whatever its Provider: look a Response Action's target up, create it,
  * and delete what was created by the id the tool gave it.
  */
 type Tool = {
   holds(r: typeof responseActions.$inferSelect): Promise<boolean>;
-  create(r: typeof responseActions.$inferSelect, c: { number: number; title: string }): Promise<string>;
+  create(r: typeof responseActions.$inferSelect, c: { number: number; title: string } | null): Promise<string>;
   /** True when the tool deleted it, false when it is already gone. */
   remove(r: typeof responseActions.$inferSelect & { externalId: string }): Promise<boolean>;
 };
@@ -132,7 +139,7 @@ export function createResponseActionSender(
           platforms: r.falconPlatforms ?? IOC_PLATFORMS,
           appliedGlobally: true,
           source: "Argus",
-          description: iocDescription(c, baseUrl),
+          description: describedFor(c, r.reason, baseUrl),
         });
       },
       remove: async (r) => {
@@ -152,7 +159,7 @@ export function createResponseActionSender(
     const tool: Tool = {
       holds: async (r) => !!(await client.findBlockedSender(r.targetType as BlockedSenderType, r.targetValue)),
       create: (r, c) =>
-        client.blockSender({ type: r.targetType as BlockedSenderType, value: r.targetValue, appliesTo: "everyone", description: iocDescription(c, baseUrl) }),
+        client.blockSender({ type: r.targetType as BlockedSenderType, value: r.targetValue, appliesTo: "everyone", description: describedFor(c, r.reason, baseUrl) }),
       remove: (r) => client.deleteBlockedSender(r.externalId),
     };
     return { revision: row.credentialsRevision, tool };
@@ -170,7 +177,7 @@ export function createResponseActionSender(
       create: async (r, c) =>
         `${r.destinationList!.id}/${await client.addDestination(r.destinationList!.id, {
           destination: r.targetValue,
-          comment: iocDescription(c, baseUrl).replace("\n", " "),
+          comment: describedFor(c, r.reason, baseUrl).replace("\n", " "),
         })}`,
       remove: async (r) => {
         const [listId, id] = r.externalId.split("/");
@@ -207,6 +214,8 @@ export function createResponseActionSender(
       .where(eq(responseActions.id, due.r.id))
       .returning();
     await recordStateChange(tx, { r: failed!, subject: due.subject, change: removing ? "removal_failed" : "failed", actor: ARGUS, now, detail: message });
+    // Notifications belong to a Case: one without shows Failed in the Action Log alone (ADR 0016).
+    if (!due.r.caseId || !due.case) return;
     const theCase = {
       id: due.r.caseId,
       organizationId: due.r.organizationId,
@@ -250,7 +259,8 @@ export function createResponseActionSender(
     attempt: typeof responseActionOutbox.$inferSelect;
     r: typeof responseActions.$inferSelect;
     subject: Subject;
-    case: { number: number; title: string; restricted: boolean; assigneeId: string | null };
+    /** Its Case, or null for one taken from the Action Center without a Case (ADR 0016). */
+    case: { number: number; title: string; restricted: boolean; assigneeId: string | null } | null;
     /** Whether the Integration takes this kind now: its Host containment setting for containment, else its Response Actions one. */
     takesIt: boolean;
     provider: keyof typeof providerCapabilities;
@@ -279,7 +289,7 @@ export function createResponseActionSender(
         .innerJoin(responseActions, eq(o.responseActionId, responseActions.id))
         .leftJoin(observables, eq(responseActions.observableId, observables.id))
         .leftJoin(assets, eq(responseActions.assetId, assets.id))
-        .innerJoin(cases, eq(responseActions.caseId, cases.id))
+        .leftJoin(cases, eq(responseActions.caseId, cases.id))
         .innerJoin(integrations, eq(responseActions.integrationId, integrations.id))
         .innerJoin(organization, eq(o.organizationId, organization.id))
         .where(and(eq(o.state, "pending"), lte(o.nextAttemptAt, now), eq(integrations.paused, false), isNull(organization.deletedAt)))
@@ -295,7 +305,10 @@ export function createResponseActionSender(
           subject: row.observable
             ? { type: row.observable.type as ObservableType, value: row.observable.value }
             : { type: row.asset!.type as AssetType, value: row.asset!.value },
-          case: { number: row.caseNumber, title: row.caseTitle, restricted: row.caseRestricted, assigneeId: row.caseAssigneeId },
+          case:
+            row.caseNumber !== null && row.caseTitle !== null && row.caseRestricted !== null
+              ? { number: row.caseNumber, title: row.caseTitle, restricted: row.caseRestricted, assigneeId: row.caseAssigneeId }
+              : null,
           takesIt: isHostKind(row.r.kind) ? row.hostContainment : row.responseActionsOn,
           provider: row.provider,
         };
@@ -361,7 +374,8 @@ export function createResponseActionSender(
             .where(eq(o.id, due.attempt.id));
           await tx.update(responseActions).set({ lastError: message }).where(eq(responseActions.id, due.r.id));
           // Members see that it is being retried, and why.
-          await publish(tx, { kind: "case", organizationId: due.r.organizationId, caseId: due.r.caseId, membersOnly: true });
+          await publish(tx, { kind: "actions", organizationId: due.r.organizationId });
+          if (due.r.caseId) await publish(tx, { kind: "case", organizationId: due.r.organizationId, caseId: due.r.caseId, membersOnly: true });
         }
       }
       return rows.length;
