@@ -2,7 +2,7 @@
 
 Where a Member sees an Observable's Enrichment from anywhere in Argus: a panel that slides in from the right over the dimmed page, in place of the IP, hash, and domain/email/URL context popups. Three lookup sources now hang off hover (IPinfo for IPs, ADR 0010; VirusTotal for hashes, ADR 0011; VirusTotal for domains, email addresses and URLs, ADR 0012). Their reports have grown too tall for a popup that vanishes when the pointer slips, and analysts want to read one report beside the table it came from, compare it with the next row, and follow a value in the report to its own report.
 
-What each source shows, and the wording of every state (looking up, never seen, no key, not configured, failed, withheld, private address), is unchanged from `ip-context-popup.md`, `hash-context-popup.md` and `domain-url-context-popup.md`. This document only moves that content into the panel and says how the panel opens, holds still and moves between values. Hover no longer opens anything.
+What each source shows, and the wording of every state (looking up, never seen, no key, not configured, failed, withheld, private address), is unchanged from `ip-context-popup.md`, `hash-context-popup.md` and `domain-url-context-popup.md`. This document only moves that content into the panel and says how the panel opens, holds still and moves between values. Hover never opens the panel; an IP alone still shows its IPinfo hover card (`ip-context-popup.md`).
 
 ## Behaviour
 

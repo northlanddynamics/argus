@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import type { FocusEvent, ReactElement, ReactNode } from "react";
 import { toast } from "sonner";
 import { EnrichmentLayout, KnownLine, SourceSection, ValueHeader } from "@/components/enrichment-parts";
 import { ObservableText } from "@/components/observable-details";
@@ -9,13 +9,17 @@ import { Time } from "@/components/time";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { meQuery } from "@/lib/api";
+import { useHoverCardOpen } from "@/lib/hover-card";
 import { asTypeLabel, type IpDetails, type IpLookup, ipLookupQuery, useRefreshIpLookup } from "@/lib/ip-lookups";
+import { canManage } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 
 /**
- * What IPinfo says about an IP (ADR 0010), as the Enrichment panel and an IP Observable's page show
- * it; laid out in `docs/wireframes/ip-context-popup.md` and `enrichment-panel.md`.
+ * What IPinfo says about an IP (ADR 0010), as the hover card, the Enrichment panel and an IP
+ * Observable's page show it; laid out in `docs/wireframes/ip-context-popup.md` and `enrichment-panel.md`.
  */
 
 /** 🇩🇪 for "DE". */
@@ -251,6 +255,57 @@ export function IpEnrichment({ ip, admin }: { ip: string; admin: boolean }) {
         </SourceSection>
       )}
     </EnrichmentLayout>
+  );
+}
+
+/** The hover card's content; mounted only while it is open, so the lookup starts when it opens. */
+function IpCard({ ip, admin }: { ip: string; admin: boolean }) {
+  const q = useQuery(ipLookupQuery(ip));
+  const lookup = q.data;
+  const shown = lookup?.ip ?? ip;
+  const publicIp = !lookup || lookup.state !== "reserved";
+  const footer = !lookup || (lookup.state !== "reserved" && lookup.state !== "unconfigured");
+  return (
+    <div className="grid gap-2.5" data-testid="ip-hover-card">
+      <ValueHeader shown={shown} copy={shown} copied={`Copied ${shown}`} href={publicIp ? `https://ipinfo.io/${encodeURIComponent(shown)}` : null} hrefLabel="Open on ipinfo.io">
+        {lookup?.details?.hostname && <span className="font-mono text-xs break-all text-muted-foreground">{lookup.details.hostname}</span>}
+      </ValueHeader>
+      <div className="border-t pt-2.5">
+        <IpLookupBody lookup={lookup} loading={q.isPending} error={q.error} admin={admin} />
+        {lookup?.state === "reserved" && lookup.reserved?.range && (
+          <p className="mt-1 text-muted-foreground">Not looked up: it means nothing outside the network it belongs to, and Argus doesn't send internal addresses to IPinfo.</p>
+        )}
+      </div>
+      {footer && (
+        <div className="border-t pt-2">
+          <IpLookupFooter ip={ip} lookup={lookup} loading={q.isPending} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Wraps an IP as it is shown anywhere (a link to its page, a badge, plain text) so that resting the
+ * pointer on it opens what IPinfo says about it (`docs/wireframes/ip-context-popup.md`). Focus
+ * doesn't open it: from the keyboard, `I` opens the Enrichment panel. `children` must be one element
+ * that can hold a ref. `enabled` false leaves it as it is; `held` keeps the card shut without
+ * remounting the IP (while the Enrichment panel shows it, so focus can return to it). Guests see the IP alone: Argus never
+ * spends the Organization's IPinfo quota on their behalf.
+ */
+export function IpHoverCard({ ip, enabled = true, held = false, children }: { ip: string; enabled?: boolean; held?: boolean; children: ReactElement }) {
+  const role = useQuery(meQuery).data?.organization?.role;
+  const card = useHoverCardOpen();
+  if (!enabled || !role) return children;
+  return (
+    <HoverCard openDelay={400} closeDelay={150} open={card.open && !held} onOpenChange={card.onOpenChange}>
+      <HoverCardTrigger asChild onFocus={(e: FocusEvent) => e.preventDefault()}>
+        {children}
+      </HoverCardTrigger>
+      <HoverCardContent className="w-80" side="bottom" align="start" collisionPadding={16}>
+        <IpCard ip={ip} admin={canManage(role)} />
+      </HoverCardContent>
+    </HoverCard>
   );
 }
 

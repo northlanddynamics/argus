@@ -2,6 +2,7 @@ import type { ObservableType } from "api/observables/vocabulary";
 import { PanelRightOpenIcon } from "lucide-react";
 import { Slot } from "radix-ui";
 import type { KeyboardEvent, ReactElement, ReactNode } from "react";
+import { IpHoverCard } from "@/components/ip-details";
 import { ObservableMenu } from "@/components/observable-menu";
 import { RowIconButton } from "@/components/row-icon-button";
 import { enrichmentKey, hasEnrichment, useEnrichmentPanel } from "@/lib/enrichment";
@@ -13,7 +14,8 @@ import { QUIET_ACTION } from "@/routes/cases/rail";
  * Where an Observable is shown, the ways to open its Enrichment in the Enrichment panel
  * (`docs/wireframes/enrichment-panel.md`): what IPinfo says about an IP (ADR 0010), and what
  * VirusTotal says about a hash's file (ADR 0011) or a domain, an email address's domain or a URL
- * (ADR 0012). Nothing opens on hover.
+ * (ADR 0012). Resting the pointer on an IP also shows what IPinfo says about it in a hover card
+ * (`IpHoverCard`); the panel opens only on purpose.
  */
 
 /** `I` on a focused value opens its Enrichment, unless a modifier is held or focus is on something inside it. */
@@ -23,25 +25,28 @@ const isShortcut = (e: KeyboardEvent) => e.key.toLowerCase() === "i" && !e.metaK
  * Marks an Observable's value as it is shown anywhere (a link to its page, a badge, plain text) as
  * one the Enrichment panel can show: it becomes part of the list the panel steps through with ↑ ↓,
  * is marked while the panel shows it (its table row takes the selected fill), and `I` on it opens
- * the panel. Any other type, `enabled` false, or a Guest, leaves it as it is. `children` must be
- * one element that can take props.
+ * the panel. An IP also gets the IPinfo hover card, unless the panel already shows it. Any other
+ * type, `enabled` false, or a Guest, leaves it as it is. `children` must be one element that can
+ * take props.
  */
 export function EnrichmentTarget({ type, value, enabled = true, children }: { type: ObservableType | string; value: string; enabled?: boolean; children: ReactElement }) {
   const panel = useEnrichmentPanel();
   if (!enabled || !panel.available || !hasEnrichment(type)) return children;
   const key = enrichmentKey({ type, value });
   return (
-    <Slot.Root
-      data-enrichment={key}
-      data-enrichment-current={panel.currentKey === key ? "" : undefined}
-      onKeyDown={(e: KeyboardEvent<HTMLElement>) => {
-        if (!isShortcut(e)) return;
-        e.preventDefault();
-        panel.open({ type, value }, { from: e.currentTarget });
-      }}
-    >
-      {children}
-    </Slot.Root>
+    <IpHoverCard ip={value} enabled={type === "ip"} held={panel.currentKey === key}>
+      <Slot.Root
+        data-enrichment={key}
+        data-enrichment-current={panel.currentKey === key ? "" : undefined}
+        onKeyDown={(e: KeyboardEvent<HTMLElement>) => {
+          if (!isShortcut(e)) return;
+          e.preventDefault();
+          panel.open({ type, value }, { from: e.currentTarget });
+        }}
+      >
+        {children}
+      </Slot.Root>
+    </IpHoverCard>
   );
 }
 
