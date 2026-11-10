@@ -2,7 +2,7 @@ import { zValidator } from "@hono/zod-validator";
 import { NotPermitted } from "../access/policy";
 import { Hono } from "hono";
 import { z } from "zod";
-import { AlertNotFound, AlertRefused, NoAlertsToAttach, QUEUE_LIMIT } from "../alerts/alerts";
+import { AlertNotFound, AlertRefused, NoAlertsToAttach, QUEUE_MAX_PAGE_SIZE } from "../alerts/alerts";
 import { ALERT_STATUSES, DISMISSAL_REASONS } from "../alerts/vocabulary";
 import { caseSummarySchema } from "../cases/case-summary";
 import { CaseClosed, CaseNotFound } from "../cases/cases";
@@ -17,6 +17,10 @@ const queueQuery = z.object({
   integration: z.string().min(1).optional(),
   /** Only the Alerts attached to this Case. */
   case: z.coerce.number().int().positive().optional(),
+  /** Which page, from 1. */
+  page: z.coerce.number().int().positive().optional(),
+  /** How many Alerts a page holds. */
+  pageSize: z.coerce.number().int().positive().max(QUEUE_MAX_PAGE_SIZE).optional(),
 });
 
 const version = z.number().int().positive();
@@ -55,10 +59,11 @@ export const alertRoutes = (deps: Deps, { alerts }: Modules) =>
   new Hono<MemberEnv>()
     .use(requireMember(deps.db))
     .get("/", zValidator("query", queueQuery), async (c) => {
-      const { status, severity, integration, case: caseNumber } = c.req.valid("query");
+      const { status, severity, integration, case: caseNumber, page, pageSize } = c.req.valid("query");
       try {
-        // `limit`: the most Alerts the queue shows at once; there may be more when it is reached.
-        return c.json({ alerts: await alerts.list(c.get("membership"), { status, severity, integrationId: integration, caseNumber }), limit: QUEUE_LIMIT }, 200);
+        // One page of the queue, newest first, with `total`: how many Alerts match in all.
+        const queue = await alerts.list(c.get("membership"), { status, severity, integrationId: integration, caseNumber }, { page, pageSize });
+        return c.json({ alerts: queue.alerts, total: queue.total, page: queue.page, pageSize: queue.pageSize }, 200);
       } catch (e) {
         if (e instanceof CaseNotFound) return c.json(caseNotFound, 404);
         throw e;
