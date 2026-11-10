@@ -90,6 +90,7 @@ export const actionLabel: Record<CaseAuditAction, string> = {
   "response_action.removal_retried": "Retried removing Response Action",
   "response_action.removal_failed": "Removing Response Action failed",
   "response_action.removed": "Removed Response Action",
+  "response_action.linked": "Linked Response Action from the Action Center",
 };
 
 /** A recorded value as people read it: "In Progress" rather than "in_progress". */

@@ -5,6 +5,7 @@ import { guestSession, isGuestAccount } from "./guests/guest-sessions";
 import { createModules } from "./modules";
 import { createLive, type Live } from "./realtime/live";
 import { alertRoutes } from "./routes/alerts";
+import { actionCenterRoutes, actionLogRoutes } from "./routes/action-center";
 import { bulkLookupRoutes } from "./routes/bulk-lookup";
 import { caseRoutes } from "./routes/cases";
 import { integrationRoutes } from "./routes/integrations";
@@ -63,6 +64,8 @@ export function createApi(deps: Deps, live: Live = createLive(deps)) {
     .route("/ignored-observables", ignoredObservableRoutes(deps, modules))
     .route("/important-observables", importantObservableRoutes(deps, modules))
     .route("/bulk-lookup", bulkLookupRoutes(deps, modules))
+    .route("/action-center", actionCenterRoutes(deps, modules))
+    .route("/action-log", actionLogRoutes(deps, modules))
     .route("/integrations", integrationRoutes(deps, modules))
     .route("/ip-lookups", ipLookupRoutes(deps, modules))
     .route("/hash-lookups", hashLookupRoutes(deps, modules))

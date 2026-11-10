@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { type ClientMessage, LIVE_PATH, type ServerMessage, type Viewer } from "api/realtime/messages";
 import { useEffect, useSyncExternalStore } from "react";
+import { actionCenterKey } from "@/lib/action-center";
 import { alertsKey, integrationsKey } from "@/lib/alerts";
 import { type IpLookup, ipLookupsKey } from "@/lib/ip-lookups";
 import { casesKey } from "@/lib/cases";
@@ -150,6 +151,8 @@ class LiveConnection {
       case "alerts":
         void this.#queries.invalidateQueries({ queryKey: alertsKey });
         void this.#queries.invalidateQueries({ queryKey: integrationsKey });
+        // What the Action Center can run depends on the Integrations.
+        void this.#queries.invalidateQueries({ queryKey: actionCenterKey });
         // An IPinfo Integration added, resumed or working again answers lookups that couldn't be made.
         void this.#queries.invalidateQueries({
           queryKey: ipLookupsKey,
@@ -158,6 +161,9 @@ class LiveConnection {
         void this.#queries.invalidateQueries({ queryKey: metricsKey });
         // A new Alert may name an Observable or Asset whose page is open.
         void this.#queries.invalidateQueries({ queryKey: itemPagesKey });
+        return;
+      case "actions":
+        void this.#queries.invalidateQueries({ queryKey: actionCenterKey });
         return;
       case "notifications":
         void this.#queries.invalidateQueries({ queryKey: notificationsKey });

@@ -1,3 +1,4 @@
+import { actionCenterStore } from "./action-center/action-center";
 import { caseReportStore } from "./case-reports/case-reports";
 import { caseLinkStore } from "./case-links/case-links";
 import { caseRoleStore } from "./case-roles/case-roles";
@@ -43,8 +44,16 @@ export function createModules(deps: Deps) {
     assets: assetStore(deps),
     responseActions,
   };
+  const lookups = {
+    ipLookups: ipLookupStore(deps),
+    hashLookups: hashLookupStore(deps),
+    domainUrlLookups: domainUrlLookupStore(deps),
+    umbrellaChecks: umbrellaDomainCheckStore(deps),
+  };
   return {
     ...readers,
+    ...lookups,
+    actionCenter: actionCenterStore(deps, { responseActions, observables: readers.observables, ...lookups }),
     ignoredObservables: ignoredObservableStore(deps),
     importantObservables: importantObservableStore(deps),
     bulkLookup: bulkLookupStore(deps, readers.observables),
@@ -58,10 +67,6 @@ export function createModules(deps: Deps) {
     invitations: invitationStore(deps),
     organizations: organizationStore(deps),
     integrations: integrationStore(deps),
-    ipLookups: ipLookupStore(deps),
-    hashLookups: hashLookupStore(deps),
-    domainUrlLookups: domainUrlLookupStore(deps),
-    umbrellaChecks: umbrellaDomainCheckStore(deps),
     alerts: alertStore(deps),
     notifications: notificationStore(deps),
     teamsChannel: teamsChannelStore(deps),

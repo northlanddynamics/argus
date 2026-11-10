@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { api } from "@/lib/api";
 import { membersKey } from "@/routes/settings/members";
 
-const categories = { members: "Members", "case-roles": "Case Roles", sso: "Single sign-on", integrations: "Integrations", alerts: "Alerts", teams: "Teams", "ignored-observables": "Ignored Observables", "important-observables": "Important Observables" } as const;
+const categories = { members: "Members", "case-roles": "Case Roles", sso: "Single sign-on", integrations: "Integrations", alerts: "Alerts", teams: "Teams", "ignored-observables": "Ignored Observables", "important-observables": "Important Observables", "response-actions": "Response Actions without a Case" } as const;
 type Category = keyof typeof categories;
 
 const actionLabels: Record<string, string> = {
@@ -52,6 +52,18 @@ const actionLabels: Record<string, string> = {
   "ignored_observable.removed": "Removed from the Ignored list:",
   "important_observable.added": "Marked Important:",
   "important_observable.removed": "No longer Important:",
+  "response_action.requested": "Took Response Action, no Case:",
+  "response_action.sent": "Sent Response Action, no Case:",
+  "response_action.failed": "Response Action failed, no Case:",
+  "response_action.retried": "Retried Response Action, no Case:",
+  "response_action.already_present": "Response Action already sent, no Case:",
+  "response_action.already_in_tool": "Response Action already in tool, no Case:",
+  "response_action.dismissed": "Dismissed Response Action, no Case:",
+  "response_action.removal_requested": "Asked to remove Response Action, no Case:",
+  "response_action.removal_retried": "Retried removing Response Action, no Case:",
+  "response_action.removal_failed": "Removing Response Action failed, no Case:",
+  "response_action.removed": "Removed Response Action, no Case:",
+  "response_action.linked": "Linked Response Action to a Case:",
   "alert.dismissed": "Dismissed Alert",
   "alert.falcon_status_changed": "Changed Falcon status of Alert",
   "alert.falcon_assignee_changed": "Changed Falcon assignee of Alert",

@@ -17,18 +17,19 @@ Interactive version: https://claude.ai/artifact/PrJiJ8ew6JKZjtm1rSSEfV
   - **Mark** (changes how Argus treats the value): Mark Important, Ignore (Admin).
 - **The dialog takes any input**: one or many values, one per line or pasted free text. Each is listed with its detected type; what the action doesn't take is struck through with the reason ("Falcon takes no URL"), and the button counts only what will go.
 - **Case is optional.** Default "No Case". Picking a Case links any value not yet on it as an Observable, puts the action on its Timeline and Response Actions, and offers Internal. Without a Case a Response Action needs a reason, sent as the IOC description or block comment in place of `C-<n>: <title>`.
+- **Containment needs a Case.** Contain host and Lift containment ask for a host and a Case, link the host to it, and open the Case's own confirmation (ADR 0009).
 - **Same rules as from a Case.** The Integration's one-click defaults (severity, platforms, destination list) are shown in the dialog. "Already present" still records and sends nothing. Contain host still refetches and confirms the host. Admin-only actions are marked "Admin" and disabled for Analysts.
 - **Lookups** show their result in the dialog, each value opening in the Enrichment panel.
 
 ### Action Log tab
 
-- **Every run of every action**, whoever took it and wherever from: this page, a Case's ⋯ menu, an Observable's page, the Enrichment panel's Refresh. One row per value per action, newest first, kept for good.
+- **What it records** (ADR 0016): every Response Action, taken here or from a Case; every Mark Important and Ignore, wherever made; and every lookup run from this page. Lookups made by opening the Enrichment panel or an Observable's page are not recorded. One row per value per action, newest first, kept for good.
 - **Columns**: When, Action (with the reason for a Case-less Response Action), Value, Through (Integration), Case, By, From, State, ⋯.
 - **Filters**: Linked to a Case / No Case, kind (Respond, Look up, Mark), action, Member, state.
 - **State**: Response Actions keep theirs (Pending, Active, Removing, Removed, Failed, with the error). Lookups and marks show Done, Cached or Failed.
 - **Row menu**: Retry, Remove…, Dismiss record…, Link to Case…, Open Observable, as the row allows.
 - **Linking later.** A row with no Case offers "Link to Case…". Linking moves a Response Action onto that Case: it then appears on its Timeline and is removable from it.
-- **Restricted Cases.** A row on a Restricted Case the Member can't see shows "Restricted Case" with no number.
+- **Restricted Cases.** A row linked to a Case the Member can't see is left out, so its value doesn't reveal what a Restricted Case holds.
 
 ## A. Actions tab
 
@@ -111,8 +112,6 @@ Interactive version: https://claude.ai/artifact/PrJiJ8ew6JKZjtm1rSSEfV
 └──────────────────────────────────────────────────────┘
 ```
 
-## Open questions
+## Decisions
 
-- **Response Actions without a Case.** ADR 0007 says a Response Action is always taken from a Case and removable only by the Case that created it; this page breaks both. Proposed: one with no Case belongs to the Action Center, any Member may remove it there, and linking it to a Case hands it over. Needs an ADR before building.
-- **Logging lookups.** ADRs 0010–0012 keep lookups out of the Audit Log because they change nothing. Proposed: record them in the Action Log only, with cache hits shown as "Cached".
-- **Values Argus doesn't hold yet.** Running an action on a new value with no Case: hold it as an Observable of the Organization with no Case, or keep it only on the log row? Proposed: hold it, so the log can link to its page.
+The open questions this wireframe raised are settled in ADR 0016: Response Actions may be taken without a Case (with a reason, recorded in the Organization Audit Log, and moved to a Case for good when linked); lookups are logged only when run from the Action Center; and new values are held as Observables with no Case.

@@ -179,9 +179,17 @@ Pasting free text into Argus to pull out every Observable it contains and see wh
 _Avoid_: IOC check, mass search
 
 **Response Action**:
-An action Argus takes in an external tool against one Observable or host linked to a Case, through an Integration, such as adding a custom IOC to Falcon, blocking a sender in Mimecast, adding a domain to a Cisco Umbrella destination list or containing a host; always taken from a Case, and removable only by the Case that created it.
+An action Argus takes in an external tool against one Observable or host, through an Integration, such as adding a custom IOC to Falcon, blocking a sender in Mimecast, adding a domain to a Cisco Umbrella destination list or containing a host; taken from a Case, or from the Action Center with a reason and no Case until one is linked; removable only from the Case that created it, or from the Action Log while it has no Case.
 _Avoid_: Block, push, playbook, remediation
 
 **Containment**:
 Cutting a host off the network through an Integration, taken as a Response Action; lifting it ends it, and an Admin may lift Containment that Argus did not impose.
 _Avoid_: Isolation, quarantine, network contain
+
+**Action Center**:
+The page where a Member sees every action Argus can take on an Observable or Asset (lookups, Response Actions and marks) and runs any of them on values they paste, linking each run to a Case or not.
+_Avoid_: Actions page, playbooks, toolbox, console
+
+**Action Log**:
+The list of every action run in Argus: each Response Action, each Important or Ignored mark, and each lookup run from the Action Center, with its value, Integration, Case, who ran it, where from and how it went; Members work from it, and it is not an Audit Log.
+_Avoid_: Action history, activity feed, run log, audit log
