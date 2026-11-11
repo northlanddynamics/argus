@@ -219,7 +219,7 @@ function Message({
         )}
       </div>
       {m.body === null ? (
-        <p className="text-sm text-muted-foreground italic">Retracted by {m.author.name}.</p>
+        <p className="text-sm text-muted-foreground">Retracted by {m.author.name}.</p>
       ) : (
         <p className="text-sm wrap-break-word whitespace-pre-wrap">
           {messageParts(m.body, m.mentions).map((part, i) =>

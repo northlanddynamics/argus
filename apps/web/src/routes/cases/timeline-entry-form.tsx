@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { XIcon } from "lucide-react";
+import { PlusIcon, XIcon } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { DatePicker } from "@/components/date-picker";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -198,7 +198,8 @@ function EntryForm({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button type="button" variant="outline" size="sm" disabled={!citable.length}>
-              + Cite a Task
+              <PlusIcon aria-hidden />
+              Cite a Task
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { PlusIcon } from "lucide-react";
 import { Fragment, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -136,7 +137,8 @@ function CaseTimeline() {
           {!readOnly && !composing && (
             <CardAction>
               <Button variant="outline" size="sm" onClick={() => setComposing(true)}>
-                + Timeline Entry
+                <PlusIcon aria-hidden />
+                Timeline Entry
               </Button>
             </CardAction>
           )}

@@ -69,7 +69,7 @@ export function CaseTasksPage() {
   // On a wide page the columns take set widths and the last one takes the slack, so Owner, Due and Edit stay beside the title.
   return (
     <Card ref={ref} className="@container">
-      <CardHeader>
+      <CardHeader className="items-center">
         <CardTitle>
           Tasks{" "}
           <span className="font-normal text-muted-foreground">
@@ -77,7 +77,7 @@ export function CaseTasksPage() {
           </span>
         </CardTitle>
         {!readOnly && (
-          <CardAction>
+          <CardAction className="row-span-1 self-center">
             <Button onClick={() => setEditing("new")}>
               <PlusIcon aria-hidden />
               New Task

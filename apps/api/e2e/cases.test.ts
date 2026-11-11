@@ -340,7 +340,7 @@ test("an Admin adds a Case Role; an Analyst gives it on a Case, works its Tasks 
     const page = await browser.newPage();
     await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
     await page.goto(`${baseUrl}/cases/1`);
-    await page.getByRole("button", { name: "+ Assign" }).click();
+    await page.getByRole("button", { name: "Assign", exact: true }).click();
     await choose(page, "Case Role", "Forensics");
     await choose(page, "Member", "Ben Analyst");
     await page.getByRole("button", { name: "Assign", exact: true }).click();
@@ -489,7 +489,7 @@ test("an Analyst writes the Timeline: exact, range and approximate entries, cita
     await page.goto(`${baseUrl}/cases/1`);
     await page.getByRole("tab", { name: "Timeline & Discussion" }).click();
     await page.getByText("Nothing on the Timeline yet.").waitFor();
-    await page.getByRole("button", { name: "+ Timeline Entry" }).click();
+    await page.getByRole("button", { name: "Timeline Entry", exact: true }).click();
     const form = page.getByRole("form", { name: "Add entry" });
     const entries = page.getByRole("list", { name: "Timeline Entries" });
     const headings = () => entries.getByRole("heading").allTextContents();
@@ -499,7 +499,7 @@ test("an Analyst writes the Timeline: exact, range and approximate entries, cita
     await pickUtc(form, "From (UTC)", "2026-10-28T09:20");
     await pickUtc(form, "To (UTC)", "2026-10-28T09:47");
     await form.getByLabel("What happened").fill("Beaconing to 185.220.101.4 roughly every 60 s.");
-    await form.getByRole("button", { name: "+ Cite a Task" }).click();
+    await form.getByRole("button", { name: "Cite a Task" }).click();
     await page.getByRole("menuitem", { name: "Contain host" }).click();
     await form.getByRole("button", { name: "Add entry" }).click();
     const beaconing = page.getByRole("listitem", { name: "Timeline Entry: Beaconing to 185.220.101.4 roughly every 60 s." });
@@ -694,7 +694,7 @@ test("an Analyst tags a Case, filters the list by Tag, links Cases and marks one
     await page.goto(`${baseUrl}/cases/1`);
     await page.getByText("No Tags yet.").waitFor();
     for (const tag of ["#BEC", "finance", "oops"]) {
-      await page.getByRole("button", { name: "+ Tag" }).click();
+      await page.getByRole("button", { name: "Tag", exact: true }).click();
       await page.getByLabel("New Tag").fill(tag);
       await page.getByRole("button", { name: "Add", exact: true }).click();
       await page.getByLabel("Tags").getByText(`#${tag.replace("#", "").toLowerCase()}`).waitFor();
@@ -713,7 +713,7 @@ test("an Analyst tags a Case, filters the list by Tag, links Cases and marks one
     // Related, from C-3; listed on C-1 from its own side.
     await page.goto(`${baseUrl}/cases/3`);
     await page.getByText("Not linked to any Case.").waitFor();
-    await page.getByRole("button", { name: "+ Link" }).click();
+    await page.getByRole("button", { name: "Link", exact: true }).click();
     let dialog = page.getByRole("dialog", { name: "Link C-3 to another Case" });
     await choose(dialog, "Target Case", "C-1 Credential phishing — finance mailboxes");
     await dialog.getByRole("button", { name: "Link", exact: true }).click();
@@ -721,14 +721,14 @@ test("an Analyst tags a Case, filters the list by Tag, links Cases and marks one
 
     // Duplicate of closes the Case.
     await page.goto(`${baseUrl}/cases/2`);
-    await page.getByRole("button", { name: "+ Link" }).click();
+    await page.getByRole("button", { name: "Link", exact: true }).click();
     dialog = page.getByRole("dialog", { name: "Link C-2 to another Case" });
     await dialog.getByLabel("Duplicate of").check();
     await choose(dialog, "Target Case", "C-1 Credential phishing — finance mailboxes");
     await dialog.getByText("Marking as Duplicate of C-1 closes C-2 now with Resolution Duplicate.").waitFor();
     await dialog.getByRole("button", { name: "Link and close" }).click();
     await page.getByText("Closed · Duplicate").first().waitFor();
-    expect(await page.getByRole("button", { name: "+ Link" }).count()).toBe(0);
+    expect(await page.getByRole("button", { name: "Link", exact: true }).count()).toBe(0);
 
     await page.goto(`${baseUrl}/cases/1`);
     const linked = page.getByLabel("Linked Cases");
