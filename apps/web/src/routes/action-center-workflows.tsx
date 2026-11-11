@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { RefreshCwIcon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { ActionLogo } from "@/components/action-logo";
 import { CaseRef } from "@/components/case-ref";
 import { Time } from "@/components/time";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -14,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { actionCenterKey, REASON_MAX_LENGTH } from "@/lib/action-center";
 import { caseRef } from "@/lib/cases";
@@ -27,6 +29,7 @@ import {
   type WorkflowRun,
   workflowRunQuery,
   type WorkflowRunState,
+  type WorkflowStatus,
   workflowRunStateLabel,
   workflowsQuery,
 } from "@/lib/workflows";
@@ -60,6 +63,32 @@ export function RunStateBadge({ state }: { state: WorkflowRunState }) {
   );
 }
 
+/** The Workflow statuses a viewer can hide, and the switch that does it. */
+const HIDEABLE = [
+  { status: "disabled", label: "Hide off in Falcon" },
+  { status: "not_on_demand", label: "Hide not on demand" },
+] as const satisfies readonly { status: WorkflowStatus; label: string }[];
+type Hideable = (typeof HIDEABLE)[number]["status"];
+
+/** Which statuses this browser hides, remembered between visits; both hidden until changed. */
+const HIDDEN_KEY = "action-center-workflows-hidden";
+const storedHidden = (): Set<Hideable> => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(HIDDEN_KEY) ?? "null") as unknown;
+    if (Array.isArray(saved)) return new Set(HIDEABLE.map((h) => h.status).filter((s) => saved.includes(s)));
+  } catch {
+    // Storage may be unavailable or hold something else; fall back to the default.
+  }
+  return new Set(HIDEABLE.map((h) => h.status));
+};
+const storeHidden = (hidden: Set<Hideable>) => {
+  try {
+    localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hidden]));
+  } catch {
+    // Storage may be unavailable; the choice lasts until the page is left.
+  }
+};
+
 /**
  * The Workflows section of the Actions tab (ADR 0017): every on-demand Falcon Fusion SOAR workflow
  * discovered through the Organization's CrowdStrike Integrations, each runnable from here, and how
@@ -69,6 +98,14 @@ export function WorkflowsSection() {
   const list = useQuery(workflowsQuery);
   const queryClient = useQueryClient();
   const [running, setRunning] = useState<Workflow | null>(null);
+  const [hidden, setHidden] = useState(storedHidden);
+  const toggleHidden = (status: Hideable, hide: boolean) => {
+    const next = new Set(hidden);
+    if (hide) next.add(status);
+    else next.delete(status);
+    setHidden(next);
+    storeHidden(next);
+  };
   const refresh = useMutation({
     mutationFn: refreshWorkflows,
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: actionCenterKey }),
@@ -77,7 +114,9 @@ export function WorkflowsSection() {
   const sources = list.data?.sources ?? [];
   const refreshing = refresh.isPending || sources.some((s) => s.refreshing);
   // Workflows Falcon no longer lists stay recorded for their runs, but aren't offered.
-  const shown = list.data?.workflows.filter((w) => w.status !== "removed") ?? [];
+  const offered = list.data?.workflows.filter((w) => w.status !== "removed") ?? [];
+  const shown = offered.filter((w) => !hidden.has(w.status as Hideable));
+  const countOf = (status: WorkflowStatus) => offered.filter((w) => w.status === status).length;
 
   return (
     <section aria-labelledby="group-workflow" className="grid gap-2">
@@ -86,7 +125,14 @@ export function WorkflowsSection() {
           Workflows <span className="font-normal tracking-normal normal-case">· Runs a Falcon Fusion SOAR workflow on demand and follows it to its outcome</span>
         </h2>
         {sources.length > 0 && (
-          <span className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+            {HIDEABLE.map(({ status, label }) => (
+              <Label key={status} className="gap-1.5 text-xs font-normal text-muted-foreground">
+                <Switch size="sm" checked={hidden.has(status)} onCheckedChange={(c) => toggleHidden(status, c)} />
+                {label}
+                <span className="tabular-nums">({countOf(status)})</span>
+              </Label>
+            ))}
             {sources.length === 1 && sources[0]!.checkedAt && (
               <span>
                 Discovered <Time iso={sources[0]!.checkedAt} />
@@ -117,23 +163,35 @@ export function WorkflowsSection() {
       {list.data && sources.length === 0 && (
         <p className="rounded-lg border p-4 text-sm text-muted-foreground">Workflows are discovered through a CrowdStrike Integration. Your Organization has none.</p>
       )}
-      {list.data && sources.length > 0 && shown.length === 0 && !refreshing && (
+      {list.data && sources.length > 0 && offered.length === 0 && !refreshing && (
         <p className="rounded-lg border p-4 text-sm text-muted-foreground">No Falcon Fusion SOAR workflows were found. Build one with an On demand trigger in Falcon, then Refresh.</p>
+      )}
+      {offered.length > 0 && shown.length === 0 && (
+        <p className="rounded-lg border p-4 text-sm text-muted-foreground">Every Workflow found is hidden. Turn off a Hide switch above to see them.</p>
       )}
       {shown.length > 0 && (
         <ul className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-2">
           {shown.map((w) => (
-            <li key={w.id} className={cn("grid content-start gap-1.5 rounded-lg border p-3", w.status !== "ready" && "opacity-70")}>
-              <div className="min-w-0">
-                <p className="font-medium">{w.name}</p>
-                <p className="truncate text-xs text-muted-foreground">CrowdStrike · {w.integration.name}</p>
+            <li key={w.id} className={cn("grid min-w-0 grid-cols-1 content-start gap-1.5 rounded-lg border p-3", w.status !== "ready" && "opacity-70")}>
+              <div className="flex min-w-0 items-center gap-2.5">
+                <ActionLogo action="workflow" />
+                <div className="min-w-0">
+                  <p className="line-clamp-2 font-medium wrap-anywhere" title={w.name}>
+                    {w.name}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">CrowdStrike · {w.integration.name}</p>
+                </div>
               </div>
-              {w.description && <p className="line-clamp-2 text-xs text-muted-foreground">{w.description}</p>}
+              {w.description && (
+                <p className="line-clamp-2 text-xs text-muted-foreground wrap-anywhere" title={w.description}>
+                  {w.description}
+                </p>
+              )}
               {w.inputs.length > 0 && (
-                <div className="flex flex-wrap gap-1">
+                <div className="flex min-w-0 flex-wrap gap-1">
                   {w.inputs.map((i) => (
-                    <Badge key={i.name} variant="outline" className="font-normal text-muted-foreground">
-                      {i.label}
+                    <Badge key={i.name} variant="outline" className="max-w-full font-normal text-muted-foreground" title={i.label}>
+                      <span className="truncate">{i.label}</span>
                       {i.required && <span aria-label="required">*</span>}
                     </Badge>
                   ))}
