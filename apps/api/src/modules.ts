@@ -28,6 +28,7 @@ import { teamsChannelStore } from "./teams/teams";
 import { taskStore } from "./tasks/tasks";
 import { umbrellaDomainCheckStore } from "./umbrella/domain-checks";
 import { timelineStore } from "./timeline/timeline";
+import { workflowStore } from "./workflows/workflows";
 
 /**
  * One module per area of the domain, built once from `deps`. Routes, and any other caller (a
@@ -50,10 +51,12 @@ export function createModules(deps: Deps) {
     domainUrlLookups: domainUrlLookupStore(deps),
     umbrellaChecks: umbrellaDomainCheckStore(deps),
   };
+  const workflows = workflowStore(deps);
   return {
     ...readers,
     ...lookups,
-    actionCenter: actionCenterStore(deps, { responseActions, observables: readers.observables, ...lookups }),
+    workflows,
+    actionCenter: actionCenterStore(deps, { responseActions, observables: readers.observables, workflows, ...lookups }),
     ignoredObservables: ignoredObservableStore(deps),
     importantObservables: importantObservableStore(deps),
     bulkLookup: bulkLookupStore(deps, readers.observables),

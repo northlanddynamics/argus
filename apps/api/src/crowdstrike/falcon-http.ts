@@ -2,6 +2,7 @@ import type { FalconCloud } from "../alerts/vocabulary";
 import { createHash } from "node:crypto";
 import type { Severity } from "../cases/vocabulary";
 import type { FalconIocAction, FalconIocType } from "../response-actions/vocabulary";
+import type { WorkflowActivity, WorkflowInput, WorkflowInputType } from "../workflows/vocabulary";
 import {
   type AlertPatch,
   FALCON_CONTAINMENT,
@@ -13,6 +14,8 @@ import {
   type FalconIdentity,
   type FalconIoc,
   FalconScopeMissing,
+  type FalconWorkflow,
+  type FalconWorkflowExecution,
   type NewIoc,
   type StreamEvent,
   type StreamSession,
@@ -22,7 +25,8 @@ import {
  * The Falcon API over HTTP: OAuth2 client credentials, then the Event Streams discovery, refresh and
  * data feed endpoints, the Alerts update and read endpoints, the user lookup, the IOC Management
  * endpoints, the Hosts API (read by `aid`, and searched by hostname) and Identity Protection's
- * GraphQL API (identities read by entity ID, and searched by account name). Unverified against a live tenant (see spec #1, "Further Notes").
+ * GraphQL API (identities read by entity ID, and searched by account name), and Falcon Fusion SOAR's
+ * workflow definitions, executions and execution results. Unverified against a live tenant (see spec #1, "Further Notes").
  */
 
 const BASE_URLS: Record<FalconCloud, string> = {
@@ -235,6 +239,93 @@ export function readIdentity(node: Record<string, unknown>): FalconIdentity | nu
     domain: text(account.domain),
     ou: text(account.ou),
     endpoints: [...new Set(associated.filter((a) => a.type === "ENDPOINT").map((a) => a.name))],
+  };
+}
+
+/** The most workflow definitions listed in one call. */
+const WORKFLOWS_PER_CALL = 500;
+/** The most executions read in one call. */
+const EXECUTIONS_PER_CALL = 100;
+
+/** A JSON schema's type, as a Workflow input takes it; null for one Argus can't ask for (an object, an array). */
+function inputType(schema: Record<string, unknown>): WorkflowInputType | null {
+  const declared = Array.isArray(schema.type) ? schema.type.find((t) => t !== "null") : schema.type;
+  if (declared === undefined && Array.isArray(schema.enum)) return "string";
+  return declared === "string" || declared === "number" || declared === "integer" || declared === "boolean" ? declared : null;
+}
+
+/**
+ * The inputs an on-demand trigger declares, from its JSON schema's `properties` (and `required`).
+ * Inputs Argus can't ask for (objects, arrays) are left out.
+ */
+export function readWorkflowInputs(schema: unknown): WorkflowInput[] {
+  const s = record(schema);
+  const properties = record(s?.properties);
+  if (!s || !properties) return [];
+  const required = new Set(texts(s.required));
+  const inputs: WorkflowInput[] = [];
+  for (const [name, value] of Object.entries(properties)) {
+    const p = record(value);
+    if (!p) continue;
+    const type = inputType(p);
+    if (!type) continue;
+    const options = Array.isArray(p.enum) ? p.enum.filter((o) => typeof o === "string" || typeof o === "number").map(String) : null;
+    inputs.push({ name, label: text(p.title) ?? name, type, required: required.has(name), description: text(p.description), options: options?.length ? options : null });
+  }
+  return inputs;
+}
+
+/** Whether a trigger's type or name says On demand, however Falcon spells it. */
+const onDemand = (v: unknown) => /^on[\s_-]?demand$/i.test(text(v) ?? "");
+
+/** A workflow definition as Falcon Fusion SOAR lists it. */
+export function readWorkflow(r: Record<string, unknown>): FalconWorkflow | null {
+  const id = text(r.id);
+  const name = text(r.name);
+  if (!id || !name) return null;
+  const trigger = record(r.trigger) ?? {};
+  const isOnDemand = onDemand(trigger.type) || onDemand(trigger.name) || onDemand(r.trigger_type);
+  const schema = trigger.parameters ?? trigger.schema ?? trigger.input_schema ?? r.input_schema ?? r.parameters;
+  return {
+    id,
+    name,
+    description: text(r.description),
+    // A definition that doesn't say is taken as on.
+    enabled: bool(r.enabled) ?? true,
+    onDemand: isOnDemand,
+    inputs: isOnDemand ? readWorkflowInputs(schema) : [],
+  };
+}
+
+/** How Argus reads Falcon's status of an execution. */
+export function executionOutcome(status: string): FalconWorkflowExecution["outcome"] {
+  const s = status.toLowerCase().replace(/[\s_-]+/g, " ").trim();
+  if (["completed", "complete", "succeeded", "success", "successful", "finished"].includes(s)) return "completed";
+  if (["failed", "failure", "error", "errored", "timed out", "timeout"].includes(s)) return "failed";
+  if (["cancelled", "canceled", "aborted", "stopped", "terminated"].includes(s)) return "cancelled";
+  return "running";
+}
+
+/** An execution's results as Falcon Fusion SOAR returns them. */
+export function readExecution(r: Record<string, unknown>): FalconWorkflowExecution | null {
+  const id = text(r.execution_id) ?? text(r.id);
+  if (!id) return null;
+  const status = text(r.status) ?? "Unknown";
+  const activities: WorkflowActivity[] = records(r.activities).flatMap((a) => {
+    const name = text(a.name) ?? text(a.display_name) ?? text(a.node_id);
+    return name ? [{ name, status: text(a.status) ?? "Unknown" }] : [];
+  });
+  const errors = records(r.errors).map((e) => text(e.message)).filter((m): m is string => m !== null);
+  const output = r.output_data ?? r.output ?? r.outputs ?? null;
+  return {
+    id,
+    outcome: executionOutcome(status),
+    status,
+    startedAt: when(r.start_timestamp ?? r.started_at),
+    endedAt: when(r.end_timestamp ?? r.ended_at),
+    activities,
+    output: output === undefined ? null : output,
+    error: text(r.error) ?? text(r.message) ?? (errors.length ? errors.join("; ") : null),
   };
 }
 
@@ -498,6 +589,62 @@ export function falconHttpClient({ cloud, credentials, appId }: FalconConnection
         .map(readIdentity)
         .filter((n): n is FalconIdentity => n !== null);
       return nodes.filter((n) => !("domain" in name) || inDomain(n, name.domain)).map((n) => n.entityId);
+    },
+
+    async workflows() {
+      const found: FalconWorkflow[] = [];
+      for (let offset = 0; ; ) {
+        const query = new URLSearchParams({ limit: String(WORKFLOWS_PER_CALL), offset: String(offset) });
+        const res = await fetchImpl(`${base}/workflows/combined/definitions/v1?${query}`, {
+          headers: { authorization: `Bearer ${await accessToken()}`, accept: "application/json" },
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        });
+        if (res.status === 403) throw new FalconScopeMissing("Listing workflows failed: the API client lacks the Workflow: Read scope");
+        if (!res.ok) throw await failure("Listing workflows in Falcon", res);
+        const body = (await res.json()) as { resources?: unknown; meta?: { pagination?: { total?: unknown } } };
+        const page = records(body.resources);
+        found.push(...page.map(readWorkflow).filter((w): w is FalconWorkflow => w !== null));
+        offset += page.length;
+        const total = body.meta?.pagination?.total;
+        if (!page.length || typeof total !== "number" || offset >= total) break;
+      }
+      return found;
+    },
+
+    async executeWorkflow(definitionId, inputs) {
+      const res = await fetchImpl(`${base}/workflows/entities/execute/v1?${new URLSearchParams({ definition_id: definitionId })}`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${await accessToken()}`, "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify(inputs),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (res.status === 403) throw new FalconScopeMissing("Running a workflow failed: the API client lacks the Workflow: Write scope");
+      if (!res.ok) throw await failure("Running a workflow in Falcon", res);
+      const body = (await res.json()) as { resources?: unknown[] | null; errors?: { message?: string }[] | null };
+      const first = body.resources?.[0];
+      const id = typeof first === "string" ? text(first) : (text(record(first)?.execution_id) ?? text(record(first)?.id));
+      if (!id) {
+        const detail = body.errors?.map((e) => e.message).filter(Boolean).join("; ");
+        throw new FalconError(`Running a workflow in Falcon failed${detail ? `: ${detail}` : ": Falcon returned no execution"}`);
+      }
+      return id;
+    },
+
+    async workflowExecutions(executionIds) {
+      const found: FalconWorkflowExecution[] = [];
+      for (let i = 0; i < executionIds.length; i += EXECUTIONS_PER_CALL) {
+        const ids = executionIds.slice(i, i + EXECUTIONS_PER_CALL).map((id): [string, string] => ["ids", id]);
+        const res = await fetchImpl(`${base}/workflows/entities/execution-results/v1?${new URLSearchParams(ids)}`, {
+          headers: { authorization: `Bearer ${await accessToken()}`, accept: "application/json" },
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        });
+        if (res.status === 403) throw new FalconScopeMissing("Reading workflow executions failed: the API client lacks the Workflow: Read scope");
+        // Falcon answers 404 when some of the executions are unknown, with the ones it knows.
+        if (!res.ok && res.status !== 404) throw await failure("Reading workflow executions from Falcon", res);
+        const body = (await res.json().catch(() => ({}))) as { resources?: unknown };
+        found.push(...records(body.resources).map(readExecution).filter((e): e is FalconWorkflowExecution => e !== null));
+      }
+      return found;
     },
 
     async *consume(session, offset, signal) {

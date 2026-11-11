@@ -3,7 +3,7 @@ import type { Db, Tx } from "../db/client";
 import { orgAuditLog } from "../db/schema";
 import { secureId } from "../ids";
 
-export const ORG_AUDIT_CATEGORIES = ["members", "case-roles", "sso", "integrations", "alerts", "teams", "ignored-observables", "important-observables", "response-actions"] as const;
+export const ORG_AUDIT_CATEGORIES = ["members", "case-roles", "sso", "integrations", "alerts", "teams", "ignored-observables", "important-observables", "response-actions", "workflows"] as const;
 export type OrgAuditCategory = (typeof ORG_AUDIT_CATEGORIES)[number];
 
 export type OrgAuditAction =
@@ -29,6 +29,8 @@ export type OrgAuditAction =
   | "integration.response_action_defaults_changed"
   | "integration.host_containment_enabled"
   | "integration.host_containment_disabled"
+  | "integration.workflows_enabled"
+  | "integration.workflows_disabled"
   | "integration.destination_list_changed"
   | "integration.ignored_severities_changed"
   | "integration.stream_gap"
@@ -55,6 +57,10 @@ export type OrgAuditAction =
   | "response_action.removal_failed"
   | "response_action.removed"
   | "response_action.linked"
+  | "workflow_run.requested"
+  | "workflow_run.retried"
+  | "workflow_run.linked"
+  | "workflow_run.finished"
   | "alert.dismissed"
   | "alert.falcon_status_changed"
   | "alert.falcon_assignee_changed"

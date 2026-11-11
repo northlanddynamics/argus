@@ -249,6 +249,10 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
       ok(await api.integrations[":id"]["host-containment"].$put({ param: { id: i.id }, json: { enabled } }), "Could not change Host containment"),
     onSettled: () => queryClient.invalidateQueries({ queryKey: integrationsKey }),
   });
+  const setWorkflows = useMutation({
+    mutationFn: async (enabled: boolean) => ok(await api.integrations[":id"].workflows.$put({ param: { id: i.id }, json: { enabled } }), "Could not change Workflows"),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: integrationsKey }),
+  });
   const remove = useMutation({
     mutationFn: async () => ok(await api.integrations[":id"].$delete({ param: { id: i.id } }), "Could not delete the Integration"),
     onSettled: () => queryClient.invalidateQueries({ queryKey: integrationsKey }),
@@ -411,6 +415,36 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
         {setHostContainment.error && (
           <Alert variant="destructive">
             <AlertDescription>{setHostContainment.error.message}</AlertDescription>
+          </Alert>
+        )}
+        {i.provider === "crowdstrike" && (
+          <ConfirmOn
+            title={`Allow running Workflows through ${i.name}?`}
+            body={
+              <>
+                Any Member can then run this tenant's on-demand Falcon Fusion SOAR workflows from the Action Center, with or without a Case.
+                A workflow does whatever it was built to do in Falcon and beyond, and can't be undone from Argus. The API client needs
+                Workflow: Write; without it, runs fail in the Action Log.
+              </>
+            }
+            confirm="Allow Workflows"
+            onConfirm={() => setWorkflows.mutate(true)}
+          >
+            {(ask) => (
+              <WorkflowsSetting
+                id={`workflows-${i.id}`}
+                discovery={i.workflowDiscovery}
+                checked={setWorkflows.isPending ? setWorkflows.variables : i.workflows}
+                disabled={!i.credentials || setWorkflows.isPending}
+                lockedReason={!i.credentials ? "Only Admins can change this." : undefined}
+                onCheckedChange={(enabled) => (enabled ? ask() : setWorkflows.mutate(false))}
+              />
+            )}
+          </ConfirmOn>
+        )}
+        {setWorkflows.error && (
+          <Alert variant="destructive">
+            <AlertDescription>{setWorkflows.error.message}</AlertDescription>
           </Alert>
         )}
         {i.provider === "umbrella" && <DestinationListSetting integration={i} />}
@@ -655,6 +689,37 @@ function HostContainmentSetting(props: {
           Contain hosts in Falcon from a Case. Separate from Response Actions; the API client needs Hosts: Write.
           {lockedReason && ` ${lockedReason}`}
         </p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The Workflows switch (ADR 0017): on, Members may run the CrowdStrike Integration's on-demand Falcon
+ * Fusion SOAR workflows. Says how many were discovered, and why discovery fails if it does.
+ */
+function WorkflowsSetting(props: {
+  id: string;
+  discovery: IntegrationView["workflowDiscovery"];
+  checked?: boolean;
+  disabled?: boolean;
+  /** Why it can't be changed, said under it. */
+  lockedReason?: string;
+  onCheckedChange?: (checked: boolean) => void;
+}) {
+  const { id, lockedReason, discovery, ...rest } = props;
+  return (
+    <div className="flex items-start gap-3">
+      <Switch id={id} className="mt-0.5" {...rest} />
+      <div className="grid gap-1">
+        <Label htmlFor={id}>Workflows</Label>
+        <p className="text-sm text-muted-foreground">
+          Run Falcon Fusion SOAR workflows on demand from the Action Center, and follow each to its outcome. The API client needs Workflow:
+          Write to run them, and Workflow: Read to find them.
+          {discovery && (discovery.checkedAt ? ` ${discovery.count} discovered ${ago(discovery.checkedAt)}.` : " Discovering…")}
+          {lockedReason && ` ${lockedReason}`}
+        </p>
+        {discovery?.error && <p className="text-sm text-destructive">{discovery.error}</p>}
       </div>
     </div>
   );

@@ -47,6 +47,7 @@ import {
   WRITE_BACK_ACTIONS,
   WRITE_BACK_STATES,
 } from "../alerts/vocabulary";
+import { WORKFLOW_RUN_STATES, type WorkflowActivity, type WorkflowInput, type WorkflowInputValues } from "../workflows/vocabulary";
 import { member, organization, session, user } from "./auth-schema";
 
 /**
@@ -861,6 +862,20 @@ export const integrations = pgTable(
      * it works, or before it is first tried. Nothing else depends on it.
      */
     identityEnrichmentError: text("identity_enrichment_error"),
+    /**
+     * Whether Members may run its Falcon Fusion SOAR Workflows (ADR 0017): CrowdStrike only, off until
+     * an Admin turns it on. Needs Workflow: Write. Discovery happens whatever it says.
+     */
+    workflows: boolean("workflows").notNull().default(false),
+    /** Its Workflows are to be discovered afresh on the worker's next tick, as when a Member asks to refresh them. */
+    workflowsDue: boolean("workflows_due").notNull().default(true),
+    /** When its Workflows were last discovered (or tried to be). */
+    workflowsCheckedAt: timestamp("workflows_checked_at", { withTimezone: true }),
+    /**
+     * Why discovering its Workflows failed when last tried, as when its API client lacks Workflow:
+     * Read; null while it works. The Workflows discovered before stay as they were.
+     */
+    workflowsError: text("workflows_error"),
     /** The worker that holds the stream, while one does. */
     workerId: text("worker_id"),
     streamOffset: bigint("stream_offset", { mode: "number" }),
@@ -1584,6 +1599,8 @@ export const actionLog = pgTable(
       .references(() => organization.id, { onDelete: "restrict" }),
     action: text("action", { enum: LOG_ACTIONS }).notNull(),
     responseActionId: text("response_action_id").references(() => responseActions.id, { onDelete: "restrict" }),
+    /** For a `workflow_run` row: the Workflow Run, whose state it shows (ADR 0017). */
+    workflowRunId: text("workflow_run_id").references((): AnyPgColumn => workflowRuns.id, { onDelete: "restrict" }),
     observableId: text("observable_id").references(() => observables.id, { onDelete: "restrict" }),
     assetId: text("asset_id").references(() => assets.id, { onDelete: "restrict" }),
     valueType: text("value_type").notNull(),
@@ -1602,6 +1619,99 @@ export const actionLog = pgTable(
     index("action_log_org_idx").on(t.organizationId, t.seq),
     uniqueIndex("action_log_response_action_idx").on(t.responseActionId).where(sql`${t.responseActionId} IS NOT NULL`),
     check("action_log_response_action", sql`(${t.action} = 'response_action') = (${t.responseActionId} IS NOT NULL)`),
-    check("action_log_outcome", sql`(${t.action} = 'response_action') = (${t.outcome} IS NULL)`),
+    uniqueIndex("action_log_workflow_run_idx").on(t.workflowRunId).where(sql`${t.workflowRunId} IS NOT NULL`),
+    check("action_log_workflow_run", sql`(${t.action} = 'workflow_run') = (${t.workflowRunId} IS NOT NULL)`),
+    check("action_log_outcome", sql`(${t.action} IN ('response_action', 'workflow_run')) = (${t.outcome} IS NULL)`),
+  ],
+);
+
+/**
+ * Falcon Fusion SOAR workflow definitions a CrowdStrike Integration discovered (ADR 0017): one row per
+ * Integration and definition, refreshed by every discovery. A definition Falcon no longer lists is
+ * kept, with `removed_at`, since Workflow Runs name it; listed again, it is back.
+ */
+export const falconWorkflows = pgTable(
+  "falcon_workflows",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    integrationId: text("integration_id")
+      .notNull()
+      .references(() => integrations.id, { onDelete: "restrict" }),
+    /** Falcon's id for the definition. */
+    definitionId: text("definition_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    /** Whether it is on in Falcon. */
+    enabled: boolean("enabled").notNull(),
+    /** Whether its trigger is On demand: only those can be run. */
+    onDemand: boolean("on_demand").notNull(),
+    /** What its on-demand trigger takes. */
+    inputs: jsonb("inputs").$type<WorkflowInput[]>().notNull().default([]),
+    discoveredAt: timestamp("discovered_at", { withTimezone: true }).notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull(),
+    removedAt: timestamp("removed_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("falcon_workflows_definition_idx").on(t.integrationId, t.definitionId),
+    index("falcon_workflows_org_idx").on(t.organizationId),
+  ],
+);
+
+/**
+ * Workflow Runs (ADR 0017): each run of a Workflow a Member asked for, queued in the transaction that
+ * asked, sent to Falcon by the worker (`workflows/runner.ts`) and watched until Falcon reports its
+ * outcome. Sending is tried once: a run Falcon couldn't be asked for is Failed with no execution,
+ * and a Member may Retry it. `case_id` is the Case it was run for, or linked to later; a run with
+ * no Case carries the Member's `reason`. Never deleted.
+ */
+export const workflowRuns = pgTable(
+  "workflow_runs",
+  {
+    id: text("id").primaryKey(),
+    seq: bigserial("seq", { mode: "number" }).notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    integrationId: text("integration_id")
+      .notNull()
+      .references(() => integrations.id, { onDelete: "restrict" }),
+    workflowId: text("workflow_id")
+      .notNull()
+      .references(() => falconWorkflows.id, { onDelete: "restrict" }),
+    caseId: text("case_id").references(() => cases.id, { onDelete: "restrict" }),
+    reason: text("reason"),
+    inputs: jsonb("inputs").$type<WorkflowInputValues>().notNull(),
+    state: text("state", { enum: WORKFLOW_RUN_STATES }).notNull(),
+    /** Falcon's id for the execution, once it took the run. */
+    executionId: text("execution_id"),
+    /** Falcon's own word for where the execution stands, as last read. */
+    falconStatus: text("falcon_status"),
+    activities: jsonb("activities").$type<WorkflowActivity[]>().notNull().default([]),
+    /** What the execution returned, as Falcon gave it, cut to `WORKFLOW_OUTPUT_MAX_BYTES`. */
+    output: jsonb("output"),
+    /** Why sending it failed, or why Falcon said it failed, or why the last read of it failed. */
+    lastError: text("last_error"),
+    createdById: text("created_by_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    stateChangedAt: timestamp("state_changed_at", { withTimezone: true }).notNull(),
+    /** When Falcon took it. */
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    /** When the worker next sends it (pending) or reads how it stands (running). */
+    nextCheckAt: timestamp("next_check_at", { withTimezone: true }),
+    /** How many times how it stands has been read. */
+    checks: integer("checks").notNull().default(0),
+  },
+  (t) => [
+    index("workflow_runs_due_idx").on(t.nextCheckAt).where(sql`${t.state} IN ('pending', 'running')`),
+    index("workflow_runs_case_idx").on(t.caseId, t.seq).where(sql`${t.caseId} IS NOT NULL`),
+    check("workflow_runs_case_or_reason", sql`${t.caseId} IS NOT NULL OR ${t.reason} IS NOT NULL`),
+    check("workflow_runs_execution", sql`${t.state} NOT IN ('running', 'completed', 'cancelled', 'timed_out') OR ${t.executionId} IS NOT NULL`),
+    check("workflow_runs_due", sql`(${t.state} IN ('pending', 'running')) = (${t.nextCheckAt} IS NOT NULL)`),
   ],
 );

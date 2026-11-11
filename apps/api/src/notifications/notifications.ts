@@ -132,6 +132,8 @@ export function headline(n: Row) {
       return `A Response Action you took on ${ref} failed`;
     case "response_action_removal_failed":
       return `A Response Action you asked to remove from ${ref} could not be removed`;
+    case "workflow_run_failed":
+      return `A Workflow you ran for ${ref} failed`;
   }
 }
 

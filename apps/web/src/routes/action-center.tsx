@@ -53,6 +53,8 @@ import { caseRef } from "@/lib/cases";
 import { observableTypeLabel, shownObservable } from "@/lib/observables";
 import { responseActionsQuery, responseActionStateLabel } from "@/lib/response-actions";
 import { cn } from "@/lib/utils";
+import { workflowRunStateLabel } from "@/lib/workflows";
+import { CaseChoice, WorkflowRunDialog, WorkflowsSection } from "@/routes/action-center-workflows";
 import { CasePicker } from "@/routes/alerts/alert-dialogs";
 import { ContainHostDialog } from "@/routes/cases/contain-host-dialog";
 
@@ -89,7 +91,7 @@ export function ActionCenterLayout() {
 
   return (
     <div className="grid w-full grid-cols-1 gap-4">
-      <PageHeader title="Action Center" description="Look up, respond to and mark any value, with or without a Case." />
+      <PageHeader title="Action Center" description="Look up, respond to and mark any value, and run Falcon workflows, with or without a Case." />
       <Tabs value={onLog ? "log" : "actions"} activationMode="manual">
         <TabsList variant="line" aria-label="Action Center" className="w-full justify-start border-b">
           <TabsTrigger value="actions" className="h-8 flex-none" asChild>
@@ -216,6 +218,7 @@ export function ActionsTab() {
             </ul>
           </section>
         ))}
+      <WorkflowsSection />
       {running &&
         (running.card.action === "contain" || running.card.action === "lift_containment" ? (
           <ContainFromCenter card={running.card} onClose={() => setRunning(null)} />
@@ -250,22 +253,6 @@ function ParsedValues({ card, text }: { card: CatalogueCard; text: string }) {
         );
       })}
     </ul>
-  );
-}
-
-/** "Link to a Case": off for no Case, else the Case picked. */
-function CaseChoice({ value, onChange, required = false }: { value: number | null | undefined; onChange: (n: number | null | undefined) => void; required?: boolean }) {
-  const on = required || value !== null;
-  return (
-    <div className="grid gap-2">
-      {!required && (
-        <Label className="flex items-center gap-2 font-normal">
-          <Checkbox checked={on} onCheckedChange={(c) => onChange(c ? undefined : null)} />
-          Link to a Case
-        </Label>
-      )}
-      {on && <CasePicker enabled value={value ? String(value) : null} onChange={(v) => onChange(Number(v))} />}
-    </div>
   );
 }
 
@@ -521,10 +508,17 @@ function ContainFromCenter({ card, onClose }: { card: CatalogueCard; onClose: ()
   );
 }
 
-const outcomeLabel: Record<string, string> = { ...logOutcomeLabel, ...responseActionStateLabel, taken: "Queued", skipped: "Skipped" };
+const outcomeLabel: Record<string, string> = { ...workflowRunStateLabel, ...logOutcomeLabel, ...responseActionStateLabel, taken: "Queued", skipped: "Skipped" };
 
 function StateBadge({ state }: { state: string }) {
-  const tone = state === "failed" ? "bg-destructive" : state === "pending" || state === "removing" || state === "taken" ? "bg-reconnecting" : state === "removed" || state === "skipped" || state === "unchanged" ? "bg-muted-foreground/40" : "bg-live";
+  const tone =
+    state === "failed"
+      ? "bg-destructive"
+      : state === "pending" || state === "removing" || state === "taken" || state === "running"
+        ? "bg-reconnecting"
+        : state === "removed" || state === "skipped" || state === "unchanged" || state === "cancelled" || state === "timed_out"
+          ? "bg-muted-foreground/40"
+          : "bg-live";
   return (
     <span className="inline-flex items-center gap-1.5 text-xs whitespace-nowrap">
       <span aria-hidden className={cn("size-1.5 rounded-full", tone)} />
@@ -540,6 +534,7 @@ export function ActionLogTab() {
   const filter: LogFilter = { ...(link !== "all" && { link }), ...(group !== "all" && { group }) };
   const log = useQuery(actionLogQuery(filter));
   const [linking, setLinking] = useState<LogEntry | null>(null);
+  const [viewing, setViewing] = useState<string | null>(null);
   const [removing, setRemoving] = useState<{ entry: LogEntry; relying: Relying } | null>(null);
   const queryClient = useQueryClient();
   const refresh = () => void queryClient.invalidateQueries({ queryKey: actionCenterKey });
@@ -568,6 +563,7 @@ export function ActionLogTab() {
           <ToggleGroupItem value="respond">Respond</ToggleGroupItem>
           <ToggleGroupItem value="lookup">Look up</ToggleGroupItem>
           <ToggleGroupItem value="mark">Mark</ToggleGroupItem>
+          <ToggleGroupItem value="workflow">Workflows</ToggleGroupItem>
         </ToggleGroup>
         {log.data && <span className="text-xs text-muted-foreground tabular-nums">{plural(log.data.entries.length, "run")}{log.data.more ? ", newest shown" : ""}</span>}
       </div>
@@ -579,7 +575,7 @@ export function ActionLogTab() {
       )}
       {log.data && log.data.entries.length === 0 && (
         <p className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
-          Nothing has been run{filter.link || filter.group ? " that matches" : " yet"}. Runs from the Actions tab, and every Response Action and mark taken anywhere in Argus, show here.
+          Nothing has been run{filter.link || filter.group ? " that matches" : " yet"}. Runs from the Actions tab, every Workflow run, and every Response Action and mark taken anywhere in Argus, show here.
         </p>
       )}
       {log.data && log.data.entries.length > 0 && (
@@ -602,13 +598,14 @@ export function ActionLogTab() {
             </TableHeader>
             <TableBody>
               {log.data.entries.map((e) => (
-                <LogRow key={e.id} entry={e} onLink={() => setLinking(e)} onAct={(op) => act.mutate({ entry: e, op })} />
+                <LogRow key={e.id} entry={e} onLink={() => setLinking(e)} onAct={(op) => act.mutate({ entry: e, op })} onView={() => e.workflowRun && setViewing(e.workflowRun.id)} />
               ))}
             </TableBody>
           </Table>
         </div>
       )}
       {linking && <LinkRunDialog entry={linking} onClose={() => setLinking(null)} />}
+      {viewing && <WorkflowRunDialog id={viewing} onClose={() => setViewing(null)} />}
       {removing && (
         <Dialog open onOpenChange={(open) => !open && setRemoving(null)}>
           <DialogContent>
@@ -641,10 +638,23 @@ export function ActionLogTab() {
   );
 }
 
-function LogRow({ entry: e, onLink, onAct }: { entry: LogEntry; onLink: () => void; onAct: (op: "retry" | "remove" | "dismiss") => void }) {
+function LogRow({
+  entry: e,
+  onLink,
+  onAct,
+  onView,
+}: {
+  entry: LogEntry;
+  onLink: () => void;
+  onAct: (op: "retry" | "remove" | "dismiss") => void;
+  /** Opens a Workflow Run's details. */
+  onView: () => void;
+}) {
   const ra = e.responseAction;
+  const wr = e.workflowRun;
   const menu: { label: string; run: () => void }[] = [
-    ...(ra?.retryable ? [{ label: "Retry", run: () => onAct("retry") }] : []),
+    ...(wr ? [{ label: "View run…", run: onView }] : []),
+    ...(ra?.retryable || wr?.retryable ? [{ label: "Retry", run: () => onAct("retry") }] : []),
     ...(ra?.removable ? [{ label: "Remove…", run: () => onAct("remove") }] : []),
     ...(ra?.dismissable ? [{ label: "Dismiss record", run: () => onAct("dismiss") }] : []),
     ...(!e.case ? [{ label: "Link to Case…", run: onLink }] : []),
@@ -658,6 +668,7 @@ function LogRow({ entry: e, onLink, onAct }: { entry: LogEntry; onLink: () => vo
       <TableCell>
         {e.label}
         {ra?.reason && !e.case && <span className="block text-xs text-muted-foreground">“{ra.reason}”</span>}
+        {wr && !e.case && e.detail && e.state !== "failed" && <span className="block text-xs text-muted-foreground">“{e.detail}”</span>}
       </TableCell>
       <TableCell className="font-mono text-xs whitespace-nowrap">
         {e.observableId ? (
@@ -668,6 +679,10 @@ function LogRow({ entry: e, onLink, onAct }: { entry: LogEntry; onLink: () => vo
           <ItemLink kind="asset" id={e.assetId}>
             {valueText}
           </ItemLink>
+        ) : wr ? (
+          <Button variant="link" className="h-auto p-0 font-sans text-sm" onClick={onView}>
+            {e.value.value}
+          </Button>
         ) : (
           valueText
         )}
@@ -735,7 +750,9 @@ function LinkRunDialog({ entry, onClose }: { entry: LogEntry; onClose: () => voi
             {entry.label} on <span className="font-mono">{shown(entry.value.type, entry.value.value)}</span>.{" "}
             {entry.responseAction
               ? "The Response Action moves to the Case for good: it shows on its Timeline and is removed from there."
-              : "The value is linked to the Case, and the run names it."}
+              : entry.workflowRun
+                ? "The Workflow run moves to the Case for good, and is recorded in its Audit Log."
+                : "The value is linked to the Case, and the run names it."}
           </DialogDescription>
         </DialogHeader>
         <CasePicker enabled value={number ? String(number) : null} onChange={(v) => setNumber(Number(v))} />

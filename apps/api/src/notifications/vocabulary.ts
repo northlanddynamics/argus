@@ -16,5 +16,7 @@ export const NOTIFICATION_KINDS = [
   "response_action_failed",
   /** A Response Action you asked to remove could not be removed after its retries. */
   "response_action_removal_failed",
+  /** A Workflow you ran for a Case failed, or Falcon reported no outcome for it (ADR 0017). */
+  "workflow_run_failed",
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];

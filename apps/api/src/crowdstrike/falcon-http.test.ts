@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { FalconScopeMissing } from "./falcon";
-import { falconHttpClient, readComments } from "./falcon-http";
+import { executionOutcome, falconHttpClient, readComments, readExecution, readWorkflow } from "./falcon-http";
 
 /** A Falcon API that answers from `routes`, recording each request. */
 function stubFalcon(routes: Record<string, (req: Request) => Response>) {
@@ -462,5 +462,117 @@ describe("The Falcon API client", () => {
       [GRAPHQL]: () => Response.json({ data: null, errors: [{ message: "Cannot query field" }] }),
     });
     await expect(falconHttpClient(connection, broken.fetchImpl).identities(["x"])).rejects.toThrow("Reading identities from Falcon failed: Cannot query field");
+  });
+});
+
+/** A workflow definition as Falcon Fusion SOAR lists it. */
+const definition = (id: string, trigger: Record<string, unknown>) => ({ id, name: `Workflow ${id}`, description: "Does things", enabled: true, trigger });
+
+describe("Falcon Fusion SOAR workflows", () => {
+  const BASE = "https://api.eu-1.crowdstrike.com";
+
+  test("lists every definition, page by page, with the inputs an on-demand trigger declares", async () => {
+    const { requests, fetchImpl } = stubFalcon({
+      [`POST ${BASE}/oauth2/token`]: token,
+      [`GET ${BASE}/workflows/combined/definitions/v1`]: (req) =>
+        new URL(req.url).searchParams.get("offset") === "0"
+          ? Response.json({
+              resources: [
+                definition("a", {
+                  type: "On demand",
+                  parameters: {
+                    type: "object",
+                    required: ["host"],
+                    properties: {
+                      host: { type: "string", title: "Host", description: "Which host" },
+                      priority: { type: "string", enum: ["low", "high"] },
+                      count: { type: ["integer", "null"] },
+                      dryRun: { type: "boolean" },
+                      extra: { type: "object" },
+                    },
+                  },
+                }),
+              ],
+              meta: { pagination: { total: 2 } },
+            })
+          : Response.json({ resources: [definition("b", { type: "Scheduled" })], meta: { pagination: { total: 2 } } }),
+    });
+    const workflows = await falconHttpClient(connection, fetchImpl).workflows();
+    expect(workflows).toEqual([
+      {
+        id: "a",
+        name: "Workflow a",
+        description: "Does things",
+        enabled: true,
+        onDemand: true,
+        inputs: [
+          { name: "host", label: "Host", type: "string", required: true, description: "Which host", options: null },
+          { name: "priority", label: "priority", type: "string", required: false, description: null, options: ["low", "high"] },
+          { name: "count", label: "count", type: "integer", required: false, description: null, options: null },
+          { name: "dryRun", label: "dryRun", type: "boolean", required: false, description: null, options: null },
+        ],
+      },
+      { id: "b", name: "Workflow b", description: "Does things", enabled: true, onDemand: false, inputs: [] },
+    ]);
+    expect(requests.filter((r) => r.url.includes("/workflows/")).map((r) => new URL(r.url).searchParams.get("offset"))).toEqual(["0", "1"]);
+  });
+
+  test("runs a definition with its inputs and returns the execution's id", async () => {
+    const { requests, fetchImpl } = stubFalcon({
+      [`POST ${BASE}/oauth2/token`]: token,
+      [`POST ${BASE}/workflows/entities/execute/v1`]: () => Response.json({ resources: ["exec-1"] }),
+    });
+    expect(await falconHttpClient(connection, fetchImpl).executeWorkflow("def-1", { host: "FIN-LT-0231", dryRun: true })).toBe("exec-1");
+    const sent = requests.at(-1)!;
+    expect(new URL(sent.url).searchParams.get("definition_id")).toBe("def-1");
+    expect(await sent.json()).toEqual({ host: "FIN-LT-0231", dryRun: true });
+  });
+
+  test("says which scope is missing when Falcon refuses", async () => {
+    const { fetchImpl } = stubFalcon({
+      [`POST ${BASE}/oauth2/token`]: token,
+      [`GET ${BASE}/workflows/combined/definitions/v1`]: () => Response.json({ errors: [{ message: "access denied" }] }, { status: 403 }),
+      [`POST ${BASE}/workflows/entities/execute/v1`]: () => Response.json({ errors: [{ message: "access denied" }] }, { status: 403 }),
+    });
+    const client = falconHttpClient(connection, fetchImpl);
+    await expect(client.workflows()).rejects.toBeInstanceOf(FalconScopeMissing);
+    await expect(client.executeWorkflow("def-1", {})).rejects.toThrow("Workflow: Write");
+  });
+
+  test("reads executions' results, mapping Falcon's status to an outcome", async () => {
+    const { fetchImpl } = stubFalcon({
+      [`POST ${BASE}/oauth2/token`]: token,
+      [`GET ${BASE}/workflows/entities/execution-results/v1`]: () =>
+        Response.json({
+          resources: [
+            {
+              execution_id: "exec-1",
+              status: "Completed",
+              start_timestamp: "2026-01-01T09:00:00Z",
+              end_timestamp: "2026-01-01T09:00:05Z",
+              activities: [{ name: "Contain host", status: "Completed" }, { node_id: "n2", status: "Skipped" }],
+              output_data: { ticket: "INC-1" },
+            },
+          ],
+        }),
+    });
+    expect(await falconHttpClient(connection, fetchImpl).workflowExecutions(["exec-1", "unknown"])).toEqual([
+      {
+        id: "exec-1",
+        outcome: "completed",
+        status: "Completed",
+        startedAt: new Date("2026-01-01T09:00:00Z"),
+        endedAt: new Date("2026-01-01T09:00:05Z"),
+        activities: [
+          { name: "Contain host", status: "Completed" },
+          { name: "n2", status: "Skipped" },
+        ],
+        output: { ticket: "INC-1" },
+        error: null,
+      },
+    ]);
+    expect([executionOutcome("In progress"), executionOutcome("FAILED"), executionOutcome("canceled"), executionOutcome("Pending")]).toEqual(["running", "failed", "cancelled", "running"]);
+    expect(readExecution({ status: "Completed" })).toBeNull();
+    expect(readWorkflow({ id: "x", name: "Off", enabled: false, trigger: { name: "on_demand" } })).toMatchObject({ enabled: false, onDemand: true, inputs: [] });
   });
 });

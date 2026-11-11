@@ -191,5 +191,13 @@ The page where a Member sees every action Argus can take on an Observable or Ass
 _Avoid_: Actions page, playbooks, toolbox, console
 
 **Action Log**:
-The list of every action run in Argus: each Response Action, each Important or Ignored mark, and each lookup run from the Action Center, with its value, Integration, Case, who ran it, where from and how it went; Members work from it, and it is not an Audit Log.
+The list of every action run in Argus: each Response Action, each Workflow Run, each Important or Ignored mark, and each lookup run from the Action Center, with its value, Integration, Case, who ran it, where from and how it went; Members work from it, and it is not an Audit Log.
 _Avoid_: Action history, activity feed, run log, audit log
+
+**Workflow**:
+A Falcon Fusion SOAR workflow that Argus discovered through a CrowdStrike Integration; a Member can run one from the Action Center when its trigger is On demand, it is on in Falcon, and the Integration allows Workflows.
+_Avoid_: Playbook, automation, runbook, SOAR action
+
+**Workflow Run**:
+One execution of a Workflow that a Member asked Argus for, with its inputs and a Case or a reason; sent to Falcon once and watched until Falcon reports it Completed, Failed or Cancelled, or for 7 days. It does whatever the Workflow does, and nothing in Argus undoes it.
+_Avoid_: Execution, job, playbook run

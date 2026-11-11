@@ -28,8 +28,11 @@ export const CENTER_ACTIONS = [
 ] as const;
 export type CenterAction = (typeof CENTER_ACTIONS)[number];
 
-/** How an action changes things: in a tool (removable), nowhere (reads), or in how Argus treats a value. */
-export type CenterGroup = "respond" | "lookup" | "mark";
+/**
+ * How an action changes things: in a tool (removable), nowhere (reads), or in how Argus treats a
+ * value; or a Falcon Fusion SOAR Workflow run (ADR 0017), which does whatever the Workflow does.
+ */
+export type CenterGroup = "respond" | "lookup" | "mark" | "workflow";
 
 export const centerActionLabel: Record<CenterAction, string> = {
   detect: "IOC alert",
@@ -94,11 +97,13 @@ export const isCenterLookup = (a: CenterAction): a is CenterLookup => (CENTER_LO
 export const REASON_MAX_LENGTH = 500;
 
 /**
- * What an Action Log row records. A `response_action` row points at its Response Action, whose state
- * it shows; the others record a mark or a lookup and how it went.
+ * What an Action Log row records. A `response_action` row points at its Response Action, and a
+ * `workflow_run` row at its Workflow Run (ADR 0017), whose state each shows; the others record a mark
+ * or a lookup and how it went.
  */
 export const LOG_ACTIONS = [
   "response_action",
+  "workflow_run",
   "mark_important",
   "unmark_important",
   "ignore",
@@ -112,6 +117,7 @@ export const LOG_ACTIONS = [
 export type LogAction = (typeof LOG_ACTIONS)[number];
 export const logActionLabel: Record<LogAction, string> = {
   response_action: "Response Action",
+  workflow_run: "Workflow",
   mark_important: "Mark Important",
   unmark_important: "Unmark Important",
   ignore: "Ignore",
@@ -124,6 +130,7 @@ export const logActionLabel: Record<LogAction, string> = {
 };
 export const logActionGroup: Record<LogAction, CenterGroup> = {
   response_action: "respond",
+  workflow_run: "workflow",
   mark_important: "mark",
   unmark_important: "mark",
   ignore: "mark",

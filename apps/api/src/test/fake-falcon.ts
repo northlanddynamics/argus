@@ -8,11 +8,14 @@ import type {
   FalconHost,
   FalconIdentity,
   FalconIoc,
+  FalconWorkflow,
+  FalconWorkflowExecution,
   NewIoc,
   StreamEvent,
   StreamSession,
 } from "../crowdstrike/falcon";
 import { FalconScopeMissing } from "../crowdstrike/falcon";
+import type { WorkflowInputValues } from "../workflows/vocabulary";
 
 /**
  * A fake Falcon for tests: one Event Stream per tenant (keyed by API client id), with consecutive
@@ -26,7 +29,26 @@ import { FalconScopeMissing } from "../crowdstrike/falcon";
  * or to fail it, and containing a device or lifting its containment, with the means to refuse those
  * for want of Hosts: Write or to fail them. And Identity Protection: the identities it knows, every read of them and every
  * search of them by account name, and the means to refuse it (no scope or subscription) or fail it.
+ * And Falcon Fusion SOAR: the workflow definitions it holds, every execution it was asked for and
+ * how each stands (which tests move along with `finish`), and the means to refuse listing or running
+ * them for want of Workflow: Read or Write, or to fail those calls.
  */
+
+/** An on-demand workflow definition as Falcon would list it, with `fields` changed. */
+export function fakeWorkflow(id: string, fields: Partial<FalconWorkflow> = {}): FalconWorkflow {
+  return {
+    id,
+    name: "Isolate and notify",
+    description: "Contains the host and posts to the SOC channel",
+    enabled: true,
+    onDemand: true,
+    inputs: [
+      { name: "hostname", label: "Hostname", type: "string", required: true, description: "The host to act on", options: null },
+      { name: "notify", label: "Notify", type: "boolean", required: false, description: null, options: null },
+    ],
+    ...fields,
+  };
+}
 
 /** A device as Falcon would report it, with `fields` changed. */
 export function fakeHost(deviceId: string, fields: Partial<FalconHost> = {}): FalconHost {
@@ -188,6 +210,28 @@ function fakeTenant() {
     /** How many more Identity Protection calls fail before they succeed again. */
     failNextIdentityCalls: 0,
 
+    /** The workflow definitions it holds, by id. */
+    workflows: new Map<string, FalconWorkflow>(),
+    /** How many times its workflows were listed. */
+    workflowListings: 0,
+    /** Set to make listing workflows fail for want of Workflow: Read, with this message. */
+    refuseWorkflowReads: null as string | null,
+    /** Set to make running a workflow fail for want of Workflow: Write, with this message. */
+    refuseWorkflowRuns: null as string | null,
+    /** How many more workflow calls (listing, running, reading executions) fail before they succeed again. */
+    failNextWorkflowCalls: 0,
+    /** Every execution it was asked for, in order, with how it stands now. */
+    executions: [] as (FalconWorkflowExecution & { definitionId: string; inputs: WorkflowInputValues })[],
+    /** The ids of every read of executions, in order. */
+    executionReads: [] as string[][],
+
+    /** Ends execution `id` (the latest, if not given) as Falcon would report it, with `fields` changed. */
+    finish(outcome: "completed" | "failed" | "cancelled", fields: Partial<FalconWorkflowExecution> = {}, id = tenant.executions.at(-1)?.id) {
+      const e = tenant.executions.find((x) => x.id === id);
+      if (!e) throw new Error(`No execution ${id}`);
+      Object.assign(e, { outcome, status: { completed: "Completed", failed: "Failed", cancelled: "Cancelled" }[outcome], endedAt: new Date(), ...fields });
+    },
+
     /** Adds a custom IOC, as someone would in the console; returns its id. */
     holdIoc(ioc: Omit<FalconIoc, "id">) {
       const id = crypto.randomUUID();
@@ -311,7 +355,47 @@ export function fakeFalcon() {
         throw new Error(`${what} failed: 503`);
       }
     };
+    /** Fails as the tenant is set to. */
+    const workflowCall = (what: string) => {
+      if (t.failNextWorkflowCalls > 0) {
+        t.failNextWorkflowCalls--;
+        throw new Error(`${what} failed: 503`);
+      }
+    };
     return {
+      async workflows() {
+        if (t.refuseWorkflowReads) throw new FalconScopeMissing(t.refuseWorkflowReads);
+        workflowCall("Listing workflows in Falcon");
+        t.workflowListings++;
+        return [...t.workflows.values()].map((w) => ({ ...w, inputs: w.inputs.map((i) => ({ ...i })) }));
+      },
+      async executeWorkflow(definitionId, inputs) {
+        if (t.refuseWorkflowRuns) throw new FalconScopeMissing(t.refuseWorkflowRuns);
+        workflowCall("Running a workflow in Falcon");
+        const w = t.workflows.get(definitionId);
+        if (!w) throw new Error("Running a workflow in Falcon failed: 404 definition not found");
+        if (!w.onDemand) throw new Error("Running a workflow in Falcon failed: 400 the workflow has no on-demand trigger");
+        const id = crypto.randomUUID();
+        t.executions.push({
+          id,
+          definitionId,
+          inputs: { ...inputs },
+          outcome: "running",
+          status: "In progress",
+          startedAt: new Date(),
+          endedAt: null,
+          activities: [{ name: "Contain host", status: "In progress" }],
+          output: null,
+          error: null,
+        });
+        return id;
+      },
+      async workflowExecutions(ids) {
+        if (t.refuseWorkflowReads) throw new FalconScopeMissing(t.refuseWorkflowReads);
+        workflowCall("Reading workflow executions from Falcon");
+        t.executionReads.push([...ids]);
+        return t.executions.filter((e) => ids.includes(e.id)).map(({ definitionId: _d, inputs: _i, ...e }) => structuredClone(e));
+      },
       async openStream() {
         if (t.refuse) throw new Error(t.refuse);
         t.opened.push(connection);

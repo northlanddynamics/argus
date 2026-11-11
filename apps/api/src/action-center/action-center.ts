@@ -3,7 +3,7 @@ import { NotPermitted, organizationPolicy, visibleCases } from "../access/policy
 import { lockCase } from "../cases/cases";
 import type { Clock } from "../clock";
 import type { Db } from "../db/client";
-import { actionLog, cases, integrations, observables, responseActions, user } from "../db/schema";
+import { actionLog, cases, integrations, observables, responseActions, user, workflowRuns } from "../db/schema";
 import { providerLabel } from "../integrations/vocabulary";
 import type { Membership } from "../members/membership";
 import { extractObservables } from "../observables/extract";
@@ -23,6 +23,8 @@ import type { IpLookupStore } from "../ipinfo/ip-lookups";
 import type { HashLookupStore } from "../virustotal/hash-lookups";
 import type { DomainUrlLookupStore } from "../virustotal/domain-url-lookups";
 import type { UmbrellaDomainCheckStore } from "../umbrella/domain-checks";
+import type { WorkflowRunState } from "../workflows/vocabulary";
+import type { WorkflowStore } from "../workflows/workflows";
 import { logRun } from "./action-log";
 import {
   type CenterAction,
@@ -115,8 +117,8 @@ export type LogEntry = {
   case: { number: number; title: string } | null;
   by: { id: string; name: string };
   source: LogSource;
-  /** A Response Action's current state, or how a mark or lookup went. */
-  state: ResponseActionState | LogOutcome;
+  /** A Response Action's or Workflow Run's current state, or how a mark or lookup went. */
+  state: ResponseActionState | WorkflowRunState | LogOutcome;
   /** Why it failed, or the reason given for a Response Action without a Case. */
   detail: string | null;
   /** For a Response Action: what can be done to it from the Action Log, which is only while it has no Case. */
@@ -130,6 +132,8 @@ export type LogEntry = {
     removable: boolean;
     dismissable: boolean;
   } | null;
+  /** For a Workflow Run (ADR 0017): which, and whether it can be retried, which is only when Falcon couldn't be asked for it. */
+  workflowRun: { id: string; retryable: boolean } | null;
 };
 
 export type LogFilter = {
@@ -201,6 +205,7 @@ export function actionCenterStore(
     hashLookups: HashLookupStore;
     domainUrlLookups: DomainUrlLookupStore;
     umbrellaChecks: UmbrellaDomainCheckStore;
+    workflows: WorkflowStore;
   },
 ) {
   /** Every action, per Integration where one runs it, and whether each can run now. */
@@ -509,16 +514,19 @@ export function actionCenterStore(
         byName: user.name,
         integrationName: integrations.name,
         ra: responseActions,
+        wr: { id: workflowRuns.id, state: workflowRuns.state, executionId: workflowRuns.executionId, lastError: workflowRuns.lastError, reason: workflowRuns.reason },
       })
       .from(l)
       .leftJoin(cases, eq(l.caseId, cases.id))
       .innerJoin(user, eq(l.actorId, user.id))
       .leftJoin(integrations, eq(l.integrationId, integrations.id))
       .leftJoin(responseActions, eq(l.responseActionId, responseActions.id))
+      .leftJoin(workflowRuns, eq(l.workflowRunId, workflowRuns.id))
       .where(and(...where))
       .orderBy(desc(l.seq))
       .limit(limit + 1);
-    const entries = rows.slice(0, limit).map(({ row, caseNumber, caseTitle, byName, integrationName, ra }): LogEntry => {
+    const entries = rows.slice(0, limit).map(({ row, caseNumber, caseTitle, byName, integrationName, ra, wr }): LogEntry => {
+      const workflowRun = wr?.id ? wr : null;
       const noCase = ra ? ra.caseId === null : false;
       return {
         id: row.id,
@@ -533,8 +541,8 @@ export function actionCenterStore(
         case: caseNumber !== null && caseTitle !== null ? { number: caseNumber, title: caseTitle } : null,
         by: { id: row.actorId, name: byName },
         source: row.source,
-        state: ra ? ra.state : row.outcome!,
-        detail: ra ? (ra.state === "failed" ? ra.lastError : (ra.lastError ?? ra.reason)) : row.detail,
+        state: ra ? ra.state : workflowRun ? workflowRun.state : row.outcome!,
+        detail: ra ? (ra.state === "failed" ? ra.lastError : (ra.lastError ?? ra.reason)) : workflowRun ? (workflowRun.lastError ?? workflowRun.reason) : row.detail,
         responseAction: ra
           ? {
               id: ra.id,
@@ -547,6 +555,7 @@ export function actionCenterStore(
               dismissable: noCase && ra.state === "active" && ra.origin !== "created" && ra.kind !== "falcon_containment_lift",
             }
           : null,
+        workflowRun: workflowRun ? { id: workflowRun.id, retryable: workflowRun.state === "failed" && workflowRun.executionId === null } : null,
       };
     });
     return { entries, more: rows.length > limit };
@@ -575,6 +584,10 @@ export function actionCenterStore(
     async linkToCase(me: Membership, id: string, number: number) {
         const row = await entry(me, id);
       if (row.caseId) throw new AlreadyLinked();
+      if (row.workflowRunId) {
+        await modules.workflows.linkToCase(me, row.workflowRunId, number);
+        return;
+      }
       if (row.responseActionId) {
         await modules.responseActions.linkToCase(me, row.responseActionId, number);
         return;
@@ -598,6 +611,10 @@ export function actionCenterStore(
     /** Retries, removes or dismisses the Response Action of run `id`, which has no Case. */
     async responseAction(me: Membership, id: string, op: "retry" | "remove" | "dismiss", { confirmRelying = false } = {}) {
         const row = await entry(me, id);
+      if (row.workflowRunId && op === "retry") {
+        await modules.workflows.retry(me, row.workflowRunId);
+        return;
+      }
       if (!row.responseActionId) throw new LogEntryNotFound();
       if (op === "retry") await modules.responseActions.retryWithoutCase(me, row.responseActionId);
       else if (op === "remove") await modules.responseActions.removeWithoutCase(me, row.responseActionId, { confirmRelying });

@@ -1,6 +1,7 @@
 import type { FalconCloud } from "../alerts/vocabulary";
 import type { Severity } from "../cases/vocabulary";
 import type { FalconIocAction, FalconIocType } from "../response-actions/vocabulary";
+import type { WorkflowActivity, WorkflowInput, WorkflowInputValues } from "../workflows/vocabulary";
 
 /**
  * The Falcon API as Argus uses it (ADR 0002): an adapter, so the worker runs against the real API
@@ -17,6 +18,9 @@ import type { FalconIocAction, FalconIocType } from "../response-actions/vocabul
  * Identity Protection identities are read, and found by account name, for identity Enrichment
  * (`identity-enrichment.ts`, ADR 0009), which needs Identity Protection Entities: Read and an
  * Identity Protection subscription.
+ * Falcon Fusion SOAR workflows are listed for discovery (`workflows/runner.ts`, ADR 0017), which
+ * needs only Workflow: Read, and run on demand, with each execution's outcome read until it ends,
+ * which needs Workflow: Write and an Integration whose Workflows setting is on.
  */
 
 export type FalconCredentials = { clientId: string; clientSecret: string };
@@ -127,7 +131,52 @@ export interface FalconClient {
    * it knows none. Rejects with `FalconScopeMissing` as `identities` does.
    */
   findIdentities(name: AccountName): Promise<string[]>;
+  /**
+   * Every Falcon Fusion SOAR workflow definition the tenant holds. Rejects with `FalconScopeMissing`
+   * when the API client lacks Workflow: Read.
+   */
+  workflows(): Promise<FalconWorkflow[]>;
+  /**
+   * Asks Falcon to run workflow definition `definitionId` on demand with `inputs`; resolves to the
+   * execution's id. Rejects with `FalconScopeMissing` when the API client lacks Workflow: Write, and
+   * otherwise when Falcon refuses or fails.
+   */
+  executeWorkflow(definitionId: string, inputs: WorkflowInputValues): Promise<string>;
+  /**
+   * How each of these executions stands now. One Falcon doesn't know is left out. Rejects with
+   * `FalconScopeMissing` when the API client lacks Workflow: Read.
+   */
+  workflowExecutions(executionIds: readonly string[]): Promise<FalconWorkflowExecution[]>;
 }
+
+/** One Falcon Fusion SOAR workflow definition, as discovery records it. */
+export type FalconWorkflow = {
+  id: string;
+  name: string;
+  description: string | null;
+  /** Whether it is on in Falcon. */
+  enabled: boolean;
+  /** Whether its trigger is On demand: only those can be run through the API. */
+  onDemand: boolean;
+  /** What its on-demand trigger takes; empty when it declares nothing, or isn't on demand. */
+  inputs: WorkflowInput[];
+};
+
+/** Falcon's view of one execution of a workflow, mapped to how Argus reads its outcome. */
+export type FalconWorkflowExecution = {
+  id: string;
+  /** `running` until Falcon reports it ended. */
+  outcome: "running" | "completed" | "failed" | "cancelled";
+  /** Falcon's own word for where it stands, such as "In progress". */
+  status: string;
+  startedAt: Date | null;
+  endedAt: Date | null;
+  activities: WorkflowActivity[];
+  /** What it returned, as Falcon gave it; null when it gave nothing. */
+  output: unknown;
+  /** Why it failed, when Falcon said. */
+  error: string | null;
+};
 
 /**
  * An account Asset's name as Identity Protection is searched by it (ADR 0009): a UPN or email
