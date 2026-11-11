@@ -180,13 +180,13 @@ export function ActionsTab() {
                   return (
                     <li
                       key={`${card.action}:${card.integration?.id ?? ""}`}
-                      className={cn("grid content-start gap-1.5 rounded-lg border p-3", hit && "border-ring ring-1 ring-ring", pasted !== null && !hit && "opacity-55")}
+                      className={cn("grid min-w-0 grid-cols-1 content-start gap-1.5 rounded-lg border p-3", hit && "border-ring ring-1 ring-ring", pasted !== null && !hit && "opacity-55")}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex min-w-0 items-center gap-2.5">
                           <ActionLogo action={card.action} />
                           <div className="min-w-0">
-                            <p className="font-medium">{card.label}</p>
+                            <p className="font-medium wrap-anywhere">{card.label}</p>
                             <p className="truncate text-xs text-muted-foreground">{card.through}</p>
                           </div>
                         </div>
@@ -196,7 +196,7 @@ export function ActionsTab() {
                           </Badge>
                         )}
                       </div>
-                      <div className="flex flex-wrap gap-1">
+                      <div className="flex min-w-0 flex-wrap gap-1">
                         {card.accepts.map((t) => (
                           <Badge key={t} variant="outline" className={cn("font-normal", types.has(t as ObservableType) ? "text-foreground" : "text-muted-foreground")}>
                             {typeLabel(t)}

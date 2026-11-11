@@ -7,8 +7,11 @@ import mimecast from "@/assets/providers/mimecast.svg";
 import virustotal from "@/assets/providers/virustotal.svg";
 import { cn } from "@/lib/utils";
 
+/** What a logo can stand for: an action, or a Falcon Fusion SOAR Workflow (ADR 0017). */
+export type LogoFor = CenterAction | "workflow";
+
 /** The logo of the Provider that runs each action; null for the marks Argus makes itself. */
-const logoOf: Record<CenterAction, string | null> = {
+const logoOf: Record<LogoFor, string | null> = {
   detect: crowdstrike,
   prevent: crowdstrike,
   contain: crowdstrike,
@@ -22,13 +25,14 @@ const logoOf: Record<CenterAction, string | null> = {
   domain_url_lookup: virustotal,
   mark_important: null,
   ignore: null,
+  workflow: crowdstrike,
 };
 
 /**
  * The logo of what runs `action`: the Provider's on a white tile, so dark marks hold up in the dark
  * theme, or Argus's shield as the sidebar shows it. Decorative: the card names the Provider beside it.
  */
-export function ActionLogo({ action, className }: { action: CenterAction; className?: string }) {
+export function ActionLogo({ action, className }: { action: LogoFor; className?: string }) {
   const src = logoOf[action];
   return (
     <span

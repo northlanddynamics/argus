@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { RefreshCwIcon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { ActionLogo } from "@/components/action-logo";
 import { CaseRef } from "@/components/case-ref";
 import { Time } from "@/components/time";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -123,17 +124,26 @@ export function WorkflowsSection() {
       {shown.length > 0 && (
         <ul className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-2">
           {shown.map((w) => (
-            <li key={w.id} className={cn("grid content-start gap-1.5 rounded-lg border p-3", w.status !== "ready" && "opacity-70")}>
-              <div className="min-w-0">
-                <p className="font-medium">{w.name}</p>
-                <p className="truncate text-xs text-muted-foreground">CrowdStrike · {w.integration.name}</p>
+            <li key={w.id} className={cn("grid min-w-0 grid-cols-1 content-start gap-1.5 rounded-lg border p-3", w.status !== "ready" && "opacity-70")}>
+              <div className="flex min-w-0 items-center gap-2.5">
+                <ActionLogo action="workflow" />
+                <div className="min-w-0">
+                  <p className="line-clamp-2 font-medium wrap-anywhere" title={w.name}>
+                    {w.name}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">CrowdStrike · {w.integration.name}</p>
+                </div>
               </div>
-              {w.description && <p className="line-clamp-2 text-xs text-muted-foreground">{w.description}</p>}
+              {w.description && (
+                <p className="line-clamp-2 text-xs text-muted-foreground wrap-anywhere" title={w.description}>
+                  {w.description}
+                </p>
+              )}
               {w.inputs.length > 0 && (
-                <div className="flex flex-wrap gap-1">
+                <div className="flex min-w-0 flex-wrap gap-1">
                   {w.inputs.map((i) => (
-                    <Badge key={i.name} variant="outline" className="font-normal text-muted-foreground">
-                      {i.label}
+                    <Badge key={i.name} variant="outline" className="max-w-full font-normal text-muted-foreground" title={i.label}>
+                      <span className="truncate">{i.label}</span>
                       {i.required && <span aria-label="required">*</span>}
                     </Badge>
                   ))}

@@ -1,6 +1,6 @@
 # Provider logos
 
-Shown on the Action Center's cards (`src/components/action-logo.tsx`). Each mark belongs to its company and is used only to name the Provider an action runs through.
+Shown on the Action Center's cards, Workflow cards included (`src/components/action-logo.tsx`). Each mark belongs to its company and is used only to name the Provider an action runs through.
 
 | File | Source |
 | --- | --- |
