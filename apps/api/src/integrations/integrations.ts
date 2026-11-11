@@ -4,7 +4,7 @@ import { type FalconCloud, falconCloudLabel } from "../alerts/vocabulary";
 import { recordOrgAudit } from "../audit/org-audit-log";
 import { writeBackCounts } from "../crowdstrike/write-back";
 import type { Tx } from "../db/client";
-import { integrations, responseActions as responseActionsTable } from "../db/schema";
+import { falconWorkflows, integrations, responseActions as responseActionsTable } from "../db/schema";
 import type { Deps } from "../deps";
 import { secureId } from "../ids";
 import { openCredentials, type ProviderCredentials, sealCredentials } from "./credentials";
@@ -205,6 +205,7 @@ export type NewIntegration =
 const writeBackLabel = (on: boolean) => (on ? "write-back on" : "read only");
 const responseActionsLabel = (on: boolean) => (on ? "Response Actions on" : "Response Actions off");
 const hostContainmentLabel = (on: boolean) => (on ? "Host containment on" : "Host containment off");
+const workflowsLabel = (on: boolean) => (on ? "Workflows on" : "Workflows off");
 /** "Phishing domains (Block, 1234)", as the Org Audit Log names a destination list. */
 const destinationListLabel = (l: ChosenDestinationList | null) => (l ? `${l.name} (${destinationListAccessLabel[l.access]}, ${l.id})` : "none");
 /**
@@ -271,6 +272,15 @@ export function integrationStore({ db, clock, credentials: sealer, umbrella }: P
         db,
         rows.map((r) => r.id),
       );
+      const discovered = new Map<string, number>();
+      if (rows.length) {
+        const counted = await db
+          .select({ integrationId: falconWorkflows.integrationId, count: sql<number>`count(*)::int` })
+          .from(falconWorkflows)
+          .where(and(inArray(falconWorkflows.integrationId, rows.map((r) => r.id)), isNull(falconWorkflows.removedAt)))
+          .groupBy(falconWorkflows.integrationId);
+        for (const c of counted) discovered.set(c.integrationId, c.count);
+      }
       return rows.map((row) => ({
         id: row.id,
         provider: row.provider,
@@ -300,6 +310,13 @@ export function integrationStore({ db, clock, credentials: sealer, umbrella }: P
         hostEnrichmentError: row.hostEnrichmentError,
         /** Why identity Enrichment is unavailable through it (ADR 0009); null while it works. */
         identityEnrichmentError: row.identityEnrichmentError,
+        /** Whether Members may run its Falcon Fusion SOAR Workflows (ADR 0017). */
+        workflows: row.workflows,
+        /** Its Workflows as last discovered: how many Falcon lists, when, and why that failed if it did. */
+        workflowDiscovery:
+          row.provider === "crowdstrike"
+            ? { count: discovered.get(row.id) ?? 0, checkedAt: row.workflowsCheckedAt?.toISOString() ?? null, refreshing: row.workflowsDue, error: row.workflowsError }
+            : null,
         lastEventAt: row.lastEventAt?.toISOString() ?? null,
         streamOffset: row.streamOffset,
         sessionRefreshAt: row.sessionRefreshAt?.toISOString() ?? null,
@@ -508,6 +525,35 @@ export function integrationStore({ db, clock, credentials: sealer, umbrella }: P
     },
 
     /**
+     * Turns Workflows on or off for a CrowdStrike Integration (ADR 0017): on, Members may run its
+     * discovered Falcon Fusion SOAR Workflows. Discovery happens either way. Runs already sent are
+     * still watched; queued ones fail. Its API client needs Workflow: Write. Admins only. Doing what
+     * is already so changes nothing.
+     */
+    async setWorkflows(me: Membership, id: string, workflows: boolean) {
+      if (!organizationPolicy.canManageIntegrations(me)) throw new NotPermitted();
+      await db.transaction(async (tx) => {
+        const row = await find(tx, me, id);
+        if (row.provider !== "crowdstrike") throw new NotSupportedByProvider(row.provider, "Workflows");
+        if (row.workflows === workflows) return;
+        const now = clock.now();
+        await tx.update(integrations).set({ workflows }).where(eq(integrations.id, id));
+        await recordOrgAudit(tx, {
+          organizationId: me.organizationId,
+          occurredAt: now,
+          actor: actorOf(me),
+          category: "integrations",
+          action: workflows ? "integration.workflows_enabled" : "integration.workflows_disabled",
+          target: row.name,
+          before: workflowsLabel(row.workflows),
+          after: workflowsLabel(workflows),
+        });
+        await publish(tx, { kind: "alerts", organizationId: me.organizationId });
+        await publish(tx, { kind: "actions", organizationId: me.organizationId });
+      });
+    },
+
+    /**
      * The destination lists of Cisco Umbrella Integration `id`, as Umbrella holds them now, for an
      * Admin choosing the one it adds domains to (ADR 0014). Throws `ToolUnavailable` when Umbrella
      * can't be asked. Admins only.
@@ -640,7 +686,7 @@ export function integrationStore({ db, clock, credentials: sealer, umbrella }: P
         const now = clock.now();
         await tx
           .update(integrations)
-          .set({ deletedAt: now, deletedById: me.userId, paused: true, writeBack: false, responseActions: false, hostContainment: false })
+          .set({ deletedAt: now, deletedById: me.userId, paused: true, writeBack: false, responseActions: false, hostContainment: false, workflows: false })
           .where(eq(integrations.id, id));
         await recordOrgAudit(tx, {
           organizationId: me.organizationId,

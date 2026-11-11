@@ -79,7 +79,7 @@ const notPermitted = { error: "Not permitted" } as const;
 /**
  * Integrations (CrowdStrike, Mimecast, Cisco Umbrella or IPinfo): every Member sees them and their
  * health; Admins add, rotate, pause, resume and delete them and set their write-back, Response
- * Actions, Response Action defaults, Host containment, ignored Severities and, for Umbrella, the
+ * Actions, Response Action defaults, Host containment, Workflows, ignored Severities and, for Umbrella, the
  * destination list it adds domains to.
  */
 export const integrationRoutes = (deps: Deps, { integrations }: Modules) =>
@@ -162,6 +162,17 @@ export const integrationRoutes = (deps: Deps, { integrations }: Modules) =>
     .put("/:id/host-containment", zValidator("json", enabledBody), async (c) => {
       try {
         await integrations.setHostContainment(c.get("membership"), c.req.param("id"), c.req.valid("json").enabled);
+        return c.json({ ok: true }, 200);
+      } catch (e) {
+        if (e instanceof NotPermitted) return c.json(notPermitted, 403);
+        if (e instanceof IntegrationNotFound) return c.json({ error: e.message }, 404);
+        if (e instanceof NotSupportedByProvider) return c.json({ error: e.message }, 422);
+        throw e;
+      }
+    })
+    .put("/:id/workflows", zValidator("json", enabledBody), async (c) => {
+      try {
+        await integrations.setWorkflows(c.get("membership"), c.req.param("id"), c.req.valid("json").enabled);
         return c.json({ ok: true }, 200);
       } catch (e) {
         if (e instanceof NotPermitted) return c.json(notPermitted, 403);

@@ -14,10 +14,12 @@ import { createNotificationWorker } from "./notifications/notifications";
 import { createResponseActionSender } from "./response-actions/sender";
 import { createTeamsSender } from "./teams/teams";
 import { createUmbrellaHealthChecker } from "./umbrella/health";
+import { createWorkflowRunner } from "./workflows/runner";
 
 /**
  * The `worker` process (ADR 0001): same image as `web`, started with `bun apps/api/src/worker.ts`.
  * Holds the CrowdStrike Event Streams connections, sends write-backs and Response Actions to Falcon,
+ * discovers Falcon Fusion SOAR Workflows and runs and watches them,
  * sends Response Actions to Mimecast and Cisco Umbrella and checks Mimecast, Umbrella and IPinfo Integrations' credentials, fetches Alerts' comments and hosts' and accounts' Enrichment from Falcon, notifies owners of overdue Tasks and retries Teams channel posts;
  * run as many as you like, each stream is owned by one, and each write-back, Response Action,
  * comment fetch, Enrichment fetch, notification and Teams post is made by one.
@@ -38,6 +40,7 @@ const ipinfoHealth = createIpinfoHealthChecker(deps, { connect: deps.ipinfo });
 const umbrellaHealth = createUmbrellaHealthChecker(deps, { connect: deps.umbrella });
 const notifications = createNotificationWorker(deps);
 const teams = createTeamsSender(deps);
+const workflows = createWorkflowRunner(deps, { connect });
 
 const tick = () =>
   Promise.all([
@@ -52,6 +55,7 @@ const tick = () =>
     umbrellaHealth.tick().catch((e: unknown) => console.error("worker: umbrella health:", e)),
     notifications.tick().catch((e: unknown) => console.error("worker: notifications:", e)),
     teams.tick().catch((e: unknown) => console.error("worker: teams:", e)),
+    workflows.tick().catch((e: unknown) => console.error("worker: workflows:", e)),
   ]);
 await tick();
 const timer = setInterval(tick, STREAM_TICK_MS);

@@ -20,6 +20,7 @@ import {
   RelyingCasesNotConfirmed,
   ResponseActionNotFound,
 } from "../response-actions/response-actions";
+import { WorkflowNotRunnable, WorkflowRunAlreadyLinked, WorkflowRunNotFound, WorkflowRunNotRetryable } from "../workflows/workflows";
 
 const runBody = z.object({
   /** Containment is run on a Case, through its own confirmation (ADR 0009), not here. */
@@ -35,7 +36,7 @@ const runBody = z.object({
 
 const logQuery = z.object({
   link: z.enum(["linked", "unlinked"]).optional(),
-  group: z.enum(["respond", "lookup", "mark"]).optional(),
+  group: z.enum(["respond", "lookup", "mark", "workflow"]).optional(),
   by: z.string().min(1).max(100).optional(),
   before: z.string().min(1).max(100).optional(),
   limit: z.coerce.number().int().min(1).max(500).optional(),
@@ -74,8 +75,17 @@ export const actionCenterRoutes = (deps: Deps, { actionCenter }: Modules) =>
 
 /** The status and body for an Action Log refusal, or null for an error that isn't one. */
 function refused(e: unknown) {
-  if (e instanceof LogEntryNotFound || e instanceof ResponseActionNotFound) return { status: 404 as const, body: { error: e.message } };
-  if (e instanceof NotRetryable || e instanceof NotRemovable || e instanceof NotDismissable || e instanceof AlreadyLinked || e instanceof CaseClosed) {
+  if (e instanceof LogEntryNotFound || e instanceof ResponseActionNotFound || e instanceof WorkflowRunNotFound) return { status: 404 as const, body: { error: e.message } };
+  if (
+    e instanceof NotRetryable ||
+    e instanceof NotRemovable ||
+    e instanceof NotDismissable ||
+    e instanceof AlreadyLinked ||
+    e instanceof CaseClosed ||
+    e instanceof WorkflowRunNotRetryable ||
+    e instanceof WorkflowRunAlreadyLinked ||
+    e instanceof WorkflowNotRunnable
+  ) {
     return { status: 409 as const, body: { error: e.message } };
   }
   return null;
@@ -84,7 +94,8 @@ function refused(e: unknown) {
 /**
  * The Action Log (ADR 0016), for Members only: `GET /` lists runs newest first (`link`, `group`, `by`
  * narrow it, and `before` pages it), `POST /:id/link` links a run with no Case to one, and
- * `POST /:id/retry`, `/remove` and `/dismiss` act on the Response Action of a run with no Case.
+ * `POST /:id/retry`, `/remove` and `/dismiss` act on the Response Action of a run with no Case;
+ * `POST /:id/retry` also retries a Workflow Run Falcon couldn't be asked for (ADR 0017).
  */
 export const actionLogRoutes = (deps: Deps, { actionCenter }: Modules) =>
   new Hono<MemberEnv>()

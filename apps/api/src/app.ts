@@ -25,6 +25,7 @@ import { searchRoutes } from "./routes/search";
 import { ssoRoutes } from "./routes/sso";
 import { teamsChannelRoutes } from "./routes/teams-channel";
 import { umbrellaCheckRoutes } from "./routes/umbrella-checks";
+import { workflowRoutes } from "./routes/workflows";
 
 /**
  * Builds the HTTP API. Everything outside the process comes in through `deps`; `live` is this
@@ -66,6 +67,7 @@ export function createApi(deps: Deps, live: Live = createLive(deps)) {
     .route("/bulk-lookup", bulkLookupRoutes(deps, modules))
     .route("/action-center", actionCenterRoutes(deps, modules))
     .route("/action-log", actionLogRoutes(deps, modules))
+    .route("/workflows", workflowRoutes(deps, modules))
     .route("/integrations", integrationRoutes(deps, modules))
     .route("/ip-lookups", ipLookupRoutes(deps, modules))
     .route("/hash-lookups", hashLookupRoutes(deps, modules))

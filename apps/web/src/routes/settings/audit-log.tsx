@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { api } from "@/lib/api";
 import { membersKey } from "@/routes/settings/members";
 
-const categories = { members: "Members", "case-roles": "Case Roles", sso: "Single sign-on", integrations: "Integrations", alerts: "Alerts", teams: "Teams", "ignored-observables": "Ignored Observables", "important-observables": "Important Observables", "response-actions": "Response Actions without a Case" } as const;
+const categories = { members: "Members", "case-roles": "Case Roles", sso: "Single sign-on", integrations: "Integrations", alerts: "Alerts", teams: "Teams", "ignored-observables": "Ignored Observables", "important-observables": "Important Observables", "response-actions": "Response Actions without a Case", workflows: "Workflows without a Case" } as const;
 type Category = keyof typeof categories;
 
 const actionLabels: Record<string, string> = {
@@ -39,6 +39,8 @@ const actionLabels: Record<string, string> = {
   "integration.host_containment_enabled": "Turned on Host containment for",
   "integration.host_containment_disabled": "Turned off Host containment for",
   "integration.destination_list_changed": "Changed the Umbrella destination list of",
+  "integration.workflows_enabled": "Turned on Workflows for",
+  "integration.workflows_disabled": "Turned off Workflows for",
   "integration.ignored_severities_changed": "Changed ignored Severities for",
   "integration.stream_gap": "Gap in the stream of",
   "integration.deleted": "Deleted Integration",
@@ -64,6 +66,10 @@ const actionLabels: Record<string, string> = {
   "response_action.removal_failed": "Removing Response Action failed, no Case:",
   "response_action.removed": "Removed Response Action, no Case:",
   "response_action.linked": "Linked Response Action to a Case:",
+  "workflow_run.requested": "Ran Workflow, no Case:",
+  "workflow_run.retried": "Retried Workflow run, no Case:",
+  "workflow_run.linked": "Linked Workflow run to a Case:",
+  "workflow_run.finished": "Workflow run ended, no Case:",
   "alert.dismissed": "Dismissed Alert",
   "alert.falcon_status_changed": "Changed Falcon status of Alert",
   "alert.falcon_assignee_changed": "Changed Falcon assignee of Alert",

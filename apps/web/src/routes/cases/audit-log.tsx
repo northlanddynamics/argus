@@ -91,6 +91,10 @@ export const actionLabel: Record<CaseAuditAction, string> = {
   "response_action.removal_failed": "Removing Response Action failed",
   "response_action.removed": "Removed Response Action",
   "response_action.linked": "Linked Response Action from the Action Center",
+  "workflow_run.requested": "Ran Workflow",
+  "workflow_run.retried": "Retried Workflow run",
+  "workflow_run.linked": "Linked Workflow run from the Action Center",
+  "workflow_run.finished": "Workflow run ended",
 };
 
 /** A recorded value as people read it: "In Progress" rather than "in_progress". */

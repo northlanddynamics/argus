@@ -35,10 +35,33 @@ export async function logResponseAction(
   });
 }
 
+/** Records Workflow Run `r`, just asked for, against the Workflow it runs (ADR 0017). */
+export async function logWorkflowRun(
+  tx: Tx,
+  r: { id: string; organizationId: string; caseId: string | null; integrationId: string; createdById: string; createdAt: Date },
+  workflowName: string,
+  source: LogSource,
+) {
+  await tx.insert(actionLog).values({
+    id: secureId(),
+    organizationId: r.organizationId,
+    action: "workflow_run",
+    workflowRunId: r.id,
+    valueType: "workflow",
+    value: workflowName,
+    integrationId: r.integrationId,
+    caseId: r.caseId,
+    source,
+    outcome: null,
+    actorId: r.createdById,
+    createdAt: r.createdAt,
+  });
+}
+
 /** A mark or a lookup that ran, and how it went. */
 export type LoggedRun = {
   organizationId: string;
-  action: Exclude<LogAction, "response_action">;
+  action: Exclude<LogAction, "response_action" | "workflow_run">;
   observableId?: string | null;
   valueType: string;
   value: string;
