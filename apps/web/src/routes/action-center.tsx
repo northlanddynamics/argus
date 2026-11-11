@@ -4,6 +4,7 @@ import { MoreHorizontalIcon } from "lucide-react";
 import { type ReactNode, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import type { ObservableType } from "api/observables/vocabulary";
+import { ActionLogo } from "@/components/action-logo";
 import { CaseRef } from "@/components/case-ref";
 import { EnrichmentButton } from "@/components/observable-details";
 import { ItemLink } from "@/components/item-link";
@@ -182,9 +183,12 @@ export function ActionsTab() {
                       className={cn("grid content-start gap-1.5 rounded-lg border p-3", hit && "border-ring ring-1 ring-ring", pasted !== null && !hit && "opacity-55")}
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="font-medium">{card.label}</p>
-                          <p className="truncate text-xs text-muted-foreground">{card.through}</p>
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          <ActionLogo action={card.action} />
+                          <div className="min-w-0">
+                            <p className="font-medium">{card.label}</p>
+                            <p className="truncate text-xs text-muted-foreground">{card.through}</p>
+                          </div>
                         </div>
                         {card.adminOnly && (
                           <Badge variant="outline" className="border-dashed">
