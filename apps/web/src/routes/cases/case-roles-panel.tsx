@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { XIcon } from "lucide-react";
+import { PlusIcon, XIcon } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -77,7 +77,8 @@ export function CaseRolesPanel({ number, caseRoles, readOnly }: { number: number
         {!readOnly && !adding && (
           <div>
             <Button variant="link" size="xs" className="h-auto px-0" onClick={() => setAdding(true)}>
-              + Assign
+              <PlusIcon aria-hidden />
+              Assign
             </Button>
           </div>
         )}

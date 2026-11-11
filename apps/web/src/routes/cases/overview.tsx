@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useRouteContext } from "@tanstack/react-router";
-import { ClockIcon } from "lucide-react";
+import { ClockIcon, PlusIcon } from "lucide-react";
 import { useState } from "react";
 import { RichTextEditor } from "@/components/rich-text-editor";
 import { PersonAvatar } from "@/components/presence-avatars";
@@ -254,7 +254,8 @@ function OpenTasksCard({ c }: { c: CaseView }) {
           <div className="flex items-center gap-2 border-t pt-2">
             {!isReadOnly(c) && (
               <Button variant="ghost" size="sm" className="-ml-2" onClick={() => setAdding(true)}>
-                + New Task
+                <PlusIcon aria-hidden />
+                New Task
               </Button>
             )}
             {shown.length > OPEN_TASKS_SHOWN && (
@@ -428,7 +429,7 @@ function CaseSummaryCard({ number, summary, readOnly }: { number: number; summar
           </AlertDescription>
         </Alert>
       )}
-      <Card>
+      <Card size="sm">
         <CardHeader>
           <CardTitle>
             <h2>Case Summary</h2>
@@ -477,9 +478,9 @@ function CaseSummaryCard({ number, summary, readOnly }: { number: number; summar
         </CardContent>
       </Card>
       {setAside && (
-        <Card>
+        <Card size="sm">
           <CardHeader>
-            <CardTitle className="text-sm">
+            <CardTitle>
               <h2>Your draft, set aside</h2>
             </CardTitle>
           </CardHeader>

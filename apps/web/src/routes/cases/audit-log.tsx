@@ -27,6 +27,7 @@ import {
 import { defang, observableTypeLabel } from "@/lib/observables";
 import { promotedSources, timelineQuery } from "@/lib/timeline";
 import { useContainerWidth } from "@/hooks/use-container-width";
+import { cn } from "@/lib/utils";
 import { useCaseNumber } from "@/routes/cases/case-layout";
 import { QUIET_ACTION } from "@/routes/cases/rail";
 import { PromoteDialog } from "@/routes/cases/timeline-entry-form";
@@ -149,11 +150,15 @@ const entryText = (e: Entry) => {
 };
 
 
-/** "New → In Progress": what an entry changed. An addition or removal has no before and after to show. */
+/**
+ * "New → In Progress": what an entry changed. An addition or removal has no before and after to show.
+ * Prose (messages, Timeline Entries, the Case Summary) is in the body face; only Evidence fingerprints
+ * are identifiers, so only they are monospace (DESIGN.md, the Identifier Rule).
+ */
 function BeforeAfter({ entry: e }: { entry: Entry }) {
   if (e.before === null && e.after === null) return null;
   return (
-    <span className="font-mono">
+    <span className={cn(e.action.startsWith("evidence.") && "font-mono")}>
       {e.before !== null && <span className="text-muted-foreground line-through">{shown(e.action, e.before)}</span>}
       {e.before !== null && " "}→ {shown(e.action, e.after)}
     </span>
@@ -265,7 +270,7 @@ export function CaseAuditLogPage() {
                     </div>
                   )}
                 </TableCell>
-                <TableCell className="overflow-hidden px-0 font-mono text-xs whitespace-normal [overflow-wrap:anywhere] @5xl:px-2">
+                <TableCell className="overflow-hidden px-0 text-xs whitespace-normal [overflow-wrap:anywhere] @5xl:px-2">
                   {fits("5xl") && <BeforeAfter entry={e} />}
                 </TableCell>
                 <TableCell className="pr-4 text-right">

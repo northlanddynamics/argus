@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { XIcon } from "lucide-react";
+import { PlusIcon, XIcon } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { StatusBadge } from "@/components/case-badges";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -150,7 +150,8 @@ function LinkCaseDialog({ number }: { number: number }) {
     >
       <DialogTrigger asChild>
         <Button variant="link" size="xs" className="h-auto px-0">
-          + Link
+          <PlusIcon aria-hidden />
+          Link
         </Button>
       </DialogTrigger>
       <DialogContent>

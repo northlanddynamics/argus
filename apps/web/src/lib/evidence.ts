@@ -24,16 +24,16 @@ export type EvidenceView = NonNullable<Awaited<ReturnType<ReturnType<typeof evid
 export const evidenceUrl = (number: number, id: string, access: "view" | "download") =>
   api.cases[":number"].evidence[":id"][access].$url({ param: { number: String(number), id } }).toString();
 
-/** "84 KB", "2.1 MB", "16 GB". */
+/** "56 B", "84 KB", "2.1 MB", "16 GB": one unit style at every size. */
 export function formatBytes(bytes: number) {
-  const units = ["bytes", "KB", "MB", "GB", "TB"];
+  const units = ["B", "KB", "MB", "GB", "TB"];
   let value = bytes;
   let unit = 0;
   while (value >= 1024 && unit < units.length - 1) {
     value /= 1024;
     unit++;
   }
-  if (unit === 0) return `${bytes} ${bytes === 1 ? "byte" : "bytes"}`;
+  if (unit === 0) return `${bytes} B`;
   return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
 }
 

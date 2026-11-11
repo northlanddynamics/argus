@@ -385,7 +385,7 @@ function QueueRow({
       <span className="line-clamp-2 leading-snug font-medium">{c.title}</span>
       <span className="flex w-full min-w-0 items-center gap-3 text-xs text-muted-foreground">
         <span className="min-w-0 truncate">
-          {statusLabel[c.status]} · <span className={cn(!c.assignee && "italic")}>{c.assignee?.name ?? "Unassigned"}</span>
+          {statusLabel[c.status]} · {c.assignee?.name ?? "Unassigned"}
         </span>
         {(c.restricted || (c.guests ?? 0) > 0) && (
           <span className="ml-auto flex shrink-0 items-center gap-2">

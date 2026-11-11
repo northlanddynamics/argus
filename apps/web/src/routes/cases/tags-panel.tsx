@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { XIcon } from "lucide-react";
+import { PlusIcon, XIcon } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -65,7 +65,8 @@ export function TagsPanel({ number, tags, readOnly }: { number: number; tags: st
         <RailTitle>Tags</RailTitle>
         {!readOnly && !adding && (
           <Button variant="link" size="xs" className="h-auto px-0" onClick={() => setAdding(true)}>
-            + Tag
+            <PlusIcon aria-hidden />
+            Tag
           </Button>
         )}
       </RailHeader>
