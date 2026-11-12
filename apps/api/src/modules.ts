@@ -10,6 +10,7 @@ import { guestStore } from "./guests/guests";
 import { alertStore } from "./alerts/alerts";
 import { integrationStore } from "./integrations/integrations";
 import { internalStore } from "./internal/internal";
+import { ipHostLookupStore } from "./crowdstrike/ip-host-lookups";
 import { ipLookupStore } from "./ipinfo/ip-lookups";
 import { domainUrlLookupStore } from "./virustotal/domain-url-lookups";
 import { hashLookupStore } from "./virustotal/hash-lookups";
@@ -46,7 +47,7 @@ export function createModules(deps: Deps) {
     responseActions,
   };
   const lookups = {
-    ipLookups: ipLookupStore(deps),
+    ipLookups: ipLookupStore(deps, ipHostLookupStore(deps)),
     hashLookups: hashLookupStore(deps),
     domainUrlLookups: domainUrlLookupStore(deps),
     umbrellaChecks: umbrellaDomainCheckStore(deps),

@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, or, type SQL } from "drizzle-orm";
 import { NotPermitted, organizationPolicy, visibleCases } from "../access/policy";
+import type { IpHostLookup } from "../crowdstrike/ip-host-lookups";
 import { lockCase } from "../cases/cases";
 import type { Clock } from "../clock";
 import type { Db } from "../db/client";
@@ -196,6 +197,14 @@ const statusText: Record<CardStatus, string> = {
   admin_only: "Admins only",
 };
 
+/** What Falcon said about an internal IP (ADR 0018), in a line, across its CrowdStrike Integrations. */
+const falconSummary = (lookups: IpHostLookup[]) => {
+  const failed = lookups.find((f) => f.state === "failed");
+  if (failed && lookups.every((f) => f.state === "failed")) return `looking it up in Falcon failed: ${failed.error}`;
+  const total = lookups.reduce((n, f) => n + f.total, 0);
+  return total === 0 ? "no host in Falcon last reported it" : `last reported by ${total} host${total === 1 ? "" : "s"} in Falcon`;
+};
+
 export function actionCenterStore(
   { db, clock }: { db: Db; clock: Clock },
   modules: {
@@ -376,7 +385,8 @@ export function actionCenterStore(
         const l = await modules.ipLookups.lookup(me, v.value);
         outcome = l.state === "failed" || l.state === "unconfigured" || l.state === "paused" ? "failed" : l.state === "reserved" ? "done" : fresh(l.fetchedAt);
         detail =
-          l.state === "reserved" ? `${l.reserved?.label ?? "Reserved"} address: never sent to IPinfo`
+          l.state === "reserved" && l.falcon?.length ? `${l.reserved?.label ?? "Reserved"} address: ${falconSummary(l.falcon)}`
+          : l.state === "reserved" ? `${l.reserved?.label ?? "Reserved"} address: never sent to IPinfo`
           : l.state === "unconfigured" ? "The Organization has no IPinfo Integration"
           : l.state === "paused" ? "The IPinfo Integration is paused"
           : l.error;

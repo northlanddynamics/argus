@@ -1,5 +1,6 @@
 import { and, asc, eq, isNull } from "drizzle-orm";
 import type { IntegrationHealth } from "../alerts/vocabulary";
+import type { IpHostLookup, IpHostLookupStore } from "../crowdstrike/ip-host-lookups";
 import { ipLookups, integrations } from "../db/schema";
 import type { Deps } from "../deps";
 import { secureId } from "../ids";
@@ -18,7 +19,8 @@ import { type IpDetails, IpinfoQuotaExceeded, IpinfoRefused, reservedRange } fro
  * every hover.
  *
  * Reserved addresses (private, loopback, link-local, documentation and the like) are never sent to
- * IPinfo: they mean nothing outside their own network, and they describe it. A paused Integration
+ * IPinfo: they mean nothing outside their own network, and they describe it. Internal ones (private,
+ * shared and unique local) are looked up in the Organization's own Falcon instead (ADR 0018). A paused Integration
  * serves what is cached and fetches nothing. What each fetch says about the token sets the
  * Integration's health, as Mimecast's checks do (`mimecast/health.ts`).
  */
@@ -37,7 +39,7 @@ export class InvalidIp extends Error {
 
 /**
  * - `found`: IPinfo's details, as of `fetchedAt`.
- * - `reserved`: a reserved address, never looked up; `reserved` says which range, or that IPinfo called it a bogon.
+ * - `reserved`: a reserved address, never sent to IPinfo; `reserved` says which range, or that IPinfo called it a bogon.
  * - `unconfigured`: the Organization has no IPinfo Integration.
  * - `paused`: its IPinfo Integration is paused; `details` are what was cached, if anything.
  * - `failed`: the last lookup failed with `error`; `details` are what was cached before, if anything.
@@ -48,10 +50,15 @@ export type IpLookup = {
   /** The address in canonical form. */
   ip: string;
   state: IpLookupState;
-  reserved: { range: string | null; label: string } | null;
+  reserved: { range: string | null; label: string; internal: boolean } | null;
   details: IpDetails | null;
   fetchedAt: string | null;
   error: string | null;
+  /**
+   * For an internal address, what each of the Organization's CrowdStrike Integrations says last
+   * reported it (ADR 0018); empty when it has none. Null for any other address.
+   */
+  falcon: IpHostLookup[] | null;
 };
 
 type Cached = typeof ipLookups.$inferSelect;
@@ -59,8 +66,8 @@ type Cached = typeof ipLookups.$inferSelect;
 /** What `row` (cached for `ip`, if anything is) says, as a lookup in `state`. */
 const answer = (ip: string, row: Cached | undefined, state: IpLookupState, error: string | null = null): IpLookup =>
   row?.bogon
-    ? { ip, state: "reserved", reserved: { range: null, label: "Reserved" }, details: null, fetchedAt: null, error: null }
-    : { ip, state, reserved: null, details: row?.details ?? null, fetchedAt: row?.fetchedAt?.toISOString() ?? null, error };
+    ? { ip, state: "reserved", reserved: { range: null, label: "Reserved", internal: false }, details: null, fetchedAt: null, error: null, falcon: null }
+    : { ip, state, reserved: null, details: row?.details ?? null, fetchedAt: row?.fetchedAt?.toISOString() ?? null, error, falcon: null };
 
 /** Records what a call to IPinfo said about an Integration's token, unless it was rotated or paused since. */
 export async function recordIpinfoHealth(
@@ -86,7 +93,10 @@ export async function recordIpinfoHealth(
   });
 }
 
-export function ipLookupStore({ db, clock, credentials: sealer, ipinfo }: Pick<Deps, "db" | "clock" | "credentials" | "ipinfo">) {
+export function ipLookupStore(
+  { db, clock, credentials: sealer, ipinfo }: Pick<Deps, "db" | "clock" | "credentials" | "ipinfo">,
+  ipHosts: IpHostLookupStore,
+) {
   /** Lookups being fetched now, so a burst of hovers on one address costs one call. */
   const inFlight = new Map<string, Promise<IpLookup>>();
 
@@ -120,14 +130,17 @@ export function ipLookupStore({ db, clock, credentials: sealer, ipinfo }: Pick<D
   return {
     /**
      * What is known about `raw` (an IPv4 or IPv6 address, defanged or not), fetching it from IPinfo
-     * when nothing fresh is cached, or always when `refresh`. Members only; any Member may look up
-     * any address.
+     * when nothing fresh is cached, or always when `refresh`; an internal address is looked up in
+     * Falcon instead, the same way. Members only; any Member may look up any address.
      */
     async lookup(me: Membership, raw: string, { refresh = false }: { refresh?: boolean } = {}): Promise<IpLookup> {
       const ip = normaliseObservable("ip", raw)?.value;
       if (!ip) throw new InvalidIp();
       const reserved = reservedRange(ip);
-      if (reserved) return { ip, state: "reserved", reserved, details: null, fetchedAt: null, error: null };
+      if (reserved) {
+        const falcon = reserved.internal ? await ipHosts.lookup(me, ip, { refresh }) : null;
+        return { ip, state: "reserved", reserved, details: null, fetchedAt: null, error: null, falcon };
+      }
 
       const [integration] = await db
         .select()
@@ -135,7 +148,7 @@ export function ipLookupStore({ db, clock, credentials: sealer, ipinfo }: Pick<D
         .where(and(eq(integrations.organizationId, me.organizationId), eq(integrations.provider, "ipinfo"), isNull(integrations.deletedAt)))
         .orderBy(asc(integrations.createdAt))
         .limit(1);
-      if (!integration) return { ip, state: "unconfigured", reserved: null, details: null, fetchedAt: null, error: null };
+      if (!integration) return { ip, state: "unconfigured", reserved: null, details: null, fetchedAt: null, error: null, falcon: null };
 
       const [cached] = await db
         .select()

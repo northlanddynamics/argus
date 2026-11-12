@@ -6,6 +6,7 @@ import { createDb } from "./db/client";
 import type { Deps, EvidenceConfig } from "./deps";
 import { s3EvidenceStorage } from "./evidence/s3-storage";
 import { credentialSealer } from "./integrations/credentials";
+import { falconHttpClient } from "./crowdstrike/falcon-http";
 import { ipinfoHttpClient } from "./ipinfo/ipinfo-http";
 import { umbrellaHttpClient } from "./umbrella/umbrella-http";
 import { virustotalHttpClient } from "./virustotal/virustotal-http";
@@ -59,6 +60,7 @@ export function depsFromEnv(): Deps & { close: () => Promise<void> } {
     // Integration credentials are sealed under their own secret when one is set.
     credentials: credentialSealer(process.env.CREDENTIALS_SECRET ?? authSecret),
     ipinfo: (credentials) => ipinfoHttpClient(credentials),
+    falcon: (connection) => falconHttpClient(connection),
     virustotal: (credentials) => virustotalHttpClient(credentials),
     umbrella: (credentials) => umbrellaHttpClient(credentials),
     close,

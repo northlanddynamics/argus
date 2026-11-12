@@ -3,7 +3,7 @@ import { createHostEnricher } from "./crowdstrike/host-enrichment";
 import { createStreamWorker } from "./crowdstrike/stream-worker";
 import epp from "./crowdstrike/fixtures/epp-detection.json";
 import { createResponseActionSender, MAX_RESPONSE_ACTION_ATTEMPTS } from "./response-actions/sender";
-import { fakeFalcon, fakeHost } from "./test/fake-falcon";
+import { fakeHost } from "./test/fake-falcon";
 import { buildTestApp } from "./test/harness";
 
 const PASSWORD = "correct-horse-battery";
@@ -38,7 +38,8 @@ async function acme({ containment = true }: { containment?: boolean } = {}) {
     as.api.integrations[":id"]["host-containment"].$put({ param: { id }, json: { enabled } });
   if (containment) await setContainment(owner, true);
 
-  const falcon = fakeFalcon();
+  // The Falcon the `web` process asks too, for internal IP lookups.
+  const falcon = t.falcon;
   const tenant = falcon.tenant(PROD);
   tenant.hosts.set(AID, fakeHost(AID, { hostGroups: ["Finance laptops", "Windows workstations"] }));
   const stream = createStreamWorker(t.deps, { connect: falcon.connect, workerId: "worker-1" });
@@ -574,6 +575,17 @@ describe("Containment lifted in Falcon", () => {
       target: `Falcon host containment: ${HOST}`,
       after: "Lifted in CrowdStrike Falcon, outside Argus",
     });
+  });
+
+  test("so does an internal IP lookup that finds the host released", async () => {
+    const a = await acme();
+    const id = await contained(a);
+    a.t.clock.advance(60_000);
+    a.tenant.hosts.set(AID, fakeHost(AID, { containment: "normal", localIp: "10.20.4.31" }));
+    const body = await (await a.ben.api["ip-lookups"].$get({ query: { ip: "10.20.4.31" } })).json();
+    expect("lookup" in body && body.lookup.falcon?.[0]?.hosts.map((h) => h.deviceId)).toEqual([AID]);
+    const at = a.t.clock.now().toISOString();
+    expect((await a.list(a.ben)).responseActions).toMatchObject([{ id, state: "removed", liftedInToolAt: at }]);
   });
 
   test("a host still contained, being contained, unknown to Falcon, or a failed fetch, changes nothing", async () => {

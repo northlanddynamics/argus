@@ -192,12 +192,14 @@ describe("IP lookups", () => {
     expect((await a.lookup("10.20.4.17")).lookup).toEqual({
       ip: "10.20.4.17",
       state: "reserved",
-      reserved: { range: "10.0.0.0/8", label: "Private" },
+      reserved: { range: "10.0.0.0/8", label: "Private", internal: true },
       details: null,
       fetchedAt: null,
       error: null,
+      // Internal: looked up in Falcon instead, and there is no CrowdStrike Integration.
+      falcon: [],
     });
-    expect((await a.lookup("fe80::1")).lookup).toMatchObject({ state: "reserved", reserved: { label: "Link-local" } });
+    expect((await a.lookup("fe80::1")).lookup).toMatchObject({ state: "reserved", reserved: { label: "Link-local", internal: false }, falcon: null });
     expect(a.t.ipinfo.lookups).toHaveLength(0);
     expect((await a.lookup("example.com")).status).toBe(422);
   });
@@ -300,6 +302,22 @@ describe("reserved ranges", () => {
     ["::ffff:a01:203", "Private"],
   ])("%s is %s", (ip, label) => {
     expect(reservedRange(ip)?.label).toBe(label);
+  });
+
+  test.each([
+    ["10.0.0.1", true],
+    ["172.16.0.1", true],
+    ["192.168.1.1", true],
+    ["100.64.0.1", true],
+    ["fd12:3456::1", true],
+    ["::ffff:10.1.2.3", true],
+    ["127.0.0.1", false],
+    ["169.254.10.10", false],
+    ["fe80::1", false],
+    ["192.0.2.55", false],
+    ["224.0.0.251", false],
+  ])("%s is internal: %p", (ip, internal) => {
+    expect(reservedRange(ip)?.internal).toBe(internal);
   });
 
   test.each(["8.8.8.8", "172.32.0.1", "100.128.0.1", "185.220.101.4", "2001:4860:4860::8888", "::ffff:8.8.8.8"])("%s is public", (ip) => {

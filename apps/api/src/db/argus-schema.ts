@@ -1094,6 +1094,34 @@ export const falconHostSnapshots = pgTable(
 );
 
 /**
+ * Internal IP lookups in Falcon (ADR 0018): which devices last reported `ip` as their local address,
+ * per CrowdStrike Integration, as fetched while a Member waited (`crowdstrike/ip-host-lookups.ts`).
+ * `device_ids` are newest first, at most 50, of `total` Falcon matched; the devices' details are
+ * their `falcon_host_snapshots`. Replaced on every fetch and served for 15 minutes, since addresses
+ * are leased again. `checked_at` is when Falcon was last asked and `error` why that failed, keeping
+ * the last answer.
+ */
+export const falconIpLookups = pgTable(
+  "falcon_ip_lookups",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "restrict" }),
+    integrationId: text("integration_id")
+      .notNull()
+      .references(() => integrations.id, { onDelete: "restrict" }),
+    ip: text("ip").notNull(),
+    deviceIds: text("device_ids").array().notNull().default(sql`'{}'::text[]`),
+    total: integer("total").notNull().default(0),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }),
+    checkedAt: timestamp("checked_at", { withTimezone: true }).notNull(),
+    error: text("error"),
+  },
+  (t) => [uniqueIndex("falcon_ip_lookups_ip_idx").on(t.integrationId, t.ip)],
+);
+
+/**
  * Looking a host up in Falcon by hostname, through an Integration that has recorded no device on it
  * (ADR 0009): a host added by hand, or named only by detections without an `aid`. `due` marks it
  * wanted by someone opening the host's page (`crowdstrike/host-enrichment.ts`); a worker asks Falcon

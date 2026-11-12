@@ -66,7 +66,7 @@ A cached answer (even a stale one) shows at once as in A; a Refresh shows A with
 └──────────────────────────────────────────────┘
 ```
 
-The same for loopback, link-local, CGNAT, documentation, multicast and other reserved ranges, naming the range.
+The same for loopback, link-local, documentation, multicast and other reserved ranges, naming the range. Private, shared (CGNAT) and unique-local addresses now show the hosts Falcon says last reported them instead (`ip-falcon-lookup.md`, ADR 0018); this state is what they show when the Organization has no CrowdStrike Integration.
 
 ## D. No IPinfo Integration
 

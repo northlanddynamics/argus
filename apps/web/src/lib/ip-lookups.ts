@@ -1,7 +1,7 @@
 import { queryOptions, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, errorMessage } from "@/lib/api";
 
-export { asTypeLabel, type IpDetails } from "api/ipinfo/ipinfo";
+export { asTypeLabel, type IpDetails, reservedRange } from "api/ipinfo/ipinfo";
 
 /** Every IP lookup's query starts with this key; an Integration signal refreshes them. */
 export const ipLookupsKey = ["ip-lookups"] as const;

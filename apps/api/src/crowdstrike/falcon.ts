@@ -15,6 +15,8 @@ import type { WorkflowActivity, WorkflowInput, WorkflowInputValues } from "../wo
  * found by hostname, for Enrichment (`host-enrichment.ts`, ADR 0009), which needs only the Hosts: Read scope.
  * A host is contained for a containment Response Action (ADR 0009), which an Integration takes only
  * when its Host containment setting is on, and which needs Hosts: Write.
+ * Devices are also found by the local IP their sensor last reported, for internal IP lookups
+ * (`ip-host-lookups.ts`, ADR 0018), made while a Member waits, which need only Hosts: Read.
  * Identity Protection identities are read, and found by account name, for identity Enrichment
  * (`identity-enrichment.ts`, ADR 0009), which needs Identity Protection Entities: Read and an
  * Identity Protection subscription.
@@ -108,6 +110,12 @@ export interface FalconClient {
    * Rejects with `FalconScopeMissing` when the API client lacks Hosts: Read.
    */
   findHosts(hostname: string): Promise<string[]>;
+  /**
+   * The devices whose sensor last reported `ip` (canonical) as its local address, seen most recently
+   * first: at most `HOSTS_BY_LOCAL_IP_LIMIT` of their `aid`s, lower case, and how many Falcon matched
+   * in all. Rejects with `FalconScopeMissing` when the API client lacks Hosts: Read.
+   */
+  findHostsByLocalIp(ip: string): Promise<HostsByLocalIp>;
   /**
    * Asks Falcon to contain the device with this `aid`, cutting it off from the network but for
    * Falcon itself. Rejects with `FalconScopeMissing` when the API client lacks Hosts: Write, and
@@ -220,6 +228,12 @@ export type FalconIdentity = {
   /** The endpoints associated with the identity, by hostname. Never linked as Assets. */
   endpoints: string[];
 };
+
+/** The most devices `findHostsByLocalIp` returns. */
+export const HOSTS_BY_LOCAL_IP_LIMIT = 50;
+
+/** The devices that last reported an address, newest first, and how many Falcon matched in all. */
+export type HostsByLocalIp = { deviceIds: string[]; total: number };
 
 /** Falcon refused a call because the API client lacks the scope it needs. */
 export class FalconScopeMissing extends Error {}

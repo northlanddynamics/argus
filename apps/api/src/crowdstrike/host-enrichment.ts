@@ -204,6 +204,42 @@ async function storeFetched(tx: Tx, integrationId: string, claimed: readonly Cla
 }
 
 /**
+ * Stores what a fetch made outside the worker, as an internal IP lookup is (ADR 0018), said about
+ * `hosts`, all through Integration `integrationId` and asked for at `askedAt`: each becomes its
+ * device's snapshot, as the worker's fetch would make it, and one showing the device released ends
+ * Argus's containment of it. Signals only when a snapshot changed, so the pages showing it follow,
+ * and a lookup that learns nothing new wakes nobody. Call in a transaction.
+ */
+export async function storeHostsFetched(tx: Tx, organizationId: string, integrationId: string, hosts: readonly FalconHost[], askedAt: Date, now: Date) {
+  const s = falconHostSnapshots;
+  if (hosts.length) {
+    const before = await tx
+      .select({ deviceId: s.deviceId, host: s.host })
+      .from(s)
+      .where(and(eq(s.integrationId, integrationId), inArray(s.deviceId, hosts.map((h) => h.deviceId))));
+    const was = new Map(before.map((b) => [b.deviceId, JSON.stringify(b.host)]));
+    const changed = hosts.filter((h) => was.get(h.deviceId) !== JSON.stringify(h));
+    await tx
+      .insert(s)
+      .values(hosts.map((host) => ({ id: secureId(), organizationId, integrationId, deviceId: host.deviceId, host, fetchedAt: now, checkedAt: now, error: null })))
+      .onConflictDoUpdate({
+        target: [s.integrationId, s.deviceId],
+        set: { host: sql`excluded.host`, fetchedAt: now, checkedAt: now, error: null },
+      });
+    await containmentLiftedInFalcon(tx, { integrationId, deviceIds: hosts.filter(released).map((h) => h.deviceId), askedAt, now });
+    if (changed.length) await announce(tx, organizationId, { devices: changed.map((h) => ({ id: "", organizationId, integrationId, deviceId: h.deviceId })) });
+  }
+  await recordHealth(tx, integrationId, { hosts });
+}
+
+/** Records in the Integration's health that a call outside the worker failed with `e`: only a missing Hosts: Read is noted. */
+export async function recordHostCallFailure(tx: Tx, integrationId: string, e: unknown) {
+  const failure = failureOf(e);
+  await recordHealth(tx, integrationId, failure);
+  return failure;
+}
+
+/**
  * Says in the Integration's health that host Enrichment is unavailable when Falcon refused for want
  * of Hosts: Read, and clears that once a call works. Other failures leave it as it was.
  */

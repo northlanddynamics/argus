@@ -4,6 +4,7 @@ import type { Db } from "./db/client";
 import type { EvidenceStorage } from "./evidence/storage";
 import type { GuestSession } from "./guests/guest-sessions";
 import type { CredentialSealer } from "./integrations/credentials";
+import type { FalconConnector } from "./crowdstrike/falcon";
 import type { IpinfoConnector } from "./ipinfo/ipinfo";
 import type { UmbrellaConnector } from "./umbrella/umbrella";
 import type { VirustotalConnector } from "./virustotal/virustotal";
@@ -29,6 +30,8 @@ export type Deps = {
   credentials: CredentialSealer;
   /** Makes IPinfo clients, to look IPs up while a Member waits (ADR 0010). */
   ipinfo: IpinfoConnector;
+  /** Makes Falcon clients, to look internal IPs up while a Member waits (ADR 0018); the worker makes its own. */
+  falcon: FalconConnector;
   /** Makes VirusTotal clients, one per Member's key, to look hashes, domains and URLs up while they wait (ADR 0011, 0012). */
   virustotal: VirustotalConnector;
   /** Makes Cisco Umbrella clients, to list destination lists and check domains against them while a Member waits (ADR 0014). */

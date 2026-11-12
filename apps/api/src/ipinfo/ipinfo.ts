@@ -71,8 +71,15 @@ export interface IpinfoClient {
 /** Makes the client for one Integration. */
 export type IpinfoConnector = (credentials: IpinfoCredentials) => IpinfoClient;
 
-/** A range of addresses that mean nothing outside the network they are used in, so are never looked up. */
-export type ReservedRange = { range: string; label: string };
+/**
+ * A range of addresses that mean nothing outside the network they are used in, so are never sent to
+ * IPinfo. `internal` ranges are the ones an Organization numbers its own hosts from (private, shared
+ * and unique local), which are looked up in Falcon instead (ADR 0018).
+ */
+export type ReservedRange = { range: string; label: string; internal: boolean };
+
+/** The reserved ranges an Organization's own hosts are addressed from. */
+const INTERNAL = new Set(["10.0.0.0/8", "100.64.0.0/10", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"]);
 
 const V4_RESERVED: [string, string][] = [
   ["0.0.0.0/8", "“This network”"],
@@ -134,7 +141,7 @@ export function reservedRange(ip: string): ReservedRange | null {
   if (!ip.includes(":")) {
     const bits = v4Bits(ip);
     const hit = V4_RESERVED.find(([cidr]) => inRange(bits, 32, cidr, v4Bits));
-    return hit ? { range: hit[0], label: hit[1] } : null;
+    return hit ? { range: hit[0], label: hit[1], internal: INTERNAL.has(hit[0]) } : null;
   }
   const bits = v6Bits(ip);
   if (bits === null) return null;
@@ -144,5 +151,5 @@ export function reservedRange(ip: string): ReservedRange | null {
     return reservedRange(v4);
   }
   const hit = V6_RESERVED.find(([cidr]) => inRange(bits, 128, cidr, v6Bits));
-  return hit ? { range: hit[0], label: hit[1] } : null;
+  return hit ? { range: hit[0], label: hit[1], internal: INTERNAL.has(hit[0]) } : null;
 }
