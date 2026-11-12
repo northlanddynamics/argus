@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { createRootRouteWithContext, createRoute, createRouter, lazyRouteComponent, Outlet, redirect } from "@tanstack/react-router";
 import { meQuery } from "@/lib/api";
-import { validateItemPageSearch } from "@/lib/observables";
+import { validateItemPageSearch, validateObservablesSearch } from "@/lib/observables";
 import { validateDashboardSearch } from "@/lib/metrics";
 import { parseSearch, stringifySearch, validateSearchPageSearch } from "@/lib/search";
 import { queryClient } from "@/lib/query-client";
@@ -22,11 +22,13 @@ import { CaseTimelinePage } from "@/routes/cases/timeline";
 import { DashboardPage } from "@/routes/dashboard";
 import { HomePage } from "@/routes/guest-home";
 import { AssetPage, ObservablePage } from "@/routes/items/item-page";
+import { IgnoredTab } from "@/routes/observables/ignored";
+import { ObservablesLayout } from "@/routes/observables/layout";
+import { ObservablesTab } from "@/routes/observables/list";
 import { GuestSignInPage, validateGuestSignInSearch } from "@/routes/guest-sign-in";
 import { SearchPage } from "@/routes/search";
 import { OrgAuditLogPage } from "@/routes/settings/audit-log";
 import { SettingsLayout } from "@/routes/settings/layout";
-import { IgnoredObservablesPage } from "@/routes/settings/ignored";
 import { IntegrationsPage } from "@/routes/settings/integrations";
 import { MembersPage } from "@/routes/settings/members";
 import { SsoPage } from "@/routes/settings/sso";
@@ -127,6 +129,32 @@ const dashboardRoute = createRoute({
     if (!context.me.organization) throw redirect({ to: "/" });
   },
   component: DashboardPage,
+});
+
+/**
+ * The Observables page: Members only, with the Observables and Ignored tabs, which share its search
+ * and type filters. An Observable's own page, below, is under the same path.
+ */
+const observablesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/observables",
+  validateSearch: validateObservablesSearch,
+  beforeLoad: ({ context }) => {
+    if (!context.me.organization || context.me.guest) throw redirect({ to: "/" });
+  },
+  component: ObservablesLayout,
+});
+
+const observablesTabRoute = createRoute({
+  getParentRoute: () => observablesRoute,
+  path: "/",
+  component: ObservablesTab,
+});
+
+const ignoredTabRoute = createRoute({
+  getParentRoute: () => observablesRoute,
+  path: "/ignored",
+  component: IgnoredTab,
 });
 
 /** An Observable's and an Asset's page, for Members and Guests; the API decides what each sees. */
@@ -241,12 +269,6 @@ const integrationsRoute = createRoute({
   component: IntegrationsPage,
 });
 
-const ignoredRoute = createRoute({
-  getParentRoute: () => settingsRoute,
-  path: "/ignored",
-  component: IgnoredObservablesPage,
-});
-
 const orgAuditLogRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/audit-log",
@@ -284,9 +306,10 @@ export const router = createRouter({
       bulkLookupRoute,
       actionCenterRoute.addChildren([actionsTabRoute, actionLogTabRoute]),
       accountRoute,
+      observablesRoute.addChildren([observablesTabRoute, ignoredTabRoute]),
       observableRoute,
       assetRoute,
-      settingsRoute.addChildren([settingsIndexRoute, membersRoute, ssoRoute, integrationsRoute, ignoredRoute, orgAuditLogRoute]),
+      settingsRoute.addChildren([settingsIndexRoute, membersRoute, ssoRoute, integrationsRoute, orgAuditLogRoute]),
     ]),
     operatorRoute,
     signInRoute,

@@ -43,6 +43,7 @@ import {
   type ObservableType,
   observableExpected,
   observableTypeLabel,
+  refang,
 } from "./vocabulary";
 
 /**
@@ -942,6 +943,82 @@ export const importantObservableStore = ({ db }: { db: Db }) => ({
 });
 
 export type ImportantObservableStore = ReturnType<typeof importantObservableStore>;
+
+/* The Organization's Observables. */
+
+/** An Observable as the Organization's list of them gives it. */
+export type ObservableEntry = {
+  id: string;
+  type: ObservableType;
+  value: string;
+  /** When the Organization first held it. */
+  firstSeen: string;
+  /** How many Cases the actor can see it is linked to. */
+  cases: number;
+  ignored: boolean;
+  important: boolean;
+};
+
+/** How many Observables the list gives at most; `more` says there were others. */
+export const OBSERVABLE_LIST_LIMIT = 200;
+
+/** `text` matched literally by `like`. */
+const likeLiteral = (text: string) => text.replace(/[\\%_]/g, (c) => `\\${c}`);
+
+/**
+ * Every Observable the Organization holds, newest first, narrowed to `types` (all when empty) and to
+ * values containing `q`, defanged or not. Members only: Guests never see the Organization's list.
+ */
+export const observableListStore = ({ db }: { db: Db }) => ({
+  async list(me: Participant, { q = "", types = [] }: { q?: string; types?: readonly ObservableType[] } = {}): Promise<{ observables: ObservableEntry[]; more: boolean }> {
+    if (isGuest(me)) throw new NotPermitted();
+    const text = refang(q).toLowerCase();
+    const caseCount = db
+      .select({ n: sql<number>`count(distinct ${caseObservables.caseId})::int`.as("n") })
+      .from(caseObservables)
+      .innerJoin(cases, eq(caseObservables.caseId, cases.id))
+      .where(and(eq(caseObservables.itemId, observables.id), isNull(caseObservables.unlinkedAt), visibleCases(me)));
+    const rows = await db
+      .select({
+        id: observables.id,
+        type: observables.type,
+        value: observables.value,
+        createdAt: observables.createdAt,
+        cases: sql<number>`(${caseCount})`.mapWith(Number),
+        ignored: exists(
+          db
+            .select({ id: ignoredObservables.id })
+            .from(ignoredObservables)
+            .where(and(eq(ignoredObservables.observableId, observables.id), isNull(ignoredObservables.endedAt))),
+        ).mapWith(Boolean),
+        important: isImportant(db, observables.id).mapWith(Boolean),
+      })
+      .from(observables)
+      .where(
+        and(
+          eq(observables.organizationId, me.organizationId),
+          types.length ? inArray(observables.type, [...types]) : undefined,
+          text ? sql`(lower(${observables.value}) like ${`%${likeLiteral(text)}%`} or ${observables.matchKey} like ${`%${likeLiteral(text)}%`})` : undefined,
+        ),
+      )
+      .orderBy(desc(observables.createdAt), desc(observables.id))
+      .limit(OBSERVABLE_LIST_LIMIT + 1);
+    return {
+      observables: rows.slice(0, OBSERVABLE_LIST_LIMIT).map((r) => ({
+        id: r.id,
+        type: r.type as ObservableType,
+        value: r.value,
+        firstSeen: r.createdAt.toISOString(),
+        cases: r.cases,
+        ignored: r.ignored,
+        important: r.important,
+      })),
+      more: rows.length > OBSERVABLE_LIST_LIMIT,
+    };
+  },
+});
+
+export type ObservableListStore = ReturnType<typeof observableListStore>;
 
 /* Observables and Assets that Alerts name. */
 

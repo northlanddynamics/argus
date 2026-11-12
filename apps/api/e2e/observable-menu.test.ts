@@ -167,7 +167,7 @@ test("an Admin ignores an Observable from its menu wherever it is shown, and fro
     await page.getByRole("button", { name: "hxxps://invoice-portal[.]biz/pay", exact: true }).click({ button: "right" });
     await menu.getByRole("menuitem", { name: "Ignore…" }).click();
     await page.getByRole("alertdialog").getByRole("button", { name: "Ignore" }).click();
-    await page.goto(`${baseUrl}/settings/ignored`);
+    await page.goto(`${baseUrl}/observables/ignored`);
     await page.getByText("hxxps://invoice-portal[.]biz/pay").waitFor();
     await context.close();
 

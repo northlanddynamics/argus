@@ -243,3 +243,44 @@ describe("Ignored Observables", () => {
     expect((await byValue(a.admin, "ip", "not an ip", true)).status).toBe(400);
   });
 });
+
+/** The Organization's Observables, as `as` lists them. */
+async function list(as: Awaited<ReturnType<typeof acme>>["ana"], query: { q?: string; types?: string } = {}) {
+  const res = await as.api.observables.$get({ query });
+  const body = await res.json();
+  if (!("observables" in body)) throw new Error(`Could not list the Observables: ${res.status}`);
+  return body;
+}
+
+describe("The Organization's Observables", () => {
+  test("Members list every Observable, newest first, with its Cases and marks, by type and value", async () => {
+    const a = await acme();
+    const resolver = await a.observe("ip", "8.8.8.8");
+    a.t.clock.advance(HOUR);
+    await a.observe("domain", "invoice-portal.biz");
+    a.t.clock.advance(HOUR);
+    await a.observe("domain", "acme.example");
+    await a.hold("DC01");
+    await a.ignore(a.admin, "observables", resolver);
+
+    const all = await list(a.ana);
+    expect(all.more).toBe(false);
+    expect(all.observables.map((o) => o.value)).toEqual(["acme.example", "invoice-portal.biz", "8.8.8.8"]);
+    expect(all.observables.find((o) => o.value === "8.8.8.8")).toMatchObject({ type: "ip", cases: 1, ignored: true, important: false });
+
+    expect((await list(a.ana, { types: "ip" })).observables.map((o) => o.value)).toEqual(["8.8.8.8"]);
+    expect((await list(a.ana, { types: "ip,domain" })).observables).toHaveLength(3);
+    // Defanged or in part; `%` and `_` are taken literally.
+    expect((await list(a.ana, { q: "invoice-portal[.]" })).observables.map((o) => o.value)).toEqual(["invoice-portal.biz"]);
+    expect((await list(a.ana, { q: "ACME" })).observables.map((o) => o.value)).toEqual(["acme.example"]);
+    expect((await list(a.ana, { q: "%" })).observables).toEqual([]);
+    expect((await a.ana.api.observables.$get({ query: { types: "host" } })).status).toBe(400);
+  });
+
+  test("Guests can't list them", async () => {
+    const a = await acme();
+    await a.observe("ip", "8.8.8.8");
+    const guest = await a.inviteGuest();
+    expect((await guest.api.observables.$get({ query: {} })).status).toBe(403);
+  });
+});

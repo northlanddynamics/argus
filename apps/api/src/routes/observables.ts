@@ -44,16 +44,27 @@ const itemRoutes = <Store extends Modules["observables"] | Modules["assets"]>(de
 };
 
 const byValue = z.object({ type: z.enum(OBSERVABLE_TYPES), value: z.string().min(1).max(4096), ignored: z.boolean() });
+const listQuery = z.object({
+  q: z.string().max(4096).optional(),
+  /** Comma-separated Observable types; every type when absent. */
+  types: z
+    .string()
+    .optional()
+    .transform((s) => (s ? s.split(",").filter(Boolean) : []))
+    .pipe(z.array(z.enum(OBSERVABLE_TYPES))),
+});
 const importantByValue = z.object({ type: z.enum(OBSERVABLE_TYPES), value: z.string().min(1).max(4096), important: z.boolean() });
 
 /**
  * Observables can also be put on the Ignored list, or taken off, by type and value wherever they are
  * shown (`POST /ignored`), even one the Organization doesn't hold yet. Admins only.
  *
+ * Members list the Organization's Observables (`GET /`), newest first, by type and by value.
+ *
  * Members mark an Observable Important (`PUT /:id/important`), so it drives Correlations, and unmark
  * it (`DELETE /:id/important`), or do either by type and value (`POST /important`).
  */
-export const observableRoutes = (deps: Deps, { observables }: Modules) => {
+export const observableRoutes = (deps: Deps, { observables, observableList }: Modules) => {
   const setImportant = (important: boolean) => async (c: Context<CaseWorkEnv>) => {
     try {
       const changed = await observables.setImportant(c.get("membership"), c.req.param("id") ?? "", important);
@@ -65,6 +76,14 @@ export const observableRoutes = (deps: Deps, { observables }: Modules) => {
     }
   };
   return itemRoutes(deps, observables)
+    .get("/", zValidator("query", listQuery), async (c) => {
+      try {
+        return c.json(await observableList.list(c.get("participant"), c.req.valid("query")), 200);
+      } catch (e) {
+        if (e instanceof NotPermitted) return c.json(notPermitted, 403);
+        throw e;
+      }
+    })
     .post("/ignored", zValidator("json", byValue), membersOnly, async (c) => {
       const { type, value, ignored } = c.req.valid("json");
       try {

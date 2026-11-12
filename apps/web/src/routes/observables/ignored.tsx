@@ -1,6 +1,6 @@
 import { ObservableMenu } from "@/components/observable-menu";
-import { PageHeader } from "@/components/page-header";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRouteContext, useSearch } from "@tanstack/react-router";
 import { useState } from "react";
 import { Time } from "@/components/time";
 import { AccountHoverCard } from "@/components/account-details";
@@ -11,7 +11,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useMe } from "@/lib/api";
 import { useLiveStatus } from "@/lib/live";
+import { canManage } from "@/lib/roles";
 import {
   type AssetType,
   assetTypeLabel,
@@ -21,24 +23,40 @@ import {
   itemPagesKey,
   type ObservableType,
   observableTypeLabel,
+  refang,
   setIgnored,
+  tickedTypes,
 } from "@/lib/observables";
 
 const typeLabel = (e: IgnoredEntry) =>
   e.kind === "observable" ? observableTypeLabel[e.type as ObservableType] : assetTypeLabel[e.type as AssetType];
 const shown = (e: IgnoredEntry) => (e.kind === "observable" ? defang(e.type as ObservableType, e.value) : e.value);
 
-/**
- * Settings · Ignored Observables: the Observables and Assets on the Organization's Ignored list,
- * newest first, each with who added it. Items are added from their own page; here they're removed.
- */
 /** The Added by column: shown from `sm`; below it its cells stay in the row, emptied, so the columns keep their widths. */
 const fromSm = "overflow-hidden px-0 sm:px-2";
 const showSm = "hidden sm:inline";
 
-export function IgnoredObservablesPage() {
+/** Whether `e` is of a ticked type (any, when none is) and contains `q`, as shown or as held. */
+const matches = (e: IgnoredEntry, ticked: Set<string>, q: string) => {
+  if (ticked.size && !ticked.has(e.type)) return false;
+  if (!q) return true;
+  const text = refang(q).toLowerCase();
+  return e.value.toLowerCase().includes(text) || shown(e).toLowerCase().includes(q.toLowerCase());
+};
+
+/**
+ * The Observables page's Ignored tab: the Observables and Assets on the Organization's Ignored list,
+ * newest first, each with who added it, of the ticked types and containing the value searched for.
+ * Items are added from their own page or menu; here Admins remove them.
+ */
+export function IgnoredTab() {
   const queryClient = useQueryClient();
+  const me = useMe(useRouteContext({ from: "/_app" }).me);
+  const admin = canManage(me.organization?.role);
+  const { q = "", types } = useSearch({ from: "/_app/observables" });
+  const ticked = tickedTypes(types);
   const list = useQuery(ignoredQuery);
+  const rows = list.data?.filter((e) => matches(e, ticked, q));
   const [error, setError] = useState<string | null>(null);
   useLiveStatus();
   const remove = useMutation({
@@ -50,7 +68,6 @@ export function IgnoredObservablesPage() {
 
   return (
     <>
-      <PageHeader title="Ignored Observables" />
       {error && (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
@@ -79,7 +96,7 @@ export function IgnoredObservablesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {list.data?.map((e) => (
+              {rows?.map((e) => (
                 <TableRow key={`${e.kind}:${e.id}`}>
                   <TableCell className="font-mono text-xs break-all whitespace-normal">
                     <AccountHoverCard assetId={e.id} account={e.value} enabled={e.kind === "asset" && e.type === "account"}>
@@ -98,6 +115,7 @@ export function IgnoredObservablesPage() {
                     <Time iso={e.at} />
                   </TableCell>
                   <TableCell className="text-right">
+                    {admin && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -107,13 +125,14 @@ export function IgnoredObservablesPage() {
                     >
                       Remove
                     </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
-              {list.data?.length === 0 && (
+              {rows?.length === 0 && (
                 <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={5} className="text-muted-foreground">
-                    Nothing is ignored.
+                    {list.data?.length ? "Nothing ignored matches." : "Nothing is ignored."}
                   </TableCell>
                 </TableRow>
               )}
