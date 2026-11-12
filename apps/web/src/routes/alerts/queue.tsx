@@ -4,7 +4,7 @@ import { AlertMenu } from "@/components/alert-menu";
 import { ObservableMenu } from "@/components/observable-menu";
 import { EnrichmentButton, EnrichmentTarget } from "@/components/observable-details";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { ChevronLeftIcon, ChevronRightIcon, XIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, FolderPlusIcon, PaperclipIcon, XIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { CaseRef } from "@/components/case-ref";
@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ContextMenuItem, ContextMenuLabel, ContextMenuSeparator } from "@/components/ui/context-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -84,6 +85,38 @@ const noFilters = { status: undefined, severity: undefined, integration: undefin
  * stay in the row, emptied and without padding, so the cells after them keep their columns.
  */
 const narrowHidden = "overflow-hidden px-0 @3xl:px-2";
+
+/** Where the Member's width for the Alert panel is kept, in pixels. */
+const PANEL_WIDTH_KEY = "argus.alertPanelWidth";
+/** The Alert panel is never narrower than 26rem, and leaves the queue at least 24rem. */
+const PANEL_MIN = 416;
+const QUEUE_MIN = 384;
+/** The gap between the queue and the panel (gap-4). */
+const SPLIT_GAP = 16;
+
+const savedPanelWidth = () => {
+  try {
+    const n = Number(localStorage.getItem(PANEL_WIDTH_KEY));
+    return Number.isFinite(n) && n >= PANEL_MIN ? n : null;
+  } catch {
+    return null;
+  }
+};
+const savePanelWidth = (width: number | null) => {
+  try {
+    if (width === null) localStorage.removeItem(PANEL_WIDTH_KEY);
+    else localStorage.setItem(PANEL_WIDTH_KEY, String(Math.round(width)));
+  } catch {
+    // Not kept: the panel goes back to its usual width next time.
+  }
+};
+
+/** A click on the row itself, not on a control or link in it, nor the end of selecting its text. */
+const rowClick = (event: React.MouseEvent) => {
+  const target = event.target as HTMLElement;
+  if (target.closest("a, button, input, label, [role=checkbox]")) return false;
+  return !window.getSelection()?.toString();
+};
 
 /**
  * Keyboard triage: j and k move between Alerts, x selects the one in focus, Escape closes the
@@ -198,6 +231,9 @@ export function AlertQueuePage() {
     document.getElementById("alert-outcome")?.focus();
   };
   const table = useRef<HTMLTableElement>(null);
+  /** The queue and the Alert panel side by side; the panel's width is the Member's, once they resize it. */
+  const split = useRef<HTMLDivElement>(null);
+  const [panelWidth, setPanelWidth] = useState<number | null>(savedPanelWidth);
   /** The row last checked or unchecked, where a shift-click range starts. */
   const anchor = useRef<number | null>(null);
 
@@ -278,6 +314,46 @@ export function AlertQueuePage() {
   const dragStart = (event: React.DragEvent, a: AlertRow) => {
     const picked = selected.has(a.id) ? selected : new Map([[a.id, pickedOf(a)]]);
     startAlertDrag(event, { count: picked.size, drop: (number) => dropAttach.mutate({ number, picked }) });
+  };
+  /**
+   * Right-clicking a row offers what can be done with the selection when the row is in it, and with
+   * only that Alert otherwise. One Alert offers what its panel does; a selection offers every action,
+   * and the outcome names any Alert it was refused for.
+   */
+  const rowActions = (a: (typeof rows)[number]) => {
+    const picked = selected.has(a.id) ? selected : new Map([[a.id, pickedOf(a)]]);
+    const many = picked.size > 1;
+    const toCase = many || a.status !== "attached";
+    const dismiss = many || a.status === "new";
+    if (!toCase && !dismiss) return undefined;
+    return (
+      <>
+        {many && (
+          <>
+            <ContextMenuLabel className="tabular-nums">{picked.size} selected Alerts</ContextMenuLabel>
+            <ContextMenuSeparator />
+          </>
+        )}
+        {toCase && (
+          <>
+            <ContextMenuItem onSelect={() => act("open", picked)}>
+              <FolderPlusIcon aria-hidden />
+              Open a new Case…
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => act("attach", picked)}>
+              <PaperclipIcon aria-hidden />
+              Attach to existing Case…
+            </ContextMenuItem>
+          </>
+        )}
+        {dismiss && (
+          <ContextMenuItem onSelect={() => act("dismiss", picked)}>
+            <XIcon aria-hidden />
+            Dismiss…
+          </ContextMenuItem>
+        )}
+      </>
+    );
   };
   /** Selects the refused Alerts again, as they are now. */
   const reselect = () => {
@@ -413,8 +489,22 @@ export function AlertQueuePage() {
           </AlertAction>
         </Alert>
       )}
-      {/* The Alert panel takes two fifths of the page beside the queue, never less than 26rem. */}
-      <div className={cn("grid items-start gap-4", showing && "@4xl:grid-cols-[minmax(0,3fr)_minmax(26rem,2fr)]")}>
+      {/*
+        The Alert panel takes two fifths of the page beside the queue, never less than 26rem, until the
+        Member drags its edge; then it keeps their width, leaving the queue at least 24rem.
+      */}
+      <div
+        ref={split}
+        className={cn("grid items-start gap-4", showing && "@4xl:grid-cols-(--alert-split)")}
+        style={
+          {
+            "--alert-split":
+              panelWidth === null
+                ? "minmax(0,3fr) minmax(26rem,2fr)"
+                : `minmax(0,1fr) max(26rem, min(${panelWidth}px, calc(100% - ${(QUEUE_MIN + SPLIT_GAP) / 16}rem)))`,
+          } as React.CSSProperties
+        }
+      >
       {!(alerts.isError && !loaded) && (
       <Card className={cn("@container py-0 transition-opacity", alerts.isPlaceholderData && "opacity-60")}>
           <Table ref={table} className="table-fixed">
@@ -487,7 +577,7 @@ export function AlertQueuePage() {
                 </TableRow>
               )}
               {loaded?.map((a, index) => (
-                <AlertMenu key={a.id} falconUrl={a.falconUrl}>
+                <AlertMenu key={a.id} falconUrl={a.falconUrl} actions={rowActions(a)}>
                 <TableRow
                   key={a.id}
                   data-testid={`alert-${a.externalId}`}
@@ -496,8 +586,10 @@ export function AlertQueuePage() {
                   draggable
                   onDragStart={(e) => dragStart(e, a)}
                   onDragEnd={endAlertDrag}
+                  // Anywhere on the row opens the Alert, as its title does.
+                  onClick={(e) => rowClick(e) && setShowing(a.id)}
                   // A half-strength fill: muted text on the full grey wash falls short of 4.5:1.
-                  className={cn("focus-within:bg-muted/50 data-[state=selected]:bg-muted/50", showing === a.id && "bg-muted/50")}
+                  className={cn("cursor-pointer focus-within:bg-muted/50 data-[state=selected]:bg-muted/50", showing === a.id && "bg-muted/50")}
                 >
                   <TableCell className="pl-4">
                     <Checkbox
@@ -609,7 +701,20 @@ export function AlertQueuePage() {
           </Table>
       </Card>
       )}
-      {showing && <AlertPanel id={showing} onClose={closePanel} onAct={(kind, a) => act(kind, new Map([[a.id, pickedOf(a)]]))} />}
+      {showing && (
+        // The panel stays in view while the queue scrolls; its left edge resizes it.
+        <div className="relative self-start @4xl:sticky @4xl:top-18">
+          <PanelResizer
+            split={split}
+            onResize={setPanelWidth}
+            onCommit={(width) => {
+              setPanelWidth(width);
+              savePanelWidth(width);
+            }}
+          />
+          <AlertPanel id={showing} onClose={closePanel} onAct={(kind, a) => act(kind, new Map([[a.id, pickedOf(a)]]))} />
+        </div>
+      )}
       </div>
       {loaded && loaded.length > 0 && pages > 1 && (
         <nav aria-label="Pages" className="flex items-center justify-between gap-2">
@@ -633,12 +738,99 @@ export function AlertQueuePage() {
           {pages > 1 && ", newest first"}
         </p>
         <p>
-          <Key>j</Key> <Key>k</Key> move · <Key>x</Key> selects · <Key>Enter</Key> opens · <Key>Esc</Key> closes · with Alerts selected,{" "}
+          <Key>j</Key> <Key>k</Key> move · <Key>x</Key> selects · <Key>Enter</Key> opens · <Key>Esc</Key> closes · right-click for actions · with Alerts selected,{" "}
           <Key>o</Key> opens a Case, <Key>a</Key> attaches, <Key>d</Key> dismisses · drag Alerts onto a Case in the work queue to attach them
         </p>
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * The Alert panel's left edge: dragging it, or the arrow keys while it has focus, set the panel's
+ * width; double-clicking it, or Enter, gives back the usual width. `onResize` follows the drag and
+ * `onCommit` has the width it ends on (null for the usual one).
+ */
+function PanelResizer({
+  split,
+  onResize,
+  onCommit,
+}: {
+  split: React.RefObject<HTMLDivElement | null>;
+  onResize: (width: number) => void;
+  onCommit: (width: number | null) => void;
+}) {
+  /** The pointer dragging the edge. */
+  const [dragging, setDragging] = useState<number | null>(null);
+  const [now, setNow] = useState<{ width: number; max: number } | null>(null);
+  /** The panel width for its left edge at `x`, or `delta` wider than now, within its bounds. */
+  const measure = (at: { x: number } | { delta: number }) => {
+    const box = split.current?.getBoundingClientRect();
+    if (!box) return null;
+    const max = Math.max(PANEL_MIN, box.width - QUEUE_MIN - SPLIT_GAP);
+    const current = split.current?.lastElementChild?.getBoundingClientRect().width ?? PANEL_MIN;
+    const wanted = "x" in at ? box.right - at.x - SPLIT_GAP / 2 : current + at.delta;
+    const width = Math.min(Math.max(wanted, PANEL_MIN), max);
+    setNow({ width, max });
+    return width;
+  };
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize the Alert panel"
+      aria-valuemin={PANEL_MIN}
+      aria-valuemax={now?.max}
+      aria-valuenow={now ? Math.round(now.width) : undefined}
+      tabIndex={0}
+      title="Drag to resize · double-click for the usual width"
+      className={cn(
+        "group/resize absolute inset-y-0 -left-4 z-10 hidden w-4 cursor-col-resize touch-none outline-none @4xl:block",
+        // A grip in the gap, and a line down it while it's hovered, dragged or in focus.
+        "before:absolute before:inset-y-2 before:left-1/2 before:w-px before:-translate-x-1/2 before:rounded-full before:transition-colors hover:before:bg-border focus-visible:before:bg-ring data-dragging:before:bg-ring",
+        "after:absolute after:top-1/2 after:left-1/2 after:h-8 after:w-1 after:-translate-1/2 after:rounded-full after:bg-border group-hover/resize:after:bg-muted-foreground/50 focus-visible:after:bg-ring data-dragging:after:bg-ring",
+      )}
+      data-dragging={dragging !== null ? "" : undefined}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        e.currentTarget.focus();
+        setDragging(e.pointerId);
+        const width = measure({ x: e.clientX });
+        if (width !== null) onResize(width);
+      }}
+      onPointerMove={(e) => {
+        if (dragging !== e.pointerId) return;
+        const width = measure({ x: e.clientX });
+        if (width !== null) onResize(width);
+      }}
+      onPointerUp={(e) => {
+        if (dragging !== e.pointerId) return;
+        setDragging(null);
+        const width = measure({ x: e.clientX });
+        if (width !== null) onCommit(width);
+      }}
+      onPointerCancel={() => setDragging(null)}
+      onDoubleClick={() => {
+        setNow(null);
+        onCommit(null);
+      }}
+      onKeyDown={(e) => {
+        const step = e.shiftKey ? 128 : 32;
+        const delta = e.key === "ArrowLeft" ? step : e.key === "ArrowRight" ? -step : null;
+        if (e.key === "Enter") {
+          e.preventDefault();
+          setNow(null);
+          onCommit(null);
+        } else if (delta !== null) {
+          e.preventDefault();
+          const width = measure({ delta });
+          if (width !== null) onCommit(width);
+        }
+      }}
+    />
   );
 }
 
@@ -921,8 +1113,8 @@ function AlertPanel({ id, onClose, onAct }: { id: string; onClose: () => void; o
   const onCase = a.attached?.case ?? null;
   const editable = onCase !== null && onCase.status !== "closed";
   return (
-    // Beside the queue it stays in view while the queue scrolls, scrolling on its own when it runs longer than the window.
-    <Card role="region" aria-label="Alert" className="self-start @4xl:sticky @4xl:top-18 @4xl:max-h-[calc(100svh-5.5rem)] @4xl:overflow-y-auto">
+    // Beside the queue it scrolls on its own when it runs longer than the window.
+    <Card role="region" aria-label="Alert" className="@4xl:max-h-[calc(100svh-5.5rem)] @4xl:overflow-y-auto">
       <CardContent className="grid gap-3 text-sm">
         <div className="flex items-center gap-2">
           <SeverityBadge severity={a.severity} />

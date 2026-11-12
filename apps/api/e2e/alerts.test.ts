@@ -217,6 +217,80 @@ test("an Analyst bulk-attaches Alerts to a Case, is told which changed meanwhile
   }
 }, 60_000);
 
+test("an Analyst opens an Alert by clicking its row, resizes its panel, and right-clicks Alerts to open a Case, attach or dismiss them", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  const falcon = fakeFalcon();
+  const worker = createStreamWorker(t.deps, { connect: falcon.connect, workerId: "worker-1" });
+  t.onCleanup(worker.close);
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    await owner.api.organization.invitations.$post({ json: { email: "ana@acme.example", role: "analyst" } });
+    const ana = await t.acceptInvite("ana@acme.example", PASSWORD, "Ana Analyst");
+    await owner.api.integrations.$post({ json: { name: "CrowdStrike — Prod", cloud: "us-1", clientId: "falcon-client-0001", clientSecret: "s" } });
+    await worker.tick();
+    const stream = falcon.tenant("falcon-client-0001");
+    stream.detection("EppDetectionSummaryEvent", "ldt:1", { Name: "Encoded PowerShell from Office process", SeverityName: "High" });
+    stream.detection("EppDetectionSummaryEvent", "ldt:2", { Name: "Credential dumping attempt", SeverityName: "High" });
+    stream.detection("EppDetectionSummaryEvent", "ldt:3", { Name: "Suspicious outbound connection", SeverityName: "Medium" });
+    await stream.drained();
+
+    const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+    await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
+    await page.goto(`${baseUrl}/alerts`);
+
+    // Clicking anywhere on a row opens its Alert, not only its title.
+    await page.getByTestId("alert-ldt:3").getByRole("cell").nth(1).click();
+    const panel = page.getByRole("region", { name: "Alert" });
+    await panel.getByRole("heading", { name: "Suspicious outbound connection" }).waitFor();
+
+    // Dragging the panel's edge widens it; the width is kept when the panel opens again.
+    const edge = page.getByRole("separator", { name: "Resize the Alert panel" });
+    const before = (await panel.boundingBox())!.width;
+    const handle = (await edge.boundingBox())!;
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + 40);
+    await page.mouse.down();
+    await page.mouse.move(handle.x - 200, handle.y + 40, { steps: 5 });
+    await page.mouse.up();
+    expect((await panel.boundingBox())!.width).toBeGreaterThan(before + 150);
+    const widened = (await panel.boundingBox())!.width;
+    await page.keyboard.press("Escape");
+    await panel.waitFor({ state: "detached" });
+    await page.getByTestId("alert-ldt:2").getByRole("cell").nth(1).click();
+    await panel.getByRole("heading", { name: "Credential dumping attempt" }).waitFor();
+    expect(Math.abs((await panel.boundingBox())!.width - widened)).toBeLessThan(2);
+    // Its arrow keys resize it too, and Enter gives back the usual width.
+    await edge.focus();
+    await page.keyboard.press("ArrowRight");
+    expect((await panel.boundingBox())!.width).toBeLessThan(widened - 20);
+    await page.keyboard.press("Enter");
+    expect(Math.abs((await panel.boundingBox())!.width - before)).toBeLessThan(2);
+
+    // Right-clicking a selected Alert acts on the whole selection.
+    for (const id of ["ldt:1", "ldt:2"]) await page.getByLabel(`Select ${id}`).check();
+    await page.getByTestId("alert-ldt:1").getByRole("cell").nth(1).click({ button: "right" });
+    const menu = page.getByRole("menu");
+    await menu.getByText("2 selected Alerts").waitFor();
+    await menu.getByRole("menuitem", { name: "Dismiss…" }).click();
+    const dismiss = page.getByRole("dialog", { name: "Dismiss 2 Alerts" });
+    await dismiss.getByText("False Positive").click();
+    await dismiss.getByRole("button", { name: "Dismiss" }).click();
+    await page.getByText("2 Alerts dismissed").waitFor();
+    await page.getByTestId("alert-ldt:1").waitFor({ state: "detached" });
+
+    // Right-clicking an Alert that isn't selected acts on it alone.
+    await page.getByTestId("alert-ldt:3").getByRole("cell").nth(1).click({ button: "right" });
+    expect(await menu.getByRole("menuitem", { name: "Attach to existing Case…" }).count()).toBe(1);
+    await menu.getByRole("menuitem", { name: "Open a new Case…" }).click();
+    const open = page.getByRole("dialog", { name: "Open Case from 1 Alert" });
+    await open.getByLabel("Title").fill("Outbound beaconing");
+    await open.getByRole("button", { name: "Open Case" }).click();
+    await page.getByRole("heading", { name: "Outbound beaconing" }).waitFor();
+  } finally {
+    await stop();
+  }
+}, 60_000);
+
 test("an Analyst drags selected Alerts, or a single one, onto a Case in the work queue to attach them", async () => {
   const { t, baseUrl, stop } = await serveTestApp();
   const falcon = fakeFalcon();
