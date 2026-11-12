@@ -5,11 +5,12 @@ import { defaultWebDist } from "../src/config";
 import { createCommentSyncer } from "../src/crowdstrike/comment-sync";
 import epp from "../src/crowdstrike/fixtures/epp-detection.json";
 import { createHostEnricher } from "../src/crowdstrike/host-enrichment";
+import { createIdentityEnricher } from "../src/crowdstrike/identity-enrichment";
 import { createStreamWorker } from "../src/crowdstrike/stream-worker";
 import { createMimecastHealthChecker } from "../src/mimecast/health";
 import { createResponseActionSender } from "../src/response-actions/sender";
 import { createServerApp } from "../src/server-app";
-import { fakeFalcon, fakeHost } from "../src/test/fake-falcon";
+import { fakeFalcon, fakeHost, fakeIdentity } from "../src/test/fake-falcon";
 import { fakeMimecast } from "../src/test/fake-mimecast";
 import { buildTestApp } from "../src/test/harness";
 
@@ -733,6 +734,49 @@ test("the Owner adds a Mimecast Integration; an Analyst blocks an email sender's
     await sender.tick();
     await row.getByText("Removed").waitFor();
     expect(mimecast.account("mimecast-app-0003").blocked.size).toBe(0);
+  } finally {
+    await stop();
+  }
+}, 60_000);
+
+test("an ambiguous account's hover card in the Alert queue shows its identities one at a time", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  const falcon = fakeFalcon();
+  const worker = createStreamWorker(t.deps, { connect: falcon.connect, workerId: "worker-1" });
+  t.onCleanup(worker.close);
+  const enricher = createIdentityEnricher(t.deps, { connect: falcon.connect });
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    await owner.api.integrations.$post({ json: { name: "CrowdStrike — Prod", cloud: "us-1", clientId: "falcon-client-0001", clientSecret: "s" } });
+    await worker.tick();
+    const stream = falcon.tenant("falcon-client-0001");
+    // Two identities go by d.howe: the detection's bare name can't tell them apart.
+    stream.identities.set("e3a1c9f0-dana", fakeIdentity("e3a1c9f0-dana"));
+    stream.identities.set("7b20d4aa-dana-lab", fakeIdentity("7b20d4aa-dana-lab", { displayName: "Dana Howe (Lab)", upn: "d.howe@lab.acme.example", email: null, privileged: false, privilegedGroups: [] }));
+    stream.detection("EppDetectionSummaryEvent", "ldt:1", { Name: "Credential dumping attempt", SeverityName: "High", UserName: "d.howe" });
+    await stream.drained();
+
+    const page = await browser.newPage();
+    await signIn(page, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
+    await page.getByRole("link", { name: "Alerts" }).click();
+    await page.getByTestId("alert-ldt:1").getByRole("link", { name: "Account d.howe" }).hover();
+    const card = page.getByTestId("account-hover-card");
+    await card.waitFor();
+    await enricher.tick();
+
+    await card.getByText("Identity 1 of 2").waitFor();
+    await card.getByText("Dana Howe", { exact: true }).waitFor();
+    await card.getByText("Ambiguous").waitFor();
+    expect(await card.getByText("Dana Howe (Lab)").count()).toBe(0);
+    expect(await card.getByRole("button", { name: "Previous identity" }).isDisabled()).toBe(true);
+    await card.getByRole("button", { name: "Next identity" }).click();
+    await card.getByText("Identity 2 of 2").waitFor();
+    await card.getByText("Dana Howe (Lab)").waitFor();
+    expect(await card.getByText("Dana Howe", { exact: true }).count()).toBe(0);
+    expect(await card.getByRole("button", { name: "Next identity" }).isDisabled()).toBe(true);
+    await card.getByRole("button", { name: "Previous identity" }).click();
+    await card.getByText("Identity 1 of 2").waitFor();
   } finally {
     await stop();
   }

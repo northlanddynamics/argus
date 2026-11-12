@@ -30,7 +30,15 @@ Shown wherever an account Asset is a link: the Alert queue's account column, a C
 └──────────────────────────────────────────────┘
 ```
 
-An ambiguous account (several identities by the same name for one Integration) lists each identity in turn, marked **Ambiguous**. With more than one CrowdStrike Integration, each section is headed by the Integration's name.
+An ambiguous account (several identities by the same name for one Integration) shows one identity at a time, marked **Ambiguous**, stepped through with `‹` `›` between the header and the details, as the IP popup steps through its pages:
+
+```
+├──────────────────────────────────────────────┤
+│ [‹]          Identity 2 of 3           [›]  │  ← ‹ disabled on the first, › on the last
+├──────────────────────────────────────────────┤
+```
+
+With more than one CrowdStrike Integration, each Integration's identities (or its lookup state, when it has none) are pages too, and the pager names the Integration shown ("CrowdStrike EU · 2 of 3"). The footer's "as of" and Refresh cover every page.
 
 ## B. Looking up
 
