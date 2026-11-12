@@ -1,65 +1,53 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
 import { AlertMenu } from "@/components/alert-menu";
-import { ObservableMenu } from "@/components/observable-menu";
-import { EnrichmentButton, EnrichmentTarget } from "@/components/observable-details";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { ChevronLeftIcon, ChevronRightIcon, XIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { CaseRef } from "@/components/case-ref";
 import { Time } from "@/components/time";
-import { SeverityBadge, StatusBadge } from "@/components/case-badges";
+import { SeverityBadge } from "@/components/case-badges";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { FilterBar, FilterSelect } from "@/components/filter-bar";
+import { FilterBar, FilterField, FilterSelect } from "@/components/filter-bar";
 import { AccountHoverCard } from "@/components/account-details";
 import { ItemLink } from "@/components/item-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   ALERT_STATUSES,
   type AlertKind,
   alertKindLabel,
-  type AlertCorrelation,
-  alertCorrelationsQuery,
-  type AlertDetail,
-  alertQuery,
   alertsKey,
   type AlertStatus,
   alertStatusLabel,
   dismissalReasonLabel,
-  falconStatusLabel,
   healthWord,
   integrationsQuery,
 } from "@/lib/alerts";
 import { endAlertDrag, startAlertDrag } from "@/lib/alert-drag";
 import { api } from "@/lib/api";
 import { type CaseType, caseRef, SEVERITIES, type Severity, severityLabel } from "@/lib/cases";
-import { assetTypeLabel, type ItemKind, type ObservableType, observableTypeLabel, shownObservable } from "@/lib/observables";
 import { cn } from "@/lib/utils";
-import { exactTime } from "@/lib/when";
-import {
-  attachAlerts,
-  AttachAlertsDialog,
-  type BulkOutcome,
-  DismissAlertsDialog,
-  MoveAlertDialog,
-  OpenCaseFromAlertsDialog,
-} from "@/routes/alerts/alert-dialogs";
+import { AttachAlertsDialog, attachAlerts, type BulkOutcome, DismissAlertsDialog, OpenCaseFromAlertsDialog } from "@/routes/alerts/alert-dialogs";
+import { AlertDetails } from "@/routes/alerts/alert-details";
 
 /**
  * `status` is New unless the URL says otherwise; "any" shows every Status. `falconComplete` shows the
  * Alerts tagged falcon_complete in Falcon, hidden unless it says "show" or "only". `page` is which page
- * of the queue, from 1. `alert` is the Alert shown in full.
+ * of the queue, from 1. `alert` is the Alert shown in full. `case` keeps to the Alerts attached to
+ * the Case with that number.
  */
 export type AlertQueueSearch = {
   status?: AlertStatus | "any";
   severity?: Severity;
   integration?: string;
+  case?: number;
   falconComplete?: "show" | "only";
   page?: number;
   alert?: string;
@@ -76,10 +64,18 @@ export const validateAlertQueueSearch = (search: Record<string, unknown>): Alert
   status: pick([...ALERT_STATUSES, "any"] as const, search.status),
   severity: pick(SEVERITIES, search.severity),
   integration: typeof search.integration === "string" && search.integration ? search.integration : undefined,
+  case: caseNumberOf(search.case),
   falconComplete: pick(["show", "only"] as const, search.falconComplete),
   page: Number.isInteger(Number(search.page)) && Number(search.page) > 1 ? Number(search.page) : undefined,
   alert: typeof search.alert === "string" && search.alert ? search.alert : undefined,
 });
+
+/** The Case number in "C-1041", "c-1041" or "1041", if it is one. */
+function caseNumberOf(value: unknown): number | undefined {
+  const match = /^\s*(?:c-?)?(\d+)\s*$/i.exec(String(value ?? ""));
+  const n = match ? Number(match[1]) : NaN;
+  return Number.isSafeInteger(n) && n > 0 ? n : undefined;
+}
 
 /** Alerts on a page of the queue. */
 const PAGE_SIZE = 50;
@@ -92,7 +88,7 @@ const pickedOf = (a: AlertRow): Picked => ({ version: a.version, severity: a.sev
 /** The Case Type a Case opened from an Alert of each kind most often is; the Member can change it. */
 const caseTypeFor: Record<AlertKind, CaseType> = { epp: "malware", idp: "account_compromise", mobile: "malware" };
 const shortcut = { o: "open", a: "attach", d: "dismiss" } as const;
-const noFilters = { status: undefined, severity: undefined, integration: undefined, falconComplete: undefined };
+const noFilters = { status: undefined, severity: undefined, integration: undefined, case: undefined, falconComplete: undefined };
 /**
  * Host / user and Received give way when the queue is narrow (the Alert panel is open). Their cells
  * stay in the row, emptied and without padding, so the cells after them keep their columns.
@@ -154,18 +150,21 @@ export function AlertQueuePage() {
   const streams = integrations.data?.filter((i) => i.capabilities.receivesAlerts);
   const alerts = useQuery({
     // Not keyed on the Alert shown in the panel: opening one mustn't reload the queue.
-    queryKey: [...alertsKey, { status, severity: search.severity, integration: search.integration, falconComplete: search.falconComplete, page }],
+    queryKey: [...alertsKey, { status, severity: search.severity, integration: search.integration, case: search.case, falconComplete: search.falconComplete, page }],
     queryFn: async () => {
       const res = await api.alerts.$get({
         query: {
           ...(status !== "any" && { status }),
           severity: search.severity,
           integration: search.integration,
+          case: search.case === undefined ? undefined : String(search.case),
           falconComplete: search.falconComplete,
           page: String(page),
           pageSize: String(PAGE_SIZE),
         },
       });
+      // A Case that doesn't exist, or that the Member can't see, has no Alerts to show.
+      if (res.status === 404 && search.case !== undefined) return { alerts: [], total: 0, page, pageSize: PAGE_SIZE };
       if (!res.ok) throw new Error("Could not load Alerts");
       return res.json();
     },
@@ -191,7 +190,8 @@ export function AlertQueuePage() {
   const [outcome, setOutcome] = useState<BulkOutcome | null>(null);
   const showing = search.alert ?? null;
   const setShowing = (alert: string | null) => setSearch({ alert: alert ?? undefined });
-  const filtered = status !== "new" || search.severity !== undefined || search.integration !== undefined || search.falconComplete !== undefined;
+  const filtered =
+    status !== "new" || search.severity !== undefined || search.integration !== undefined || search.case !== undefined || search.falconComplete !== undefined;
   /**
    * Changes the filters, starting again from the first page; the last action's notice is about Alerts
    * that may no longer be shown, so it goes.
@@ -400,6 +400,11 @@ export function AlertQueuePage() {
             onChange={(integration) => filter({ integration })}
           />
         )}
+        <CaseFilter
+          value={search.case}
+          // Only Attached Alerts are on a Case: the New ones the queue starts with would show nothing.
+          onChange={(next) => filter({ case: next, ...(next !== undefined && status === "new" && { status: "attached" }) })}
+        />
         <FilterSelect
           label="Falcon Complete"
           id="alert-falcon-complete"
@@ -659,6 +664,7 @@ export function AlertQueuePage() {
           {pages > 1 ? `${first}–${first + loaded.length - 1} of ` : ""}
           {total} {status === "any" ? "" : `${alertStatusLabel[status]} `}
           {total === 1 ? "Alert" : "Alerts"}
+          {search.case !== undefined && ` on ${caseRef(search.case)}`}
           {pages > 1 && ", newest first"}
         </p>
         <p>
@@ -668,6 +674,46 @@ export function AlertQueuePage() {
         </div>
       )}
     </div>
+  );
+}
+
+/** The Case filter: a Case reference, applied on Enter or on leaving the field. */
+function CaseFilter({ value, onChange }: { value: number | undefined; onChange: (value: number | undefined) => void }) {
+  const shown = value === undefined ? "" : caseRef(value);
+  const [draft, setDraft] = useState(shown);
+  // Follows the URL when it changes elsewhere: Clear, Back, or a link from a Case.
+  const [was, setWas] = useState(shown);
+  if (was !== shown) {
+    setWas(shown);
+    setDraft(shown);
+  }
+  const invalid = draft.trim() !== "" && caseNumberOf(draft) === undefined;
+  const apply = () => {
+    if (invalid) return;
+    const next = caseNumberOf(draft);
+    setDraft(next === undefined ? "" : caseRef(next));
+    if (next !== value) onChange(next);
+  };
+  return (
+    <FilterField label="Attached to" htmlFor="alert-case">
+      <Input
+        id="alert-case"
+        type="search"
+        inputMode="text"
+        autoComplete="off"
+        placeholder="C-1041"
+        aria-invalid={invalid || undefined}
+        title={invalid ? "A Case reference, like C-1041" : undefined}
+        className="h-7 w-24 font-mono text-xs md:text-xs"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={apply}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") apply();
+          else if (e.key === "Escape") setDraft(shown);
+        }}
+      />
+    </FilterField>
   );
 }
 
@@ -730,366 +776,12 @@ function OutcomeNotice({ outcome, onReselect, onDismiss }: { outcome: BulkOutcom
   );
 }
 
-/** The Alert's comments in Falcon, as last fetched; opening the Alert asks the worker to fetch them again. */
-function FalconComments({ comments: c }: { comments: AlertDetail["falconComments"] }) {
-  /** Refreshing for longer than Falcon usually takes: the worker may be down or Falcon unreachable. */
-  // The fetch it has been waiting on since, keyed by when comments were last fetched: a new refresh starts unflagged.
-  const [slowSince, setSlowSince] = useState<string | null | false>(false);
-  const slow = c.refreshing && slowSince === c.syncedAt;
-  useEffect(() => {
-    if (!c.refreshing) return;
-    const timer = setTimeout(() => setSlowSince(c.syncedAt), 20_000);
-    return () => clearTimeout(timer);
-  }, [c.refreshing, c.syncedAt]);
-  return (
-    <section aria-label="Comments in Falcon" className="grid gap-1">
-      <div className="flex items-baseline justify-between gap-2">
-        <h3 className="text-xs font-medium text-muted-foreground">Comments in Falcon</h3>
-        {c.refreshing ? (
-          <span role="status" className="text-xs text-muted-foreground">
-            {slow ? "Falcon hasn't answered yet; these may be out of date" : "Refreshing from Falcon…"}
-          </span>
-        ) : (
-          c.syncedAt && (
-            <span className="text-xs text-muted-foreground">
-              Fetched <time dateTime={c.syncedAt}>{new Date(c.syncedAt).toLocaleTimeString()}</time>
-            </span>
-          )
-        )}
-      </div>
-      {c.error && <p className="text-xs text-destructive">Couldn’t fetch comments: {c.error}</p>}
-      {c.comments.length ? (
-        <ul className="grid gap-2">
-          {c.comments.map((comment) => (
-            <li key={comment.id} className="rounded border p-2">
-              <p className="text-xs text-muted-foreground">
-                CrowdStrike: {comment.author ?? "unknown user"}
-                {comment.createdAt && ` · ${new Date(comment.createdAt).toLocaleString()}`}
-              </p>
-              <p className="whitespace-pre-wrap">{comment.body}</p>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        !c.refreshing && <p className="text-muted-foreground">None</p>
-      )}
-    </section>
-  );
-}
-
-/** Observables or Assets an Alert names, as badges. */
-function Extracted({
-  label,
-  kind,
-  items,
-}: {
-  label: string;
-  kind: ItemKind;
-  items: { id: string; text: string; title: string; type?: string; observable?: { type: ObservableType; value: string } }[];
-}) {
-  return (
-    <section aria-label={label} className="grid gap-1">
-      <h3 className="text-xs font-medium text-muted-foreground">{label}</h3>
-      {items.length ? (
-        <div className="flex flex-wrap gap-1" data-enrichment-list>
-          {items.map((item) => (
-            <span key={item.id} className="group/row inline-flex max-w-full items-center">
-              <EnrichmentTarget type={item.observable?.type ?? ""} value={item.observable?.value ?? ""} enabled={!!item.observable}>
-                <ObservableMenu observable={item.observable}>
-                  <Badge variant="outline" className="max-w-full truncate font-mono" title={item.title} asChild>
-                    <ItemLink kind={kind} id={item.id}>
-                      {item.text}
-                    </ItemLink>
-                  </Badge>
-                </ObservableMenu>
-              </EnrichmentTarget>
-              {item.observable && <EnrichmentButton type={item.observable.type} value={item.observable.value} className="size-5" />}
-            </span>
-          ))}
-        </div>
-      ) : (
-        <p className="text-muted-foreground">None</p>
-      )}
-    </section>
-  );
-}
-
-/**
- * Correlation: the Cases this Alert may belong with, by the Important Observables and the Assets they
- * share (those on the Ignored list aside), strongest first. Argus never attaches on its own: the Member attaches
- * from a suggestion, or for a Closed Case an Admin reopens it and attaches in one step; an Analyst
- * only gets the link.
- */
-function RelatedCases({ alert }: { alert: AlertDetail }) {
-  const related = useQuery(alertCorrelationsQuery(alert.id));
-  const queryClient = useQueryClient();
-  const attach = useMutation({
-    mutationFn: async (c: AlertCorrelation) => {
-      const res = await api.alerts.attach.$post({
-        json: { case: c.case.number, alerts: [{ id: alert.id, version: alert.version }], reopen: c.attach === "reopen_and_attach" },
-      });
-      const body = (await res.json()) as { error?: string; refused?: { externalId: string | null; detail: string }[] };
-      if (!res.ok) throw new Error(body.error ?? "Couldn't attach the Alert");
-      const refused = body.refused?.[0];
-      if (refused) throw new Error(`${refused.externalId ?? "The Alert"} ${refused.detail}`);
-    },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: alertsKey }),
-  });
-  const list = related.data ?? [];
-  return (
-    <section aria-label="Related Cases" className="grid gap-1">
-      <h3 className="text-xs font-medium text-muted-foreground">Related Cases</h3>
-      {related.isPending ? (
-        <Skeleton className="h-10 w-full" />
-      ) : related.isError ? (
-        <p className="text-destructive">Couldn’t load the related Cases.</p>
-      ) : list.length === 0 ? (
-        <p className="text-muted-foreground">No other Case shares its Important Observables or its Assets.</p>
-      ) : (
-        <ul className="grid gap-2">
-          {list.map((c) => (
-            <li key={c.case.number} className="grid gap-1.5 rounded border p-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <Link
-                  to="/cases/$number"
-                  params={{ number: String(c.case.number) }}
-                  className="min-w-0 font-medium underline-offset-4 hover:underline"
-                >
-                  <span className="font-mono text-xs">{caseRef(c.case.number)}</span> {c.case.title}
-                </Link>
-                <StatusBadge status={c.case.status} />
-                <span className="ml-auto text-xs text-muted-foreground">{c.sharedCount} shared</span>
-              </div>
-              <div className="flex flex-wrap gap-1">
-                {c.shared.map((s) => (
-                  <AccountHoverCard key={`${s.kind}-${s.id}`} assetId={s.id} account={s.value} enabled={s.kind === "asset" && s.type === "account"}>
-                    <EnrichmentTarget type={s.type} value={s.value} enabled={s.kind === "observable"}>
-                    <ObservableMenu observable={s.kind === "observable" ? s : null}>
-                      <Badge variant="outline" className="max-w-full truncate font-mono" title={s.value} asChild>
-                        <ItemLink kind={s.kind} id={s.id}>
-                          {s.kind === "observable"
-                            ? `${observableTypeLabel[s.type]} ${shownObservable(s.type, s.value)}`
-                            : `${assetTypeLabel[s.type]} ${s.value}`}
-                        </ItemLink>
-                      </Badge>
-                    </ObservableMenu>
-                    </EnrichmentTarget>
-                  </AccountHoverCard>
-                ))}
-              </div>
-              {c.attach ? (
-                <div>
-                  <Button size="sm" variant="outline" disabled={attach.isPending} onClick={() => attach.mutate(c)}>
-                    {c.attach === "reopen_and_attach" ? `Reopen ${caseRef(c.case.number)} and attach` : `Attach to ${caseRef(c.case.number)}`}
-                  </Button>
-                </div>
-              ) : (
-                c.case.status === "closed" &&
-                alert.attached?.case.status !== "closed" && <p className="text-xs text-muted-foreground">Closed: ask an Admin to reopen it to attach this Alert.</p>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-      {attach.error && <p className="text-xs text-destructive">{attach.error.message}</p>}
-    </section>
-  );
-}
-
-/**
- * One Alert in full, beside the queue: Open Case, Attach and Dismiss while it isn't on a Case, Move
- * and Detach while it is on an open one.
- */
+/** The Alert in full beside the queue, staying in view while the queue scrolls and scrolling on its own when it runs longer than the window. */
 function AlertPanel({ id, onClose, onAct }: { id: string; onClose: () => void; onAct: (kind: BulkKind, alert: AlertRow) => void }) {
-  const alert = useQuery(alertQuery(id));
-  const [moving, setMoving] = useState<"move" | "detach" | null>(null);
-  const a = alert.data;
-  if (alert.isPending) {
-    return (
-      <Card role="region" aria-label="Alert" aria-busy className="self-start">
-        <CardContent className="grid gap-3">
-          <span className="sr-only" role="status">
-            Loading the Alert…
-          </span>
-          <div className="flex justify-between">
-            <Skeleton className="h-5 w-16 rounded-full" />
-            <Skeleton className="h-5 w-16 rounded-full" />
-          </div>
-          <Skeleton className="h-5 w-4/5" />
-          <Skeleton className="h-3 w-1/2" />
-          <Skeleton className="h-16 w-full" />
-        </CardContent>
-      </Card>
-    );
-  }
-  if (!a) {
-    return (
-      <Card role="region" aria-label="Alert" className="self-start">
-        <CardContent className="grid gap-3">
-          {alert.isError ? (
-            <>
-              <p className="font-medium">This Alert couldn't be loaded</p>
-              <p className="text-muted-foreground">Try again, or reload the page.</p>
-            </>
-          ) : (
-            <>
-              <p className="font-medium">This Alert isn't available</p>
-              <p className="text-muted-foreground">It may have been removed from the queue, or the link may be wrong.</p>
-            </>
-          )}
-          <div className="flex gap-2">
-            {alert.isError && (
-              <Button size="sm" variant="outline" disabled={alert.isFetching} onClick={() => alert.refetch()}>
-                Try again
-              </Button>
-            )}
-            <Button size="sm" variant="ghost" className="ml-auto" onClick={onClose}>
-              Close
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-  const onCase = a.attached?.case ?? null;
-  const editable = onCase !== null && onCase.status !== "closed";
   return (
-    // Beside the queue it stays in view while the queue scrolls, scrolling on its own when it runs longer than the window.
     <Card role="region" aria-label="Alert" className="self-start @4xl:sticky @4xl:top-18 @4xl:max-h-[calc(100svh-5.5rem)] @4xl:overflow-y-auto">
-      <CardContent className="grid gap-3">
-        <div className="flex items-center gap-2">
-          <SeverityBadge severity={a.severity} />
-          <Badge variant="outline">{alertStatusLabel[a.status]}</Badge>
-          {onCase && (
-            <Link
-              to="/cases/$number"
-              params={{ number: String(onCase.number) }}
-              className="font-mono text-xs underline underline-offset-4"
-              title={onCase.title}
-            >
-              {caseRef(onCase.number)}
-            </Link>
-          )}
-          <Button size="icon-sm" variant="ghost" className="-my-1 ml-auto" aria-label="Close the Alert" onClick={onClose}>
-            <XIcon aria-hidden />
-          </Button>
-        </div>
-        <AlertMenu falconUrl={a.falconUrl}>
-          <div>
-            <h2 className="text-base font-semibold text-balance">{a.title}</h2>
-            <p className="text-xs text-muted-foreground">
-              <span className="font-mono">{a.externalId}</span> · {alertKindLabel[a.kind]} · {a.integration.name}
-            </p>
-          </div>
-        </AlertMenu>
-        {a.description && <p>{a.description}</p>}
-        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-          <dt className="text-muted-foreground">Host</dt>
-          <dd className={cn("min-w-0 break-all", a.host ? "font-mono text-xs leading-5" : "text-muted-foreground")}>{a.host ?? "None"}</dd>
-          <dt className="text-muted-foreground">User</dt>
-          <dd className={cn("min-w-0 break-all", a.userName ? "font-mono text-xs leading-5" : "text-muted-foreground")}>{a.userName ?? "None"}</dd>
-          <dt className="text-muted-foreground">Received</dt>
-          <dd>{exactTime(a.receivedAt)}</dd>
-          {a.attached && (
-            <>
-              <dt className="text-muted-foreground">Attached</dt>
-              <dd>
-                {onCase ? caseRef(onCase.number) : "to a Case you can’t see"}
-                {a.attached.by && ` by ${a.attached.by.name}`}
-              </dd>
-            </>
-          )}
-          {a.dismissed && (
-            <>
-              <dt className="text-muted-foreground">Dismissed</dt>
-              <dd>
-                {dismissalReasonLabel[a.dismissed.reason]}
-                {a.dismissed.by && ` by ${a.dismissed.by.name}`}
-                {a.dismissed.comment && <span className="block text-muted-foreground">“{a.dismissed.comment}”</span>}
-              </dd>
-            </>
-          )}
-          {a.falcon.status && (
-            <>
-              <dt className="text-muted-foreground">In Falcon</dt>
-              <dd>{falconStatusLabel[a.falcon.status] ?? a.falcon.status}</dd>
-            </>
-          )}
-          {a.falcon.assignee && (
-            <>
-              <dt className="text-muted-foreground">Falcon assignee</dt>
-              <dd>{a.falcon.assignee}</dd>
-            </>
-          )}
-          {a.falcon.tags.length > 0 && (
-            <>
-              <dt className="text-muted-foreground">Falcon tags</dt>
-              <dd className="flex flex-wrap gap-1">
-                {a.falcon.tags.map((tag) => (
-                  <Badge key={tag} variant="secondary">
-                    {tag}
-                  </Badge>
-                ))}
-              </dd>
-            </>
-          )}
-        </dl>
-        <Extracted
-          label="Extracted Observables"
-          kind="observable"
-          items={a.indicators.observables.map((o) => ({ id: o.id, text: `${observableTypeLabel[o.type]} ${shownObservable(o.type, o.value)}`, title: o.value, type: o.type, observable: o }))}
-        />
-        <Extracted
-          label="Extracted Assets"
-          kind="asset"
-          items={a.indicators.assets.map((x) => ({ id: x.id, text: `${assetTypeLabel[x.type]} ${x.value}`, title: x.value }))}
-        />
-        {a.indicators.observables.length + a.indicators.assets.length > 0 && (
-          <p className="text-xs text-muted-foreground">
-            {onCase ? `These are on ${caseRef(onCase.number)} too.` : "Attaching this Alert adds these to its Case."}
-          </p>
-        )}
-        <RelatedCases alert={a} />
-        <FalconComments comments={a.falconComments} />
-        <details>
-          <summary className="cursor-pointer text-muted-foreground">Raw payload</summary>
-          <pre className="mt-2 max-h-64 overflow-auto rounded bg-muted p-2 text-xs">{JSON.stringify(a.payload, null, 2)}</pre>
-        </details>
-        {(a.status !== "attached" || editable) && (
-          <div className="flex flex-wrap gap-2 border-t pt-3">
-            {a.status !== "attached" && (
-              <>
-                <Button size="sm" onClick={() => onAct("open", a)}>
-                  Open Case
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => onAct("attach", a)}>
-                  Attach to Case…
-                </Button>
-                {a.status === "new" && (
-                  <Button size="sm" variant="outline" onClick={() => onAct("dismiss", a)}>
-                    Dismiss…
-                  </Button>
-                )}
-              </>
-            )}
-            {editable && (
-              <>
-                <Button size="sm" variant="outline" onClick={() => setMoving("move")}>
-                  Move to another Case…
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setMoving("detach")}>
-                  Detach
-                </Button>
-              </>
-            )}
-          </div>
-        )}
-        <MoveAlertDialog
-          open={moving !== null}
-          onOpenChange={(o) => setMoving(o ? moving : null)}
-          alert={a}
-          detachOnly={moving === "detach"}
-        />
+      <CardContent>
+        <AlertDetails id={id} onClose={onClose} onAct={onAct} />
       </CardContent>
     </Card>
   );

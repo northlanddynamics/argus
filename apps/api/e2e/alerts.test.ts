@@ -223,6 +223,65 @@ test("an Analyst bulk-attaches Alerts to a Case, is told which changed meanwhile
   }
 }, 60_000);
 
+test("on a Case, an Analyst opens an attached Alert in a flyout, and follows the Case's link to the Alert queue filtered to it", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  const falcon = fakeFalcon();
+  const worker = createStreamWorker(t.deps, { connect: falcon.connect, workerId: "worker-1" });
+  t.onCleanup(worker.close);
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    await owner.api.organization.invitations.$post({ json: { email: "ana@acme.example", role: "analyst" } });
+    const ana = await t.acceptInvite("ana@acme.example", PASSWORD, "Ana Analyst");
+    await owner.api.integrations.$post({ json: { name: "CrowdStrike — Prod", cloud: "us-1", clientId: "falcon-client-0001", clientSecret: "s" } });
+    await worker.tick();
+    const stream = falcon.tenant("falcon-client-0001");
+    stream.detection("EppDetectionSummaryEvent", "ldt:1", { Name: "Encoded PowerShell from Office process", SeverityName: "High" });
+    stream.detection("EppDetectionSummaryEvent", "ldt:2", { Name: "Credential dumping attempt", SeverityName: "High" });
+    stream.detection("EppDetectionSummaryEvent", "ldt:3", { Name: "Suspicious outbound connection", SeverityName: "Medium" });
+    await stream.drained();
+    const opened = await (await ana.api.cases.$post({ json: { title: "PowerShell on FIN-LT-0231", caseType: "malware", severity: "high" } })).json();
+    if (!("case" in opened)) throw new Error("Could not open a Case");
+    const number = opened.case.number;
+    const queue = await (await ana.api.alerts.$get({ query: {} })).json();
+    const chosen = queue.alerts.filter((a) => a.externalId !== "ldt:3").map((a) => ({ id: a.id, version: a.version }));
+    await ana.api.alerts.attach.$post({ json: { case: number, alerts: chosen } });
+
+    const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
+    await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
+    await page.goto(`${baseUrl}/cases/${number}`);
+    const attached = page.getByRole("list", { name: "Attached Alerts" });
+    await attached.getByRole("button", { name: "Credential dumping attempt" }).click();
+    const flyout = page.getByRole("dialog", { name: "Alert" });
+    await flyout.getByRole("heading", { name: "Credential dumping attempt" }).waitFor();
+    await flyout.getByText("Extracted Observables").waitFor();
+    await flyout.getByRole("button", { name: "Move to another Case…" }).waitFor();
+    await flyout.getByRole("button", { name: "Close the Alert" }).click();
+    await flyout.waitFor({ state: "detached" });
+
+    await page.getByRole("link", { name: "Alert queue" }).click();
+    await page.getByTestId("alert-ldt:1").waitFor();
+    await page.getByTestId("alert-ldt:2").waitFor();
+    expect(new URL(page.url()).searchParams.get("case")).toBe(String(number));
+    expect(await page.getByLabel("Attached to").inputValue()).toBe(`C-${number}`);
+    expect(await page.getByTestId("alert-ldt:3").count()).toBe(0);
+    await page.getByText(`2 Attached Alerts on C-${number}`).waitFor();
+
+    // Clearing the filters goes back to the New Alerts.
+    await page.getByRole("button", { name: "Clear" }).click();
+    await page.getByTestId("alert-ldt:3").waitFor();
+    expect(await page.getByLabel("Attached to").inputValue()).toBe("");
+    // Typing a Case in the filter keeps to its Alerts, looking at the Attached ones.
+    await page.getByLabel("Attached to").fill(String(number));
+    await page.getByLabel("Attached to").press("Enter");
+    await page.getByTestId("alert-ldt:1").waitFor();
+    await page.getByTestId("alert-ldt:3").waitFor({ state: "detached" });
+    expect(await page.getByLabel("Alert Status").inputValue()).toBe("attached");
+  } finally {
+    await stop();
+  }
+}, 60_000);
+
 test("an Analyst drags selected Alerts, or a single one, onto a Case in the work queue to attach them", async () => {
   const { t, baseUrl, stop } = await serveTestApp();
   const falcon = fakeFalcon();
