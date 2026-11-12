@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { SeverityBadge } from "@/components/case-badges";
 import { AccountHoverCard } from "@/components/account-details";
+import { EnrichmentTarget } from "@/components/observable-details";
 import { ItemLink } from "@/components/item-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -113,6 +114,7 @@ function SharedItems({ items, more }: { items: readonly Shared[]; more: number }
     <div className="flex flex-wrap gap-1">
       {items.map((s) => (
         <AccountHoverCard key={`${s.kind}-${s.id}`} assetId={s.id} account={s.value} enabled={s.kind === "asset" && s.type === "account"}>
+          <EnrichmentTarget type={s.type} value={s.value} enabled={s.kind === "observable"}>
           <ObservableMenu observable={s.kind === "observable" ? s : null}>
             <Badge variant="outline" className="max-w-full truncate font-mono hover:bg-muted" title={s.value} asChild>
               <ItemLink kind={s.kind} id={s.id}>
@@ -120,6 +122,7 @@ function SharedItems({ items, more }: { items: readonly Shared[]; more: number }
               </ItemLink>
             </Badge>
           </ObservableMenu>
+          </EnrichmentTarget>
         </AccountHoverCard>
       ))}
       {more > 0 && <span className="text-xs text-muted-foreground">+{more} more</span>}

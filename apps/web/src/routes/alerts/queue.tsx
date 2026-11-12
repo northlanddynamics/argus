@@ -837,6 +837,7 @@ function RelatedCases({ alert }: { alert: AlertDetail }) {
               <div className="flex flex-wrap gap-1">
                 {c.shared.map((s) => (
                   <AccountHoverCard key={`${s.kind}-${s.id}`} assetId={s.id} account={s.value} enabled={s.kind === "asset" && s.type === "account"}>
+                    <EnrichmentTarget type={s.type} value={s.value} enabled={s.kind === "observable"}>
                     <ObservableMenu observable={s.kind === "observable" ? s : null}>
                       <Badge variant="outline" className="max-w-full truncate font-mono hover:bg-muted" title={s.value} asChild>
                         <ItemLink kind={s.kind} id={s.id}>
@@ -846,6 +847,7 @@ function RelatedCases({ alert }: { alert: AlertDetail }) {
                         </ItemLink>
                       </Badge>
                     </ObservableMenu>
+                    </EnrichmentTarget>
                   </AccountHoverCard>
                 ))}
               </div>
