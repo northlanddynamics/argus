@@ -1,11 +1,12 @@
 /**
- * IPinfo as Argus uses it (ADR 0010): an adapter, so lookups go to the real Core API
+ * IPinfo as Argus uses it (ADR 0010): an adapter, so lookups go to the real Plus API
  * (`ipinfo-http.ts`) in production and to a fake in tests (`test/fake-ipinfo.ts`).
  *
  * An IPinfo Integration sends no Alerts, writes nothing back and takes no Response Actions. It only
- * answers what IPinfo Core knows about a public IP address: where it is, which network announces it,
- * and whether it is anonymous, hosting, anycast, mobile or satellite. The answers are cached in
- * `ip_lookups` (`ip-lookups.ts`).
+ * answers what IPinfo Plus knows about a public IP address: where it is and how precisely, which
+ * network announces it, whether it is anonymous (and as a VPN, proxy, Tor exit or relay, run by
+ * which service), hosting, anycast, mobile (and on which carrier) or satellite. The answers are
+ * cached in `ip_lookups` (`ip-lookups.ts`).
  */
 
 /** An IPinfo API access token. */
@@ -22,39 +23,108 @@ export const asTypeLabel: Record<AsType, string> = {
   government: "Government",
 };
 
-/** What IPinfo Core reports about a public address. Anything IPinfo leaves out is null. */
+/** What IPinfo Plus reports about a public address. Anything IPinfo leaves out is null (or false). */
 export type IpDetails = {
   /** Its reverse DNS name. */
   hostname: string | null;
   city: string | null;
   region: string | null;
+  /** The region's ISO 3166-2 subdivision code, such as "CA". */
+  regionCode: string | null;
   country: string | null;
   /** ISO 3166-1 alpha-2, upper case. */
   countryCode: string | null;
   continent: string | null;
+  /** "EU", "NA". */
+  continentCode: string | null;
   latitude: number | null;
   longitude: number | null;
+  /** How far, in kilometres, the address may be from the coordinates. */
+  accuracyRadius: number | null;
   /** IANA time zone, such as "Europe/Berlin". */
   timezone: string | null;
   postalCode: string | null;
+  /** The Nielsen DMA (US metro area) code. */
+  dmaCode: string | null;
+  /** The city's GeoNames ID. */
+  geonameId: string | null;
+  /** The day IPinfo last saw the address's location change, "2025-04-01". */
+  locationChangedOn: string | null;
   /** "AS15169". */
   asn: string | null;
   asName: string | null;
   asDomain: string | null;
   asType: AsType | null;
-  /** A VPN, proxy, Tor exit or relay; Core says only that it is one, not which. */
+  /** The day IPinfo last saw the address move to another AS. */
+  asChangedOn: string | null;
+  /** A VPN, proxy, Tor exit or relay; which ones are below. */
   anonymous: boolean;
+  vpn: boolean;
+  proxy: boolean;
+  tor: boolean;
+  /** A privacy relay, such as iCloud Private Relay. */
+  relay: boolean;
+  /** The anonymising service, such as "NordVPN", when IPinfo knows it. */
+  anonymousService: string | null;
   /** Belongs to a hosting provider, cloud or data centre. */
   hosting: boolean;
   anycast: boolean;
   mobile: boolean;
   satellite: boolean;
+  /** The mobile carrier's name, and its mobile country and network codes. */
+  carrier: string | null;
+  mcc: string | null;
+  mnc: string | null;
 };
+
+/** Every field of `IpDetails`, null or false, for filling in what an older cached answer lacks. */
+export const EMPTY_IP_DETAILS: IpDetails = {
+  hostname: null,
+  city: null,
+  region: null,
+  regionCode: null,
+  country: null,
+  countryCode: null,
+  continent: null,
+  continentCode: null,
+  latitude: null,
+  longitude: null,
+  accuracyRadius: null,
+  timezone: null,
+  postalCode: null,
+  dmaCode: null,
+  geonameId: null,
+  locationChangedOn: null,
+  asn: null,
+  asName: null,
+  asDomain: null,
+  asType: null,
+  asChangedOn: null,
+  anonymous: false,
+  vpn: false,
+  proxy: false,
+  tor: false,
+  relay: false,
+  anonymousService: null,
+  hosting: false,
+  anycast: false,
+  mobile: false,
+  satellite: false,
+  carrier: null,
+  mcc: null,
+  mnc: null,
+};
+
+/**
+ * Whether cached details came from IPinfo Plus. Answers cached while Argus used Core lack the Plus
+ * fields, so they are fetched again rather than served as fresh.
+ */
+export const hasPlusDetails = (details: Partial<IpDetails>) => "vpn" in details;
 
 /** IPinfo's answer: the details, or that the address is a bogon it holds nothing for. */
 export type IpinfoAnswer = { bogon: true } | { bogon: false; details: IpDetails };
 
-/** IPinfo refused the token: it is wrong, revoked, or its plan lacks the Core API. */
+/** IPinfo refused the token: it is wrong, revoked, or its plan lacks the Plus API. */
 export class IpinfoRefused extends Error {}
 
 /** The token's lookup quota is used up for now. */

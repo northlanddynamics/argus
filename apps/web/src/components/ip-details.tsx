@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
-import type { FocusEvent, ReactElement, ReactNode } from "react";
+import { type FocusEvent, type ReactElement, type ReactNode, useState } from "react";
 import { toast } from "sonner";
+import { CardPager } from "@/components/card-pager";
 import { EnrichmentLayout, KnownLine, SourceSection, ValueHeader } from "@/components/enrichment-parts";
 import { ObservableText } from "@/components/observable-details";
 import { Time } from "@/components/time";
@@ -19,8 +20,8 @@ import { canManage } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 
 /**
- * What IPinfo says about an IP (ADR 0010), as the hover card, the Enrichment panel and an IP
- * Observable's page show it; laid out in `docs/wireframes/ip-context-popup.md` and `enrichment-panel.md`.
+ * What IPinfo Plus says about an IP (ADR 0010), as the hover card (a page at a time), the
+ * Enrichment panel and an IP Observable's page (everything, by subject) show it; laid out in `docs/wireframes/ip-context-popup.md` and `enrichment-panel.md`.
  * An internal IP shows what Falcon says last reported it instead (ADR 0018, `ip-falcon-hosts.tsx`).
  */
 
@@ -40,27 +41,105 @@ function utcOffset(timeZone: string) {
   }
 }
 
-const FLAGS: { key: keyof Pick<IpDetails, "anonymous" | "hosting" | "anycast" | "mobile" | "satellite">; label: string; title: string }[] = [
-  { key: "anonymous", label: "Anonymous", title: "A VPN, proxy, Tor exit or relay" },
-  { key: "hosting", label: "Hosting", title: "A hosting provider, cloud or data centre" },
-  { key: "anycast", label: "Anycast", title: "Announced from many places at once" },
-  { key: "mobile", label: "Mobile", title: "A mobile carrier's network" },
-  { key: "satellite", label: "Satellite", title: "A satellite provider's network" },
-];
+/** "14 Mar 2025" for "2025-03-14"; IPinfo's change dates are days, not instants. */
+function day(date: string) {
+  const at = new Date(`${date}T00:00:00Z`);
+  return Number.isNaN(at.getTime()) ? date : at.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+}
 
 const joined = (parts: (string | null)[], sep = ", ") => parts.filter(Boolean).join(sep) || null;
+const muted = (text: string) => <span className="text-muted-foreground">{text}</span>;
+const mono = (text: string) => <span className="font-mono text-xs">{text}</span>;
+/** "Hesse (HE)", or whichever of the two IPinfo gave. */
+const withCode = (name: string | null, code: string | null) => (name && code ? `${name} (${code})` : (name ?? code));
+/** Yes or No; a Yes worth an Analyst's attention in the notice tone. */
+const yesNo = (value: boolean, notice = false) =>
+  value ? (
+    notice ? (
+      <Badge variant="notice">Yes</Badge>
+    ) : (
+      "Yes"
+    )
+  ) : (
+    muted("No")
+  );
 
-/** The flags that are true, the details as label-value rows; `full`, for the Enrichment panel, adds the postcode and coordinates. */
-function Details({ details: d, showHostname, full }: { details: IpDetails; showHostname: boolean; full?: boolean }) {
-  const flags = FLAGS.filter((f) => d[f.key]);
+type Row = { label: string; value: ReactNode };
+
+/**
+ * The flags that are true, in this order: which kinds of anonymity (VPN, Proxy, Tor, Relay, or
+ * Anonymous when IPinfo didn't say which) in the notice tone, then Hosting, Anycast, Mobile, Satellite.
+ */
+function flags(d: IpDetails): { label: string; title: string; notice: boolean }[] {
+  const kinds = [
+    { on: d.vpn, label: "VPN", title: "A VPN service's address" },
+    { on: d.proxy, label: "Proxy", title: "An open, web or residential proxy" },
+    { on: d.tor, label: "Tor", title: "A Tor exit node" },
+    { on: d.relay, label: "Relay", title: "A privacy relay, such as iCloud Private Relay" },
+  ].filter((k) => k.on);
+  const anonymous = kinds.length
+    ? kinds.map((k) => ({ label: k.label, title: d.anonymousService ? `${k.title}: ${d.anonymousService}` : k.title, notice: true }))
+    : d.anonymous
+      ? [{ label: "Anonymous", title: d.anonymousService ?? "A VPN, proxy, Tor exit or relay", notice: true }]
+      : [];
+  return [
+    ...anonymous,
+    ...[
+      { on: d.hosting, label: "Hosting", title: "A hosting provider, cloud or data centre" },
+      { on: d.anycast, label: "Anycast", title: "Announced from many places at once" },
+      { on: d.mobile, label: "Mobile", title: d.carrier ? `On ${d.carrier}'s mobile network` : "A mobile carrier's network" },
+      { on: d.satellite, label: "Satellite", title: "A satellite provider's network" },
+    ]
+      .filter((f) => f.on)
+      .map((f) => ({ label: f.label, title: f.title, notice: false })),
+  ];
+}
+
+function Flags({ details }: { details: IpDetails }) {
+  const shown = flags(details);
+  if (!shown.length) return null;
+  return (
+    <div className="flex flex-wrap gap-1" aria-label="Flags">
+      {shown.map((f) => (
+        <Badge key={f.label} variant={f.notice ? "notice" : "outline"} title={f.title}>
+          {f.label}
+        </Badge>
+      ))}
+    </div>
+  );
+}
+
+/** Label-value rows, leaving out those with nothing to show. */
+function Rows({ rows }: { rows: Row[] }) {
+  return (
+    <dl className="grid grid-cols-[6rem_1fr] gap-x-2 gap-y-1">
+      {rows
+        .filter((r) => r.value !== null && r.value !== undefined && r.value !== false && r.value !== "")
+        .map((r) => (
+          <div key={r.label} className="contents">
+            <dt className="text-muted-foreground">{r.label}</dt>
+            <dd className="min-w-0 break-words">{r.value}</dd>
+          </div>
+        ))}
+    </dl>
+  );
+}
+
+/** The time zone with its offset now: "Europe/Berlin (UTC+1)". */
+const timeZone = (d: IpDetails) => {
   const offset = d.timezone && utcOffset(d.timezone);
-  const rows: { label: string; value: ReactNode }[] = [
+  return d.timezone && (offset ? `${d.timezone} (${offset})` : d.timezone);
+};
+
+/** What answers "where is it and who runs it" at a glance: the hover card's first page. */
+function summaryRows(d: IpDetails, showHostname: boolean): Row[] {
+  return [
     { label: "Hostname", value: showHostname && d.hostname && <span className="font-mono text-xs break-all">{d.hostname}</span> },
     {
       label: "Location",
       value: (d.city || d.region || d.country) && (
         <>
-          {joined([d.city, d.region, full ? d.postalCode : null]) && <span className="block">{joined([d.city, d.region, full ? d.postalCode : null])}</span>}
+          {joined([d.city, d.region]) && <span className="block">{joined([d.city, d.region])}</span>}
           {d.country && (
             <span className="block">
               {d.countryCode && <span aria-hidden>{flag(d.countryCode)} </span>}
@@ -75,7 +154,7 @@ function Details({ details: d, showHostname, full }: { details: IpDetails; showH
       value: (d.asn || d.asName) && (
         <>
           <span className="block">
-            {d.asn && <span className="font-mono text-xs">{d.asn}</span>}
+            {d.asn && mono(d.asn)}
             {d.asn && d.asName && " · "}
             {d.asName}
           </span>
@@ -83,35 +162,132 @@ function Details({ details: d, showHostname, full }: { details: IpDetails; showH
         </>
       ),
     },
-    { label: "Coordinates", value: full && d.latitude !== null && d.longitude !== null && <span className="font-mono text-xs">{d.latitude}, {d.longitude}</span> },
     { label: "Type", value: d.asType && asTypeLabel[d.asType] },
-    { label: "Time zone", value: d.timezone && (offset ? `${d.timezone} (${offset})` : d.timezone) },
+    { label: "Anonymiser", value: d.anonymousService },
+    { label: "Carrier", value: d.carrier },
+    { label: "Time zone", value: timeZone(d) },
   ];
+}
+
+type Section = { key: "location" | "network" | "privacy" | "mobile"; title: string; rows: Row[] };
+
+/** Everything IPinfo Plus says, by subject: the hover card's other pages and the panel's sections. */
+function sections(d: IpDetails, showHostname: boolean): Section[] {
+  const map =
+    d.latitude !== null && d.longitude !== null
+      ? `https://www.openstreetmap.org/?mlat=${d.latitude}&mlon=${d.longitude}#map=${d.accuracyRadius && d.accuracyRadius > 50 ? 8 : 11}/${d.latitude}/${d.longitude}`
+      : null;
+  return [
+    {
+      key: "location",
+      title: "Location",
+      rows: [
+        { label: "City", value: d.city },
+        { label: "Region", value: withCode(d.region, d.regionCode) },
+        { label: "Postcode", value: d.postalCode && mono(d.postalCode) },
+        {
+          label: "Country",
+          value: (d.country || d.countryCode) && (
+            <>
+              {d.countryCode && <span aria-hidden>{flag(d.countryCode)} </span>}
+              {withCode(d.country, d.countryCode)}
+            </>
+          ),
+        },
+        { label: "Continent", value: withCode(d.continent, d.continentCode) },
+        {
+          label: "Coordinates",
+          value: map && (
+            <a href={map} target="_blank" rel="noreferrer noopener" className="font-mono text-xs underline underline-offset-2 hover:text-muted-foreground" title="Open on OpenStreetMap">
+              {d.latitude}, {d.longitude}
+            </a>
+          ),
+        },
+        { label: "Accuracy", value: d.accuracyRadius !== null && `Within ${d.accuracyRadius.toLocaleString("en-GB")} km` },
+        { label: "Time zone", value: timeZone(d) },
+        { label: "Metro (DMA)", value: d.dmaCode && mono(d.dmaCode) },
+        { label: "GeoNames ID", value: d.geonameId && mono(d.geonameId) },
+        { label: "Changed on", value: d.locationChangedOn && day(d.locationChangedOn) },
+      ],
+    },
+    {
+      key: "network",
+      title: "Network",
+      rows: [
+        { label: "Hostname", value: showHostname && d.hostname && <span className="font-mono text-xs break-all">{d.hostname}</span> },
+        { label: "ASN", value: d.asn && mono(d.asn) },
+        { label: "Name", value: d.asName },
+        { label: "Domain", value: d.asDomain },
+        { label: "Type", value: d.asType && asTypeLabel[d.asType] },
+        { label: "Hosting", value: yesNo(d.hosting) },
+        { label: "Anycast", value: yesNo(d.anycast) },
+        { label: "Changed on", value: d.asChangedOn && day(d.asChangedOn) },
+      ],
+    },
+    {
+      key: "privacy",
+      title: "Privacy",
+      rows: [
+        { label: "Anonymous", value: yesNo(d.anonymous, true) },
+        { label: "VPN", value: yesNo(d.vpn, true) },
+        { label: "Proxy", value: yesNo(d.proxy, true) },
+        { label: "Tor", value: yesNo(d.tor, true) },
+        { label: "Relay", value: yesNo(d.relay, true) },
+        { label: "Service", value: d.anonymousService },
+      ],
+    },
+    {
+      key: "mobile",
+      title: "Mobile",
+      rows: [
+        { label: "Mobile", value: yesNo(d.mobile) },
+        { label: "Carrier", value: d.carrier },
+        { label: "MCC", value: d.mcc && mono(d.mcc) },
+        { label: "MNC", value: d.mnc && mono(d.mnc) },
+        { label: "Satellite", value: yesNo(d.satellite) },
+      ],
+    },
+  ];
+}
+
+/** The hover card's pages: the summary, then a page per subject; Mobile only when there is something mobile or satellite to say. */
+function cardPages(d: IpDetails): { title: string; body: ReactNode }[] {
+  const relevant = sections(d, false).filter((s) => s.key !== "mobile" || d.mobile || d.satellite || d.carrier || d.mcc);
+  return [
+    {
+      title: "Summary",
+      body: (
+        <div className="grid gap-2">
+          <Flags details={d} />
+          <Rows rows={summaryRows(d, false)} />
+        </div>
+      ),
+    },
+    ...relevant.map((s) => ({ title: s.title, body: <Rows rows={s.rows} /> })),
+  ];
+}
+
+/** The flags, then every section with its heading: the Enrichment panel and an IP Observable's page. */
+function FullDetails({ details: d, showHostname }: { details: IpDetails; showHostname: boolean }) {
+  return (
+    <div className="grid gap-4">
+      <Flags details={d} />
+      {sections(d, showHostname).map((s) => (
+        <section key={s.key} aria-label={s.title} className="grid gap-1.5">
+          <h4 className="text-xs font-medium text-muted-foreground">{s.title}</h4>
+          <Rows rows={s.rows} />
+        </section>
+      ))}
+    </div>
+  );
+}
+
+/** The summary alone, the flags then the rows. */
+function Details({ details: d, showHostname }: { details: IpDetails; showHostname: boolean }) {
   return (
     <div className="grid gap-2">
-      {flags.length > 0 && (
-        <div className="flex flex-wrap gap-1" aria-label="Flags">
-          {flags.map((f) => (
-            <Badge
-              key={f.key}
-              variant={f.key === "anonymous" ? "notice" : "outline"}
-              title={f.title}
-            >
-              {f.label}
-            </Badge>
-          ))}
-        </div>
-      )}
-      <dl className="grid grid-cols-[5.5rem_1fr] gap-x-2 gap-y-1">
-        {rows
-          .filter((r) => r.value)
-          .map((r) => (
-            <div key={r.label} className="contents">
-              <dt className="text-muted-foreground">{r.label}</dt>
-              <dd className="min-w-0 break-words">{r.value}</dd>
-            </div>
-          ))}
-      </dl>
+      <Flags details={d} />
+      <Rows rows={summaryRows(d, showHostname)} />
     </div>
   );
 }
@@ -158,7 +334,8 @@ function Unconfigured({ admin, paused }: { admin: boolean; paused: boolean }) {
 
 /**
  * The body of the panel or card for `ip`'s lookup: details, or why there are none. `showHostname`
- * puts the reverse DNS name among the rows, for the card, which has no header to show it in.
+ * puts the reverse DNS name among the rows, for the card, which has no header to show it in. `full`
+ * shows everything IPinfo said, by subject; `page`, the hover card's, shows the details its own way.
  */
 export function IpLookupBody({
   lookup,
@@ -167,6 +344,7 @@ export function IpLookupBody({
   admin,
   showHostname = false,
   full,
+  page,
 }: {
   lookup: IpLookup | undefined;
   loading: boolean;
@@ -174,7 +352,9 @@ export function IpLookupBody({
   admin: boolean;
   showHostname?: boolean;
   full?: boolean;
+  page?: (details: IpDetails) => ReactNode;
 }) {
+  const shown = (d: IpDetails) => (page ? page(d) : full ? <FullDetails details={d} showHostname={showHostname} /> : <Details details={d} showHostname={showHostname} />);
   if (loading && !lookup) return <DetailsSkeleton />;
   if (!lookup) return <Problem>{error?.message ?? "Could not look the IP up"}</Problem>;
   switch (lookup.state) {
@@ -190,16 +370,16 @@ export function IpLookupBody({
     case "unconfigured":
       return <Unconfigured admin={admin} paused={false} />;
     case "paused":
-      return lookup.details ? <Details details={lookup.details} showHostname={showHostname} full={full} /> : <Unconfigured admin={admin} paused />;
+      return lookup.details ? shown(lookup.details) : <Unconfigured admin={admin} paused />;
     case "failed":
       return (
         <div className="grid gap-2">
           <Problem>{lookup.error}</Problem>
-          {lookup.details && <Details details={lookup.details} showHostname={showHostname} full={full} />}
+          {lookup.details && shown(lookup.details)}
         </div>
       );
     case "found":
-      return lookup.details && <Details details={lookup.details} showHostname={showHostname} full={full} />;
+      return lookup.details && shown(lookup.details);
   }
 }
 
@@ -267,26 +447,34 @@ export function IpEnrichment({ ip, admin }: { ip: string; admin: boolean }) {
   );
 }
 
-/** The hover card's content; mounted only while it is open, so the lookup starts when it opens. */
+/**
+ * The hover card's content; mounted only while it is open, so the lookup starts when it opens. A
+ * public IP's details show a page at a time (summary, Location, Network, Privacy, Mobile), stepped
+ * through with the pager the account card uses for several identities.
+ */
 function IpCard({ ip, admin }: { ip: string; admin: boolean }) {
   const q = useQuery(ipLookupQuery(ip));
+  const [index, setIndex] = useState(0);
   const lookup = q.data;
   const shown = lookup?.ip ?? ip;
   const internal = internalIp(ip, lookup);
   const range = lookup?.reserved ?? reservedRange(ip);
   const publicIp = !internal && (!lookup || lookup.state !== "reserved");
   const footer = !internal && (!lookup || (lookup.state !== "reserved" && lookup.state !== "unconfigured"));
+  const pages = !internal && lookup?.details && lookup.state !== "reserved" ? cardPages(lookup.details) : [];
+  const at = Math.min(index, Math.max(pages.length - 1, 0));
   return (
     <div className="grid gap-2.5" data-testid="ip-hover-card">
       <ValueHeader shown={shown} copy={shown} copied={`Copied ${shown}`} href={publicIp ? `https://ipinfo.io/${encodeURIComponent(shown)}` : null} hrefLabel="Open on ipinfo.io">
         {lookup?.details?.hostname && <span className="font-mono text-xs break-all text-muted-foreground">{lookup.details.hostname}</span>}
         {internal && range && <RangeLine reserved={range} />}
       </ValueHeader>
+      {pages.length > 1 && <CardPager at={at} count={pages.length} onStep={setIndex} noun="page" label={pages[at]!.title} />}
       <div className="border-t pt-2.5">
         {internal ? (
           <FalconHostsCompact ip={ip} lookup={lookup} loading={q.isPending} admin={admin} card />
         ) : (
-          <IpLookupBody lookup={lookup} loading={q.isPending} error={q.error} admin={admin} />
+          <IpLookupBody lookup={lookup} loading={q.isPending} error={q.error} admin={admin} page={() => pages[at]?.body} />
         )}
         {!internal && lookup?.state === "reserved" && lookup.reserved?.range && (
           <p className="mt-1 text-muted-foreground">Not looked up: it means nothing outside the network it belongs to, and Argus doesn't send internal addresses to IPinfo.</p>
@@ -357,7 +545,7 @@ export function IpDetailsCard({ ip, admin }: { ip: string; admin: boolean }) {
         <CardTitle>IP details</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-3">
-        <IpLookupBody lookup={q.data} loading={q.isPending} error={q.error} admin={admin} showHostname />
+        <IpLookupBody lookup={q.data} loading={q.isPending} error={q.error} admin={admin} showHostname full />
         <IpLookupFooter ip={ip} lookup={q.data} loading={q.isPending} />
       </CardContent>
     </Card>

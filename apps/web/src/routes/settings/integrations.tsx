@@ -1377,8 +1377,8 @@ function AddIntegrationDialog({ provider, open, onOpenChange }: { provider: Prov
           <DialogTitle>Add a {providerLabel[provider]} Integration</DialogTitle>
           {provider === "ipinfo" && (
             <DialogDescription>
-              Copy the API access token from your IPinfo account. Argus uses the Core API: location, network, and the anonymous, hosting,
-              anycast, mobile and satellite flags.
+              Copy the API access token from your IPinfo account. Argus uses the Plus API: location and its accuracy, network, whether an
+              address is a VPN, proxy, Tor exit or relay, mobile carrier, and the hosting, anycast and satellite flags.
             </DialogDescription>
           )}
           {provider === "umbrella" && (

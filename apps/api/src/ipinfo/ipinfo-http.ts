@@ -1,7 +1,7 @@
 import { AS_TYPES, type AsType, type IpDetails, type IpinfoAnswer, type IpinfoClient, type IpinfoCredentials, IpinfoQuotaExceeded, IpinfoRefused } from "./ipinfo";
 
 /**
- * IPinfo's Core API over HTTP: `GET https://api.ipinfo.io/lookup/{ip}` with the token as a bearer
+ * IPinfo's Plus API over HTTP: `GET https://api.ipinfo.io/lookup/{ip}` with the token as a bearer
  * token. Unverified against a live token.
  */
 
@@ -15,34 +15,54 @@ export class IpinfoError extends Error {}
 
 const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+/** IPinfo sends some codes and IDs as strings and some as numbers. */
+const code = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? String(v) : str(v));
 const obj = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
 
-/** IPinfo Core's JSON as `IpDetails`, or a bogon. */
+/** IPinfo Plus's JSON as `IpDetails`, or a bogon. A Core answer reads too, with the Plus fields empty. */
 export function readLookup(body: Record<string, unknown>): IpinfoAnswer {
   if (body.bogon === true) return { bogon: true };
   const geo = obj(body.geo);
   const as = obj(body.as);
+  const anon = obj(body.anonymous);
+  const mobile = obj(body.mobile);
   const asType = str(as.type)?.toLowerCase();
+  const radius = num(geo.radius);
   const details: IpDetails = {
     hostname: str(body.hostname),
     city: str(geo.city),
     region: str(geo.region),
+    regionCode: str(geo.region_code),
     country: str(geo.country),
     countryCode: str(geo.country_code)?.toUpperCase() ?? null,
     continent: str(geo.continent),
+    continentCode: str(geo.continent_code)?.toUpperCase() ?? null,
     latitude: num(geo.latitude),
     longitude: num(geo.longitude),
+    accuracyRadius: radius !== null && radius > 0 ? radius : null,
     timezone: str(geo.timezone),
     postalCode: str(geo.postal_code),
+    dmaCode: code(geo.dma_code),
+    geonameId: code(geo.geoname_id),
+    locationChangedOn: str(geo.last_changed),
     asn: str(as.asn),
     asName: str(as.name),
     asDomain: str(as.domain),
     asType: (AS_TYPES as readonly string[]).includes(asType ?? "") ? (asType as AsType) : null,
+    asChangedOn: str(as.last_changed),
     anonymous: body.is_anonymous === true,
+    vpn: anon.is_vpn === true,
+    proxy: anon.is_proxy === true,
+    tor: anon.is_tor === true,
+    relay: anon.is_relay === true,
+    anonymousService: str(anon.name),
     hosting: body.is_hosting === true,
     anycast: body.is_anycast === true,
     mobile: body.is_mobile === true,
     satellite: body.is_satellite === true,
+    carrier: str(mobile.name),
+    mcc: code(mobile.mcc),
+    mnc: code(mobile.mnc),
   };
   return { bogon: false, details };
 }

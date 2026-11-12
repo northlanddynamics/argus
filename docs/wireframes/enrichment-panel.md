@@ -20,7 +20,7 @@ What each source shows, and the wording of every state (looking up, never seen, 
 - **Closes** on `Esc`, its `✕`, clicking the dimmed page, or opening the Observable's page. Focus returns to the value that opened it.
 - **Focus.** Opening moves focus to the panel's heading, so Back, ↑ ↓ and ✕ are next, and stays in the panel while it is open; closing returns it to the value it was opened from.
 - **Guests** get no panel button, no menu item and no shortcut, as they got no popup: Argus never spends the Organization's IPinfo quota or a Member's VirusTotal key for a Guest.
-- **Shows everything.** The panel lists every detection, category, tag, DNS record, name, threat and redirect a source reported, with the details the cards leave out (a file's other hashes and submissions, a certificate's subject and expiry, every popularity rank, an IP's postcode and coordinates); nothing is cut to "and N more".
+- **Shows everything.** The panel lists every detection, category, tag, DNS record, name, threat and redirect a source reported, with the details the cards leave out (a file's other hashes and submissions, a certificate's subject and expiry, every popularity rank, an IP's every IPinfo Plus field, in Location, Network, Privacy and Mobile sections); nothing is cut to "and N more".
 - **Ignore.** For Admins, the header's Ignore button (🔕) puts the value on the Organization's Ignored list after asking, or takes it off; an Ignored value shows an "Ignored" badge beside its type.
 - **On an Observable's own page** nothing changes: the IP details and VirusTotal cards stay on the page. Values inside those cards (Resolves to, Ends at) open the panel for themselves.
 
