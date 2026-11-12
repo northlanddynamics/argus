@@ -15,7 +15,7 @@ import { ipLookupStore } from "./ipinfo/ip-lookups";
 import { domainUrlLookupStore } from "./virustotal/domain-url-lookups";
 import { hashLookupStore } from "./virustotal/hash-lookups";
 import { bulkLookupStore } from "./observables/bulk-lookup";
-import { assetStore, ignoredObservableStore, importantObservableStore, observableStore } from "./observables/observables";
+import { assetStore, ignoredObservableStore, importantObservableStore, observableListStore, observableStore } from "./observables/observables";
 import { invitationStore } from "./invitations/invitations";
 import { memberStore } from "./members/members";
 import { metricsStore } from "./metrics/metrics";
@@ -60,6 +60,7 @@ export function createModules(deps: Deps) {
     actionCenter: actionCenterStore(deps, { responseActions, observables: readers.observables, workflows, ...lookups }),
     ignoredObservables: ignoredObservableStore(deps),
     importantObservables: importantObservableStore(deps),
+    observableList: observableListStore(deps),
     bulkLookup: bulkLookupStore(deps, readers.observables),
     caseRoles: caseRoleStore(deps),
     discussion: discussionStore(deps),

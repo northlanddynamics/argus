@@ -14,6 +14,7 @@ export {
   OBSERVABLE_TYPES,
   type ObservableType,
   observableTypeLabel,
+  refang,
 } from "api/observables/vocabulary";
 
 /** Under the Case's key, so its live signal refreshes them. */
@@ -106,6 +107,36 @@ export const itemPageQuery = (kind: ItemKind, id: string) =>
   });
 
 export type ItemPage = NonNullable<Awaited<ReturnType<ReturnType<typeof itemPageQuery>["queryFn"] & {}>>>;
+
+/** The Observables page's URL search: the value typed, and the types ticked (every type when none are). */
+export type ObservablesSearch = { q?: string; types?: string };
+
+export const validateObservablesSearch = (search: Record<string, unknown>): ObservablesSearch => ({
+  q: typeof search.q === "string" && search.q ? search.q : undefined,
+  types: typeof search.types === "string" && search.types ? search.types : undefined,
+});
+
+/** The types ticked on the Observables page, Observable and Asset types alike. */
+export const tickedTypes = (types: string | undefined) => new Set(types?.split(",").filter(Boolean) ?? []);
+
+/** Under the item pages' key, so the same signals refresh it. */
+export const observableListKey = [...itemPagesKey, "list"] as const;
+
+/**
+ * The Organization's Observables, newest first, of `types` (every type when empty) and containing
+ * `q`. Members only. The API gives the first 200; `more` says there are others.
+ */
+export const observableListQuery = (q: string, types: readonly ObservableType[]) =>
+  queryOptions({
+    queryKey: [...observableListKey, q, types.join(",")],
+    queryFn: async () => {
+      const res = await api.observables.$get({ query: { ...(q ? { q } : {}), ...(types.length ? { types: types.join(",") } : {}) } });
+      if (!res.ok) throw new Error("Could not load the Observables");
+      const body = await res.json();
+      if (!("observables" in body)) throw new Error("Unexpected response");
+      return body;
+    },
+  });
 
 /** Under the item pages' key, so the same signals refresh it. */
 export const ignoredKey = [...itemPagesKey, "ignored"] as const;

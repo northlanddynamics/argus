@@ -68,7 +68,9 @@ function crumbsWithin(pathname: string, search: Record<string, unknown>, me: Me)
   if (area === "search") return [{ label: "Search" }];
   if (area === "lookup") return [{ label: "Bulk Lookup" }];
   if (area === "account") return [{ label: "Your settings" }];
-  if (area === "observables") return [{ label: "Observable" }];
+  if (area === "observables" && !id) return [{ label: "Observables" }];
+  if (area === "observables" && id === "ignored") return [{ label: "Observables", to: "/observables" }, { label: "Ignored" }];
+  if (area === "observables") return [{ label: "Observables", to: "/observables" }, { label: "Observable" }];
   if (area === "assets") return [{ label: "Asset" }];
   if (area === "dashboard") return [{ label: "Dashboard" }];
   if (area === "actions") return id === "log" ? [{ label: "Action Center", to: "/actions" }, { label: "Action Log" }] : [{ label: "Action Center" }];
