@@ -52,10 +52,22 @@ import {
 } from "@/routes/alerts/alert-dialogs";
 
 /**
- * `status` is New unless the URL says otherwise; "any" shows every Status. `page` is which page of the
- * queue, from 1. `alert` is the Alert shown in full.
+ * `status` is New unless the URL says otherwise; "any" shows every Status. `falconComplete` shows the
+ * Alerts tagged falcon_complete in Falcon, hidden unless it says "show" or "only". `page` is which page
+ * of the queue, from 1. `alert` is the Alert shown in full.
  */
-export type AlertQueueSearch = { status?: AlertStatus | "any"; severity?: Severity; integration?: string; page?: number; alert?: string };
+export type AlertQueueSearch = {
+  status?: AlertStatus | "any";
+  severity?: Severity;
+  integration?: string;
+  falconComplete?: "show" | "only";
+  page?: number;
+  alert?: string;
+};
+
+/** How the queue treats Alerts handled by Falcon Complete; hiding them is the default. */
+const FALCON_COMPLETE_CHOICES = ["hide", "show", "only"] as const;
+const falconCompleteLabel = { hide: "Hidden", show: "Shown", only: "Only these" } as const;
 
 const pick = <T extends string>(list: readonly T[], value: unknown) => (list.includes(value as T) ? (value as T) : undefined);
 
@@ -64,6 +76,7 @@ export const validateAlertQueueSearch = (search: Record<string, unknown>): Alert
   status: pick([...ALERT_STATUSES, "any"] as const, search.status),
   severity: pick(SEVERITIES, search.severity),
   integration: typeof search.integration === "string" && search.integration ? search.integration : undefined,
+  falconComplete: pick(["show", "only"] as const, search.falconComplete),
   page: Number.isInteger(Number(search.page)) && Number(search.page) > 1 ? Number(search.page) : undefined,
   alert: typeof search.alert === "string" && search.alert ? search.alert : undefined,
 });
@@ -79,7 +92,7 @@ const pickedOf = (a: AlertRow): Picked => ({ version: a.version, severity: a.sev
 /** The Case Type a Case opened from an Alert of each kind most often is; the Member can change it. */
 const caseTypeFor: Record<AlertKind, CaseType> = { epp: "malware", idp: "account_compromise", mobile: "malware" };
 const shortcut = { o: "open", a: "attach", d: "dismiss" } as const;
-const noFilters = { status: undefined, severity: undefined, integration: undefined };
+const noFilters = { status: undefined, severity: undefined, integration: undefined, falconComplete: undefined };
 /**
  * Host / user and Received give way when the queue is narrow (the Alert panel is open). Their cells
  * stay in the row, emptied and without padding, so the cells after them keep their columns.
@@ -141,13 +154,14 @@ export function AlertQueuePage() {
   const streams = integrations.data?.filter((i) => i.capabilities.receivesAlerts);
   const alerts = useQuery({
     // Not keyed on the Alert shown in the panel: opening one mustn't reload the queue.
-    queryKey: [...alertsKey, { status, severity: search.severity, integration: search.integration, page }],
+    queryKey: [...alertsKey, { status, severity: search.severity, integration: search.integration, falconComplete: search.falconComplete, page }],
     queryFn: async () => {
       const res = await api.alerts.$get({
         query: {
           ...(status !== "any" && { status }),
           severity: search.severity,
           integration: search.integration,
+          falconComplete: search.falconComplete,
           page: String(page),
           pageSize: String(PAGE_SIZE),
         },
@@ -177,7 +191,7 @@ export function AlertQueuePage() {
   const [outcome, setOutcome] = useState<BulkOutcome | null>(null);
   const showing = search.alert ?? null;
   const setShowing = (alert: string | null) => setSearch({ alert: alert ?? undefined });
-  const filtered = status !== "new" || search.severity !== undefined || search.integration !== undefined;
+  const filtered = status !== "new" || search.severity !== undefined || search.integration !== undefined || search.falconComplete !== undefined;
   /**
    * Changes the filters, starting again from the first page; the last action's notice is about Alerts
    * that may no longer be shown, so it goes.
@@ -386,6 +400,14 @@ export function AlertQueuePage() {
             onChange={(integration) => filter({ integration })}
           />
         )}
+        <FilterSelect
+          label="Falcon Complete"
+          id="alert-falcon-complete"
+          value={search.falconComplete ?? "hide"}
+          options={FALCON_COMPLETE_CHOICES}
+          labels={falconCompleteLabel}
+          onChange={(next) => filter({ falconComplete: next === "hide" ? undefined : next })}
+        />
       </FilterBar>
       {outcome && <OutcomeNotice outcome={outcome} onReselect={reselect} onDismiss={() => setOutcome(null)} />}
       <OpenCaseFromAlertsDialog
@@ -567,6 +589,11 @@ export function AlertQueuePage() {
                   <TableCell className="pr-4">
                     <div className="flex flex-wrap items-center gap-1">
                       <Badge variant="outline">{alertStatusLabel[a.status]}</Badge>
+                      {a.falconComplete && (
+                        <Badge variant="secondary" title="Tagged falcon_complete in Falcon: handled by CrowdStrike's managed service">
+                          Falcon Complete
+                        </Badge>
+                      )}
                       {a.case && (
                         <CaseRef number={a.case.number} title={a.case.title} />
                       )}

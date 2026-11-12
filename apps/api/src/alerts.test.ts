@@ -133,6 +133,58 @@ describe("The Alert queue", () => {
   });
 });
 
+describe("Alerts handled by Falcon Complete", () => {
+  test("the queue hides Alerts tagged falcon_complete in Falcon unless asked to show them", async () => {
+    const a = await acme();
+    await a.detect("ldt:1", "Credential dumping attempt");
+    await a.detect("ldt:2", "PUP installer blocked");
+    await a.detect("ldt:3", "Suspicious script");
+    a.stream.emit("UserActivityAuditEvent", {
+      OperationName: "detection_update",
+      UserId: "falcon-complete",
+      UTCTimestamp: 1_800_000_000,
+      AuditKeyValues: [
+        { Key: "composite_id", ValueString: "ldt:1" },
+        { Key: "add_tag", ValueString: "falcon_complete" },
+      ],
+    });
+    a.stream.emit("UserActivityAuditEvent", {
+      OperationName: "detection_update",
+      UserId: "falcon-complete",
+      UTCTimestamp: 1_800_000_000,
+      AuditKeyValues: [
+        { Key: "composite_id", ValueString: "ldt:3" },
+        { Key: "add_tag", ValueString: "Falcon_Complete, triaged" },
+      ],
+    });
+    await a.stream.drained();
+    const shown = async (falconComplete?: "hide" | "show" | "only") => {
+      const body = await (await a.ana.api.alerts.$get({ query: { ...(falconComplete && { falconComplete }) } })).json();
+      if (!("alerts" in body)) throw new Error("Could not list Alerts");
+      return [body.alerts.map((x) => [x.externalId, x.falconComplete]), body.total];
+    };
+
+    expect(await shown()).toEqual([[["ldt:2", false]], 1]);
+    expect(await shown("hide")).toEqual([[["ldt:2", false]], 1]);
+    expect(await shown("show")).toEqual([
+      [
+        ["ldt:3", true],
+        ["ldt:2", false],
+        ["ldt:1", true],
+      ],
+      3,
+    ]);
+    expect(await shown("only")).toEqual([
+      [
+        ["ldt:3", true],
+        ["ldt:1", true],
+      ],
+      2,
+    ]);
+    expect((await a.ana.api.alerts.$get({ query: { falconComplete: "all" as "show" } })).status as number).toBe(400);
+  });
+});
+
 describe("Opening a Case from Alerts", () => {
   test("one Case opens from the selected Alerts, with the highest of their Severities, and they become Attached", async () => {
     const a = await acme();
@@ -590,6 +642,59 @@ describe("Changes made in Falcon", () => {
     a.t.clock.advance(LAST_EVENT_SIGNAL_MS);
     activity();
     await socket.next((m) => m.type === "alerts");
+  });
+
+  test("closing a New Alert in Falcon dismisses it, and reopening it there returns it to New", async () => {
+    const a = await acme();
+    await a.detect("ldt:1", "Credential dumping attempt");
+    const { id } = await a.alert("ldt:1");
+
+    await falconUpdate(a.stream, ["ldt:1"], { new_status: "closed" }, 1_800_000_000);
+    const closed = await a.detail(id);
+    expect(closed.status).toBe("dismissed");
+    expect(closed.dismissed).toMatchObject({ reason: "other", comment: "Closed in Falcon by jsmith@acme.example", by: null });
+    expect((await a.queue(a.ana, { status: "new" })).map((x) => x.externalId)).toEqual([]);
+    expect((await a.queue(a.ana, { status: "dismissed" })).map((x) => x.externalId)).toEqual(["ldt:1"]);
+
+    await falconUpdate(a.stream, ["ldt:1"], { new_status: "reopened" }, 1_800_000_100);
+    const reopened = await a.detail(id);
+    expect(reopened.status).toBe("new");
+    expect(reopened.dismissed).toBeNull();
+    expect(reopened.falcon.status).toBe("reopened");
+
+    const entries = (await orgAudit(a)).filter((e) => e.action === "alert.dismissed" || e.action === "alert.restored");
+    expect(entries.map((e) => [e.actor.type, e.action, e.target, e.before, e.after])).toEqual([
+      ["crowdstrike", "alert.restored", "Credential dumping attempt (ldt:1)", "Dismissed", "New"],
+      ["crowdstrike", "alert.dismissed", "Credential dumping attempt (ldt:1)", null, "Other: Closed in Falcon by jsmith@acme.example"],
+    ]);
+  });
+
+  test("an Alert dismissed in Argus after a change made in Falcon stays dismissed when that change arrives", async () => {
+    const a = await acme();
+    await a.detect("ldt:1", "Credential dumping attempt");
+    const { id } = await a.alert("ldt:1");
+    a.t.clock.set(new Date(1_800_000_200_000));
+    await a.dismiss(await a.select("ldt:1"), "benign");
+
+    // Made in Falcon before the dismissal, arriving after it.
+    await falconUpdate(a.stream, ["ldt:1"], { new_status: "in_progress" }, 1_800_000_100);
+    expect((await a.detail(id)).status).toBe("dismissed");
+
+    // Made after it: Falcon's reopening wins.
+    await falconUpdate(a.stream, ["ldt:1"], { new_status: "reopened" }, 1_800_000_300);
+    expect((await a.detail(id)).status).toBe("new");
+  });
+
+  test("closing an Alert already dismissed in Argus changes only Falcon's status, and nothing is written back", async () => {
+    const a = await acme();
+    await a.detect("ldt:1", "Credential dumping attempt");
+    await a.dismiss(await a.select("ldt:1"), "false_positive");
+    const [dismissed] = await a.queue(a.ana, { status: "dismissed" });
+
+    await falconUpdate(a.stream, ["ldt:1"], { new_status: "closed" }, 1_800_000_000);
+    const after = await a.detail(dismissed!.id);
+    expect(after.dismissed).toMatchObject({ reason: "false_positive" });
+    expect(after.falcon.status).toBe("closed");
   });
 
   test("a selection made before a change in Falcon is refused as changed", async () => {

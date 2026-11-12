@@ -26,7 +26,18 @@ import {
   unlinkAlertIndicators,
 } from "../observables/observables";
 import { publish } from "../realtime/signals";
-import { alertLabel, type AlertStatus, crowdstrikeActorName, falconAlertUrl, type DismissalReason, dismissalReasonLabel } from "./vocabulary";
+import {
+  alertLabel,
+  type AlertStatus,
+  closedInFalconComment,
+  crowdstrikeActorName,
+  FALCON_CLOSED,
+  FALCON_COMPLETE_TAG,
+  FALCON_OPEN_STATUSES,
+  falconAlertUrl,
+  type DismissalReason,
+  dismissalReasonLabel,
+} from "./vocabulary";
 import { queueTeamsPost, sendTeamsPosts } from "../teams/teams";
 
 /**
@@ -43,7 +54,13 @@ import { queueTeamsPost, sendTeamsPosts } from "../teams/teams";
  *
  * Changes made to an Alert in Falcon (its status, assignee and tags there) are mirrored onto it
  * (`applyFalconUpdate`), last write wins, and recorded as CrowdStrike's: in its Case's Audit Log
- * while it is on one, else in the Organization Audit Log. They don't change its Alert Status.
+ * while it is on one, else in the Organization Audit Log. Closing a New Alert in Falcon dismisses it
+ * (Dismissal Reason Other, "Closed in Falcon"), and reopening a dismissed one there returns it to New;
+ * an Attached Alert stays on its Case whatever Falcon's status, since its Case decides its outcome.
+ * Neither is written back to Falcon, which already has it.
+ *
+ * The queue hides Alerts tagged `falcon_complete` in Falcon (handled by CrowdStrike's managed service)
+ * unless the filter asks for them.
  * Comments made on it in Falcon are fetched when Falcon reports a change to it, when it is attached,
  * and when it or its Case is opened, and posted into its Case's Discussion (`crowdstrike/comment-sync.ts`).
  *
@@ -117,7 +134,19 @@ export class AlertNotFound extends Error {
   }
 }
 
-export type AlertFilter = { status?: AlertStatus; severity?: Severity; integrationId?: string; caseNumber?: number };
+/** `falconComplete`: whether Alerts tagged `falcon_complete` in Falcon are hidden (the default), shown with the rest, or the only ones shown. */
+export type AlertFilter = {
+  status?: AlertStatus;
+  severity?: Severity;
+  integrationId?: string;
+  caseNumber?: number;
+  falconComplete?: FalconCompleteFilter;
+};
+export const FALCON_COMPLETE_FILTERS = ["hide", "show", "only"] as const;
+export type FalconCompleteFilter = (typeof FALCON_COMPLETE_FILTERS)[number];
+
+/** Whether an Alert is tagged `falcon_complete` in Falcon, ignoring case. */
+const taggedFalconComplete = sql<boolean>`exists (select 1 from jsonb_array_elements_text(${alerts.falconTags}) as tag where lower(tag) = ${FALCON_COMPLETE_TAG})`;
 
 /**
  * A Case an Alert may belong with: the non-ignored Important Observables and Assets they share, and how the
@@ -221,7 +250,7 @@ export async function recordDetection(
 
 /** A Falcon change as an Audit Log entry: what changed, from what to what. */
 type FalconChange = {
-  action: "alert.falcon_status_changed" | "alert.falcon_assignee_changed" | "alert.falcon_tags_changed";
+  action: "alert.falcon_status_changed" | "alert.falcon_assignee_changed" | "alert.falcon_tags_changed" | "alert.dismissed" | "alert.restored";
   before: string | null;
   after: string | null;
 };
@@ -233,7 +262,9 @@ const tagList = (tags: readonly string[]) => (tags.length ? tags.join(", ") : nu
  * Alerts not yet received are skipped. Each of status, assignee and tags is applied only if the
  * change is no older than the one that last set it, so changes arriving out of order never
  * overwrite newer ones. Each change applied moves the Alert's version on and is recorded in the
- * Audit Log as CrowdStrike's. Every Alert it names is also marked for a comment fetch, since a
+ * Audit Log as CrowdStrike's. A status change also moves the Alert Status: closed dismisses a New
+ * Alert, and an open status returns one dismissed no later than the change to New; Attached Alerts
+ * keep theirs. Every Alert it names is also marked for a comment fetch, since a
  * comment added in Falcon may be all that changed. Call it in the transaction that stores the offset.
  */
 export async function applyFalconUpdate(tx: Tx, integration: { id: string; organizationId: string }, update: FalconUpdate, now: Date) {
@@ -244,6 +275,8 @@ export async function applyFalconUpdate(tx: Tx, integration: { id: string; organ
       title: alerts.title,
       version: alerts.version,
       caseId: alerts.caseId,
+      status: alerts.status,
+      dismissedAt: alerts.dismissedAt,
       falconStatus: alerts.falconStatus,
       falconStatusAt: alerts.falconStatusAt,
       falconAssignee: alerts.falconAssignee,
@@ -273,6 +306,19 @@ export async function applyFalconUpdate(tx: Tx, integration: { id: string; organ
       if (update.status !== row.falconStatus) {
         set.falconStatus = update.status;
         changes.push({ action: "alert.falcon_status_changed", before: row.falconStatus, after: update.status });
+        if (update.status === FALCON_CLOSED && row.status === "new") {
+          const comment = closedInFalconComment(update.user);
+          Object.assign(set, { status: "dismissed", dismissalReason: "other", dismissalComment: comment, dismissedById: null, dismissedAt: now });
+          changes.push({ action: "alert.dismissed", before: null, after: `${dismissalReasonLabel.other}: ${comment}` });
+        } else if (
+          FALCON_OPEN_STATUSES.includes(update.status) &&
+          row.status === "dismissed" &&
+          (row.dismissedAt === null || row.dismissedAt.getTime() <= update.at.getTime())
+        ) {
+          // Dismissed in Argus after this change was made in Falcon: the later dismissal stands.
+          Object.assign(set, { status: "new", dismissalReason: null, dismissalComment: null, dismissedById: null, dismissedAt: null });
+          changes.push({ action: "alert.restored", before: "Dismissed", after: "New" });
+        }
       }
     }
     if (update.assignee !== undefined && newer(row.falconAssigneeAt)) {
@@ -300,8 +346,8 @@ export async function applyFalconUpdate(tx: Tx, integration: { id: string; organ
     applied = true;
     const target = alertLabel(row);
     for (const change of changes) {
-      if (row.caseId) {
-        await recordCaseAudit(tx, { organizationId: integration.organizationId, caseId: row.caseId, occurredAt: now, actor, target, ...change });
+      if (row.caseId && (change.action === "alert.falcon_status_changed" || change.action === "alert.falcon_assignee_changed" || change.action === "alert.falcon_tags_changed")) {
+        await recordCaseAudit(tx, { organizationId: integration.organizationId, caseId: row.caseId, occurredAt: now, actor, target, ...change, action: change.action });
       } else {
         await recordOrgAudit(tx, { organizationId: integration.organizationId, occurredAt: now, actor, category: "alerts", target, ...change });
       }
@@ -574,6 +620,8 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
         filter.severity ? eq(alerts.severity, filter.severity) : undefined,
         filter.integrationId ? eq(alerts.integrationId, filter.integrationId) : undefined,
         caseId ? eq(alerts.caseId, caseId) : undefined,
+        (filter.falconComplete ?? "hide") === "hide" ? sql`not ${taggedFalconComplete}` : undefined,
+        filter.falconComplete === "only" ? taggedFalconComplete : undefined,
       );
       const [counted] = await db.select({ total: sql<number>`count(*)::int` }).from(alerts).where(matching);
       const total: number = counted?.total ?? 0;
@@ -595,6 +643,8 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
           integrationName: integrations.name,
           dismissalReason: alerts.dismissalReason,
           internal: alerts.internal,
+          /** Tagged `falcon_complete` in Falcon: handled by CrowdStrike's managed service. */
+          falconComplete: taggedFalconComplete,
           caseNumber: cases.number,
           caseTitle: cases.title,
         })

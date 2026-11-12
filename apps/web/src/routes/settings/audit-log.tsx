@@ -71,6 +71,7 @@ const actionLabels: Record<string, string> = {
   "workflow_run.linked": "Linked Workflow run to a Case:",
   "workflow_run.finished": "Workflow run ended, no Case:",
   "alert.dismissed": "Dismissed Alert",
+  "alert.restored": "Returned Alert to New",
   "alert.falcon_status_changed": "Changed Falcon status of Alert",
   "alert.falcon_assignee_changed": "Changed Falcon assignee of Alert",
   "alert.falcon_tags_changed": "Changed Falcon tags of Alert",
