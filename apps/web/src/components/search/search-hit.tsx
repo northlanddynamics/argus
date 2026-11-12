@@ -1,4 +1,4 @@
-import { ObservableMenu } from "@/components/observable-menu";
+import { ItemContext, type ItemReference, itemReference } from "@/components/item-context";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   AtSignIcon,
@@ -202,15 +202,16 @@ export function useOpenHit(guest: boolean) {
   };
 }
 
-/** An Observable result's value, for its right-click menu. */
-export const hitObservable = (hit: SearchHit) => (hit.kind === "observables" ? hit.item : null);
+/** An Observable or Asset result as a reference, for its hover card, Enrichment and right-click menu. */
+export const hitItem = (hit: SearchHit): ItemReference | null =>
+  hit.kind === "observables" ? itemReference("observable", hit.item) : hit.kind === "assets" ? itemReference("asset", hit.item) : null;
 
-/** A result as a link to where it opens; an Observable's has its right-click menu. */
+/** A result as a link to where it opens; an Observable's or Asset's has what `ItemContext` gives it. */
 export function SearchHitLink({ hit, guest, className, children }: { hit: SearchHit; guest: boolean; className?: string; children: ReactNode }) {
   const target = targetOf(hit, guest);
   const classes = cn("block rounded-md px-2 py-1.5 outline-none hover:bg-muted focus-visible:bg-muted", className);
   return (
-    <ObservableMenu observable={hitObservable(hit)}>
+    <ItemContext item={hitItem(hit)}>
       {target.to === "/alerts" ? (
         <Link to={target.to} search={target.search} className={classes}>
           {children}
@@ -220,6 +221,6 @@ export function SearchHitLink({ hit, guest, className, children }: { hit: Search
           {children}
         </Link>
       )}
-    </ObservableMenu>
+    </ItemContext>
   );
 }

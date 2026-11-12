@@ -10,7 +10,7 @@ import { Time } from "@/components/time";
 import { SeverityBadge } from "@/components/case-badges";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { FilterBar, FilterField, FilterSelect } from "@/components/filter-bar";
-import { AccountHoverCard } from "@/components/account-details";
+import { ItemContext } from "@/components/item-context";
 import { ItemLink } from "@/components/item-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -565,9 +565,11 @@ export function AlertQueuePage() {
                       {a.host === null ? (
                         <span className="font-sans text-muted-foreground">No host</span>
                       ) : a.hostAsset ? (
-                        <ItemLink kind="asset" id={a.hostAsset.id} className="hover:underline" aria-label={`Host ${a.host}`}>
-                          {a.host}
-                        </ItemLink>
+                        <ItemContext item={{ kind: "asset", id: a.hostAsset.id, type: "host", value: a.host }}>
+                          <ItemLink kind="asset" id={a.hostAsset.id} className="hover:underline" aria-label={`Host ${a.host}`}>
+                            {a.host}
+                          </ItemLink>
+                        </ItemContext>
                       ) : (
                         a.host
                       )}
@@ -575,11 +577,11 @@ export function AlertQueuePage() {
                     {a.userName && (
                       <div className="truncate text-muted-foreground" title={a.userName}>
                         {a.userAsset ? (
-                          <AccountHoverCard assetId={a.userAsset.id} account={a.userName}>
+                          <ItemContext item={{ kind: "asset", id: a.userAsset.id, type: "account", value: a.userName }}>
                             <ItemLink kind="asset" id={a.userAsset.id} className="hover:underline" aria-label={`Account ${a.userName}`}>
                               {a.userName}
                             </ItemLink>
-                          </AccountHoverCard>
+                          </ItemContext>
                         ) : (
                           a.userName
                         )}

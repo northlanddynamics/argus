@@ -3,6 +3,7 @@ import { ChevronRightIcon, ExternalLinkIcon, InfoIcon, RefreshCwIcon, TriangleAl
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { SourceSection } from "@/components/enrichment-parts";
+import { ItemContext } from "@/components/item-context";
 import { ItemLink } from "@/components/item-link";
 import { Time } from "@/components/time";
 import { Badge } from "@/components/ui/badge";
@@ -42,15 +43,21 @@ export function RangeLine({ reserved }: { reserved: { label: string; range: stri
   );
 }
 
-/** The host's name: a link to its Asset page when Argus holds it, with ↗ to the Falcon console. */
-function HostName({ h, className }: { h: IpHost; className?: string }) {
+/**
+ * The host's name: a link to its Asset page when Argus holds it, with ↗ to the Falcon console. In
+ * the panel the link has the host's hover card; in the IP's hover card it doesn't, as a card opens
+ * no card of its own.
+ */
+function HostName({ h, className, inCard = false }: { h: IpHost; className?: string; inCard?: boolean }) {
   const name = h.host?.hostname ?? h.deviceId;
   return (
     <span className={cn("flex min-w-0 items-center gap-1", className)}>
       {h.asset ? (
-        <ItemLink kind="asset" id={h.asset.id} className="min-w-0 truncate font-medium underline underline-offset-2 hover:text-muted-foreground" title="Open its page">
-          {name}
-        </ItemLink>
+        <ItemContext item={{ kind: "asset", id: h.asset.id, type: "host", value: name }} hoverCard={!inCard}>
+          <ItemLink kind="asset" id={h.asset.id} className="min-w-0 truncate font-medium underline underline-offset-2 hover:text-muted-foreground" title="Open its page">
+            {name}
+          </ItemLink>
+        </ItemContext>
       ) : (
         <span className="min-w-0 truncate font-medium">{name}</span>
       )}
@@ -93,7 +100,7 @@ function CardHost({ h, alone }: { h: IpHost; alone: boolean }) {
     return (
       <li className={cn("grid gap-0.5", stale(h) && "opacity-60")}>
         <span className="flex min-w-0 items-center gap-1.5">
-          <HostName h={h} className="flex-1" />
+          <HostName h={h} className="flex-1" inCard />
           <ContainmentBadge h={h} />
         </span>
         <span className="text-xs">
@@ -104,7 +111,7 @@ function CardHost({ h, alone }: { h: IpHost; alone: boolean }) {
   }
   return (
     <li className={cn("grid gap-0.5", stale(h) && "opacity-60")}>
-      <HostName h={h} />
+      <HostName h={h} inCard />
       <span className="text-xs">
         <Summary h={h} />
       </span>

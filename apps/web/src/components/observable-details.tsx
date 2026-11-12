@@ -24,16 +24,30 @@ const isShortcut = (e: KeyboardEvent) => e.key.toLowerCase() === "i" && !e.metaK
  * Marks an Observable's value as it is shown anywhere (a link to its page, a badge, plain text) as
  * one the Enrichment panel can show: it becomes part of the list the panel steps through with ↑ ↓,
  * is marked while the panel shows it (its table row takes the selected fill), and `I` on it opens
- * the panel. An IP also gets the IPinfo hover card, unless the panel already shows it. Any other
+ * the panel. An IP also gets the IPinfo hover card, unless the panel already shows it or `hoverCard`
+ * is false. Any other
  * type, `enabled` false, or a Guest, leaves it as it is. `children` must be one element that can
  * take props.
  */
-export function EnrichmentTarget({ type, value, enabled = true, children }: { type: ObservableType | string; value: string; enabled?: boolean; children: ReactElement }) {
+export function EnrichmentTarget({
+  type,
+  value,
+  enabled = true,
+  hoverCard = true,
+  children,
+}: {
+  type: ObservableType | string;
+  value: string;
+  enabled?: boolean;
+  /** False for a value already inside a hover card: it keeps the rest, but opens no card of its own. */
+  hoverCard?: boolean;
+  children: ReactElement;
+}) {
   const panel = useEnrichmentPanel();
   if (!enabled || !panel.available || !hasEnrichment(type)) return children;
   const key = enrichmentKey({ type, value });
   return (
-    <IpHoverCard ip={value} enabled={type === "ip"} held={panel.currentKey === key}>
+    <IpHoverCard ip={value} enabled={hoverCard && type === "ip"} held={panel.currentKey === key}>
       <Slot.Root
         data-enrichment={key}
         data-enrichment-current={panel.currentKey === key ? "" : undefined}

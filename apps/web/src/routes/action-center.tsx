@@ -7,7 +7,7 @@ import type { ObservableType } from "api/observables/vocabulary";
 import { ActionLogo } from "@/components/action-logo";
 import { CaseRef } from "@/components/case-ref";
 import { EnrichmentButton } from "@/components/observable-details";
-import { AccountHoverCard } from "@/components/account-details";
+import { ItemContext, itemReference } from "@/components/item-context";
 import { ItemLink } from "@/components/item-link";
 import { PageHeader } from "@/components/page-header";
 import { Time } from "@/components/time";
@@ -420,7 +420,11 @@ function LookupResults({ result }: { result: RunResult }) {
       {result.values.map((v) => (
         <li key={`${v.type}:${v.value}`} className="flex items-center justify-between gap-2">
           <span className="min-w-0">
-            <span className={cn("font-mono text-xs break-all", v.outcome === "skipped" && "text-muted-foreground line-through")}>{v.type ? shownObservable(v.type, v.value) : v.value}</span>
+            <ItemContext item={v.type && v.outcome !== "skipped" ? { kind: "observable", type: v.type, value: v.value } : null}>
+              <span tabIndex={v.type && v.outcome !== "skipped" ? 0 : undefined} className={cn("font-mono text-xs break-all outline-none focus-visible:ring-2 focus-visible:ring-ring/50", v.outcome === "skipped" && "text-muted-foreground line-through")}>
+                {v.type ? shownObservable(v.type, v.value) : v.value}
+              </span>
+            </ItemContext>
             {v.detail && <span className="block text-xs text-muted-foreground">{v.detail}</span>}
           </span>
           <span className="flex flex-none items-center gap-1">
@@ -673,15 +677,17 @@ function LogRow({
       </TableCell>
       <TableCell className="font-mono text-xs whitespace-nowrap">
         {e.observableId ? (
-          <ItemLink kind="observable" id={e.observableId}>
-            {valueText}
-          </ItemLink>
+          <ItemContext item={itemReference("observable", { id: e.observableId, ...e.value })}>
+            <ItemLink kind="observable" id={e.observableId}>
+              {valueText}
+            </ItemLink>
+          </ItemContext>
         ) : e.assetId ? (
-          <AccountHoverCard assetId={e.assetId} account={e.value.value} enabled={e.value.type === "account"}>
+          <ItemContext item={itemReference("asset", { id: e.assetId, ...e.value })}>
             <ItemLink kind="asset" id={e.assetId}>
               {valueText}
             </ItemLink>
-          </AccountHoverCard>
+          </ItemContext>
         ) : wr ? (
           <Button variant="link" onClick={onView}>
             <span className="font-sans">{e.value.value}</span>

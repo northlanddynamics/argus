@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
-import { EnrichmentButton, EnrichmentTarget, ObservableText } from "@/components/observable-details";
+import { EnrichmentButton, ObservableText } from "@/components/observable-details";
+import { ItemContext, itemReference } from "@/components/item-context";
 import { ObservableMenu } from "@/components/observable-menu";
 import { Link } from "@tanstack/react-router";
 import { useDeferredValue, useMemo, useState } from "react";
@@ -194,13 +195,11 @@ function ResultRow({ result: r, selected, onSelect }: { result: LookupResult; se
       <TableCell className="max-w-0 min-w-48 font-mono text-xs break-all whitespace-normal" title={r.value}>
         <span className="flex items-start gap-1">
           {r.known ? (
-            <EnrichmentTarget type={r.type} value={r.value}>
-              <ObservableMenu observable={r}>
-                <ItemLink kind="observable" id={r.known.id} className="min-w-0 hover:underline">
-                  {shown}
-                </ItemLink>
-              </ObservableMenu>
-            </EnrichmentTarget>
+            <ItemContext item={itemReference("observable", { id: r.known.id, type: r.type, value: r.value })}>
+              <ItemLink kind="observable" id={r.known.id} className="min-w-0 hover:underline">
+                {shown}
+              </ItemLink>
+            </ItemContext>
           ) : hasEnrichment(r.type) ? (
             <ObservableText type={r.type} value={r.value} className="min-w-0 no-underline">
               {shown}

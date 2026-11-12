@@ -10,6 +10,7 @@ import { Link, useParams, useRouteContext } from "@tanstack/react-router";
 import { BellOffIcon, CheckIcon, CopyIcon, ExternalLinkIcon, FingerprintIcon, LockIcon, MonitorIcon, RefreshCwIcon, SearchIcon, StarIcon, StarOffIcon, UserIcon } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
 import { CaseRef } from "@/components/case-ref";
+import { ItemContext } from "@/components/item-context";
 import { ItemLink } from "@/components/item-link";
 import { Time } from "@/components/time";
 import { SeverityBadge, StatusBadge } from "@/components/case-badges";
@@ -620,9 +621,11 @@ function AlertsCard({ item }: { item: ItemPage }) {
                   </Link>
                   {a.host &&
                     (a.hostAsset && a.hostAsset.id !== item.id ? (
-                      <ItemLink kind="asset" id={a.hostAsset.id} className="block font-mono text-xs text-muted-foreground hover:underline" aria-label={`Host ${a.host}`}>
-                        {a.host}
-                      </ItemLink>
+                      <ItemContext item={{ kind: "asset", id: a.hostAsset.id, type: "host", value: a.host }}>
+                        <ItemLink kind="asset" id={a.hostAsset.id} className="block w-fit font-mono text-xs text-muted-foreground hover:underline" aria-label={`Host ${a.host}`}>
+                          {a.host}
+                        </ItemLink>
+                      </ItemContext>
                     ) : (
                       <span className="block font-mono text-xs text-muted-foreground">{a.host}</span>
                     ))}

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { EnrichmentButton, EnrichmentTarget } from "@/components/observable-details";
-import { ObservableMenu } from "@/components/observable-menu";
+import { EnrichmentButton } from "@/components/observable-details";
+import { ItemContext, itemReference } from "@/components/item-context";
 import { type FormEvent, Fragment, type ReactNode, useState } from "react";
 import { toast } from "sonner";
 import { CaseRef } from "@/components/case-ref";
@@ -740,22 +740,22 @@ export function ResponseActionsCard({
                           {r.observable ? (
                             <>
                               <span className="flex items-start gap-1">
-                                <EnrichmentTarget type={r.observable.type} value={r.observable.value}>
-                                  <ObservableMenu observable={r.observable}>
-                                    <ItemLink kind="observable" id={r.observable.id} className="block min-w-0 font-mono text-xs break-all hover:underline" title={r.observable.value}>
-                                      {shownObservable(r.observable.type, r.observable.value)}
-                                    </ItemLink>
-                                  </ObservableMenu>
-                                </EnrichmentTarget>
+                                <ItemContext item={itemReference("observable", r.observable)}>
+                                  <ItemLink kind="observable" id={r.observable.id} className="block min-w-0 font-mono text-xs break-all hover:underline" title={r.observable.value}>
+                                    {shownObservable(r.observable.type, r.observable.value)}
+                                  </ItemLink>
+                                </ItemContext>
                                 <EnrichmentButton type={r.observable.type} value={r.observable.value} className="-my-1 ml-auto" />
                               </span>
                               <span className="text-xs text-muted-foreground">{observableTypeLabel[r.observable.type]}</span>
                             </>
                           ) : (
                             <>
-                              <ItemLink kind="asset" id={subject.id} className="block font-mono text-xs break-all hover:underline" title={subject.value}>
-                                {subject.value}
-                              </ItemLink>
+                              <ItemContext item={{ kind: "asset", id: subject.id, type: "host", value: subject.value }}>
+                                <ItemLink kind="asset" id={subject.id} className="block w-fit font-mono text-xs break-all hover:underline" title={subject.value}>
+                                  {subject.value}
+                                </ItemLink>
+                              </ItemContext>
                               <span className="text-xs break-all text-muted-foreground">
                                 Host · device <span className="font-mono">{r.target.value}</span>
                               </span>

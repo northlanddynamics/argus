@@ -4,8 +4,8 @@ import { ArrowRightIcon, SearchIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { KindFilter } from "@/components/search/kind-filter";
-import { ObservableMenu } from "@/components/observable-menu";
-import { hitObservable, SearchHitRow, useOpenHit } from "@/components/search/search-hit";
+import { ItemContext } from "@/components/item-context";
+import { hitItem, SearchHitRow, useOpenHit } from "@/components/search/search-hit";
 import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
@@ -144,7 +144,7 @@ export function SearchPalette() {
               {hits.length > 0 && (
                 <CommandGroup heading={hits.length > 1 ? "Top results" : undefined}>
                   {hits.map((hit) => (
-                    <ObservableMenu key={hitKey(hit)} observable={hitObservable(hit)}>
+                    <ItemContext key={hitKey(hit)} item={hitItem(hit)}>
                       <CommandItem
                         value={hitKey(hit)}
                         onSelect={() => {
@@ -155,7 +155,7 @@ export function SearchPalette() {
                       >
                         <SearchHitRow hit={hit} query={settled} showKind />
                       </CommandItem>
-                    </ObservableMenu>
+                    </ItemContext>
                   ))}
                 </CommandGroup>
               )}

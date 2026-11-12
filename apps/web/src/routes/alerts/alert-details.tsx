@@ -2,12 +2,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { XIcon } from "lucide-react";
 import { useEffect, useState } from "react";
-import { AccountHoverCard } from "@/components/account-details";
 import { AlertMenu } from "@/components/alert-menu";
 import { SeverityBadge, StatusBadge } from "@/components/case-badges";
 import { ItemLink } from "@/components/item-link";
-import { EnrichmentButton, EnrichmentTarget } from "@/components/observable-details";
-import { ObservableMenu } from "@/components/observable-menu";
+import { EnrichmentButton } from "@/components/observable-details";
+import { ItemContext, itemReference } from "@/components/item-context";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -79,6 +78,22 @@ function FalconComments({ comments: c }: { comments: AlertDetail["falconComments
   );
 }
 
+/**
+ * The host or account an Alert's detection names, as a link to its Asset page with the Asset's hover
+ * card when Argus holds it, as plain text when it doesn't, and "None" when there is none.
+ */
+function SubjectAsset({ type, value, asset }: { type: "host" | "account"; value: string | null; asset: { id: string } | null }) {
+  if (value === null) return "None";
+  if (!asset) return value;
+  return (
+    <ItemContext item={{ kind: "asset", id: asset.id, type, value }}>
+      <ItemLink kind="asset" id={asset.id} className="hover:underline" aria-label={`${type === "host" ? "Host" : "Account"} ${value}`}>
+        {value}
+      </ItemLink>
+    </ItemContext>
+  );
+}
+
 /** Observables or Assets an Alert names, as badges. */
 function Extracted({
   label,
@@ -87,7 +102,7 @@ function Extracted({
 }: {
   label: string;
   kind: ItemKind;
-  items: { id: string; text: string; title: string; type?: string; observable?: { type: ObservableType; value: string } }[];
+  items: { id: string; text: string; title: string; type: string; value: string }[];
 }) {
   return (
     <section aria-label={label} className="grid gap-1">
@@ -96,16 +111,14 @@ function Extracted({
         <div className="flex flex-wrap gap-1" data-enrichment-list>
           {items.map((item) => (
             <span key={item.id} className="group/row inline-flex max-w-full items-center">
-              <EnrichmentTarget type={item.observable?.type ?? ""} value={item.observable?.value ?? ""} enabled={!!item.observable}>
-                <ObservableMenu observable={item.observable}>
-                  <Badge variant="outline" className="max-w-full truncate font-mono" title={item.title} asChild>
-                    <ItemLink kind={kind} id={item.id}>
-                      {item.text}
-                    </ItemLink>
-                  </Badge>
-                </ObservableMenu>
-              </EnrichmentTarget>
-              {item.observable && <EnrichmentButton type={item.observable.type} value={item.observable.value} className="size-5" />}
+              <ItemContext item={itemReference(kind, item)}>
+                <Badge variant="outline" className="max-w-full truncate font-mono" title={item.title} asChild>
+                  <ItemLink kind={kind} id={item.id}>
+                    {item.text}
+                  </ItemLink>
+                </Badge>
+              </ItemContext>
+              {kind === "observable" && <EnrichmentButton type={item.type as ObservableType} value={item.value} className="size-5" />}
             </span>
           ))}
         </div>
@@ -164,9 +177,7 @@ function RelatedCases({ alert }: { alert: AlertDetail }) {
               </div>
               <div className="flex flex-wrap gap-1">
                 {c.shared.map((s) => (
-                  <AccountHoverCard key={`${s.kind}-${s.id}`} assetId={s.id} account={s.value} enabled={s.kind === "asset" && s.type === "account"}>
-                    <EnrichmentTarget type={s.type} value={s.value} enabled={s.kind === "observable"}>
-                    <ObservableMenu observable={s.kind === "observable" ? s : null}>
+                  <ItemContext key={`${s.kind}-${s.id}`} item={itemReference(s.kind, s)}>
                       <Badge variant="outline" className="max-w-full truncate font-mono" title={s.value} asChild>
                         <ItemLink kind={s.kind} id={s.id}>
                           {s.kind === "observable"
@@ -174,9 +185,7 @@ function RelatedCases({ alert }: { alert: AlertDetail }) {
                             : `${assetTypeLabel[s.type]} ${s.value}`}
                         </ItemLink>
                       </Badge>
-                    </ObservableMenu>
-                    </EnrichmentTarget>
-                  </AccountHoverCard>
+                  </ItemContext>
                 ))}
               </div>
               {c.attach ? (
@@ -283,9 +292,13 @@ export function AlertDetails({ id, onClose, onAct }: { id: string; onClose: () =
         {a.description && <p>{a.description}</p>}
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
           <dt className="text-muted-foreground">Host</dt>
-          <dd className={cn("min-w-0 break-all", a.host ? "font-mono text-xs leading-5" : "text-muted-foreground")}>{a.host ?? "None"}</dd>
+          <dd className={cn("min-w-0 break-all", a.host ? "font-mono text-xs leading-5" : "text-muted-foreground")}>
+            <SubjectAsset type="host" value={a.host} asset={a.hostAsset} />
+          </dd>
           <dt className="text-muted-foreground">User</dt>
-          <dd className={cn("min-w-0 break-all", a.userName ? "font-mono text-xs leading-5" : "text-muted-foreground")}>{a.userName ?? "None"}</dd>
+          <dd className={cn("min-w-0 break-all", a.userName ? "font-mono text-xs leading-5" : "text-muted-foreground")}>
+            <SubjectAsset type="account" value={a.userName} asset={a.userAsset} />
+          </dd>
           <dt className="text-muted-foreground">Received</dt>
           <dd>{exactTime(a.receivedAt)}</dd>
           {a.attached && (
@@ -335,12 +348,12 @@ export function AlertDetails({ id, onClose, onAct }: { id: string; onClose: () =
         <Extracted
           label="Extracted Observables"
           kind="observable"
-          items={a.indicators.observables.map((o) => ({ id: o.id, text: `${observableTypeLabel[o.type]} ${shownObservable(o.type, o.value)}`, title: o.value, type: o.type, observable: o }))}
+          items={a.indicators.observables.map((o) => ({ id: o.id, text: `${observableTypeLabel[o.type]} ${shownObservable(o.type, o.value)}`, title: o.value, type: o.type, value: o.value }))}
         />
         <Extracted
           label="Extracted Assets"
           kind="asset"
-          items={a.indicators.assets.map((x) => ({ id: x.id, text: `${assetTypeLabel[x.type]} ${x.value}`, title: x.value }))}
+          items={a.indicators.assets.map((x) => ({ id: x.id, text: `${assetTypeLabel[x.type]} ${x.value}`, title: x.value, type: x.type, value: x.value }))}
         />
         {a.indicators.observables.length + a.indicators.assets.length > 0 && (
           <p className="text-xs text-muted-foreground">

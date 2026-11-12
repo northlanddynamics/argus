@@ -840,3 +840,48 @@ test("an ambiguous account's hover card in the Alert queue shows its identities 
     await stop();
   }
 }, 60_000);
+
+test("a host's hover card shows what Falcon says about it, in the Alert queue and the Alert's Host", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  const falcon = fakeFalcon();
+  const tenant = falcon.tenant("falcon-client-0001");
+  const aid = "8f1c2b3a4d5e6f708192a3b4c5d6e7f8";
+  tenant.hosts.set(aid, fakeHost(aid, { containment: "contained" }));
+  const worker = createStreamWorker(t.deps, { connect: falcon.connect, workerId: "worker-1" });
+  t.onCleanup(worker.close);
+  const enricher = createHostEnricher(t.deps, { connect: falcon.connect });
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    await owner.api.integrations.$post({ json: { name: "CrowdStrike — Prod", cloud: "us-1", clientId: "falcon-client-0001", clientSecret: "falcon-secret" } });
+    await worker.tick();
+    tenant.emit("EppDetectionSummaryEvent", epp);
+    await tenant.drained();
+
+    const page = await browser.newPage();
+    await signIn(page, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
+    await page.getByRole("link", { name: "Alerts" }).click();
+    await page.getByRole("link", { name: "Host FIN-LT-0231" }).first().hover();
+    const card = page.getByTestId("host-hover-card");
+    await card.waitFor();
+    await enricher.tick();
+    await card.getByText("Contained").waitFor();
+    await card.getByText("Windows 11").waitFor();
+    await card.getByText("ACME\\d.howe").waitFor();
+    await card.getByText(aid).waitFor();
+
+    // In the Alert, its Host and the host among its Extracted Assets are the same link, with the same card.
+    await page.locator("button[data-alert-title]").first().click();
+    const links = page.getByRole("region", { name: "Alert" }).getByRole("link", { name: "Host FIN-LT-0231" });
+    await links.last().waitFor();
+    expect(await links.count()).toBe(2);
+    for (const link of [links.first(), links.last()]) {
+      await page.mouse.move(0, 0);
+      await card.waitFor({ state: "detached" });
+      await link.hover();
+      await card.getByText("Contained").waitFor();
+    }
+  } finally {
+    await stop();
+  }
+}, 60_000);
