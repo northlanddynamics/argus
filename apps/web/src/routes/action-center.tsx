@@ -7,6 +7,7 @@ import type { ObservableType } from "api/observables/vocabulary";
 import { ActionLogo } from "@/components/action-logo";
 import { CaseRef } from "@/components/case-ref";
 import { EnrichmentButton } from "@/components/observable-details";
+import { AccountHoverCard } from "@/components/account-details";
 import { ItemLink } from "@/components/item-link";
 import { PageHeader } from "@/components/page-header";
 import { Time } from "@/components/time";
@@ -676,9 +677,11 @@ function LogRow({
             {valueText}
           </ItemLink>
         ) : e.assetId ? (
-          <ItemLink kind="asset" id={e.assetId}>
-            {valueText}
-          </ItemLink>
+          <AccountHoverCard assetId={e.assetId} account={e.value.value} enabled={e.value.type === "account"}>
+            <ItemLink kind="asset" id={e.assetId}>
+              {valueText}
+            </ItemLink>
+          </AccountHoverCard>
         ) : wr ? (
           <Button variant="link" className="h-auto p-0 font-sans text-sm" onClick={onView}>
             {e.value.value}

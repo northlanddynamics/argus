@@ -3,6 +3,7 @@ import { ObservableMenu } from "@/components/observable-menu";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { SeverityBadge } from "@/components/case-badges";
+import { AccountHoverCard } from "@/components/account-details";
 import { ItemLink } from "@/components/item-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -111,13 +112,15 @@ function SharedItems({ items, more }: { items: readonly Shared[]; more: number }
   return (
     <div className="flex flex-wrap gap-1">
       {items.map((s) => (
-        <ObservableMenu key={`${s.kind}-${s.id}`} observable={s.kind === "observable" ? s : null}>
-          <Badge variant="outline" className="max-w-full truncate font-mono hover:bg-muted" title={s.value} asChild>
-            <ItemLink kind={s.kind} id={s.id}>
-              {s.kind === "observable" ? `${observableTypeLabel[s.type]} ${shownObservable(s.type, s.value)}` : `${assetTypeLabel[s.type]} ${s.value}`}
-            </ItemLink>
-          </Badge>
-        </ObservableMenu>
+        <AccountHoverCard key={`${s.kind}-${s.id}`} assetId={s.id} account={s.value} enabled={s.kind === "asset" && s.type === "account"}>
+          <ObservableMenu observable={s.kind === "observable" ? s : null}>
+            <Badge variant="outline" className="max-w-full truncate font-mono hover:bg-muted" title={s.value} asChild>
+              <ItemLink kind={s.kind} id={s.id}>
+                {s.kind === "observable" ? `${observableTypeLabel[s.type]} ${shownObservable(s.type, s.value)}` : `${assetTypeLabel[s.type]} ${s.value}`}
+              </ItemLink>
+            </Badge>
+          </ObservableMenu>
+        </AccountHoverCard>
       ))}
       {more > 0 && <span className="text-xs text-muted-foreground">+{more} more</span>}
     </div>
