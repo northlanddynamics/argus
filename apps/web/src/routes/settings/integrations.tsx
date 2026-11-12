@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { PageHeader } from "@/components/page-header";
 import { Time } from "@/components/time";
-import { type FormEvent, type ReactNode, useState } from "react";
+import { type FormEvent, type ReactNode, useId, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -16,18 +17,20 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Switch } from "@/components/ui/switch";
-import { ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus } from "lucide-react";
 import { ago, FALCON_CLOUDS, type FalconCloud, falconCloudLabel, healthWord, type IntegrationView, integrationsKey, integrationsQuery } from "@/lib/alerts";
 import { api, errorMessage } from "@/lib/api";
 import { useLiveStatus } from "@/lib/live";
+import { FALCON_CONSOLES } from "api/alerts/vocabulary";
 import { type Provider, providerLabel } from "api/integrations/vocabulary";
 import { SEVERITIES, type Severity, severityLabel } from "api/cases/vocabulary";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -35,6 +38,35 @@ import { FALCON_IOC_PLATFORMS, type FalconIocDefaults, type FalconIocPlatform, f
 
 /** The Amber Notice treatment (DESIGN.md): the one warning style. */
 const notice = "border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80";
+
+/** A section of an Integration's card, set off from the one above by a hairline. */
+const section = "grid gap-2 border-t pt-4";
+/** A section's heading, under the card's `h2`. */
+const sectionHeading = "text-sm font-semibold";
+
+/**
+ * The Falcon API scopes Argus can use, each with what it is for. The Add dialog lists them all and
+ * each switch names its own, so an Admin grants them once, up front.
+ */
+const FALCON_SCOPE = {
+  stream: "Event Streams: Read",
+  hosts: "Hosts: Read",
+  identities: "Identity Protection Entities: Read",
+  writeBack: "Alerts: Write",
+  iocs: "IOC Management: Write",
+  containment: "Hosts: Write",
+  workflows: "Workflow: Read and Workflow: Write",
+} as const;
+
+const FALCON_SCOPES: { scope: string; use: string; required?: boolean }[] = [
+  { scope: FALCON_SCOPE.stream, use: "receiving detections as Alerts", required: true },
+  { scope: FALCON_SCOPE.hosts, use: "hosts' Enrichment" },
+  { scope: FALCON_SCOPE.identities, use: "accounts' Enrichment" },
+  { scope: FALCON_SCOPE.writeBack, use: "Write back to Falcon" },
+  { scope: FALCON_SCOPE.iocs, use: "Response Actions (custom IOCs)" },
+  { scope: FALCON_SCOPE.containment, use: "Host containment" },
+  { scope: FALCON_SCOPE.workflows, use: "Workflows" },
+];
 
 /** Throws the API's error message unless `res` is OK. */
 async function ok(res: Response, fallback: string) {
@@ -47,24 +79,37 @@ const until = (iso: string) => {
   return minutes <= 0 ? "due" : `in ${minutes} min`;
 };
 
+/** "Low", "Low and Informational", "Medium, Low and Informational". */
+const listed = (items: string[]) => (items.length < 2 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`);
+
+/** "1 Alert change", "3 Alert changes". */
+const counted = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/** What each Provider is for, said in the Add menu. */
+const providerUse: Record<Provider, string> = {
+  crowdstrike: "Falcon detections arrive as Alerts",
+  mimecast: "Block email senders and domains",
+  umbrella: "Check domains and add them to destination lists",
+  ipinfo: "See where IP addresses are and who runs them",
+};
+
 /** Settings · Integrations: the Organization's CrowdStrike, Mimecast, Cisco Umbrella and IPinfo Integrations and how they are doing. */
 export function IntegrationsPage() {
   const integrations = useQuery(integrationsQuery);
   // Health and the last event refresh live.
   useLiveStatus();
+  // One Add dialog, opened from the menu or the empty state. The Provider outlives `open`, so it stays put while the dialog closes.
+  const [adding, setAdding] = useState<{ provider: Provider; open: boolean }>({ provider: "crowdstrike", open: false });
+  const add = (provider: Provider) => setAdding({ provider, open: true });
+  // IPs are looked up through one IPinfo Integration (ADR 0010).
+  const hasIpinfo = integrations.data?.some((i) => i.provider === "ipinfo") ?? false;
   return (
     <>
-      <PageHeader
-        title="Integrations"
-        actions={
-          <>
-            {/* IPs are looked up through one IPinfo Integration (ADR 0010). */}
-            {integrations.data && !integrations.data.some((i) => i.provider === "ipinfo") && <AddIntegrationDialog provider="ipinfo" />}
-            <AddIntegrationDialog provider="umbrella" />
-            <AddIntegrationDialog provider="mimecast" />
-            <AddIntegrationDialog provider="crowdstrike" />
-          </>
-        }
+      <PageHeader title="Integrations" actions={<AddIntegrationMenu hasIpinfo={hasIpinfo} disabled={!integrations.data} onAdd={add} />} />
+      <AddIntegrationDialog
+        provider={adding.provider}
+        open={adding.open}
+        onOpenChange={(open) => setAdding((a) => ({ ...a, open }))}
       />
       {integrations.isPending && <Skeleton className="h-48 w-full rounded-xl" />}
       {integrations.isError && (
@@ -80,15 +125,46 @@ export function IntegrationsPage() {
       {integrations.data?.map((i) => <IntegrationCard key={i.id} integration={i} />)}
       {integrations.data?.length === 0 && (
         <Card>
-          <CardContent className="text-sm text-muted-foreground">
-            No Integrations yet. Add a CrowdStrike Integration to receive Falcon detections as Alerts, a Mimecast Integration to block
-            email senders, Cisco Umbrella to check and add domains to its destination lists, or IPinfo to see where IP addresses are and
-            who runs them.
+          <CardContent className="grid justify-items-start gap-3">
+            <p className="max-w-prose text-sm text-muted-foreground">
+              No Integrations yet. Start with CrowdStrike, so Falcon detections arrive as Alerts. Mimecast and Cisco Umbrella let Members
+              block senders and domains from a Case, and IPinfo shows where IP addresses are and who runs them.
+            </p>
+            <Button variant="outline" onClick={() => add("crowdstrike")}>
+              Add CrowdStrike Integration
+            </Button>
           </CardContent>
         </Card>
       )}
       <TeamsChannelCard />
     </>
+  );
+}
+
+/** The page's one Add action: a menu of Providers, CrowdStrike first as the source of Alerts. */
+function AddIntegrationMenu({ hasIpinfo, disabled, onAdd }: { hasIpinfo: boolean; disabled: boolean; onAdd: (provider: Provider) => void }) {
+  const providers: Provider[] = ["crowdstrike", "mimecast", "umbrella", "ipinfo"];
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button disabled={disabled}>
+          <Plus aria-hidden />
+          Add Integration
+          <ChevronDown aria-hidden />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-72">
+        {providers.map((p) => {
+          const taken = p === "ipinfo" && hasIpinfo;
+          return (
+            <DropdownMenuItem key={p} disabled={taken} onSelect={() => onAdd(p)} className="grid items-start gap-0.5">
+              <span className="font-medium">{providerLabel[p]}</span>
+              <span className="text-xs text-muted-foreground">{taken ? "Already added: an Organization has one" : providerUse[p]}</span>
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -134,15 +210,17 @@ function TeamsChannelCard() {
   return (
     <Card id="teams" data-testid="teams-channel">
       <CardHeader className="border-b">
-        <div className="flex items-center gap-3 self-center">
-          <CardTitle>Teams channel</CardTitle>
-          <Badge variant={configured ? "default" : "outline"}>{configured ? "Active" : "Not set"}</Badge>
-        </div>
-        {configured && (
-          <CardAction>
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <CardTitle>
+              <h2>Teams channel</h2>
+            </CardTitle>
+            <Badge variant={configured ? "default" : "outline"}>{configured ? "Webhook set" : "Not set"}</Badge>
+          </div>
+          {configured && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button variant="outline" size="sm" disabled={remove.isPending}>
+                <Button variant="destructive" size="sm" disabled={remove.isPending}>
                   Remove
                 </Button>
               </AlertDialogTrigger>
@@ -162,8 +240,8 @@ function TeamsChannelCard() {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
-          </CardAction>
-        )}
+          )}
+        </div>
       </CardHeader>
       <CardContent>
         {channel.isError && (
@@ -183,17 +261,18 @@ function TeamsChannelCard() {
               onChange={(e) => {
                 setWebhookUrl(e.target.value);
                 setTested(false);
+                save.reset();
               }}
             />
             {channel.data?.webhook && (
               <p className="text-sm text-muted-foreground">
-                In use: <span className="font-mono">{channel.data.webhook.hint}</span>, set by {channel.data.webhook.updatedBy.name} on{" "}
-                {new Date(channel.data.webhook.updatedAt).toLocaleDateString()}
+                In use: <span className="font-mono">{channel.data.webhook.hint}</span>, set by {channel.data.webhook.updatedBy.name}{" "}
+                <Time iso={channel.data.webhook.updatedAt} />
               </p>
             )}
           </div>
           <div className="grid gap-1 text-sm">
-            <span className="font-semibold">Posts to the channel when</span>
+            <h3 className={sectionHeading}>Posts to the channel when</h3>
             <ul className="list-disc pl-5">
               <li>a new Case is opened as Critical</li>
               <li>a Case's Severity is raised to Critical</li>
@@ -210,13 +289,14 @@ function TeamsChannelCard() {
               <AlertDescription>Test post sent. Check the channel.</AlertDescription>
             </Alert>
           )}
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button type="button" variant="outline" disabled={test.isPending || (!webhookUrl && !configured)} onClick={() => test.mutate()}>
               Send test post
             </Button>
             <Button type="submit" disabled={save.isPending || !webhookUrl}>
               Save
             </Button>
+            <Saved show={save.isSuccess}>Webhook saved. New posts go to this channel.</Saved>
           </div>
         </form>
       </CardContent>
@@ -224,60 +304,80 @@ function TeamsChannelCard() {
   );
 }
 
+/** Says, politely to screen readers, that something just saved; empty otherwise, so the live region stays in place. */
+function Saved({ show, children }: { show: boolean; children: ReactNode }) {
+  return (
+    <p role="status" className="text-sm text-muted-foreground">
+      {show ? children : null}
+    </p>
+  );
+}
+
+/** A switch's mutation: puts `enabled`, then refreshes the Integrations. */
+function useSwitch(put: (enabled: boolean) => Promise<Response>, fallback: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (enabled: boolean) => ok(await put(enabled), fallback),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: integrationsKey }),
+  });
+}
+
 function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
   const queryClient = useQueryClient();
+  const param = { id: i.id };
   const setPaused = useMutation({
     mutationFn: async (paused: boolean) => {
-      const param = { id: i.id };
       const res = paused ? await api.integrations[":id"].pause.$post({ param }) : await api.integrations[":id"].resume.$post({ param });
       await ok(res, paused ? "Could not pause the Integration" : "Could not resume the Integration");
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: integrationsKey }),
   });
-  const setWriteBack = useMutation({
-    mutationFn: async (enabled: boolean) =>
-      ok(await api.integrations[":id"]["write-back"].$put({ param: { id: i.id }, json: { enabled } }), "Could not change write-back"),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: integrationsKey }),
-  });
-  const setResponseActions = useMutation({
-    mutationFn: async (enabled: boolean) =>
-      ok(await api.integrations[":id"]["response-actions"].$put({ param: { id: i.id }, json: { enabled } }), "Could not change Response Actions"),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: integrationsKey }),
-  });
-  const setHostContainment = useMutation({
-    mutationFn: async (enabled: boolean) =>
-      ok(await api.integrations[":id"]["host-containment"].$put({ param: { id: i.id }, json: { enabled } }), "Could not change Host containment"),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: integrationsKey }),
-  });
-  const setWorkflows = useMutation({
-    mutationFn: async (enabled: boolean) => ok(await api.integrations[":id"].workflows.$put({ param: { id: i.id }, json: { enabled } }), "Could not change Workflows"),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: integrationsKey }),
-  });
+  const setWriteBack = useSwitch(
+    async (enabled) => api.integrations[":id"]["write-back"].$put({ param, json: { enabled } }),
+    "Could not change write-back",
+  );
+  const setResponseActions = useSwitch(
+    async (enabled) => api.integrations[":id"]["response-actions"].$put({ param, json: { enabled } }),
+    "Could not change Response Actions",
+  );
+  const setHostContainment = useSwitch(
+    async (enabled) => api.integrations[":id"]["host-containment"].$put({ param, json: { enabled } }),
+    "Could not change Host containment",
+  );
+  const setWorkflows = useSwitch(async (enabled) => api.integrations[":id"].workflows.$put({ param, json: { enabled } }), "Could not change Workflows");
   const remove = useMutation({
-    mutationFn: async () => ok(await api.integrations[":id"].$delete({ param: { id: i.id } }), "Could not delete the Integration"),
+    mutationFn: async () => ok(await api.integrations[":id"].$delete({ param }), "Could not delete the Integration"),
     onSettled: () => queryClient.invalidateQueries({ queryKey: integrationsKey }),
   });
   const { receivesAlerts, writesBack, responseActions } = i.capabilities;
+  const falcon = i.provider === "crowdstrike";
   const word = healthWord(i);
+  // Only Admins see the credentials, and only Admins reach Settings; this only guards against a stale view.
+  const locked = !i.credentials;
+  const unsent = i.writeBacks.pending + i.writeBacks.retrying;
   return (
     <Card data-testid={`integration-${i.name}`}>
       <CardHeader className="border-b">
-        <div className="flex items-center gap-3 self-center">
-          <CardTitle>{i.name}</CardTitle>
-          <Badge variant={word === "Connected" ? "default" : "outline"} className={word === "Error" ? "border-destructive text-destructive" : undefined}>
-            {word}
-          </Badge>
-          {writesBack && !i.writeBack && <Badge variant="outline">Alert write-back off</Badge>}
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <CardTitle>
+              <h2>{i.name}</h2>
+            </CardTitle>
+            <Badge variant={word === "Connected" ? "default" : "outline"} className={word === "Error" ? "border-destructive text-destructive" : undefined}>
+              {word}
+            </Badge>
+            {writesBack && !i.writeBack && <Badge variant="outline">Alert write-back off</Badge>}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <PauseButton integration={i} pending={setPaused.isPending} onPause={(paused) => setPaused.mutate(paused)} />
+            <RotateCredentialsDialog integration={i} />
+            <DeleteIntegrationDialog integration={i} remove={remove} />
+          </div>
         </div>
-        <CardAction className="flex gap-2">
-          <Button variant="outline" size="sm" disabled={setPaused.isPending} onClick={() => setPaused.mutate(!i.paused)}>
-            {i.paused ? "Resume" : "Pause"}
-          </Button>
-          <RotateCredentialsDialog integration={i} />
-          <DeleteIntegrationDialog integration={i} onDelete={() => remove.mutate()} pending={remove.isPending} />
-        </CardAction>
       </CardHeader>
       <CardContent className="grid gap-4">
+        {/* What needs attention comes first. */}
+        <IntegrationProblems integration={i} pauseError={setPaused.error} />
         {receivesAlerts && <StreamSummary integration={i} />}
         {!receivesAlerts && !i.paused && (
           <p className="text-sm text-muted-foreground">
@@ -290,206 +390,280 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
                 : "Checking the credentials…"}
           </p>
         )}
-        {i.healthDetail && !i.paused && (
-          <Alert variant={i.health === "error" ? "destructive" : "default"}>
-            <AlertDescription>{i.healthDetail}</AlertDescription>
-          </Alert>
-        )}
-        {i.hostEnrichmentError && !i.paused && (
-          <Alert>
-            <AlertDescription>{i.hostEnrichmentError}. Grant it to the API client to see hosts' Enrichment; nothing else is affected.</AlertDescription>
-          </Alert>
-        )}
-        {i.identityEnrichmentError && !i.paused && (
-          <Alert>
-            <AlertDescription>{i.identityEnrichmentError}. Grant it to see accounts' Enrichment; nothing else is affected.</AlertDescription>
-          </Alert>
-        )}
-        {i.lastGap && (
-          <Alert className="border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80">
-            <AlertTitle>Gap in the stream, noticed {new Date(i.lastGap.at).toLocaleString()}</AlertTitle>
-            <AlertDescription>
-              Falcon could no longer replay events {i.lastGap.fromOffset.toLocaleString()}–{i.lastGap.toOffset.toLocaleString()}, so
-              Alerts raised then may be missing.
-            </AlertDescription>
-          </Alert>
-        )}
-        {setPaused.error && (
-          <Alert variant="destructive">
-            <AlertDescription>{setPaused.error.message}</AlertDescription>
-          </Alert>
-        )}
-        {remove.error && (
-          <Alert variant="destructive">
-            <AlertDescription>{remove.error.message}</AlertDescription>
-          </Alert>
-        )}
-        {writesBack && (
-          <ConfirmOn
-            title={`Write Alert changes back to ${i.name}?`}
-            body={
-              <>
-                From now on, changing an Alert's Status or Assignee, commenting on it or closing its Case is sent to CrowdStrike, where your
-                Falcon console shows it. The API client needs Alerts write scope; without it, write-backs fail and show here.
-              </>
-            }
-            confirm="Turn on write-back"
-            onConfirm={() => setWriteBack.mutate(true)}
-          >
-            {(ask) => (
-              <WriteBackSetting
-                id={`write-back-${i.id}`}
-                checked={setWriteBack.isPending ? setWriteBack.variables : i.writeBack}
-                // Only Admins (who see the credentials) may change it.
-                disabled={!i.credentials || setWriteBack.isPending}
-                lockedReason={!i.credentials ? "Only Admins can change this." : undefined}
-                onCheckedChange={(enabled) => (enabled ? ask() : setWriteBack.mutate(false))}
-              />
-            )}
-          </ConfirmOn>
-        )}
-        {setWriteBack.error && (
-          <Alert variant="destructive">
-            <AlertDescription>{setWriteBack.error.message}</AlertDescription>
-          </Alert>
-        )}
-        {responseActions && (
-          <ConfirmOn
-            title={`Allow Response Actions through ${i.name}?`}
-            body={
-              i.provider === "crowdstrike" ? (
-                <>The API client needs IOC Management write scope; without it, sends fail on the Case with a 403.</>
-              ) : i.provider === "umbrella" ? (
-                <>
-                  Members can then add domains linked to a Case to the destination list chosen below. The API key needs the Policies ·
-                  Destination Lists write scope; without it, adds fail on the Case.
-                </>
-              ) : (
-                <>The API application's role needs Gateway · Policies · Edit; without it, blocks fail on the Case.</>
-              )
-            }
-            confirm="Allow Response Actions"
-            onConfirm={() => setResponseActions.mutate(true)}
-          >
-            {(ask) => (
-              <ResponseActionsSetting
-                id={`response-actions-${i.id}`}
-                provider={i.provider}
-                checked={setResponseActions.isPending ? setResponseActions.variables : i.responseActions}
-                disabled={!i.credentials || setResponseActions.isPending}
-                lockedReason={!i.credentials ? "Only Admins can change this." : undefined}
-                onCheckedChange={(enabled) => (enabled ? ask() : setResponseActions.mutate(false))}
-              />
-            )}
-          </ConfirmOn>
-        )}
-        {setResponseActions.error && (
-          <Alert variant="destructive">
-            <AlertDescription>{setResponseActions.error.message}</AlertDescription>
-          </Alert>
-        )}
-        {i.provider === "crowdstrike" && (
-          <ConfirmOn
-            title={`Allow containing hosts through ${i.name}?`}
-            body={
-              <>
-                Any Member who can work a Case can then contain a host linked to it, cutting it off from the network except for Falcon. Each
-                containment is confirmed with the host's details first. The API client needs Hosts: Write; without it, containment fails on
-                the Case.
-              </>
-            }
-            confirm="Allow Host containment"
-            onConfirm={() => setHostContainment.mutate(true)}
-          >
-            {(ask) => (
-              <HostContainmentSetting
-                id={`host-containment-${i.id}`}
-                checked={setHostContainment.isPending ? setHostContainment.variables : i.hostContainment}
-                disabled={!i.credentials || setHostContainment.isPending}
-                lockedReason={!i.credentials ? "Only Admins can change this." : undefined}
-                onCheckedChange={(enabled) => (enabled ? ask() : setHostContainment.mutate(false))}
-              />
-            )}
-          </ConfirmOn>
-        )}
-        {setHostContainment.error && (
-          <Alert variant="destructive">
-            <AlertDescription>{setHostContainment.error.message}</AlertDescription>
-          </Alert>
-        )}
-        {i.provider === "crowdstrike" && (
-          <ConfirmOn
-            title={`Allow running Workflows through ${i.name}?`}
-            body={
-              <>
-                Any Member can then run this tenant's on-demand Falcon Fusion SOAR workflows from the Action Center, with or without a Case.
-                A workflow does whatever it was built to do in Falcon and beyond, and can't be undone from Argus. The API client needs
-                Workflow: Write; without it, runs fail in the Action Log.
-              </>
-            }
-            confirm="Allow Workflows"
-            onConfirm={() => setWorkflows.mutate(true)}
-          >
-            {(ask) => (
-              <WorkflowsSetting
-                id={`workflows-${i.id}`}
-                discovery={i.workflowDiscovery}
-                checked={setWorkflows.isPending ? setWorkflows.variables : i.workflows}
-                disabled={!i.credentials || setWorkflows.isPending}
-                lockedReason={!i.credentials ? "Only Admins can change this." : undefined}
-                onCheckedChange={(enabled) => (enabled ? ask() : setWorkflows.mutate(false))}
-              />
-            )}
-          </ConfirmOn>
-        )}
-        {setWorkflows.error && (
-          <Alert variant="destructive">
-            <AlertDescription>{setWorkflows.error.message}</AlertDescription>
-          </Alert>
+        {(writesBack || responseActions) && (
+          <section className={section} aria-labelledby={`allowed-${i.id}`}>
+            <h3 id={`allowed-${i.id}`} className={sectionHeading}>
+              What Argus may do in {providerLabel[i.provider]}
+            </h3>
+            <div className="grid gap-4">
+              {writesBack && (
+                <GuardedSwitch
+                  id={`write-back-${i.id}`}
+                  label="Write back to Falcon"
+                  description="Send Alert Status, Assignee, comments and Case closure to CrowdStrike."
+                  scope={FALCON_SCOPE.writeBack}
+                  checked={setWriteBack.isPending ? setWriteBack.variables : i.writeBack}
+                  disabled={locked || setWriteBack.isPending}
+                  error={setWriteBack.error}
+                  onChange={(enabled) => setWriteBack.mutate(enabled)}
+                  confirmOn={{
+                    title: `Write Alert changes back to ${i.name}?`,
+                    body: (
+                      <>
+                        From now on, changing an Alert's Status or Assignee, commenting on it or closing its Case is sent to CrowdStrike, where your
+                        Falcon console shows it. The API client needs {FALCON_SCOPE.writeBack}; without it, write-backs fail and show here.
+                      </>
+                    ),
+                    confirm: "Turn on write-back",
+                  }}
+                  // Turning it off cancels what is still waiting to be sent: say so, with the count.
+                  confirmOff={
+                    unsent > 0
+                      ? {
+                          title: `Turn off write-back to ${i.name}?`,
+                          body: (
+                            <>
+                              {counted(unsent, "Alert change")} waiting to be sent to Falcon {unsent === 1 ? "is" : "are"} cancelled and never sent. Argus
+                              then only reads from {i.name}.
+                            </>
+                          ),
+                          confirm: "Turn off and cancel",
+                        }
+                      : undefined
+                  }
+                />
+              )}
+              {responseActions && (
+                <GuardedSwitch
+                  id={`response-actions-${i.id}`}
+                  label="Response Actions"
+                  description={
+                    falcon
+                      ? "Add custom IOCs to Falcon from a Case."
+                      : i.provider === "umbrella"
+                        ? "Add domains to a destination list in Cisco Umbrella from a Case."
+                        : `Block email senders and domains in ${providerLabel[i.provider]} from a Case.`
+                  }
+                  scope={falcon ? FALCON_SCOPE.iocs : i.provider === "umbrella" ? "Policies · Destination Lists, write" : "Gateway · Policies · Edit"}
+                  checked={setResponseActions.isPending ? setResponseActions.variables : i.responseActions}
+                  disabled={locked || setResponseActions.isPending}
+                  error={setResponseActions.error}
+                  onChange={(enabled) => setResponseActions.mutate(enabled)}
+                  confirmOn={{
+                    title: `Allow Response Actions through ${i.name}?`,
+                    body: falcon ? (
+                      <>
+                        Members can then add custom IOCs to Falcon from a Case. The API client needs {FALCON_SCOPE.iocs}; without it, sends fail on
+                        the Case with a 403.
+                      </>
+                    ) : i.provider === "umbrella" ? (
+                      <>
+                        Members can then add domains linked to a Case to the destination list chosen below. The API key needs the Policies ·
+                        Destination Lists write scope; without it, adds fail on the Case.
+                      </>
+                    ) : (
+                      <>
+                        Members can then block email senders and domains from a Case. The API application's role needs Gateway · Policies · Edit;
+                        without it, blocks fail on the Case.
+                      </>
+                    ),
+                    confirm: "Allow Response Actions",
+                  }}
+                />
+              )}
+              {falcon && (
+                <GuardedSwitch
+                  id={`host-containment-${i.id}`}
+                  label="Host containment"
+                  description="Contain a host in Falcon from a Case. Containment is a Response Action allowed on its own, apart from IOCs."
+                  scope={FALCON_SCOPE.containment}
+                  checked={setHostContainment.isPending ? setHostContainment.variables : i.hostContainment}
+                  disabled={locked || setHostContainment.isPending}
+                  error={setHostContainment.error}
+                  onChange={(enabled) => setHostContainment.mutate(enabled)}
+                  confirmOn={{
+                    title: `Allow containing hosts through ${i.name}?`,
+                    body: (
+                      <>
+                        Any Member who can work a Case can then contain a host linked to it, cutting it off from the network except for Falcon.
+                        Each containment is confirmed with the host's details first. The API client needs {FALCON_SCOPE.containment}; without it,
+                        containment fails on the Case.
+                      </>
+                    ),
+                    confirm: "Allow Host containment",
+                  }}
+                />
+              )}
+              {falcon && (
+                <GuardedSwitch
+                  id={`workflows-${i.id}`}
+                  label="Workflows"
+                  description="Run on-demand Falcon Fusion SOAR workflows from the Action Center, and follow each to its outcome."
+                  scope={FALCON_SCOPE.workflows}
+                  status={
+                    i.workflowDiscovery &&
+                    (i.workflowDiscovery.checkedAt
+                      ? `${counted(i.workflowDiscovery.count, "workflow")} discovered ${ago(i.workflowDiscovery.checkedAt)}`
+                      : "Discovering workflows…")
+                  }
+                  problem={i.workflowDiscovery?.error ?? undefined}
+                  checked={setWorkflows.isPending ? setWorkflows.variables : i.workflows}
+                  disabled={locked || setWorkflows.isPending}
+                  error={setWorkflows.error}
+                  onChange={(enabled) => setWorkflows.mutate(enabled)}
+                  confirmOn={{
+                    title: `Allow running Workflows through ${i.name}?`,
+                    body: (
+                      <>
+                        Any Member can then run this tenant's on-demand Falcon Fusion SOAR workflows from the Action Center, with or without a Case.
+                        A workflow does whatever it was built to do in Falcon and beyond, and can't be undone from Argus. The API client needs
+                        Workflow: Write; without it, runs fail in the Action Log.
+                      </>
+                    ),
+                    confirm: "Allow Workflows",
+                  }}
+                />
+              )}
+            </div>
+          </section>
         )}
         {i.provider === "umbrella" && <DestinationListSetting integration={i} />}
-        {receivesAlerts && (
-          // Keyed by what is saved, so a change saved elsewhere replaces the form's.
-          <IgnoredSeverities key={i.ignoredSeverities.join()} integration={i} />
-        )}
-        {responseActions && (
-          // Keyed by what is saved, so a change saved elsewhere replaces the form's.
-          <ResponseActionDefaults key={JSON.stringify(i.responseActionDefaults)} integration={i} />
-        )}
+        {receivesAlerts && <IgnoredSeverities integration={i} />}
+        {responseActions && <ResponseActionDefaults integration={i} />}
         {writesBack && <WriteBacks counts={i.writeBacks} />}
-        {responseActions && (i.responseActions || hasAny(i.responseActionCounts)) && (
-          <ResponseActionCounts counts={i.responseActionCounts} />
-        )}
-        {i.credentials && i.provider === "ipinfo" && (
-          <p className="text-sm text-muted-foreground">
-            IPinfo API token <span className="font-mono">{i.credentials.clientIdHint}</span> · set {new Date(i.credentials.updatedAt).toLocaleDateString()}
-          </p>
-        )}
-        {i.credentials && i.provider !== "ipinfo" && (
-          <p className="text-sm text-muted-foreground">
-            {i.provider === "crowdstrike" && i.cloud
-              ? `Falcon API credentials: ${falconCloudLabel[i.cloud]} cloud`
-              : i.provider === "umbrella"
-                ? "Umbrella API"
-                : `${providerLabel[i.provider]} API 2.0 credentials`}{" "}
-            · {i.provider === "umbrella" ? "key" : "client"} <span className="font-mono">{i.credentials.clientIdHint}</span> · set{" "}
-            {new Date(i.credentials.updatedAt).toLocaleDateString()}
-          </p>
-        )}
+        {responseActions && (i.responseActions || hasAny(i.responseActionCounts)) && <ResponseActionCounts counts={i.responseActionCounts} />}
+        <CredentialsLine integration={i} />
       </CardContent>
     </Card>
   );
 }
 
-/** The Integration's write-backs to Falcon by where they stand; sent, skipped and failed over the last 24 hours. */
+/** Everything wrong with the Integration, at the top of its card: errors in red, warnings in Amber Notice. */
+function IntegrationProblems({ integration: i, pauseError }: { integration: IntegrationView; pauseError: Error | null }) {
+  return (
+    <>
+      {pauseError && (
+        <Alert variant="destructive">
+          <AlertDescription>{pauseError.message}</AlertDescription>
+        </Alert>
+      )}
+      {i.healthDetail && !i.paused && (
+        <Alert variant={i.health === "error" ? "destructive" : "default"} className={i.health === "error" ? undefined : notice}>
+          <AlertDescription>{i.healthDetail}</AlertDescription>
+        </Alert>
+      )}
+      {i.lastGap && (
+        <Alert className={notice}>
+          <AlertTitle>
+            Gap in the stream, noticed <Time iso={i.lastGap.at} />
+          </AlertTitle>
+          <AlertDescription>
+            Falcon could no longer replay events {i.lastGap.fromOffset.toLocaleString()}–{i.lastGap.toOffset.toLocaleString()}, so Alerts raised
+            then may be missing.
+          </AlertDescription>
+        </Alert>
+      )}
+      {i.hostEnrichmentError && !i.paused && (
+        <Alert className={notice}>
+          <AlertDescription>
+            {i.hostEnrichmentError}. Grant {FALCON_SCOPE.hosts} to the API client to see hosts' Enrichment; nothing else is affected.
+          </AlertDescription>
+        </Alert>
+      )}
+      {i.identityEnrichmentError && !i.paused && (
+        <Alert className={notice}>
+          <AlertDescription>{i.identityEnrichmentError}. Grant it to see accounts' Enrichment; nothing else is affected.</AlertDescription>
+        </Alert>
+      )}
+    </>
+  );
+}
+
+/** Which credentials the Integration uses and when they were set, at the foot of its card. */
+function CredentialsLine({ integration: i }: { integration: IntegrationView }) {
+  if (!i.credentials) return null;
+  return (
+    <p className="border-t pt-4 text-sm text-muted-foreground">
+      {i.provider === "ipinfo" ? (
+        <>
+          IPinfo API token <span className="font-mono">{i.credentials.clientIdHint}</span>
+        </>
+      ) : (
+        <>
+          {i.provider === "crowdstrike" && i.cloud
+            ? `Falcon API credentials: ${falconCloudLabel[i.cloud]} cloud`
+            : i.provider === "umbrella"
+              ? "Umbrella API"
+              : `${providerLabel[i.provider]} API 2.0 credentials`}{" "}
+          · {i.provider === "umbrella" ? "key" : "client"} <span className="font-mono">{i.credentials.clientIdHint}</span>
+        </>
+      )}{" "}
+      · set <Time iso={i.credentials.updatedAt} />
+    </p>
+  );
+}
+
+/** Pause asks first, saying what stops; Resume doesn't. */
+function PauseButton({ integration: i, pending, onPause }: { integration: IntegrationView; pending: boolean; onPause: (paused: boolean) => void }) {
+  if (i.paused) {
+    return (
+      <Button variant="outline" size="sm" disabled={pending} onClick={() => onPause(false)}>
+        Resume
+      </Button>
+    );
+  }
+  const { receivesAlerts, looksUpIps } = i.capabilities;
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button variant="outline" size="sm" disabled={pending}>
+          Pause
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Pause {i.name}?</AlertDialogTitle>
+          <AlertDialogDescription asChild>
+            <div>
+              <Alert className={notice}>
+                <AlertDescription>
+                  {receivesAlerts
+                    ? "Argus stops reading its Alert stream, so no new Alerts arrive from it until you resume it. Events Falcon no longer holds by then show here as a gap."
+                    : looksUpIps
+                      ? "Argus stops looking IP addresses up through it and shows only what it already has until you resume it."
+                      : "Members can't take Response Actions through it until you resume it."}{" "}
+                  Nothing already received or taken changes.
+                </AlertDescription>
+              </Alert>
+            </div>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={() => onPause(true)}>Pause Integration</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 const capitalized = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 /**
  * Deleting an Integration (ADR 0013), confirmed first: it stops for good and leaves this page, but
- * what came in or was done through it stays where it is.
+ * what came in or was done through it stays where it is. While Response Actions taken through it are
+ * still in place the dialog says so instead of offering a delete the API would refuse.
  */
-function DeleteIntegrationDialog({ integration: i, onDelete, pending }: { integration: IntegrationView; onDelete: () => void; pending: boolean }) {
+function DeleteIntegrationDialog({
+  integration: i,
+  remove,
+}: {
+  integration: IntegrationView;
+  remove: { mutate: (v: void, o: { onSuccess: () => void }) => void; isPending: boolean; error: Error | null; reset: () => void };
+}) {
+  const [open, setOpen] = useState(false);
   const { receivesAlerts, responseActions, looksUpIps } = i.capabilities;
+  const held = responseActions ? i.responseActionCounts.active + i.responseActionCounts.pending : 0;
   const kept = [
     receivesAlerts && "the Alerts it brought in",
     responseActions && "the Response Actions taken through it",
@@ -501,9 +675,15 @@ function DeleteIntegrationDialog({ integration: i, onDelete, pending }: { integr
       ? "Argus stops looking IPs up through it."
       : "Argus stops taking Response Actions through it.";
   return (
-    <AlertDialog>
+    <AlertDialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) remove.reset();
+      }}
+    >
       <AlertDialogTrigger asChild>
-        <Button variant="outline" size="sm" disabled={pending}>
+        <Button variant="destructive" size="sm" disabled={remove.isPending}>
           Delete
         </Button>
       </AlertDialogTrigger>
@@ -512,12 +692,37 @@ function DeleteIntegrationDialog({ integration: i, onDelete, pending }: { integr
           <AlertDialogTitle>Delete {i.name}?</AlertDialogTitle>
           <AlertDialogDescription>
             {stops} {kept.length > 0 && `${capitalized(kept.join(" and "))} stay, under its name. `}It can't be resumed: to connect again, add a
-            new Integration.{responseActions && " Any Response Actions taken through it that are still in place must be removed from their Cases first."}
+            new Integration.
           </AlertDialogDescription>
         </AlertDialogHeader>
+        {held > 0 && (
+          <Alert className={notice}>
+            <AlertDescription>
+              {counted(held, "Response Action")} taken through it {held === 1 ? "is" : "are"} still in place. Remove{" "}
+              {held === 1 ? "it from its Case" : "them from their Cases"} first; the{" "}
+              <Link to="/actions/log" className="underline underline-offset-2">
+                Action Log
+              </Link>{" "}
+              lists them.
+            </AlertDescription>
+          </Alert>
+        )}
+        {remove.error && (
+          <Alert variant="destructive">
+            <AlertDescription>{remove.error.message}</AlertDescription>
+          </Alert>
+        )}
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction variant="destructive" onClick={onDelete}>
+          <AlertDialogAction
+            variant="destructive"
+            disabled={held > 0 || remove.isPending}
+            onClick={(e) => {
+              // Stays open until the API answers, so a refusal shows here.
+              e.preventDefault();
+              remove.mutate(undefined, { onSuccess: () => setOpen(false) });
+            }}
+          >
             Delete Integration
           </AlertDialogAction>
         </AlertDialogFooter>
@@ -526,26 +731,34 @@ function DeleteIntegrationDialog({ integration: i, onDelete, pending }: { integr
   );
 }
 
+/** The Integration's write-backs to Falcon by where they stand, then what happened over the last 24 hours. */
 function WriteBacks({ counts: w }: { counts: IntegrationView["writeBacks"] }) {
   return (
-    <div className="grid gap-2" data-testid="write-backs">
-      <span className="text-sm font-semibold">Write-backs to Falcon</span>
+    <section className={section} data-testid="write-backs" aria-label="Write-backs to Falcon">
+      <h3 className={sectionHeading}>Write-backs to Falcon</h3>
       <div className="flex flex-wrap gap-2">
         <Badge variant="outline">Pending {w.pending}</Badge>
         <Badge variant="outline" className={w.retrying ? "border-notice-border text-notice-foreground" : undefined}>
           Retrying {w.retrying}
           {w.nextRetryAt ? ` · next ${until(w.nextRetryAt)}` : ""}
         </Badge>
-        <Badge variant="outline">Sent (24 h) {w.sent}</Badge>
-        <Badge variant="outline">Skipped, no Falcon user match (24 h) {w.skipped}</Badge>
-        {w.failed > 0 && (
-          <Badge variant="outline" className="border-destructive text-destructive">
-            Failed (24 h) {w.failed}
-          </Badge>
-        )}
       </div>
-      {w.lastError && <p className="text-sm text-muted-foreground">Last failure: {w.lastError}</p>}
-    </div>
+      <p className="text-sm text-muted-foreground">
+        Last 24 h: {w.sent} sent · {w.skipped} skipped, no Falcon user with the Assignee's email
+        {w.failed > 0 && (
+          <>
+            {" "}
+            · <span className="font-medium text-destructive">{w.failed} failed</span>
+          </>
+        )}
+      </p>
+      {w.lastError && (
+        <p className="text-sm">
+          <span className="text-muted-foreground">Last failure: </span>
+          {w.lastError}
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -554,8 +767,8 @@ const hasAny = (c: IntegrationView["responseActionCounts"]) => c.pending + c.act
 /** What Argus holds in the tool through this Integration, and what is waiting or failed. */
 function ResponseActionCounts({ counts: c }: { counts: IntegrationView["responseActionCounts"] }) {
   return (
-    <div className="grid gap-2" data-testid="response-action-counts">
-      <span className="text-sm font-semibold">Response Actions through this Integration</span>
+    <section className={section} data-testid="response-action-counts" aria-label="Response Actions through this Integration">
+      <h3 className={sectionHeading}>Response Actions through this Integration</h3>
       <div className="flex flex-wrap gap-2">
         <Badge variant="outline">Active {c.active}</Badge>
         <Badge variant="outline">Pending {c.pending}</Badge>
@@ -565,14 +778,29 @@ function ResponseActionCounts({ counts: c }: { counts: IntegrationView["response
           </Badge>
         )}
       </div>
-      {c.lastError && <p className="text-sm text-muted-foreground">Last failure: {c.lastError}</p>}
-    </div>
+      {c.lastError && (
+        <p className="text-sm">
+          <span className="text-muted-foreground">Last failure: </span>
+          {c.lastError}
+        </p>
+      )}
+      {(c.failed > 0 || c.lastError) && (
+        <p className="text-sm text-muted-foreground">
+          Each one, with its Case and how it went, is in the{" "}
+          <Link to="/actions/log" className="text-foreground underline underline-offset-2">
+            Action Log
+          </Link>
+          .
+        </p>
+      )}
+    </section>
   );
 }
 
 /** The stream at a glance (its last event), with the worker's bookkeeping folded away. */
 function StreamSummary({ integration: i }: { integration: IntegrationView }) {
   const [open, setOpen] = useState(false);
+  const connecting = i.health === "connecting" && !i.paused;
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="grid gap-2 text-sm">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -587,6 +815,13 @@ function StreamSummary({ integration: i }: { integration: IntegrationView }) {
           </Button>
         </CollapsibleTrigger>
       </div>
+      {connecting && (
+        <p className="text-muted-foreground">
+          {i.lastEventAt
+            ? "Opening the Falcon stream again; it carries on from the last event."
+            : "Checking the credentials and opening the Falcon stream. Alerts appear in the queue as detections come in."}
+        </p>
+      )}
       <CollapsibleContent>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
           <dt className="text-muted-foreground">Session refresh</dt>
@@ -601,126 +836,91 @@ function StreamSummary({ integration: i }: { integration: IntegrationView }) {
   );
 }
 
+type Confirmation = { title: string; body: ReactNode; confirm: string };
+
 /**
- * Asks before a switch turns something on that reaches outside Argus; turning it off needs no
- * asking. `children` gets `ask`, which opens the confirmation.
+ * A setting's switch, with what it does, the scope it needs, and its last error under it. Turning it
+ * on asks first when `confirmOn` is given (it reaches outside Argus); turning it off asks first when
+ * `confirmOff` is (it would lose something).
  */
-function ConfirmOn({
-  title,
-  body,
-  confirm,
-  onConfirm,
-  children,
+function GuardedSwitch({
+  id,
+  label,
+  description,
+  scope,
+  status,
+  problem,
+  checked,
+  disabled,
+  error,
+  onChange,
+  confirmOn,
+  confirmOff,
 }: {
-  title: string;
-  body: ReactNode;
-  confirm: string;
-  onConfirm: () => void;
-  children: (ask: () => void) => ReactNode;
+  id: string;
+  label: string;
+  description: string;
+  /** The scope or role the tool's credentials need for it. */
+  scope: string;
+  /** A live fact about it, on its own line. */
+  status?: ReactNode;
+  /** Why it can't work as things stand. */
+  problem?: string;
+  checked?: boolean;
+  disabled?: boolean;
+  error: Error | null;
+  onChange: (enabled: boolean) => void;
+  confirmOn?: Confirmation;
+  confirmOff?: Confirmation;
 }) {
-  const [open, setOpen] = useState(false);
+  const [asking, setAsking] = useState<boolean | null>(null);
+  const confirmation = asking === null ? undefined : asking ? confirmOn : confirmOff;
+  const describedBy = `${id}-description`;
   return (
-    <>
-      {children(() => setOpen(true))}
-      <AlertDialog open={open} onOpenChange={setOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{title}</AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div>
-                <Alert className={notice}>
-                  <AlertDescription>{body}</AlertDescription>
-                </Alert>
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={onConfirm}>{confirm}</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
+    <div className="flex items-start gap-3">
+      <Switch
+        id={id}
+        className="mt-0.5"
+        checked={checked}
+        disabled={disabled}
+        aria-describedby={describedBy}
+        onCheckedChange={(next) => ((next ? confirmOn : confirmOff) ? setAsking(next) : onChange(next))}
+      />
+      <div className="grid gap-1">
+        <Label htmlFor={id}>{label}</Label>
+        <div id={describedBy} className="grid max-w-prose gap-0.5 text-sm text-muted-foreground">
+          <p>
+            {description} Needs {scope}.
+          </p>
+          {status && <p className="text-xs">{status}</p>}
+        </div>
+        {problem && <p className="text-sm text-destructive">{problem}</p>}
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error.message}
+          </p>
+        )}
+      </div>
+      <AlertDialog open={confirmation !== undefined} onOpenChange={(open) => !open && setAsking(null)}>
+        {confirmation && (
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{confirmation.title}</AlertDialogTitle>
+              <AlertDialogDescription asChild>
+                <div>
+                  <Alert className={notice}>
+                    <AlertDescription>{confirmation.body}</AlertDescription>
+                  </Alert>
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={() => asking !== null && onChange(asking)}>{confirmation.confirm}</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        )}
       </AlertDialog>
-    </>
-  );
-}
-
-/** The write-back switch: on, Argus writes Alert changes back to Falcon; off, it only reads. */
-function WriteBackSetting(props: {
-  id: string;
-  checked?: boolean;
-  defaultChecked?: boolean;
-  disabled?: boolean;
-  name?: string;
-  /** Why it can't be changed, said under it. */
-  lockedReason?: string;
-  onCheckedChange?: (checked: boolean) => void;
-}) {
-  const { id, lockedReason, ...rest } = props;
-  return (
-    <div className="flex items-start gap-3">
-      <Switch id={id} className="mt-0.5" {...rest} />
-      <div className="grid gap-1">
-        <Label htmlFor={id}>Write back to Falcon</Label>
-        <p className="text-sm text-muted-foreground">
-          Send Alert Status, Assignee, comments and Case closure to CrowdStrike.
-          {lockedReason && ` ${lockedReason}`}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-/** The Host containment switch: on, Members may contain hosts through the CrowdStrike Integration from a Case (ADR 0009). */
-function HostContainmentSetting(props: {
-  id: string;
-  checked?: boolean;
-  disabled?: boolean;
-  /** Why it can't be changed, said under it. */
-  lockedReason?: string;
-  onCheckedChange?: (checked: boolean) => void;
-}) {
-  const { id, lockedReason, ...rest } = props;
-  return (
-    <div className="flex items-start gap-3">
-      <Switch id={id} className="mt-0.5" {...rest} />
-      <div className="grid gap-1">
-        <Label htmlFor={id}>Host containment</Label>
-        <p className="text-sm text-muted-foreground">
-          Contain hosts in Falcon from a Case. Separate from Response Actions; the API client needs Hosts: Write.
-          {lockedReason && ` ${lockedReason}`}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-/**
- * The Workflows switch (ADR 0017): on, Members may run the CrowdStrike Integration's on-demand Falcon
- * Fusion SOAR workflows. Says how many were discovered, and why discovery fails if it does.
- */
-function WorkflowsSetting(props: {
-  id: string;
-  discovery: IntegrationView["workflowDiscovery"];
-  checked?: boolean;
-  disabled?: boolean;
-  /** Why it can't be changed, said under it. */
-  lockedReason?: string;
-  onCheckedChange?: (checked: boolean) => void;
-}) {
-  const { id, lockedReason, discovery, ...rest } = props;
-  return (
-    <div className="flex items-start gap-3">
-      <Switch id={id} className="mt-0.5" {...rest} />
-      <div className="grid gap-1">
-        <Label htmlFor={id}>Workflows</Label>
-        <p className="text-sm text-muted-foreground">
-          Run Falcon Fusion SOAR workflows on demand from the Action Center, and follow each to its outcome. The API client needs Workflow:
-          Write to run them, and Workflow: Read to find them.
-          {discovery && (discovery.checkedAt ? ` ${discovery.count} discovered ${ago(discovery.checkedAt)}.` : " Discovering…")}
-          {lockedReason && ` ${lockedReason}`}
-        </p>
-        {discovery?.error && <p className="text-sm text-destructive">{discovery.error}</p>}
-      </div>
     </div>
   );
 }
@@ -753,10 +953,12 @@ function DestinationListSetting({ integration: i }: { integration: IntegrationVi
   });
   const current = i.destinationList;
   return (
-    <div className="grid gap-2 rounded-lg border p-3" data-testid="destination-list">
+    <section className={section} data-testid="destination-list" aria-labelledby={`destination-list-heading-${i.id}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="grid gap-0.5">
-          <span className="text-sm font-semibold">Destination list</span>
+          <h3 id={`destination-list-heading-${i.id}`} className={sectionHeading}>
+            Destination list
+          </h3>
           <p className="text-sm text-muted-foreground">
             {current ? (
               <>
@@ -766,8 +968,8 @@ function DestinationListSetting({ integration: i }: { integration: IntegrationVi
             ) : (
               "None chosen yet: Members can't add domains to Umbrella until an Admin chooses one."
             )}
-            {locked && " Only Admins can change this."}
           </p>
+          <Saved show={save.isSuccess && !choosing}>Saved.</Saved>
         </div>
         {!locked && !choosing && (
           <Button
@@ -822,37 +1024,77 @@ function DestinationListSetting({ integration: i }: { integration: IntegrationVi
           <AlertDescription>{(lists.error ?? save.error)!.message}</AlertDescription>
         </Alert>
       )}
-    </div>
+    </section>
   );
 }
 
-/** The Response Actions switch: on, Members may take Response Actions through the Integration from a Case. */
-function ResponseActionsSetting(props: {
-  id: string;
-  provider: Provider;
-  checked?: boolean;
-  defaultChecked?: boolean;
-  disabled?: boolean;
-  name?: string;
-  /** Why it can't be changed, said under it. */
-  lockedReason?: string;
-  onCheckedChange?: (checked: boolean) => void;
+/**
+ * A setting shown as one summary line with Edit, opening into its form in place. Saving folds it
+ * back and says so. `form` is the form's name for screen readers and tests.
+ */
+function EditableSetting({
+  name,
+  heading,
+  summary,
+  editing,
+  saved,
+  locked,
+  onEdit,
+  onSubmit,
+  testId,
+  children,
+}: {
+  name: string;
+  heading: string;
+  summary: ReactNode;
+  editing: boolean;
+  saved: boolean;
+  locked: boolean;
+  onEdit: () => void;
+  onSubmit: () => void;
+  testId: string;
+  children: ReactNode;
 }) {
-  const { id, provider, lockedReason, ...rest } = props;
+  const headingId = useId();
   return (
-    <div className="flex items-start gap-3">
-      <Switch id={id} className="mt-0.5" {...rest} />
-      <div className="grid gap-1">
-        <Label htmlFor={id}>Response Actions</Label>
-        <p className="text-sm text-muted-foreground">
-          {provider === "crowdstrike"
-            ? "Add custom IOCs to Falcon. The API client needs IOC Management write scope."
-            : provider === "umbrella"
-              ? "Add domains to a destination list in Cisco Umbrella."
-              : `Block email senders and domains in ${providerLabel[provider]}.`}
-          {lockedReason && ` ${lockedReason}`}
-        </p>
+    <form
+      className={section}
+      aria-label={name}
+      data-testid={testId}
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSubmit();
+      }}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="grid gap-0.5">
+          <h3 id={headingId} className={sectionHeading}>
+            {heading}
+          </h3>
+          <p className="max-w-prose text-sm text-muted-foreground">{summary}</p>
+          <Saved show={saved && !editing}>Saved.</Saved>
+        </div>
+        {!locked && !editing && (
+          <Button type="button" variant="outline" size="sm" aria-describedby={headingId} onClick={onEdit}>
+            Edit
+          </Button>
+        )}
       </div>
+      {editing && children}
+    </form>
+  );
+}
+
+/** Save and Cancel under a setting being edited. */
+function EditActions({ save, disabled, onCancel }: { save: string; disabled: boolean; onCancel: () => void }) {
+  return (
+    <div className="flex justify-end gap-2">
+      <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+        Cancel
+      </Button>
+      <Button type="submit" size="sm" disabled={disabled}>
+        {save}
+      </Button>
     </div>
   );
 }
@@ -865,63 +1107,64 @@ function ResponseActionsSetting(props: {
 function IgnoredSeverities({ integration: i }: { integration: IntegrationView }) {
   const queryClient = useQueryClient();
   const saved = i.ignoredSeverities;
+  const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Severity[]>(saved);
-  const locked = !i.credentials;
   const save = useMutation({
     mutationFn: async (severities: Severity[]) =>
       ok(await api.integrations[":id"]["ignored-severities"].$put({ param: { id: i.id }, json: { severities } }), "Could not save the ignored Severities"),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: integrationsKey }),
+    // Folds back once the saved value is in, so the summary never shows the old one.
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: integrationsKey });
+      setEditing(false);
+    },
+    onError: () => queryClient.invalidateQueries({ queryKey: integrationsKey }),
   });
   const changed = SEVERITIES.some((s) => draft.includes(s) !== saved.includes(s));
   const all = draft.length === SEVERITIES.length;
   const toggle = (severity: Severity, on: boolean) => setDraft((d) => SEVERITIES.filter((s) => (s === severity ? on : d.includes(s))));
   const id = (severity: Severity) => `ignored-severity-${severity}-${i.id}`;
+  const errorId = `ignored-severities-error-${i.id}`;
+  const ignoring = SEVERITIES.filter((s) => saved.includes(s)).map((s) => severityLabel[s]);
   return (
-    <form
-      className="grid gap-3 rounded-lg border p-3"
-      aria-label="Ignored Severities"
-      data-testid="ignored-severities"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (changed && !all) save.mutate(draft);
+    <EditableSetting
+      name="Ignored Severities"
+      heading="Ignored Severities"
+      testId="ignored-severities"
+      summary={
+        ignoring.length === 0
+          ? "None: detections of every Severity become Alerts."
+          : `${listed(ignoring)}: detections of ${ignoring.length === 1 ? "this Severity are" : "these Severities are"} skipped and don't become Alerts. Alerts already received are kept.`
+      }
+      editing={editing}
+      saved={save.isSuccess}
+      locked={!i.credentials}
+      onEdit={() => {
+        setDraft(saved);
+        save.reset();
+        setEditing(true);
       }}
+      onSubmit={() => changed && !all && save.mutate(draft)}
     >
-      <div className="grid gap-0.5">
-        <span className="text-sm font-semibold">Ignored Severities</span>
-        <p className="text-sm text-muted-foreground">
-          Detections of these Severities are skipped and don't become Alerts. Alerts already received are kept.
-          {locked && " Only Admins can change these."}
-        </p>
-      </div>
-      <div className="flex flex-wrap gap-4" role="group" aria-label="Severities to ignore">
+      <div className="flex flex-wrap gap-4" role="group" aria-label="Severities to ignore" aria-describedby={all ? errorId : undefined}>
         {SEVERITIES.map((s) => (
           <div key={s} className="flex items-center gap-2">
-            <Checkbox id={id(s)} checked={draft.includes(s)} disabled={locked} onCheckedChange={(checked) => toggle(s, checked === true)} />
+            <Checkbox id={id(s)} checked={draft.includes(s)} aria-invalid={all || undefined} onCheckedChange={(checked) => toggle(s, checked === true)} />
             <Label htmlFor={id(s)} className="font-normal">
               {severityLabel[s]}
             </Label>
           </div>
         ))}
       </div>
-      {all && <p className="text-xs text-destructive">Leave at least one Severity unignored. To stop receiving Alerts, pause the Integration.</p>}
+      <p id={errorId} role="alert" className="text-xs text-destructive empty:hidden">
+        {all && "Leave at least one Severity unignored. To stop receiving Alerts, pause the Integration."}
+      </p>
       {save.error && (
         <Alert variant="destructive">
           <AlertDescription>{save.error.message}</AlertDescription>
         </Alert>
       )}
-      {!locked && (
-        <div className="flex justify-end gap-2">
-          {changed && (
-            <Button type="button" variant="ghost" size="sm" onClick={() => setDraft(saved)}>
-              Reset
-            </Button>
-          )}
-          <Button type="submit" size="sm" disabled={!changed || all || save.isPending}>
-            Save ignored Severities
-          </Button>
-        </div>
-      )}
-    </form>
+      <EditActions save="Save ignored Severities" disabled={!changed || all || save.isPending} onCancel={() => setEditing(false)} />
+    </EditableSetting>
   );
 }
 
@@ -934,12 +1177,17 @@ function IgnoredSeverities({ integration: i }: { integration: IntegrationView })
 function ResponseActionDefaults({ integration: i }: { integration: IntegrationView }) {
   const queryClient = useQueryClient();
   const saved = i.responseActionDefaults;
+  const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<FalconIocDefaults>(saved);
-  const locked = !i.credentials;
   const save = useMutation({
     mutationFn: async (next: FalconIocDefaults) =>
       ok(await api.integrations[":id"]["response-action-defaults"].$put({ param: { id: i.id }, json: next }), "Could not save the defaults"),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: integrationsKey }),
+    // Folds back once the saved value is in, so the summary never shows the old one.
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: integrationsKey });
+      setEditing(false);
+    },
+    onError: () => queryClient.invalidateQueries({ queryKey: integrationsKey }),
   });
   const changed =
     draft.severity !== saved.severity ||
@@ -949,20 +1197,29 @@ function ResponseActionDefaults({ integration: i }: { integration: IntegrationVi
     setDraft((d) => ({ ...d, platforms: FALCON_IOC_PLATFORMS.filter((x) => (x === p ? on : d.platforms.includes(x))) }));
   const id = (field: string) => `ioc-defaults-${field}-${i.id}`;
   const falcon = i.provider === "crowdstrike";
+  const noPlatform = draft.platforms.length === 0;
+  const visibility = saved.internal ? "start Internal" : "start visible to Guests";
+  const summary = falcon
+    ? `Sent as ${saved.severity === "case" ? "the Case's Severity" : severityLabel[saved.severity]}, for ${listed(
+        FALCON_IOC_PLATFORMS.filter((p) => saved.platforms.includes(p)).map((p) => falconIocPlatformLabel[p]),
+      )}; they ${visibility}.`
+    : `New ones ${visibility}.`;
   return (
-    <form
-      className="grid gap-3 rounded-lg border p-3"
-      aria-label="Response Action defaults"
-      data-testid="response-action-defaults"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (changed && draft.platforms.length) save.mutate(draft);
+    <EditableSetting
+      name="Response Action defaults"
+      heading={falcon ? "IOC defaults" : i.provider === "umbrella" ? "Destination list defaults" : "Block defaults"}
+      testId="response-action-defaults"
+      summary={summary}
+      editing={editing}
+      saved={save.isSuccess}
+      locked={!i.credentials}
+      onEdit={() => {
+        setDraft(saved);
+        save.reset();
+        setEditing(true);
       }}
+      onSubmit={() => changed && !noPlatform && save.mutate(draft)}
     >
-      <div className="grid gap-0.5">
-        <span className="text-sm font-semibold">{falcon ? "IOC defaults" : i.provider === "umbrella" ? "Destination list defaults" : "Block defaults"}</span>
-        {locked && <p className="text-sm text-muted-foreground">Only Admins can change these.</p>}
-      </div>
       <div className="grid gap-2 @lg:grid-cols-[10rem_1fr] @lg:items-center">
         {falcon && (
           <>
@@ -970,7 +1227,6 @@ function ResponseActionDefaults({ integration: i }: { integration: IntegrationVi
             <NativeSelect
               id={id("severity")}
               value={draft.severity}
-              disabled={locked}
               onChange={(e) => setDraft((d) => ({ ...d, severity: e.target.value as FalconIocDefaults["severity"] }))}
             >
               <NativeSelectOption value="case">The Case's Severity</NativeSelectOption>
@@ -981,13 +1237,13 @@ function ResponseActionDefaults({ integration: i }: { integration: IntegrationVi
               ))}
             </NativeSelect>
             <span className="text-sm font-medium">Platforms</span>
-            <div className="flex flex-wrap gap-4" role="group" aria-label="Platforms">
+            <div className="flex flex-wrap gap-4" role="group" aria-label="Platforms" aria-describedby={noPlatform ? id("error") : undefined}>
               {FALCON_IOC_PLATFORMS.map((p) => (
                 <div key={p} className="flex items-center gap-2">
                   <Checkbox
                     id={id(p)}
                     checked={draft.platforms.includes(p)}
-                    disabled={locked}
+                    aria-invalid={noPlatform || undefined}
                     onCheckedChange={(checked) => togglePlatform(p, checked === true)}
                   />
                   <Label htmlFor={id(p)} className="font-normal">
@@ -1000,36 +1256,22 @@ function ResponseActionDefaults({ integration: i }: { integration: IntegrationVi
         )}
         <span className="text-sm font-medium">Visibility</span>
         <div className="flex items-center gap-2">
-          <Checkbox
-            id={id("internal")}
-            checked={draft.internal}
-            disabled={locked}
-            onCheckedChange={(checked) => setDraft((d) => ({ ...d, internal: checked === true }))}
-          />
+          <Checkbox id={id("internal")} checked={draft.internal} onCheckedChange={(checked) => setDraft((d) => ({ ...d, internal: checked === true }))} />
           <Label htmlFor={id("internal")} className="font-normal">
             Internal
           </Label>
         </div>
       </div>
-      {draft.platforms.length === 0 && <p className="text-xs text-destructive">Choose at least one platform.</p>}
+      <p id={id("error")} role="alert" className="text-xs text-destructive empty:hidden">
+        {noPlatform && "Choose at least one platform."}
+      </p>
       {save.error && (
         <Alert variant="destructive">
           <AlertDescription>{save.error.message}</AlertDescription>
         </Alert>
       )}
-      {!locked && (
-        <div className="flex justify-end gap-2">
-          {changed && (
-            <Button type="button" variant="ghost" size="sm" onClick={() => setDraft(saved)}>
-              Reset
-            </Button>
-          )}
-          <Button type="submit" size="sm" disabled={!changed || !draft.platforms.length || save.isPending}>
-            Save defaults
-          </Button>
-        </div>
-      )}
-    </form>
+      <EditActions save="Save defaults" disabled={!changed || noPlatform || save.isPending} onCancel={() => setEditing(false)} />
+    </EditableSetting>
   );
 }
 
@@ -1074,49 +1316,64 @@ function CredentialFields({ provider = "crowdstrike" }: { provider?: Provider })
 const credentialsFrom = (form: FormData) => ({ clientId: String(form.get("clientId")), clientSecret: String(form.get("clientSecret")) });
 const tokenFrom = (form: FormData) => ({ token: String(form.get("token")) });
 
+/** Every Falcon scope Argus uses, the one it can't work without first; the switches name the same ones. */
+function FalconScopeList() {
+  return (
+    <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+      {FALCON_SCOPES.map((s) => (
+        <div key={s.scope} className="contents">
+          <dt className="font-medium">{s.scope}</dt>
+          <dd className="text-muted-foreground">
+            {s.required ? "Required, for" : "For"} {s.use}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 /**
  * Adds a CrowdStrike Integration, a Mimecast or Cisco Umbrella one, which have no cloud, Alert stream
- * or write-back, or the IPinfo one, which only looks IPs up (ADR 0010).
+ * or write-back, or the IPinfo one, which only looks IPs up (ADR 0010). What reaches outside Argus
+ * starts off; Admins turn it on from the Integration's card, where each switch asks first.
  */
-function AddIntegrationDialog({ provider }: { provider: Provider }) {
-  const [isOpen, setIsOpen] = useState(false);
+function AddIntegrationDialog({ provider, open, onOpenChange }: { provider: Provider; open: boolean; onOpenChange: (open: boolean) => void }) {
   const queryClient = useQueryClient();
   const falcon = provider === "crowdstrike";
+  const [cloud, setCloud] = useState<FalconCloud>("us-1");
   const add = useMutation({
     mutationFn: async (
       json:
-        | { provider: "crowdstrike"; name: string; cloud: FalconCloud; clientId: string; clientSecret: string; writeBack: boolean; responseActions: boolean }
-        | { provider: "mimecast" | "umbrella"; name: string; clientId: string; clientSecret: string; responseActions: boolean }
+        | { provider: "crowdstrike"; name: string; cloud: FalconCloud; clientId: string; clientSecret: string }
+        | { provider: "mimecast" | "umbrella"; name: string; clientId: string; clientSecret: string }
         | { provider: "ipinfo"; name: string; token: string },
     ) => ok(await api.integrations.$post({ json }), "Could not add the Integration"),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: integrationsKey });
-      setIsOpen(false);
+      onOpenChange(false);
     },
   });
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     if (provider === "ipinfo") return add.mutate({ provider, name: String(form.get("name")), ...tokenFrom(form) });
-    const common = { name: String(form.get("name")), responseActions: form.get("responseActions") === "on", ...credentialsFrom(form) };
-    add.mutate(
-      falcon
-        ? { provider, ...common, cloud: form.get("cloud") as FalconCloud, writeBack: form.get("writeBack") === "on" }
-        : { provider: provider === "umbrella" ? "umbrella" : "mimecast", ...common },
-    );
+    const common = { name: String(form.get("name")), ...credentialsFrom(form) };
+    add.mutate(falcon ? { provider, ...common, cloud } : { provider: provider === "umbrella" ? "umbrella" : "mimecast", ...common });
   };
   return (
     <Dialog
-      open={isOpen}
+      open={open}
       onOpenChange={(next) => {
-        setIsOpen(next);
+        onOpenChange(next);
         if (next) add.reset();
       }}
     >
-      <DialogTrigger asChild>
-        <Button variant={falcon ? "default" : "outline"}>+ Add {providerLabel[provider]} Integration</Button>
-      </DialogTrigger>
-      <DialogContent>
+      <DialogContent
+        onOpenAutoFocus={() => {
+          add.reset();
+          setCloud("us-1");
+        }}
+      >
         <DialogHeader>
           <DialogTitle>Add a {providerLabel[provider]} Integration</DialogTitle>
           {provider === "ipinfo" && (
@@ -1128,33 +1385,23 @@ function AddIntegrationDialog({ provider }: { provider: Provider }) {
           {provider === "umbrella" && (
             <DialogDescription>
               Create an API key in the Umbrella dashboard (Admin · API Keys) with the Policies · Destination Lists scope, read and write. Once
-              it is added, choose the destination list Argus adds domains to.
+              it is added, choose the destination list Argus adds domains to and turn on Response Actions from its card.
             </DialogDescription>
           )}
           {provider === "mimecast" && (
             <DialogDescription>
-              Create an API 2.0 application in the Mimecast Administration Console whose role has Gateway · Policies · Edit.
+              Create an API 2.0 application in the Mimecast Administration Console whose role has Gateway · Policies · Edit. Once it is added,
+              turn on Response Actions from its card.
             </DialogDescription>
           )}
           {falcon && (
-            <>
-              <DialogDescription>Create an API client in the Falcon console with these scopes:</DialogDescription>
-              <ul className="grid gap-1 text-sm">
-                <li>
-                  <span className="font-medium">Event Streams: Read</span>
-                </li>
-                <li>
-                  <span className="font-medium">Alerts: Write</span>
-                  <span className="text-muted-foreground"> — for write-back</span>
-                </li>
-                <li>
-                  <span className="font-medium">IOC Management: Write</span>
-                  <span className="text-muted-foreground"> — for Response Actions</span>
-                </li>
-              </ul>
-            </>
+            <DialogDescription>
+              Create an API client in the Falcon console with these scopes. Grant all of them now to avoid coming back; write-back and every
+              action in Falcon stay off until you turn them on from the Integration's card.
+            </DialogDescription>
           )}
         </DialogHeader>
+        {falcon && <FalconScopeList />}
         <form className="grid gap-4" onSubmit={onSubmit}>
           <div className={falcon ? "grid gap-4 @lg:grid-cols-[1fr_auto]" : "grid gap-4"}>
             <div className="grid gap-2">
@@ -1164,34 +1411,47 @@ function AddIntegrationDialog({ provider }: { provider: Provider }) {
                 name="name"
                 required
                 maxLength={80}
-                placeholder={falcon ? "CrowdStrike — Prod" : providerLabel[provider]}
+                aria-describedby="integration-name-hint"
                 defaultValue={provider === "ipinfo" ? "IPinfo" : undefined}
               />
+              <p id="integration-name-hint" className="text-xs text-muted-foreground">
+                {falcon ? "Shown on its Alerts and actions, such as “CrowdStrike — Prod”." : "Shown on the actions taken through it."}
+              </p>
             </div>
             {falcon && (
-              <div className="grid gap-2">
+              <div className="grid content-start gap-2">
                 <Label htmlFor="integration-cloud">Falcon cloud</Label>
-                <NativeSelect id="integration-cloud" name="cloud" defaultValue="us-1">
+                <NativeSelect
+                  id="integration-cloud"
+                  name="cloud"
+                  value={cloud}
+                  aria-describedby="integration-cloud-hint"
+                  onChange={(e) => setCloud(e.target.value as FalconCloud)}
+                >
                   {FALCON_CLOUDS.map((c) => (
                     <NativeSelectOption key={c} value={c}>
                       {falconCloudLabel[c]}
                     </NativeSelectOption>
                   ))}
                 </NativeSelect>
+                <p id="integration-cloud-hint" className="text-xs text-muted-foreground">
+                  Console at <span className="font-mono">{new URL(FALCON_CONSOLES[cloud]).host}</span>
+                </p>
               </div>
             )}
           </div>
           <CredentialFields provider={provider} />
-          {falcon && <WriteBackSetting id="integration-write-back" name="writeBack" defaultChecked={false} />}
-          {provider !== "ipinfo" && (
-            <ResponseActionsSetting id="integration-response-actions" provider={provider} name="responseActions" defaultChecked={false} />
-          )}
           {add.error && (
             <Alert variant="destructive">
               <AlertDescription>{add.error.message}</AlertDescription>
             </Alert>
           )}
           <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Cancel
+              </Button>
+            </DialogClose>
             <Button type="submit" disabled={add.isPending}>
               Add Integration
             </Button>
@@ -1202,12 +1462,13 @@ function AddIntegrationDialog({ provider }: { provider: Provider }) {
   );
 }
 
-function RotateCredentialsDialog({ integration }: { integration: IntegrationView }) {
+function RotateCredentialsDialog({ integration: i }: { integration: IntegrationView }) {
   const [isOpen, setIsOpen] = useState(false);
   const queryClient = useQueryClient();
+  const token = i.provider === "ipinfo";
   const rotate = useMutation({
     mutationFn: async (json: { clientId: string; clientSecret: string } | { token: string }) =>
-      ok(await api.integrations[":id"].credentials.$put({ param: { id: integration.id }, json }), "Could not rotate the credentials"),
+      ok(await api.integrations[":id"].credentials.$put({ param: { id: i.id }, json }), "Could not rotate the credentials"),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: integrationsKey });
       setIsOpen(false);
@@ -1216,7 +1477,7 @@ function RotateCredentialsDialog({ integration }: { integration: IntegrationView
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    rotate.mutate(integration.provider === "ipinfo" ? tokenFrom(form) : credentialsFrom(form));
+    rotate.mutate(token ? tokenFrom(form) : credentialsFrom(form));
   };
   return (
     <Dialog
@@ -1228,25 +1489,35 @@ function RotateCredentialsDialog({ integration }: { integration: IntegrationView
     >
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
-          {integration.provider === "ipinfo" ? "Rotate token" : "Rotate credentials"}
+          {token ? "Rotate token" : "Rotate credentials"}
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            Rotate {integration.provider === "ipinfo" ? "the token" : "credentials"} of {integration.name}
+            Rotate {token ? "the token" : "credentials"} of {i.name}
           </DialogTitle>
+          <DialogDescription>
+            {i.capabilities.receivesAlerts
+              ? "The stream reconnects with the new credentials and carries on from its last event. The new API client needs the same scopes as the old one."
+              : `Argus stops using the old ${token ? "token" : "credentials"} and checks the new ${token ? "one" : "ones"}; the badge says Connecting until then.`}
+          </DialogDescription>
         </DialogHeader>
         <form className="grid gap-4" onSubmit={onSubmit}>
-          <CredentialFields provider={integration.provider} />
+          <CredentialFields provider={i.provider} />
           {rotate.error && (
             <Alert variant="destructive">
               <AlertDescription>{rotate.error.message}</AlertDescription>
             </Alert>
           )}
           <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Cancel
+              </Button>
+            </DialogClose>
             <Button type="submit" disabled={rotate.isPending}>
-              Rotate
+              {token ? "Rotate token" : "Rotate credentials"}
             </Button>
           </DialogFooter>
         </form>
