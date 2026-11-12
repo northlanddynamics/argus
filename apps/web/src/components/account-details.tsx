@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
-import type { FocusEvent, ReactElement, ReactNode } from "react";
+import { type FocusEvent, type ReactElement, type ReactNode, useState } from "react";
 import { toast } from "sonner";
+import { CardPager } from "@/components/card-pager";
 import { ValueHeader } from "@/components/enrichment-parts";
 import { Time } from "@/components/time";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +18,9 @@ import { cn } from "@/lib/utils";
  * What Falcon Identity Protection says about an account Asset (ADR 0009), as the hover card shows
  * it on resting the pointer on the account: each identity's full name, account state, whether it is
  * privileged, and its last activity. Laid out in `docs/wireframes/account-context-popup.md`. The
- * account's page shows the rest (`FalconIdentitiesCard`).
+ * account's page shows the rest (`FalconIdentitiesCard`). An ambiguous account's identities, or the
+ * account under several Integrations, show one at a time, stepped through with `CardPager` as the
+ * IP card steps through its pages.
  */
 
 type Group = ItemPage["falconIdentities"][number];
@@ -141,6 +144,13 @@ const latestFetch = (groups: Group[]) =>
     .toSorted()
     .at(-1) ?? null;
 
+/** One page of the card: an identity, or, for an Integration with none recorded, how looking the account up went. */
+type Page = { group: Group; identity: Identity | null };
+
+/** Every identity under every Integration, one page each; an Integration with none gets one page of its own. */
+const cardPages = (groups: Group[]): Page[] =>
+  groups.flatMap((group) => (group.identities.length ? group.identities.map((identity): Page => ({ group, identity })) : [{ group, identity: null }]));
+
 /** The hover card's content; mounted only while it is open, so the account is fetched when it opens. */
 function AccountCard({ assetId, account }: { assetId: string; account: string }) {
   const queryClient = useQueryClient();
@@ -150,33 +160,30 @@ function AccountCard({ assetId, account }: { assetId: string; account: string })
     onError: (e) => toast.error(e.message),
     onSettled: () => queryClient.invalidateQueries({ queryKey: itemPagesKey }),
   });
+  const [index, setIndex] = useState(0);
   const item = q.data;
   const groups = item?.falconIdentities ?? [];
   const shown = item?.value ?? account;
   const refreshing = refresh.isPending || groups.some((g) => g.lookup?.refreshing || g.identities.some((i) => i.enrichment.refreshing));
   const asOf = latestFetch(groups);
+  const pages = cardPages(groups);
+  const at = Math.min(index, Math.max(pages.length - 1, 0));
+  const page = pages[at];
   let body: ReactNode;
   if (q.isPending) body = <DetailsSkeleton />;
   else if (!item) body = <Problem>{q.error?.message ?? "Could not load the account"}</Problem>;
-  else if (!groups.length) body = <p className="text-muted-foreground">No CrowdStrike Integration to look this account up in. An Admin can add one in Settings · Integrations.</p>;
+  else if (!page) body = <p className="text-muted-foreground">No CrowdStrike Integration to look this account up in. An Admin can add one in Settings · Integrations.</p>;
   else
     body = (
-      <div className="grid gap-3">
-        {groups.map((g) => (
-          <section key={g.integration.id} aria-label={g.integration.name} className="grid gap-2">
-            {groups.length > 1 && <p className="text-xs text-muted-foreground">{g.integration.name}</p>}
-            {g.integration.enrichmentUnavailable && <Problem>{g.integration.enrichmentUnavailable}.</Problem>}
-            {g.identities.map((i) => (
-              <IdentityFacts key={i.entityId} group={g} identity={i} />
-            ))}
-            {g.lookup && !g.identities.length && <LookupState lookup={g.lookup} />}
-          </section>
-        ))}
-      </div>
+      <section aria-label={page.group.integration.name} className="grid gap-2">
+        {page.group.integration.enrichmentUnavailable && <Problem>{page.group.integration.enrichmentUnavailable}.</Problem>}
+        {page.identity ? <IdentityFacts group={page.group} identity={page.identity} /> : page.group.lookup && <LookupState lookup={page.group.lookup} />}
+      </section>
     );
   return (
     <div className="grid gap-2.5" data-testid="account-hover-card">
       <ValueHeader shown={shown} copy={shown} copied={`Copied ${shown}`} href={null} hrefLabel="" />
+      {pages.length > 1 && <CardPager at={at} count={pages.length} onStep={setIndex} noun="identity" label={groups.length > 1 ? page?.group.integration.name : undefined} />}
       <div className="max-h-96 overflow-y-auto border-t pt-2.5">{body}</div>
       {groups.length > 0 && (
         <div className="flex items-center justify-between gap-2 border-t pt-2 text-xs text-muted-foreground">
