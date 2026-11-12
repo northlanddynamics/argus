@@ -367,9 +367,12 @@ export function falconHttpClient({ cloud, credentials, appId }: FalconConnection
     return token.value;
   };
 
-  /** The user identities Identity Protection returns for `filter`, which uses `$values`. */
-  const identityQuery = async (what: string, filter: string, values: readonly string[]) => {
-    const query = `query ($values: [String!]) { entities(types: [USER], ${filter}) { nodes { ${IDENTITY_FIELDS} } } }`;
+  /**
+   * The user identities Identity Protection returns for `filter`, which uses `$values`.
+   * `type` is the GraphQL element type the filter argument expects: `entityIds` takes `UUID`, the name filters `String`.
+   */
+  const identityQuery = async (what: string, filter: string, values: readonly string[], type: "UUID" | "String" = "String") => {
+    const query = `query ($values: [${type}!]) { entities(types: [USER], ${filter}) { nodes { ${IDENTITY_FIELDS} } } }`;
     const res = await fetchImpl(`${base}/identity-protection/combined/graphql/v1`, {
       method: "POST",
       headers: { authorization: `Bearer ${await accessToken()}`, "content-type": "application/json", accept: "application/json" },
@@ -572,7 +575,7 @@ export function falconHttpClient({ cloud, credentials, appId }: FalconConnection
       const found: FalconIdentity[] = [];
       for (let i = 0; i < entityIds.length; i += IDENTITIES_PER_CALL) {
         const ids = entityIds.slice(i, i + IDENTITIES_PER_CALL);
-        const nodes = await identityQuery("Reading identities from Falcon", `entityIds: $values, first: ${ids.length}`, ids);
+        const nodes = await identityQuery("Reading identities from Falcon", `entityIds: $values, first: ${ids.length}`, ids, "UUID");
         found.push(...nodes.map(readIdentity).filter((n): n is FalconIdentity => n !== null));
       }
       return found;
