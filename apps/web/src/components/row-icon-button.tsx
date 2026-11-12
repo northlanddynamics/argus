@@ -1,7 +1,6 @@
 import type { ComponentProps } from "react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { QUIET_ACTION } from "@/routes/cases/rail";
 
 /**
  * A row's action as an icon, named by a tooltip on hover or focus and by `aria-label` for screen
@@ -11,7 +10,7 @@ export function RowIconButton({ label, children, ...props }: { label: string } &
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button variant="ghost" size="icon-sm" className={QUIET_ACTION} {...props}>
+        <Button variant="quiet" size="icon-sm" {...props}>
           {children}
         </Button>
       </TooltipTrigger>

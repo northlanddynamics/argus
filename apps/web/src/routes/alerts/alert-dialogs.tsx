@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Field, FieldContent, FieldDescription, FieldLabel, FieldLegend, FieldSet, FieldTitle } from "@/components/ui/field";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
@@ -90,18 +91,19 @@ export function CasePicker({
   return (
     <div className="grid gap-2">
       <Label htmlFor="case-filter">Search Cases</Label>
-      <div className="relative">
-        <SearchIcon aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
+      <InputGroup>
+        <InputGroupAddon>
+          <SearchIcon aria-hidden />
+        </InputGroupAddon>
+        <InputGroupInput
           id="case-filter"
           type="search"
-          className="pl-8"
           placeholder="C-1041 or words in the title"
           autoComplete="off"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
         />
-      </div>
+      </InputGroup>
       <p className="text-xs text-muted-foreground">{settled.trim() ? "Top matches" : "Most recently opened"}</p>
       <RadioGroup aria-label="Case" value={value ?? ""} onValueChange={onChange} className="p-0.5">
         {shown?.map((c) => (
@@ -112,7 +114,7 @@ export function CasePicker({
                 <FieldTitle>
                   <span className="font-mono text-xs text-muted-foreground">{caseRef(c.number)}</span> {c.title}
                 </FieldTitle>
-                <FieldDescription className="text-xs">
+                <FieldDescription size="sm">
                   {statusLabel[c.status]} · {severityLabel[c.severity]}
                   {c.assignee && ` · ${c.assignee.name}`}
                 </FieldDescription>
@@ -493,7 +495,7 @@ export function MoveAlertDialog({
                   <RadioGroupItem value="detach" id="move-detach" />
                   <FieldContent>
                     <FieldTitle>Detach</FieldTitle>
-                    <FieldDescription className="text-xs">Back to the Alert queue as New, on no Case</FieldDescription>
+                    <FieldDescription size="sm">Back to the Alert queue as New, on no Case</FieldDescription>
                   </FieldContent>
                 </Field>
               </FieldLabel>

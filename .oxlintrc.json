@@ -28,7 +28,77 @@
           "**/*.css"
         ]
       }
-    ]
+    ],
+    "shadcn/no-restyle": [
+      "error",
+      {
+        "allow": [
+          "layout",
+          "gap-*",
+          "gap-x-*",
+          "gap-y-*"
+        ],
+        "contracts": [
+          {
+            "pattern": "^(Sidebar|Card|Field|FieldGroup|Collapsible|RadioGroup|Command)$|(Content|Header|Footer|Panel|List|Action)$",
+            "allow": [
+              "layout",
+              "spacing",
+              "border-t",
+              "border-b",
+              "border-r",
+              "border-b-0",
+              "divide-y"
+            ]
+          },
+          {
+            "pattern": "^Skeleton$",
+            "allow": [
+              "layout",
+              "shape"
+            ]
+          },
+          {
+            "pattern": "^Badge$",
+            "allow": [
+              "layout",
+              "typography"
+            ]
+          },
+          {
+            "pattern": "^(Input|Textarea)$",
+            "allow": [
+              "layout",
+              "font-mono",
+              "text-xs",
+              "bg-background"
+            ]
+          },
+          {
+            "pattern": "^Table(Head|Cell)$",
+            "allow": [
+              "layout",
+              "spacing",
+              "typography",
+              "text-muted-foreground",
+              "text-foreground"
+            ]
+          }
+        ]
+      }
+    ],
+    "shadcn/no-raw-colors": "error",
+    "shadcn/no-arbitrary-values": [
+      "error",
+      {
+        "allow": [
+          "layout"
+        ]
+      }
+    ],
+    "shadcn/no-inline-styles": "error",
+    "shadcn/no-unknown-classes": "error",
+    "shadcn/require-static-classes": "error"
   },
   "overrides": [
     {

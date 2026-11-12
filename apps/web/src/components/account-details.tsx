@@ -70,7 +70,7 @@ function IdentityFacts({ group, identity }: { group: Group; identity: Identity }
         <span className="flex flex-wrap gap-1">
           {state.map((s) =>
             s.flagged ? (
-              <Badge key={s.label} variant="outline" className={NOTICE}>
+              <Badge key={s.label} variant="notice">
                 {s.label}
               </Badge>
             ) : (
@@ -89,7 +89,7 @@ function IdentityFacts({ group, identity }: { group: Group; identity: Identity }
           muted("Unknown")
         ) : f.privileged ? (
           <>
-            <Badge variant="outline" className={NOTICE}>
+            <Badge variant="notice">
               Privileged
             </Badge>
             {f.privilegedGroups.length > 0 && <span className="mt-0.5 block text-muted-foreground">{f.privilegedGroups.join(", ")}</span>}

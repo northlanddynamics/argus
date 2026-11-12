@@ -174,7 +174,7 @@ export function CaseEvidencePage() {
             <col className="w-20" />
           </colgroup>
           <TableHeader>
-            <TableRow className="hover:bg-transparent">
+            <TableRow variant="static">
               <TableHead>File</TableHead>
               <TableHead className={cn(fromMd, "text-right")}>{fits("md") && "Size"}</TableHead>
               <TableHead className={from6xl}>{fits("6xl") && "Added by"}</TableHead>
@@ -188,7 +188,7 @@ export function CaseEvidencePage() {
           </TableHeader>
           <TableBody>
             {evidence.isPending && (
-              <TableRow className="hover:bg-transparent">
+              <TableRow variant="static">
                 <TableCell colSpan={membersView ? 7 : 6}>
                   <Skeleton className="h-8" />
                 </TableCell>
@@ -238,7 +238,7 @@ export function CaseEvidencePage() {
               </TableRow>
             ))}
             {evidence.data?.length === 0 && (
-              <TableRow className="hover:bg-transparent">
+              <TableRow variant="static">
                 <TableCell colSpan={membersView ? 7 : 6} className="text-muted-foreground">
                   No Evidence yet.
                 </TableCell>

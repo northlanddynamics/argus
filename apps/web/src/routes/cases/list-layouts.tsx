@@ -33,7 +33,7 @@ const cardClass =
 function OverdueBadge({ count }: { count: number }) {
   if (!count) return null;
   return (
-    <Badge variant="outline" className="border-overdue-border text-overdue">
+    <Badge variant="overdue">
       {count} overdue
     </Badge>
   );
@@ -43,13 +43,13 @@ function AccessBadges({ c }: { c: CaseRow }) {
   return (
     <>
       {c.restricted && (
-        <Badge variant="outline" className="text-muted-foreground">
+        <Badge variant="outline-muted">
           <LockIcon aria-hidden />
           Restricted
         </Badge>
       )}
       {c.guests !== null && c.guests > 0 && (
-        <Badge variant="outline" className="text-muted-foreground" title="Guests from outside the Organization can see this Case">
+        <Badge variant="outline-muted" title="Guests from outside the Organization can see this Case">
           <UsersIcon aria-hidden />
           {plural(c.guests, "Guest", "Guests")}
         </Badge>
@@ -298,7 +298,7 @@ function PreviewSection({ title, count, action, children }: { title: string; cou
 }
 
 const sectionLink = (to: "/cases/$number/tasks" | "/cases/$number/timeline", number: number, label: string) => (
-  <Button variant="link" size="xs" className="h-auto px-0" asChild>
+  <Button variant="link" size="xs" asChild>
     <Link to={to} params={{ number: String(number) }}>
       {label}
     </Link>
@@ -382,7 +382,7 @@ function CasePreview({ row }: { row: CaseRow }) {
                     </span>
                     <span className="text-xs text-muted-foreground">{t.owner.name}</span>
                     {t.overdue ? (
-                      <Badge variant="outline" className="border-overdue-border text-overdue tabular-nums">
+                      <Badge variant="overdue" className="tabular-nums">
                         Overdue · {t.dueDate}
                       </Badge>
                     ) : (

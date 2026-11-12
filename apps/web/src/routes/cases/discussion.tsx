@@ -435,7 +435,7 @@ function Composer({
             <Checkbox id={`${label}-internal`} checked={internal} onCheckedChange={(checked) => setInternal(checked === true)} />
             <FieldContent>
               <FieldLabel htmlFor={`${label}-internal`}>Internal</FieldLabel>
-              <FieldDescription className="text-xs">Hidden from Guests</FieldDescription>
+              <FieldDescription size="sm">Hidden from Guests</FieldDescription>
             </FieldContent>
           </Field>
         )}

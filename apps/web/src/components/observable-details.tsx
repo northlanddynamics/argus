@@ -8,7 +8,6 @@ import { RowIconButton } from "@/components/row-icon-button";
 import { enrichmentKey, hasEnrichment, useEnrichmentPanel } from "@/lib/enrichment";
 import { defang } from "@/lib/observables";
 import { cn } from "@/lib/utils";
-import { QUIET_ACTION } from "@/routes/cases/rail";
 
 /**
  * Where an Observable is shown, the ways to open its Enrichment in the Enrichment panel
@@ -64,7 +63,7 @@ export function EnrichmentButton({ type, value, className }: { type: ObservableT
       label="Show Enrichment (I)"
       aria-label={`Show Enrichment for ${defang(type, value)}`}
       aria-pressed={open}
-      className={cn(QUIET_ACTION, "size-6 shrink-0", open && "bg-muted text-foreground", className)}
+      className={cn("size-6 shrink-0", className)}
       onClick={(e) => panel.toggle({ type, value }, { from: e.currentTarget })}
     >
       <PanelRightOpenIcon aria-hidden />

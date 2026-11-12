@@ -64,7 +64,7 @@ export function TagsPanel({ number, tags, readOnly }: { number: number; tags: st
       <RailHeader>
         <RailTitle>Tags</RailTitle>
         {!readOnly && !adding && (
-          <Button variant="link" size="xs" className="h-auto px-0" onClick={() => setAdding(true)}>
+          <Button variant="link" size="xs" onClick={() => setAdding(true)}>
             <PlusIcon aria-hidden />
             Tag
           </Button>
@@ -75,14 +75,14 @@ export function TagsPanel({ number, tags, readOnly }: { number: number; tags: st
           <ul className="flex flex-wrap gap-1.5" aria-label="Tags">
             {tags.map((tag) => (
               <li key={tag}>
-                <Badge variant="secondary" className="gap-1">
+                <Badge variant="secondary">
                   {tagLabel(tag)}
                   {!readOnly && (
                     <Button
                       variant="ghost"
                       size="icon-xs"
                       aria-label={`Remove ${tagLabel(tag)}`}
-                      className="-mr-1 size-5 rounded-full hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring"
+                      className="-mr-1"
                       disabled={remove.isPending}
                       onClick={() => remove.mutate(tag)}
                     >

@@ -207,7 +207,7 @@ export function CasesPage() {
               {CASE_LAYOUTS.map((l) => {
                 const Icon = layoutIcon[l];
                 return (
-                  <ToggleGroupItem key={l} value={l} aria-label={layoutLabel[l]} className="gap-1.5 px-2.5">
+                  <ToggleGroupItem key={l} value={l} aria-label={layoutLabel[l]} className="gap-1.5">
                     <Icon aria-hidden />
                     <span className="hidden sm:inline">{layoutLabel[l]}</span>
                   </ToggleGroupItem>
@@ -220,7 +220,7 @@ export function CasesPage() {
       />
       <div className="grid min-w-0 grid-cols-1 gap-3">
         <Tabs value={view} activationMode="manual">
-          <TabsList variant="line" aria-label="Case views" className="w-full justify-start overflow-x-auto overflow-y-hidden border-b">
+          <TabsList variant="line" aria-label="Case views" className="w-full justify-start overflow-x-auto overflow-y-hidden">
             {CASE_VIEWS.map((v) => (
               <TabsTrigger key={v} value={v} className="flex-none" asChild>
                 <Link to="/" search={{ ...search, view: v, status: v === "closed" || search.status === "closed" ? undefined : search.status }}>
@@ -301,7 +301,7 @@ export function CasesPage() {
               {`${viewLabel[view]}, ${filtered ? "filtered, " : ""}sorted by ${sortLabel[sort]}, ${order === "desc" ? "descending" : "ascending"}`}
             </TableCaption>
             <TableHeader>
-              <TableRow className="hover:bg-transparent">
+              <TableRow variant="static">
                 <TableHead scope="col" className="w-20 pl-4" {...sortable("number", "Case")} />
                 <TableHead scope="col" className="w-28" {...sortable("severity", "Severity")} />
                 <TableHead scope="col">Title</TableHead>
@@ -316,7 +316,7 @@ export function CasesPage() {
             <TableBody>
               {cases.isPending &&
                 Array.from({ length: 6 }, (_, i) => (
-                  <TableRow key={i} className="hover:bg-transparent" aria-hidden>
+                  <TableRow key={i} variant="static" aria-hidden>
                     <TableCell className="pl-4"><Skeleton className="h-4 w-10" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-64" /></TableCell>
@@ -336,10 +336,9 @@ export function CasesPage() {
               {rows?.map((c) => (
                 <TableRow
                   key={c.number}
-                  className={cn(
-                    "cursor-pointer [&>td]:align-baseline transition-colors duration-700 focus-within:bg-muted/50",
-                    justChanged.has(c.number) && "bg-muted duration-0",
-                  )}
+                  variant="live"
+                  data-changed={justChanged.has(c.number) || undefined}
+                  className="cursor-pointer [&>td]:align-baseline"
                   onClick={(e) => {
                     if ((e.target as HTMLElement).closest("a, button") || window.getSelection()?.toString()) return;
                     openCase(c.number);
@@ -400,7 +399,7 @@ export function CasesPage() {
                 </TableRow>
               ))}
               {rows?.length === 0 && (
-                <TableRow className="hover:bg-transparent">
+                <TableRow variant="static">
                   <TableCell colSpan={9} className="py-10 text-center whitespace-normal">
                     <EmptyState view={view} filtered={filtered} unassigned={counts?.unassigned ?? 0} onClear={() => setSearch(noFilters)} />
                   </TableCell>

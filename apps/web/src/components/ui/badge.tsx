@@ -18,6 +18,21 @@ const badgeVariants = cva(
         ghost:
           "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
         link: "text-primary underline-offset-4 hover:underline",
+        notice: "border-notice-border bg-notice text-notice-foreground",
+        "outline-notice": "border-notice-border text-notice-foreground",
+        "outline-destructive": "border-destructive text-destructive",
+        "outline-muted":
+          "border-border text-muted-foreground [a]:hover:bg-muted",
+        overdue: "border-overdue-border text-overdue",
+        internal: "border-dashed border-foreground/50 text-foreground",
+        "outline-dashed": "border-dashed border-border text-foreground",
+        // Severity: colour and weight fade together, so it never rests on colour alone.
+        critical:
+          "bg-severity-critical font-semibold text-severity-critical-foreground",
+        high: "border-2 border-severity-high-border bg-severity-high font-semibold text-severity-high-foreground",
+        medium: "border-severity-medium-border text-severity-medium-foreground",
+        low: "border-severity-low-border text-severity-low-foreground",
+        informational: "border-border text-muted-foreground",
       },
     },
     defaultVariants: {

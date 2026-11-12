@@ -5,7 +5,6 @@ import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
-import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TypeIcon } from "@/routes/observables/item-row";
 import { ASSET_TYPES, assetTypeLabel, OBSERVABLE_TYPES, observableTypeLabel, type ObservablesSearch, tickedTypes } from "@/lib/observables";
@@ -39,7 +38,7 @@ export function ObservablesLayout() {
     <div className="grid w-full grid-cols-1 gap-4">
       <PageHeader title="Observables" description="Every Observable the Organization holds, and its Ignored list." />
       <Tabs value={onIgnored ? "ignored" : "observables"} activationMode="manual">
-        <TabsList variant="line" aria-label="Observables" className="w-full justify-start border-b">
+        <TabsList variant="line" aria-label="Observables" className="w-full justify-start">
           <TabsTrigger value="observables" className="h-8 flex-none" asChild>
             <Link to="/observables" search={(prev) => prev}>
               Observables
@@ -89,11 +88,11 @@ function TypeGroup({
         {title}
       </legend>
       {types.map(([type, label]) => (
-        <Label key={type} className="cursor-pointer rounded-md px-3 py-2 text-sm font-normal hover:bg-muted">
+        <label key={type} className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm leading-none select-none hover:bg-muted">
           <Checkbox checked={ticked.has(type)} onCheckedChange={(on) => onTick(type, on === true)} />
           <TypeIcon type={type} />
           {label}
-        </Label>
+        </label>
       ))}
     </fieldset>
   );

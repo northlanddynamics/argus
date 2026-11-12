@@ -326,7 +326,7 @@ export function AlertQueuePage() {
         }
       />
       {unhealthy.length > 0 && (
-        <Alert className="border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80">
+        <Alert variant="notice">
           <AlertTitle>
             {unhealthy.length === 1 ? `${unhealthy[0]!.name} isn't bringing in Alerts` : `${unhealthy.length} Integrations aren't bringing in Alerts`}
           </AlertTitle>
@@ -417,8 +417,8 @@ export function AlertQueuePage() {
       {/* The Alert panel takes two fifths of the page beside the queue, never less than 26rem. */}
       <div className={cn("grid items-start gap-4", showing && "@4xl:grid-cols-[minmax(0,3fr)_minmax(26rem,2fr)]")}>
       {!(alerts.isError && !loaded) && (
-      <Card className={cn("@container py-0 transition-opacity", alerts.isPlaceholderData && "opacity-60")}>
-          <Table ref={table} className="table-fixed">
+      <Card className="@container py-0">
+          <Table ref={table} className="table-fixed" aria-busy={alerts.isPlaceholderData}>
             {/* Column widths live here, so the header row can turn into the selection toolbar without moving them. */}
             <colgroup>
               <col className="w-10" />
@@ -429,7 +429,7 @@ export function AlertQueuePage() {
               <col className="w-32 @7xl:w-[10%]" />
             </colgroup>
             <TableHeader>
-              <TableRow className={cn("hover:bg-transparent", selected.size > 0 && "bg-muted/50")}>
+              <TableRow variant="static" data-state={selected.size > 0 ? "selected" : undefined}>
                 <TableHead scope="col" className="pl-4">
                   <Checkbox
                     aria-label="Select all Alerts shown"
@@ -473,7 +473,7 @@ export function AlertQueuePage() {
             <TableBody>
               {alerts.isPending &&
                 Array.from({ length: 8 }, (_, i) => (
-                  <TableRow key={i} className="hover:bg-transparent" aria-hidden>
+                  <TableRow key={i} variant="static" aria-hidden>
                     <TableCell className="pl-4"><Skeleton className="size-4" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-4/5" /></TableCell>
@@ -497,8 +497,7 @@ export function AlertQueuePage() {
                   draggable
                   onDragStart={(e) => dragStart(e, a)}
                   onDragEnd={endAlertDrag}
-                  // A half-strength fill: muted text on the full grey wash falls short of 4.5:1.
-                  className={cn("focus-within:bg-muted/50 data-[state=selected]:bg-muted/50", showing === a.id && "bg-muted/50")}
+                  aria-current={showing === a.id || undefined}
                 >
                   <TableCell className="pl-4">
                     <Checkbox
@@ -586,7 +585,7 @@ export function AlertQueuePage() {
                 </AlertMenu>
               ))}
               {loaded?.length === 0 && (
-                <TableRow className="hover:bg-transparent">
+                <TableRow variant="static">
                   <TableCell colSpan={6} className="py-10 text-center whitespace-normal">
                     {filtered ? (
                       <div className="grid justify-items-center gap-2">
@@ -654,7 +653,7 @@ function OutcomeNotice({ outcome, onReselect, onDismiss }: { outcome: BulkOutcom
   const total = outcome.applied.length + outcome.refused.length;
   if (!outcome.refused.length) {
     return (
-      <Alert role="status" id="alert-outcome" tabIndex={-1} className="outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+      <Alert role="status" id="alert-outcome" tabIndex={-1}>
         <AlertTitle>
           {alertCount(outcome.applied.length)} {outcome.verb}
         </AlertTitle>
@@ -671,7 +670,7 @@ function OutcomeNotice({ outcome, onReselect, onDismiss }: { outcome: BulkOutcom
       role="status"
       id="alert-outcome"
       tabIndex={-1}
-      className="outline-none focus-visible:ring-3 focus-visible:ring-ring/50 border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80"
+      variant="notice"
     >
       <AlertTitle>
         {outcome.refused.length} of {alertCount(total)} {outcome.refused.length === 1 ? "was" : "were"} not {outcome.verb}
@@ -770,7 +769,7 @@ function Extracted({
             <span key={item.id} className="group/row inline-flex max-w-full items-center">
               <EnrichmentTarget type={item.observable?.type ?? ""} value={item.observable?.value ?? ""} enabled={!!item.observable}>
                 <ObservableMenu observable={item.observable}>
-                  <Badge variant="outline" className="max-w-full truncate font-mono hover:bg-muted" title={item.title} asChild>
+                  <Badge variant="outline" className="max-w-full truncate font-mono" title={item.title} asChild>
                     <ItemLink kind={kind} id={item.id}>
                       {item.text}
                     </ItemLink>
@@ -839,7 +838,7 @@ function RelatedCases({ alert }: { alert: AlertDetail }) {
                   <AccountHoverCard key={`${s.kind}-${s.id}`} assetId={s.id} account={s.value} enabled={s.kind === "asset" && s.type === "account"}>
                     <EnrichmentTarget type={s.type} value={s.value} enabled={s.kind === "observable"}>
                     <ObservableMenu observable={s.kind === "observable" ? s : null}>
-                      <Badge variant="outline" className="max-w-full truncate font-mono hover:bg-muted" title={s.value} asChild>
+                      <Badge variant="outline" className="max-w-full truncate font-mono" title={s.value} asChild>
                         <ItemLink kind={s.kind} id={s.id}>
                           {s.kind === "observable"
                             ? `${observableTypeLabel[s.type]} ${shownObservable(s.type, s.value)}`
@@ -899,7 +898,7 @@ function AlertPanel({ id, onClose, onAct }: { id: string; onClose: () => void; o
   if (!a) {
     return (
       <Card role="region" aria-label="Alert" className="self-start">
-        <CardContent className="grid gap-3 text-sm">
+        <CardContent className="grid gap-3">
           {alert.isError ? (
             <>
               <p className="font-medium">This Alert couldn't be loaded</p>
@@ -930,7 +929,7 @@ function AlertPanel({ id, onClose, onAct }: { id: string; onClose: () => void; o
   return (
     // Beside the queue it stays in view while the queue scrolls, scrolling on its own when it runs longer than the window.
     <Card role="region" aria-label="Alert" className="self-start @4xl:sticky @4xl:top-18 @4xl:max-h-[calc(100svh-5.5rem)] @4xl:overflow-y-auto">
-      <CardContent className="grid gap-3 text-sm">
+      <CardContent className="grid gap-3">
         <div className="flex items-center gap-2">
           <SeverityBadge severity={a.severity} />
           <Badge variant="outline">{alertStatusLabel[a.status]}</Badge>

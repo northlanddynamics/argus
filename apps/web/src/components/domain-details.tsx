@@ -185,7 +185,7 @@ export function DomainDetailsCard({ type, value }: { type: "domain" | "email"; v
       <CardHeader>
         <CardTitle>{type === "email" && q.data ? `VirusTotal · ${defang("domain", q.data.domain)}` : "VirusTotal"}</CardTitle>
       </CardHeader>
-      <CardContent className="grid gap-3 text-sm">
+      <CardContent className="grid gap-3">
         <DomainLookupBody lookup={q.data} loading={q.isPending} error={q.error} />
         <DomainFooter value={value} lookup={q.data} loading={q.isPending} />
       </CardContent>

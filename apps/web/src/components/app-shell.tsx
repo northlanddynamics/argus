@@ -112,14 +112,16 @@ export function AppShell() {
                       {i > 0 && <BreadcrumbSeparator className="hidden @2xl:block" />}
                       <BreadcrumbItem
                         className={cn(
-                          i === 0 && crumbs.length > 1 && "font-medium text-foreground",
+                          // The current page gives way to the header's other contents rather than wrapping.
+                          // oxlint-disable-next-line shadcn/no-restyle -- truncation is layout here, not a type treatment.
                           i < crumbs.length - 1 ? "hidden @2xl:inline-flex" : "min-w-0 truncate",
                         )}
                       >
                         {c.to && i < crumbs.length - 1 ? (
                           <BreadcrumbLink asChild>
                             <Link to={c.to} params={c.params}>
-                              {c.label}
+                              {/* The Organization reads as a name, not a link back. */}
+                              {i === 0 ? <span className="font-medium text-foreground">{c.label}</span> : c.label}
                             </Link>
                           </BreadcrumbLink>
                         ) : (

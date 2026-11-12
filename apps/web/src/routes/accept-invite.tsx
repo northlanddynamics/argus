@@ -74,7 +74,7 @@ export function AcceptInvitePage() {
       <Card className="w-full max-w-sm">
         <CardHeader>
           <p className="text-sm font-semibold tracking-widest">ARGUS</p>
-          <CardTitle className="text-2xl">Accept invitation</CardTitle>
+          <CardTitle size="lg">Accept invitation</CardTitle>
           {invitation.data && (
             <CardDescription>
               You're invited to be the {invitation.data.role === "owner" ? "Owner" : "Member"} of{" "}

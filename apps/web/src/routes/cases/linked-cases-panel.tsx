@@ -149,7 +149,7 @@ function LinkCaseDialog({ number }: { number: number }) {
       }}
     >
       <DialogTrigger asChild>
-        <Button variant="link" size="xs" className="h-auto px-0">
+        <Button variant="link" size="xs">
           <PlusIcon aria-hidden />
           Link
         </Button>
@@ -189,7 +189,7 @@ function LinkCaseDialog({ number }: { number: number }) {
             </Select>
           </Field>
           {duplicate && (
-            <Alert className="border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80">
+            <Alert variant="notice">
               <AlertDescription>
                 Marking as Duplicate of {target ? caseRef(Number(target)) : "another Case"} closes {caseRef(number)} now with Resolution
                 Duplicate.

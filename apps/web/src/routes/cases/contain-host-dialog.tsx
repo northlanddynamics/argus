@@ -22,7 +22,6 @@ import {
 import { exactTime, when } from "@/lib/when";
 
 /** The Amber Notice treatment (DESIGN.md): the one warning style. */
-const notice = "border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80";
 
 const containmentLabel: Record<NonNullable<ContainmentDevice["containment"]>, string> = {
   normal: "Not contained",
@@ -162,12 +161,12 @@ export function ContainHostDialog({
         )}
 
         {!lift && picked && isContained(picked) && (
-          <Alert className={notice}>
+          <Alert variant="notice">
             <AlertDescription>Falcon already reports this device {containmentLabel[picked.containment!].toLowerCase()}.</AlertDescription>
           </Alert>
         )}
         {lift && picked && fresh(picked) && (
-          <Alert className={notice}>
+          <Alert variant="notice">
             <AlertDescription>
               {isContained(picked) ? (
                 <>

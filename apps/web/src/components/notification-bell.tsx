@@ -63,7 +63,8 @@ export function NotificationBell() {
         <Button variant="ghost" size="icon" className="relative" aria-label={unread ? `Notifications, ${unread} unread` : "Notifications"}>
           <BellIcon />
           {unread > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] leading-4 font-medium text-white dark:text-primary-foreground">
+            // oxlint-disable-next-line shadcn/no-arbitrary-values -- the unread count sits on the bell's corner; 12px would cover the bell.
+            <span className="absolute -top-0.5 -right-0.5 flex min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] leading-4 font-medium text-primary-foreground">
               {unread > 99 ? "99+" : unread}
             </span>
           )}

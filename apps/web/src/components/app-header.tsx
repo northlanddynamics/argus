@@ -26,7 +26,7 @@ export function AppHeader({
     await navigate({ to: "/sign-in" });
   };
   return (
-    <header className="flex items-center justify-between bg-slate-900 px-6 py-3 text-slate-50">
+    <header className="flex items-center justify-between bg-console px-6 py-3 text-console-foreground">
       <div className="flex items-center gap-4">
         <span className="font-semibold tracking-widest">ARGUS</span>
         {badge}
@@ -34,7 +34,7 @@ export function AppHeader({
       <div className="flex items-center gap-4 text-sm">
         {live && <LiveIndicator />}
         <span>{email}</span>
-        {passkeys && <AddPasskeyButton size="sm" className="bg-transparent text-slate-50" />}
+        {passkeys && <AddPasskeyButton size="sm" variant="ghost" />}
         <Button variant="secondary" size="sm" onClick={signOut}>
           Sign out
         </Button>

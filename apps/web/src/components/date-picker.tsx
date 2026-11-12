@@ -31,6 +31,7 @@ export function DatePicker({
   disabled,
   clearable = true,
   className,
+  size = "default",
   "aria-invalid": invalid,
 }: {
   id?: string;
@@ -43,6 +44,8 @@ export function DatePicker({
   /** Offers a way back to no day. */
   clearable?: boolean;
   className?: string;
+  /** `sm` for a filter bar. */
+  size?: "default" | "sm";
   "aria-invalid"?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -53,10 +56,11 @@ export function DatePicker({
         <Button
           id={id}
           type="button"
-          variant="outline"
+          variant="picker"
+          size={size}
           data-empty={!selected}
           aria-invalid={invalid}
-          className={cn("w-full justify-between font-normal data-[empty=true]:text-muted-foreground", className)}
+          className={cn("w-full justify-between", className)}
         >
           {/* `YYYY-MM-DD`: one unambiguous form, beside UTC times and due dates. */}
           {selected ? value : placeholder}

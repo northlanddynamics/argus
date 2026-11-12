@@ -17,6 +17,16 @@
     --color-overdue-border: var(--overdue-border);
     --color-mention: var(--mention);
     --color-mention-foreground: var(--mention-foreground);
+    /* Presence tints and the operator console header look the same in both themes. */
+    --color-tint-sky: oklch(0.901 0.058 230.902);
+    --color-tint-amber: oklch(0.924 0.12 95.746);
+    --color-tint-emerald: oklch(0.905 0.093 164.15);
+    --color-tint-rose: oklch(0.892 0.058 10.001);
+    --color-tint-violet: oklch(0.894 0.057 293.283);
+    --color-tint-lime: oklch(0.938 0.127 124.321);
+    --color-tint-foreground: oklch(0.208 0.042 265.755);
+    --color-console: oklch(0.208 0.042 265.755);
+    --color-console-foreground: oklch(0.984 0.003 247.858);
     --color-severity-critical: var(--severity-critical);
     --color-severity-critical-foreground: var(--severity-critical-foreground);
     --color-severity-high: var(--severity-high);

@@ -41,7 +41,7 @@ export function CaseChoice({ value, onChange, required = false }: { value: numbe
   return (
     <div className="grid gap-2">
       {!required && (
-        <Label className="flex items-center gap-2 font-normal">
+        <Label variant="option">
           <Checkbox checked={on} onCheckedChange={(c) => onChange(c ? undefined : null)} />
           Link to a Case
         </Label>
@@ -127,7 +127,7 @@ export function WorkflowsSection() {
         {sources.length > 0 && (
           <span className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
             {HIDEABLE.map(({ status, label }) => (
-              <Label key={status} className="gap-1.5 text-xs font-normal text-muted-foreground">
+              <Label key={status} variant="meta" className="gap-1.5">
                 <Switch size="sm" checked={hidden.has(status)} onCheckedChange={(c) => toggleHidden(status, c)} />
                 {label}
                 <span className="tabular-nums">({countOf(status)})</span>
@@ -190,7 +190,7 @@ export function WorkflowsSection() {
               {w.inputs.length > 0 && (
                 <div className="flex min-w-0 flex-wrap gap-1">
                   {w.inputs.map((i) => (
-                    <Badge key={i.name} variant="outline" className="max-w-full font-normal text-muted-foreground" title={i.label}>
+                    <Badge key={i.name} variant="outline-muted" className="max-w-full font-normal" title={i.label}>
                       <span className="truncate">{i.label}</span>
                       {i.required && <span aria-label="required">*</span>}
                     </Badge>
@@ -307,7 +307,7 @@ export function RunWorkflowDialog({
                 const id = `workflow-input-${i.name}`;
                 if (i.type === "boolean") {
                   return (
-                    <Label key={i.name} className="flex items-start gap-2 font-normal">
+                    <Label key={i.name} variant="option" className="items-start">
                       <Checkbox className="mt-0.5" checked={values[i.name] === true} onCheckedChange={(c) => setValues((v) => ({ ...v, [i.name]: !!c }))} />
                       <span>
                         {i.label}
@@ -501,7 +501,7 @@ export function WorkflowRunDialog({ id, onClose }: { id: string; onClose: () => 
           </Alert>
         )}
         <DialogFooter className="items-center sm:justify-between">
-          <Button variant="link" className="h-auto p-0 text-xs" onClick={() => void navigate({ to: "/actions/log" })}>
+          <Button variant="link" size="xs" onClick={() => void navigate({ to: "/actions/log" })}>
             View in Action Log
           </Button>
           <div className="flex gap-2">

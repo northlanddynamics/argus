@@ -57,7 +57,7 @@ function NavRail({ me }: { me: Me }) {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild className="md:h-8 md:p-0" tooltip={{ children: workspace, hidden: false, className: "data-closed:animate-none" }}>
+            <SidebarMenuButton size="rail" asChild tooltip={{ children: workspace, hidden: false, className: "data-closed:animate-none" }}>
               <Link to="/" aria-label="Argus home" onClick={closeMobile}>
                 <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
                   <ShieldIcon className="size-4" />
@@ -78,7 +78,6 @@ function NavRail({ me }: { me: Me }) {
                   asChild
                   isActive={onCases}
                   tooltip={{ children: me.guest ? "Your Cases" : "Cases", hidden: false, className: "data-closed:animate-none" }}
-                  className="px-2.5 md:px-2"
                 >
                   <Link
                     to="/"
@@ -95,7 +94,6 @@ function NavRail({ me }: { me: Me }) {
                   asChild
                   isActive={!!matchRoute({ to: "/search" })}
                   tooltip={{ children: "Search", hidden: false, className: "data-closed:animate-none" }}
-                  className="px-2.5 md:px-2"
                 >
                   <Link to="/search" search={{}} aria-current={matchRoute({ to: "/search" }) ? "page" : undefined} onClick={closeMobile}>
                     <SearchIcon />
@@ -109,7 +107,6 @@ function NavRail({ me }: { me: Me }) {
                     asChild
                     isActive={!!matchRoute({ to: "/alerts" })}
                     tooltip={{ children: "Alerts", hidden: false, className: "data-closed:animate-none" }}
-                    className="px-2.5 md:px-2"
                   >
                     <Link to="/alerts" aria-current={matchRoute({ to: "/alerts" }) ? "page" : undefined} onClick={closeMobile}>
                       <SirenIcon />
@@ -124,7 +121,6 @@ function NavRail({ me }: { me: Me }) {
                     asChild
                     isActive={!!matchRoute({ to: "/observables", fuzzy: true })}
                     tooltip={{ children: "Observables", hidden: false, className: "data-closed:animate-none" }}
-                    className="px-2.5 md:px-2"
                   >
                     <Link
                       to="/observables"
@@ -143,7 +139,6 @@ function NavRail({ me }: { me: Me }) {
                     asChild
                     isActive={!!matchRoute({ to: "/actions", fuzzy: true })}
                     tooltip={{ children: "Actions", hidden: false, className: "data-closed:animate-none" }}
-                    className="px-2.5 md:px-2"
                   >
                     <Link to="/actions" aria-current={matchRoute({ to: "/actions", fuzzy: true }) ? "page" : undefined} onClick={closeMobile}>
                       <ZapIcon />
@@ -158,7 +153,6 @@ function NavRail({ me }: { me: Me }) {
                     asChild
                     isActive={!!matchRoute({ to: "/dashboard" })}
                     tooltip={{ children: "Dashboard", hidden: false, className: "data-closed:animate-none" }}
-                    className="px-2.5 md:px-2"
                   >
                     <Link to="/dashboard" aria-current={matchRoute({ to: "/dashboard" }) ? "page" : undefined} onClick={closeMobile}>
                       <ChartColumnIcon />
@@ -173,7 +167,6 @@ function NavRail({ me }: { me: Me }) {
                     asChild
                     isActive={!!matchRoute({ to: "/lookup" })}
                     tooltip={{ children: "Bulk Lookup", hidden: false, className: "data-closed:animate-none" }}
-                    className="px-2.5 md:px-2"
                   >
                     <Link to="/lookup" aria-current={matchRoute({ to: "/lookup" }) ? "page" : undefined} onClick={closeMobile}>
                       <ListChecksIcon />
@@ -188,7 +181,6 @@ function NavRail({ me }: { me: Me }) {
                     asChild
                     isActive={!!matchRoute({ to: "/settings", fuzzy: true })}
                     tooltip={{ children: "Settings", hidden: false, className: "data-closed:animate-none" }}
-                    className="px-2.5 md:px-2"
                   >
                     <Link to="/settings" aria-current={matchRoute({ to: "/settings", fuzzy: true }) ? "location" : undefined} onClick={closeMobile}>
                       <SettingsIcon />

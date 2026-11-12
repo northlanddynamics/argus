@@ -107,7 +107,7 @@ export function MembersPage() {
               <col className="@2xl:w-28" />
             </colgroup>
             <TableHeader>
-              <TableRow className="hover:bg-transparent">
+              <TableRow variant="static">
                 <TableHead>Member</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Sign-in</TableHead>

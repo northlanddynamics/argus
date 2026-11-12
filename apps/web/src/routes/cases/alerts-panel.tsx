@@ -23,7 +23,7 @@ export function CaseAlertsPanel({ c }: { c: CaseView }) {
         <RailTitle>Alerts{alerts.data?.length ? ` · ${alerts.data.length}` : ""}</RailTitle>
         {member && (
           <div>
-            <Button variant="link" size="xs" className="h-auto px-0" asChild>
+            <Button variant="link" size="xs" asChild>
               <Link to="/alerts" search={{ status: "attached" }}>
                 Alert queue
               </Link>

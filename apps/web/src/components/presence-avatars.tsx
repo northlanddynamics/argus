@@ -2,7 +2,7 @@ import { Avatar, AvatarFallback, AvatarGroup } from "@/components/ui/avatar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCasePresence } from "@/lib/live";
 
-const tints = ["bg-sky-200", "bg-amber-200", "bg-emerald-200", "bg-rose-200", "bg-violet-200", "bg-lime-200"];
+const tints = ["sky", "amber", "emerald", "rose", "violet", "lime"] as const;
 
 export const initials = (name: string) =>
   name
@@ -18,8 +18,8 @@ export const tintFor = (id: string) => tints[[...id].reduce((sum, ch) => sum + c
 /** A small avatar for a person named in a list: their initials on their tint. */
 export function PersonAvatar({ person }: { person: { id: string | null; name: string } }) {
   return (
-    <Avatar size="sm" className="size-5" aria-hidden>
-      <AvatarFallback className={`text-[9px]! font-semibold text-slate-900 ${tintFor(person.id ?? person.name)}`}>{initials(person.name)}</AvatarFallback>
+    <Avatar size="xs" aria-hidden>
+      <AvatarFallback tint={tintFor(person.id ?? person.name)}>{initials(person.name)}</AvatarFallback>
     </Avatar>
   );
 }
@@ -36,7 +36,7 @@ export function PresenceAvatars({ number }: { number: number }) {
           <Tooltip key={v.id}>
             <TooltipTrigger asChild>
               <Avatar role="listitem" aria-label={v.name} tabIndex={0}>
-                <AvatarFallback className={`text-[11px] font-semibold text-slate-900 ${tintFor(v.id)}`} aria-hidden>
+                <AvatarFallback tint={tintFor(v.id)} aria-hidden>
                   {initials(v.name)}
                 </AvatarFallback>
               </Avatar>

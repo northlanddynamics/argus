@@ -8,7 +8,7 @@ export function AuthCard({ title, description, children }: { title: string; desc
       <Card className="w-full max-w-sm">
         <CardHeader>
           <p className="text-sm font-semibold tracking-widest">ARGUS</p>
-          <CardTitle className="text-2xl">{title}</CardTitle>
+          <CardTitle size="lg">{title}</CardTitle>
           {description && <CardDescription>{description}</CardDescription>}
         </CardHeader>
         <CardContent>{children}</CardContent>

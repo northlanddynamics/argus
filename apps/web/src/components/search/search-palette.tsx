@@ -95,7 +95,7 @@ export function SearchPalette() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent
           showCloseButton={false}
-          className="top-[12%] translate-y-0 gap-0 overflow-hidden rounded-xl p-0 sm:max-w-xl"
+          className="top-[12%] translate-y-0 gap-0 overflow-hidden p-0 sm:max-w-xl"
           onCloseAutoFocus={(e) => {
             // Opened from the keyboard, the box has no trigger to return to: go back where focus was,
             // or to the new page's content after opening a result.
@@ -111,7 +111,7 @@ export function SearchPalette() {
             loop
             value={highlighted}
             onValueChange={(value) => setHighlight({ for: hitsKey, value })}
-            className="rounded-none! p-0"
+            className="p-0"
           >
             <div className="border-b p-2">
               <CommandInput
@@ -120,7 +120,7 @@ export function SearchPalette() {
                 placeholder={guest ? "Search your Cases…" : "Search Cases, Alerts, Observables, Assets…"}
                 aria-label="Search"
                 maxLength={200}
-                className="h-9 text-base sm:text-sm"
+                className="h-9"
               />
               <KindFilter kinds={kinds} onChange={setKinds} counts={counts} className="mt-2 flex-wrap" />
             </div>
@@ -130,7 +130,7 @@ export function SearchPalette() {
               {typed && !waiting && results.isError && (
                 <p className="px-3 py-6 text-center text-sm">
                   <span className="text-destructive">Could not search.</span>{" "}
-                  <Button variant="link" size="sm" className="h-auto p-0" onClick={() => void results.refetch()}>
+                  <Button variant="link" size="sm" onClick={() => void results.refetch()}>
                     Try again
                   </Button>
                 </p>
@@ -151,7 +151,7 @@ export function SearchPalette() {
                           leave();
                           void openHit(hit);
                         }}
-                        className="group/hit py-1.5 [&>svg:last-child]:hidden"
+                        className="group/hit [&>svg:last-child]:hidden"
                       >
                         <SearchHitRow hit={hit} query={settled} showKind />
                       </CommandItem>
@@ -160,6 +160,7 @@ export function SearchPalette() {
                 </CommandGroup>
               )}
               {typed && (
+                // oxlint-disable-next-line shadcn/no-restyle -- "See all" closes the list as a footer row, set off by a hairline and quieter than the hits.
                 <CommandItem value="see-all" onSelect={seeAll} className="mt-1 justify-between border-t py-2 text-muted-foreground [&>svg:last-child]:hidden">
                   <span>
                     See all {total > hits.length ? `${total} ` : ""}results for <span className="text-foreground">“{q.trim()}”</span>

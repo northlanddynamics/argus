@@ -264,11 +264,16 @@ export function WorkQueue({ me, current }: { me: Me; current: number | null }) {
             )}
             {sections.map((s) => (
               <Collapsible key={s.id} open={!s.collapsed} onOpenChange={(open) => change(s.id, { collapsed: !open })}>
-                <CollapsibleTrigger className="group/section sticky top-0 z-1 flex w-full items-center gap-1.5 border-b bg-sidebar px-4 py-2 text-left text-xs font-medium text-foreground outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-inset">
-                  <ChevronRightIcon className="size-3.5 text-muted-foreground transition-transform duration-150 group-data-[state=open]/section:rotate-90" aria-hidden />
-                  <span>{sectionLabel[s.id]}</span>
-                  <span className="ml-auto font-normal text-muted-foreground tabular-nums">{sectionCount(s)}</span>
-                  <span className="sr-only">{s.collapsed ? ", collapsed" : ""}</span>
+                <CollapsibleTrigger asChild>
+                  <button
+                    type="button"
+                    className="group/section sticky top-0 z-1 flex w-full items-center gap-1.5 border-b bg-sidebar px-4 py-2 text-left text-xs font-medium text-foreground outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-inset"
+                  >
+                    <ChevronRightIcon className="size-3.5 text-muted-foreground transition-transform duration-150 group-data-[state=open]/section:rotate-90" aria-hidden />
+                    <span>{sectionLabel[s.id]}</span>
+                    <span className="ml-auto font-normal text-muted-foreground tabular-nums">{sectionCount(s)}</span>
+                    <span className="sr-only">{s.collapsed ? ", collapsed" : ""}</span>
+                  </button>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
                   {s.items.length === 0 ? (
@@ -374,7 +379,7 @@ function QueueRow({
         <span className="font-mono text-xs text-muted-foreground">{caseRef(c.number)}</span>
         <SeverityBadge severity={c.severity} short />
         {c.overdueTasks > 0 && (
-          <Badge variant="outline" className="border-overdue-border text-overdue">
+          <Badge variant="overdue">
             {c.overdueTasks} overdue
           </Badge>
         )}

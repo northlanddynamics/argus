@@ -362,7 +362,7 @@ function LinkedCard<Type extends string>(props: {
               {hasActions && <col className="w-12" />}
             </colgroup>
             <TableHeader>
-              <TableRow className="hover:bg-transparent">
+              <TableRow variant="static">
                 {selection && (
                   <TableHead>
                     <Checkbox
@@ -493,7 +493,6 @@ function LinkedCard<Type extends string>(props: {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="px-2"
                             disabled={unlink.isPending}
                             aria-label={`Unlink ${typeLabel[item.type]} ${item.value}`}
                             onClick={() => unlink.mutate(item)}
@@ -509,24 +508,24 @@ function LinkedCard<Type extends string>(props: {
               })}
               {items === undefined && props.query.isPending &&
                 [0, 1].map((i) => (
-                  <TableRow key={i} className="hover:bg-transparent">
+                  <TableRow key={i} variant="static">
                     <TableCell colSpan={colSpan}>
                       <Skeleton className="h-8" />
                     </TableCell>
                   </TableRow>
                 ))}
               {items === undefined && props.query.isError && (
-                <TableRow className="hover:bg-transparent">
+                <TableRow variant="static">
                   <TableCell colSpan={colSpan} className="whitespace-normal">
                     <span className="text-destructive">Could not load the {title}.</span>{" "}
-                    <Button variant="link" size="sm" className="h-auto p-0" onClick={() => void props.query.refetch()}>
+                    <Button variant="link" size="sm" onClick={() => void props.query.refetch()}>
                       Try again
                     </Button>
                   </TableCell>
                 </TableRow>
               )}
               {items?.length === 0 && (
-                <TableRow className="hover:bg-transparent">
+                <TableRow variant="static">
                   <TableCell colSpan={colSpan} className="text-muted-foreground">
                     No {title} yet.
                   </TableCell>

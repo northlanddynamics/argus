@@ -46,7 +46,9 @@ export function RelatedAlertsPrompt({ c }: { c: CaseView }) {
   if (related.isError)
     return (
       <Card size="sm">
-        <CardContent className="text-destructive">Couldn’t load the related Alerts.</CardContent>
+        <CardContent>
+          <p className="text-destructive">Couldn’t load the related Alerts.</p>
+        </CardContent>
       </Card>
     );
   // Nothing to say until there's something to attach: an empty Correlation is not news.
@@ -116,7 +118,7 @@ function SharedItems({ items, more }: { items: readonly Shared[]; more: number }
         <AccountHoverCard key={`${s.kind}-${s.id}`} assetId={s.id} account={s.value} enabled={s.kind === "asset" && s.type === "account"}>
           <EnrichmentTarget type={s.type} value={s.value} enabled={s.kind === "observable"}>
           <ObservableMenu observable={s.kind === "observable" ? s : null}>
-            <Badge variant="outline" className="max-w-full truncate font-mono hover:bg-muted" title={s.value} asChild>
+            <Badge variant="outline" className="max-w-full truncate font-mono" title={s.value} asChild>
               <ItemLink kind={s.kind} id={s.id}>
                 {s.kind === "observable" ? `${observableTypeLabel[s.type]} ${shownObservable(s.type, s.value)}` : `${assetTypeLabel[s.type]} ${s.value}`}
               </ItemLink>

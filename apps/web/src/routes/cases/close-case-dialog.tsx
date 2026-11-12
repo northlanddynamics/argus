@@ -82,7 +82,7 @@ export function CloseCaseDialog({ number }: { number: number }) {
               ))}
             </RadioGroup>
           </FieldSet>
-          <Alert className="border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80">
+          <Alert variant="notice">
             <AlertDescription>
               <ul className="grid list-disc gap-1 pl-4">
                 {open.length > 0 && (
