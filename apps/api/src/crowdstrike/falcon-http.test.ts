@@ -396,6 +396,7 @@ describe("The Falcon API client", () => {
     });
     const found = await falconHttpClient(connection, fetchImpl).identities(["e3a1c9f0-dana"]);
     const sent = (await requests[1]!.json()) as { query: string; variables: unknown };
+    expect(sent.query).toContain("$values: [UUID!]");
     expect(sent.query).toContain("entityIds: $values");
     expect(sent.variables).toEqual({ values: ["e3a1c9f0-dana"] });
     expect(found).toEqual([
@@ -448,6 +449,7 @@ describe("The Falcon API client", () => {
       "samAccountNames",
       "samAccountNames",
     ]);
+    expect(queries.every((q) => q.includes("$values: [String!]"))).toBe(true);
   });
 
   test("an identity call refused, for want of the scope or the subscription, says so; GraphQL errors fail it", async () => {
