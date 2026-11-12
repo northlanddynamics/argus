@@ -98,8 +98,15 @@ test("the Owner adds IPinfo; opening an IP's Enrichment on a Case shows what IPi
     // The rest is a page at a time: Location, Network, Privacy (no Mobile page: nothing mobile to say).
     await card.getByText("Summary · 1 of 4").waitFor();
     expect(await card.getByRole("button", { name: "Previous page" }).isDisabled()).toBe(true);
+    // Stepping keeps the card where and as tall as it was, so it never flips away from the pointer;
+    // the Location page is longer than the card and scrolls inside it.
+    const box = await card.boundingBox();
     await card.getByRole("button", { name: "Next page" }).click();
     await card.getByText("Location · 2 of 4").waitFor();
+    expect(await card.boundingBox()).toEqual(box);
+    const body = card.getByTestId("ip-hover-card-body");
+    expect(await body.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/hover-card-location.png` });
     await card.getByText("Hesse (HE)").waitFor();
     await card.getByText("Within 20 km").waitFor();
     await card.getByRole("button", { name: "Next page" }).click();
@@ -107,6 +114,7 @@ test("the Owner adds IPinfo; opening an IP's Enrichment on a Case shows what IPi
     await card.getByText("Stiftung Erneuerbare Freiheit").waitFor();
     await card.getByRole("button", { name: "Next page" }).click();
     await card.getByText("Privacy · 4 of 4").waitFor();
+    expect(await card.boundingBox()).toEqual(box);
     await card.getByText("Tor", { exact: true }).waitFor();
     expect(await card.getByRole("button", { name: "Next page" }).isDisabled()).toBe(true);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/hover-card-privacy.png` });
