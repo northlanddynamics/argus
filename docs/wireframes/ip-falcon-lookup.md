@@ -1,6 +1,6 @@
 # Internal IP looked up in Falcon: wireframes
 
-> _Proposed_ with ADR 0018. Replaces state C of `ip-context-popup.md` for private, shared (100.64/10) and unique-local addresses. Loopback, link-local, multicast, documentation and other reserved addresses keep state C unchanged. Public addresses are unchanged.
+> With ADR 0018. Replaces state C of `ip-context-popup.md` for private, shared (100.64/10) and unique-local addresses. Loopback, link-local, multicast, documentation and other reserved addresses keep state C unchanged. Public addresses are unchanged.
 
 What a Member sees on hovering an internal IP, or opening it in the Enrichment panel: the hosts that each of the Organization's CrowdStrike Integrations says last reported that address. The behaviour (when the card opens and closes, Guests, where IPs are hoverable) is `ip-context-popup.md`'s. The panel's frame (header, ↑ ↓, Back, sections) is `enrichment-panel.md`'s.
 
@@ -9,7 +9,7 @@ What a Member sees on hovering an internal IP, or opening it in the Enrichment p
 - **The range moves to the header.** "Private address · 10.0.0.0/8" sits under the value, muted, where a public IP's reverse DNS name goes. There's still no ↗ to ipinfo.io, and no IPinfo section.
 - **One section per CrowdStrike Integration.** With a single Integration the heading is "CrowdStrike". With several, each heading carries the Integration's name ("CrowdStrike · EU tenant"), in the order Settings lists them.
 - **Hosts newest first** by last seen. The hover card shows up to 3 and "and N more · Show all (I)"; the panel shows every one Argus fetched (at most 50), then "Falcon matched 212; showing the 50 seen most recently" when there are more.
-- **A host links to its Asset page** when its `aid` is recorded on a host Asset (✓ "In 2 Cases"), and otherwise to the device in the Falcon console (↗).
+- **A host's name links to its Asset page** when its `aid` is recorded on a host Asset (and the panel marks it "Held as a host"). Every host has ↗ to the device in the Falcon console.
 - **Wording is always "last reported"**: never "this is" or "owned by".
 - **Stale hosts are dimmed.** A host last seen over 7 days ago is muted, with "last seen 23 days ago — may have moved on". The address may have been leased again since.
 - **Lookup starts on open**, as now: a table of 200 internal IPs costs nothing until one is hovered.
@@ -63,7 +63,7 @@ What a Member sees on hovering an internal IP, or opening it in the Enrichment p
 │ CrowdStrike                              │
 │ Last reported by                         │
 │ ┌──────────────────────────────────────┐ │
-│ │ WS-FIN-0412           ✓ In 2 Cases ↗ │ │  ← ✓ when held as a host Asset
+│ │ WS-FIN-0412 ↗        [Held as a host] │ │  ← badge when held as a host Asset
 │ │ Platform    Windows 11 23H2          │ │
 │ │ Last seen   4 min ago                │ │
 │ │ User        jdoe@acme.corp           │ │
@@ -73,7 +73,7 @@ What a Member sees on hovering an internal IP, or opening it in the Enrichment p
 │ │ Sensor      7.18 · Normal            │ │
 │ │ Containment Normal                   │ │
 │ │ [+ Add host to C-12]                 │ │  ← only when opened from within a Case and the
-│ └──────────────────────────────────────┘ │    host isn't linked to it; not in the first cut
+│ └──────────────────────────────────────┘ │    host isn't linked to it; not built yet
 │ as of 2 min ago              [Refresh]   │
 └──────────────────────────────────────────┘
 ```

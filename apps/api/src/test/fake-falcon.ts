@@ -14,7 +14,7 @@ import type {
   StreamEvent,
   StreamSession,
 } from "../crowdstrike/falcon";
-import { FalconScopeMissing } from "../crowdstrike/falcon";
+import { FalconScopeMissing, HOSTS_BY_LOCAL_IP_LIMIT } from "../crowdstrike/falcon";
 import type { WorkflowInputValues } from "../workflows/vocabulary";
 
 /**
@@ -185,6 +185,8 @@ function fakeTenant() {
     failNextHostReads: 0,
     /** Every hostname the Hosts API was searched for, in order. */
     hostSearches: [] as string[],
+    /** Every local IP the Hosts API was searched for, in order. */
+    ipSearches: [] as string[],
 
     /** The `aid` of every device it was asked to contain, in order. */
     containments: [] as string[],
@@ -473,6 +475,19 @@ export function fakeFalcon() {
         t.hostSearches.push(hostname);
         // Falcon matches hostnames whatever their case.
         return [...t.hosts.values()].filter((h) => h.hostname?.toLowerCase() === hostname.toLowerCase()).map((h) => h.deviceId);
+      },
+      async findHostsByLocalIp(ip) {
+        if (t.refuseHosts) throw new FalconScopeMissing(t.refuseHosts);
+        if (t.failNextHostReads > 0) {
+          t.failNextHostReads--;
+          throw new Error("Finding hosts by IP in Falcon failed: 503");
+        }
+        t.ipSearches.push(ip);
+        const matched = [...t.hosts.values()]
+          .filter((h) => h.localIp === ip)
+          .toSorted((a, b) => (b.lastSeen ?? "").localeCompare(a.lastSeen ?? ""))
+          .map((h) => h.deviceId);
+        return { deviceIds: matched.slice(0, HOSTS_BY_LOCAL_IP_LIMIT), total: matched.length };
       },
       async containHost(deviceId) {
         if (t.refuseContainment) throw new FalconScopeMissing(t.refuseContainment);

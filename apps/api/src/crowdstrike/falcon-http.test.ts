@@ -354,6 +354,25 @@ describe("The Falcon API client", () => {
     await expect(falconHttpClient(connection, refused.fetchImpl).findHosts("FIN-LT-0231")).rejects.toBeInstanceOf(FalconScopeMissing);
   });
 
+  test("finds hosts by the local IP they last reported, newest first, with Falcon's total", async () => {
+    const { fetchImpl, requests } = stubFalcon({
+      "POST https://api.eu-1.crowdstrike.com/oauth2/token": token,
+      "GET https://api.eu-1.crowdstrike.com/devices/queries/devices/v1": () =>
+        Response.json({ resources: ["8F1C2B3A4D5E6F708192A3B4C5D6E7F8", "0123456789abcdef0123456789abcdef"], meta: { pagination: { total: 212 } } }),
+    });
+    const found = await falconHttpClient(connection, fetchImpl).findHostsByLocalIp("10.20.4.17");
+    expect(found).toEqual({ deviceIds: ["8f1c2b3a4d5e6f708192a3b4c5d6e7f8", "0123456789abcdef0123456789abcdef"], total: 212 });
+    const query = new URL(requests[1]!.url).searchParams;
+    expect([query.get("filter"), query.get("sort"), query.get("limit")]).toEqual(["local_ip:'10.20.4.17'", "last_seen.desc", "50"]);
+
+    const refused = stubFalcon({
+      "POST https://api.eu-1.crowdstrike.com/oauth2/token": token,
+      "GET https://api.eu-1.crowdstrike.com/devices/queries/devices/v1": () =>
+        Response.json({ errors: [{ code: 403, message: "access denied, authorization failed" }] }, { status: 403 }),
+    });
+    await expect(falconHttpClient(connection, refused.fetchImpl).findHostsByLocalIp("10.20.4.17")).rejects.toBeInstanceOf(FalconScopeMissing);
+  });
+
   const GRAPHQL = "POST https://api.eu-1.crowdstrike.com/identity-protection/combined/graphql/v1";
   const node = {
     entityId: "e3a1c9f0-dana",

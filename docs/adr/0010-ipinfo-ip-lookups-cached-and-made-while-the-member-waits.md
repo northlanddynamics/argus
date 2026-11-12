@@ -27,3 +27,5 @@ Any IP shown in Argus can be looked up. Hovering or focusing it opens a popup (`
 _Update: hover no longer opens anything. The same details now open in the Enrichment panel, docked on the right (`docs/wireframes/enrichment-panel.md`); what is looked up, cached and shown is unchanged._
 
 _Update: resting the pointer on an IP opens the hover card again, beside the Enrichment panel; focus does not open it._
+
+_Update: private, shared and unique-local addresses are now looked up in the Organization's own Falcon instead, for the hosts that last reported them (ADR 0018). They still never go to IPinfo._

@@ -8,19 +8,24 @@ import { ObservableText } from "@/components/observable-details";
 import { Time } from "@/components/time";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { FalconHostsCompact, FalconHostsSections, RangeLine } from "@/components/ip-falcon-hosts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { meQuery } from "@/lib/api";
 import { useHoverCardOpen } from "@/lib/hover-card";
-import { asTypeLabel, type IpDetails, type IpLookup, ipLookupQuery, useRefreshIpLookup } from "@/lib/ip-lookups";
+import { asTypeLabel, type IpDetails, type IpLookup, ipLookupQuery, reservedRange, useRefreshIpLookup } from "@/lib/ip-lookups";
 import { canManage } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 
 /**
  * What IPinfo says about an IP (ADR 0010), as the hover card, the Enrichment panel and an IP
  * Observable's page show it; laid out in `docs/wireframes/ip-context-popup.md` and `enrichment-panel.md`.
+ * An internal IP shows what Falcon says last reported it instead (ADR 0018, `ip-falcon-hosts.tsx`).
  */
+
+/** Whether `ip` is an internal address, looked up in Falcon: known from the address itself, before any answer. */
+const internalIp = (ip: string, lookup: IpLookup | undefined) => lookup?.reserved?.internal ?? reservedRange(ip)?.internal ?? false;
 
 /** 🇩🇪 for "DE". */
 const flag = (code: string) => (/^[A-Z]{2}$/.test(code) ? String.fromCodePoint(...[...code].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65)) : "");
@@ -232,17 +237,22 @@ export function IpEnrichment({ ip, admin }: { ip: string; admin: boolean }) {
   const q = useQuery(ipLookupQuery(ip));
   const lookup = q.data;
   const shown = lookup?.ip ?? ip;
-  const publicIp = !lookup || lookup.state !== "reserved";
+  const internal = internalIp(ip, lookup);
+  const range = lookup?.reserved ?? reservedRange(ip);
+  const publicIp = !internal && (!lookup || lookup.state !== "reserved");
   return (
     <EnrichmentLayout
       header={
         <ValueHeader shown={shown} copy={shown} copied={`Copied ${shown}`} href={publicIp ? `https://ipinfo.io/${encodeURIComponent(shown)}` : null} hrefLabel="Open on ipinfo.io">
           {lookup?.details?.hostname && <span className="font-mono text-xs break-all text-muted-foreground">{lookup.details.hostname}</span>}
+          {internal && range && <RangeLine reserved={range} />}
           <KnownLine type="ip" value={ip} />
         </ValueHeader>
       }
     >
-      {lookup?.state === "reserved" ? (
+      {internal ? (
+        <FalconHostsSections ip={ip} lookup={lookup} loading={q.isPending} admin={admin} />
+      ) : lookup?.state === "reserved" ? (
         <div className="p-4 text-sm">
           <IpLookupBody lookup={lookup} loading={false} error={null} admin={admin} />
           {lookup.reserved?.range && (
@@ -263,16 +273,23 @@ function IpCard({ ip, admin }: { ip: string; admin: boolean }) {
   const q = useQuery(ipLookupQuery(ip));
   const lookup = q.data;
   const shown = lookup?.ip ?? ip;
-  const publicIp = !lookup || lookup.state !== "reserved";
-  const footer = !lookup || (lookup.state !== "reserved" && lookup.state !== "unconfigured");
+  const internal = internalIp(ip, lookup);
+  const range = lookup?.reserved ?? reservedRange(ip);
+  const publicIp = !internal && (!lookup || lookup.state !== "reserved");
+  const footer = !internal && (!lookup || (lookup.state !== "reserved" && lookup.state !== "unconfigured"));
   return (
     <div className="grid gap-2.5" data-testid="ip-hover-card">
       <ValueHeader shown={shown} copy={shown} copied={`Copied ${shown}`} href={publicIp ? `https://ipinfo.io/${encodeURIComponent(shown)}` : null} hrefLabel="Open on ipinfo.io">
         {lookup?.details?.hostname && <span className="font-mono text-xs break-all text-muted-foreground">{lookup.details.hostname}</span>}
+        {internal && range && <RangeLine reserved={range} />}
       </ValueHeader>
       <div className="border-t pt-2.5">
-        <IpLookupBody lookup={lookup} loading={q.isPending} error={q.error} admin={admin} />
-        {lookup?.state === "reserved" && lookup.reserved?.range && (
+        {internal ? (
+          <FalconHostsCompact ip={ip} lookup={lookup} loading={q.isPending} admin={admin} card />
+        ) : (
+          <IpLookupBody lookup={lookup} loading={q.isPending} error={q.error} admin={admin} />
+        )}
+        {!internal && lookup?.state === "reserved" && lookup.reserved?.range && (
           <p className="mt-1 text-muted-foreground">Not looked up: it means nothing outside the network it belongs to, and Argus doesn't send internal addresses to IPinfo.</p>
         )}
       </div>
@@ -321,6 +338,20 @@ export function IpText({ ip, className }: { ip: string; className?: string }) {
 /** An IP Observable's own page's "IP details": what the Enrichment panel shows. */
 export function IpDetailsCard({ ip, admin }: { ip: string; admin: boolean }) {
   const q = useQuery(ipLookupQuery(ip));
+  const range = q.data?.reserved ?? reservedRange(ip);
+  if (internalIp(ip, q.data)) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Hosts in Falcon</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3 text-sm">
+          {range && <RangeLine reserved={range} />}
+          <FalconHostsCompact ip={ip} lookup={q.data} loading={q.isPending} admin={admin} card={false} />
+        </CardContent>
+      </Card>
+    );
+  }
   return (
     <Card>
       <CardHeader>

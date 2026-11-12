@@ -3,6 +3,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chromium, type Browser, type Page } from "playwright";
 import { defaultWebDist } from "../src/config";
 import { createServerApp } from "../src/server-app";
+import { fakeHost } from "../src/test/fake-falcon";
 import { buildTestApp } from "../src/test/harness";
 
 let browser: Browser;
@@ -166,6 +167,68 @@ test("the Owner adds IPinfo; opening an IP's Enrichment on a Case shows what IPi
     await page.getByText("Stiftung Erneuerbare Freiheit").waitFor();
     expect(await panel.count()).toBe(0);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/f-page.png`, fullPage: true });
+  } finally {
+    await stop();
+  }
+}, 60_000);
+
+test("an internal IP shows the hosts Falcon says last reported it, in the hover card, the panel and on its page", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    await owner.api.organization.invitations.$post({ json: { email: "ana@acme.example", role: "analyst" } });
+    const ana = await t.acceptInvite("ana@acme.example", PASSWORD, "Ana Analyst");
+    await owner.api.integrations.$post({ json: { name: "CrowdStrike — Prod", cloud: "us-1", clientId: "falcon-client-0001", clientSecret: "falcon-secret" } });
+    const tenant = t.falcon.tenant("falcon-client-0001");
+    const recently = new Date(t.clock.now().getTime() - 4 * 60_000).toISOString();
+    tenant.hosts.set("8f1c2b3a4d5e6f708192a3b4c5d6e7f8", fakeHost("8f1c2b3a4d5e6f708192a3b4c5d6e7f8", { hostname: "WS-FIN-0412", localIp: "10.20.4.17", lastSeen: recently, lastLoggedOnUser: "ACME\\j.doe" }));
+    for (let n = 1; n <= 6; n++) {
+      const aid = n.toString(16).padStart(32, "0");
+      tenant.hosts.set(aid, fakeHost(aid, { hostname: `BUILD-AGENT-0${n}`, platform: "Linux", osVersion: "Ubuntu 24.04", localIp: "172.17.0.1", lastSeen: new Date(t.clock.now().getTime() - n * 3_600_000).toISOString() }));
+    }
+    await ana.api.cases.$post({ json: { title: "Lateral movement from the finance VLAN", caseType: "unauthorized_access", severity: "high" } });
+    await ana.api.cases[":number"].observables.$post({ param: { number: "1" }, json: { type: "ip", value: "10.20.4.17" } });
+    await ana.api.cases[":number"].observables.$post({ param: { number: "1" }, json: { type: "ip", value: "172.17.0.1" } });
+
+    const page = await browser.newPage({ deviceScaleFactor: 2 });
+    await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
+    await page.goto(`${baseUrl}/cases/1/observables`);
+    const card = page.getByTestId("ip-hover-card");
+
+    // One host: its name, OS, last seen and user.
+    await page.getByRole("link", { name: "IP 10.20.4.17" }).hover();
+    await card.getByText("Private address").waitFor();
+    await card.getByText("WS-FIN-0412").waitFor();
+    await card.getByText("ACME\\j.doe").waitFor();
+    await card.getByText(/CrowdStrike · as of/).waitFor();
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/falcon-one-host.png` });
+    expect(t.ipinfo.lookups).toHaveLength(0);
+    await page.mouse.move(0, 0);
+    await card.waitFor({ state: "detached" });
+
+    // Several: the newest three, "and 3 more", and a note that the address is shared.
+    await page.getByRole("link", { name: "IP 172.17.0.1" }).hover();
+    await card.getByText("Last reported by 6 hosts").waitFor();
+    await card.getByText("BUILD-AGENT-01").waitFor();
+    expect(await card.getByText("BUILD-AGENT-04").count()).toBe(0);
+    await card.getByText(/likely reused on each one/).waitFor();
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/falcon-many-hosts.png` });
+
+    // Show all opens the panel with every one.
+    await card.getByRole("button", { name: "Show all (I)" }).click();
+    const panel = page.getByRole("dialog", { name: "IP Enrichment" });
+    await panel.getByText("BUILD-AGENT-06").waitFor();
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/falcon-panel.png` });
+    expect(tenant.ipSearches.toSorted()).toEqual(["10.20.4.17", "172.17.0.1"]);
+
+    // The IP's own page shows them as a card.
+    await page.locator("[data-slot=sheet-overlay]").click();
+    await panel.waitFor({ state: "detached" });
+    await page.getByRole("link", { name: "IP 10.20.4.17" }).click();
+    await page.getByText("Hosts in Falcon").waitFor();
+    await page.getByText("WS-FIN-0412").waitFor();
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/falcon-page.png`, fullPage: true });
   } finally {
     await stop();
   }

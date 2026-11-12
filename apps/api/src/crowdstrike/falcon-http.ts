@@ -14,6 +14,7 @@ import {
   type FalconIdentity,
   type FalconIoc,
   FalconScopeMissing,
+  HOSTS_BY_LOCAL_IP_LIMIT,
   type FalconWorkflow,
   type FalconWorkflowExecution,
   type NewIoc,
@@ -561,6 +562,20 @@ export function falconHttpClient({ cloud, credentials, appId }: FalconConnection
         if (!ids.length || typeof total !== "number" || offset >= total) break;
       }
       return [...found];
+    },
+
+    async findHostsByLocalIp(ip) {
+      const query = new URLSearchParams({ filter: `local_ip:${fqlString(ip)}`, sort: "last_seen.desc", limit: String(HOSTS_BY_LOCAL_IP_LIMIT) });
+      const res = await fetchImpl(`${base}/devices/queries/devices/v1?${query}`, {
+        headers: { authorization: `Bearer ${await accessToken()}`, accept: "application/json" },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (res.status === 403) throw new FalconScopeMissing((await failure("Finding hosts by IP in Falcon", res)).message);
+      if (!res.ok) throw await failure("Finding hosts by IP in Falcon", res);
+      const body = (await res.json()) as { resources?: unknown[] | null; meta?: { pagination?: { total?: unknown } } };
+      const deviceIds = [...new Set(texts(body.resources).map((id) => id.toLowerCase()))];
+      const total = body.meta?.pagination?.total;
+      return { deviceIds, total: typeof total === "number" ? Math.max(total, deviceIds.length) : deviceIds.length };
     },
 
     async containHost(deviceId) {

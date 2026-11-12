@@ -16,6 +16,7 @@ import { createLive } from "../realtime/live";
 import { type ClientMessage, LIVE_PATH, type ServerMessage } from "../realtime/messages";
 import { postgresSignals } from "../realtime/signals";
 import { captureTeams } from "../teams/teams-webhook";
+import { fakeFalcon } from "./fake-falcon";
 import { fakeIpinfo } from "./fake-ipinfo";
 import { fakeUmbrella } from "./fake-umbrella";
 import { fakeVirustotal } from "./fake-virustotal";
@@ -60,6 +61,7 @@ export async function buildTestApp({
   const auth = createAuth({ db, baseUrl: BASE_URL, secret: authSecret, mailer: outbox.mailer, clock });
   const evidence = memoryEvidenceStorage();
   const ipinfo = fakeIpinfo();
+  const falcon = fakeFalcon();
   const virustotal = fakeVirustotal();
   const umbrella = fakeUmbrella();
   const deps: Deps = {
@@ -73,6 +75,7 @@ export async function buildTestApp({
     evidence: { storage: evidence.storage, maxBytes: evidenceMaxBytes },
     credentials: credentialSealer("test-credentials-secret"),
     ipinfo: ipinfo.connect,
+    falcon: falcon.connect,
     virustotal: virustotal.connect,
     umbrella: umbrella.connect,
   };
@@ -282,6 +285,8 @@ export async function buildTestApp({
     teams,
     /** The IPinfo every Integration's lookups go to (`test/fake-ipinfo.ts`). */
     ipinfo,
+    /** The Falcon the `web` process's internal IP lookups go to (`test/fake-falcon.ts`); pass its `connect` to workers to share it. */
+    falcon,
     /** The VirusTotal every Member's hash lookups go to (`test/fake-virustotal.ts`). */
     virustotal,
     /** The Cisco Umbrella every Umbrella Integration's web-process calls go to (`test/fake-umbrella.ts`). */
