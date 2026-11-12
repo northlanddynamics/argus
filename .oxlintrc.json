@@ -6,6 +6,9 @@
     "import",
     "unicorn"
   ],
+  "jsPlugins": [
+    "@shadcn/lint"
+  ],
   "categories": {
     "correctness": "error",
     "suspicious": "warn"
