@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouteContext, useSearch } from "@tanstack/react-router";
 import { useState } from "react";
-import { AccountHoverCard } from "@/components/account-details";
 import { Time } from "@/components/time";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -105,13 +104,7 @@ export function IgnoredTab() {
                   </Button>
                 )
               }
-            >
-              {(link) => (
-                <AccountHoverCard assetId={e.id} account={e.value} enabled={e.kind === "asset" && e.type === "account"}>
-                  {link}
-                </AccountHoverCard>
-              )}
-            </ItemRow>
+            />
           ))}
         </ul>
       )}

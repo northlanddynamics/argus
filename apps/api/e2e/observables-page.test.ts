@@ -3,6 +3,9 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chromium, type Browser } from "playwright";
 import { defaultWebDist } from "../src/config";
 import { createServerApp } from "../src/server-app";
+import { createStreamWorker } from "../src/crowdstrike/stream-worker";
+import epp from "../src/crowdstrike/fixtures/epp-detection.json";
+import { fakeFalcon } from "../src/test/fake-falcon";
 import { buildTestApp } from "../src/test/harness";
 
 let browser: Browser;
@@ -60,6 +63,16 @@ test("the Observables page lists the Organization's Observables and its Ignored 
     expect(await table.getByRole("listitem").count()).toBe(3);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/observables.png` });
 
+    // As on a Case: resting the pointer on an IP shows its hover card, and its Enrichment opens in the panel.
+    await table.getByRole("link", { name: /185\.220\.101\.4/ }).hover();
+    await page.getByTestId("ip-hover-card").waitFor();
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/observables-hover.png` });
+    await page.mouse.move(0, 0);
+    await page.getByTestId("ip-hover-card").waitFor({ state: "detached" });
+    await table.getByRole("button", { name: "Show Enrichment for 185.220.101.4" }).click();
+    await page.getByRole("dialog", { name: "IP Enrichment" }).waitFor();
+    await page.keyboard.press("Escape");
+
     // Ticking a type narrows the list to it.
     const filters = page.getByRole("navigation", { name: "Filter by type" });
     await filters.getByRole("checkbox", { name: "IP" }).click();
@@ -89,6 +102,45 @@ test("the Observables page lists the Organization's Observables and its Ignored 
     // Settings no longer has it.
     await page.goto(`${baseUrl}/settings/members`);
     expect(await page.getByRole("navigation", { name: "Organization settings" }).getByRole("link", { name: /Ignored/ }).count()).toBe(0);
+    await context.close();
+  } finally {
+    stop();
+  }
+}, 60_000);
+
+test("the Observables a New Alert shares with a Case show their hover card on the Case Overview", async () => {
+  const { t, baseUrl, stop } = await serveTestApp();
+  try {
+    await t.inviteOwner("Acme Security", "owner@acme.example");
+    const owner = await t.acceptInvite("owner@acme.example", PASSWORD, "Olive Owner");
+    await owner.api.integrations.$post({ json: { name: "CrowdStrike — Prod", cloud: "us-1", clientId: "falcon-client-0001", clientSecret: "falcon-secret" } });
+    const falcon = fakeFalcon();
+    const worker = createStreamWorker(t.deps, { connect: falcon.connect, workerId: "worker-1" });
+    t.onCleanup(worker.close);
+    await worker.tick();
+    await owner.api.cases.$post({ json: { title: "Tor exit traffic", caseType: "malware", severity: "high" } });
+    const linked = await (await owner.api.cases[":number"].observables.$post({ param: { number: "1" }, json: { type: "ip", value: "185.220.101.4" } })).json();
+    if (!("observable" in linked)) throw new Error("Could not link the IP");
+    await owner.api.observables[":id"].important.$put({ param: { id: linked.observable.id } });
+    // A New Alert naming the same IP.
+    const stream = falcon.tenant("falcon-client-0001");
+    stream.emit("EppDetectionSummaryEvent", epp);
+    await stream.drained();
+
+    const context = await browser.newContext({ deviceScaleFactor: SHOTS ? 2 : 1, viewport: { width: 1400, height: 900 } });
+    const page = await context.newPage();
+    await page.goto(`${baseUrl}/sign-in`);
+    await page.getByLabel("Work email").fill("owner@acme.example");
+    await page.getByLabel("Password").fill(PASSWORD);
+    await page.getByRole("button", { name: "Continue" }).click();
+    await page.getByLabel("Authentication code").fill(await t.totpCode(owner.totp.secret));
+    await page.getByRole("button", { name: "Verify" }).click();
+    await page.getByText("Acme Security", { exact: true }).waitFor();
+
+    await page.goto(`${baseUrl}/cases/1`);
+    await page.getByRole("link", { name: "IP 185.220.101.4" }).first().hover();
+    await page.getByTestId("ip-hover-card").waitFor();
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/new-alerts-hover.png` });
     await context.close();
   } finally {
     stop();
