@@ -463,6 +463,10 @@ function IpCard({ ip, admin }: { ip: string; admin: boolean }) {
   const footer = !internal && (!lookup || (lookup.state !== "reserved" && lookup.state !== "unconfigured"));
   const pages = !internal && lookup?.details && lookup.state !== "reserved" ? cardPages(lookup.details) : [];
   const at = Math.min(index, Math.max(pages.length - 1, 0));
+  // While it looks up and once it has pages, the body keeps one height and a long page scrolls
+  // inside it: a card that grew or shrank on stepping could flip above or below the IP and slip
+  // out from under the pointer, which closes it.
+  const fixed = !internal && (q.isPending || pages.length > 0);
   return (
     <div className="grid gap-2.5" data-testid="ip-hover-card">
       <ValueHeader shown={shown} copy={shown} copied={`Copied ${shown}`} href={publicIp ? `https://ipinfo.io/${encodeURIComponent(shown)}` : null} hrefLabel="Open on ipinfo.io">
@@ -470,7 +474,7 @@ function IpCard({ ip, admin }: { ip: string; admin: boolean }) {
         {internal && range && <RangeLine reserved={range} />}
       </ValueHeader>
       {pages.length > 1 && <CardPager at={at} count={pages.length} onStep={setIndex} noun="page" label={pages[at]!.title} />}
-      <div className="border-t pt-2.5">
+      <div className={cn("border-t pt-2.5", fixed && "h-52 overflow-y-auto overscroll-contain")} data-testid="ip-hover-card-body">
         {internal ? (
           <FalconHostsCompact ip={ip} lookup={lookup} loading={q.isPending} admin={admin} card />
         ) : (
