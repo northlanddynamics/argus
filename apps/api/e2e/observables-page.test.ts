@@ -55,36 +55,36 @@ test("the Observables page lists the Organization's Observables and its Ignored 
     await page.getByText("Acme Security", { exact: true }).waitFor();
 
     await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Observables" }).click();
-    const table = page.getByRole("table", { name: "Observables" });
+    const table = page.getByRole("list", { name: "Observables" });
     await table.getByText("invoice-portal[.]biz").waitFor();
-    expect(await table.getByRole("row").count()).toBe(4);
+    expect(await table.getByRole("listitem").count()).toBe(3);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/observables.png` });
 
     // Ticking a type narrows the list to it.
     const filters = page.getByRole("navigation", { name: "Filter by type" });
     await filters.getByRole("checkbox", { name: "IP" }).click();
-    await table.getByText("invoice-portal[.]biz").waitFor({ state: "detached" });
-    expect(await table.getByRole("row").count()).toBe(3);
+    await page.getByText("2 Observables, newest first").waitFor();
+    expect(await table.getByRole("listitem").count()).toBe(2);
     expect(page.url()).toContain("types=ip");
 
     // So does searching, defanged or not.
     await page.getByRole("searchbox", { name: "Search Observables" }).fill("185.220");
-    await table.getByText("8.8.8.8").waitFor({ state: "detached" });
-    expect(await table.getByRole("row").count()).toBe(2);
+    await page.getByText("1 Observable, newest first").waitFor();
+    expect(await table.getByRole("listitem").count()).toBe(1);
     await filters.getByRole("button", { name: "Show every type" }).click();
     await page.getByRole("searchbox", { name: "Search Observables" }).fill("");
     await table.getByText("invoice-portal[.]biz").waitFor();
 
     // The Ignored tab: Asset types too, and Admins remove entries.
     await page.getByRole("tab", { name: "Ignored" }).click();
-    const ignored = page.getByRole("table", { name: "Ignored Observables" });
+    const ignored = page.getByRole("list", { name: "Ignored Observables" });
     await ignored.getByText("DC01").waitFor();
     await ignored.getByText("8.8.8.8").waitFor();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/ignored.png` });
     await filters.getByRole("checkbox", { name: "Host" }).click();
     await ignored.getByText("8.8.8.8").waitFor({ state: "detached" });
     await ignored.getByRole("button", { name: "Stop ignoring DC01" }).click();
-    await ignored.getByText("Nothing ignored matches.").waitFor();
+    await page.getByText("Nothing ignored matches.").waitFor();
 
     // Settings no longer has it.
     await page.goto(`${baseUrl}/settings/members`);

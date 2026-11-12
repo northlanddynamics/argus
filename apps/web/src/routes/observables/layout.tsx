@@ -7,6 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TypeIcon } from "@/routes/observables/item-row";
 import { ASSET_TYPES, assetTypeLabel, OBSERVABLE_TYPES, observableTypeLabel, type ObservablesSearch, tickedTypes } from "@/lib/observables";
 
 /** How long typing pauses before the search is put in the URL, and so run. */
@@ -90,6 +91,7 @@ function TypeGroup({
       {types.map(([type, label]) => (
         <Label key={type} className="cursor-pointer rounded-md px-3 py-2 text-sm font-normal hover:bg-muted">
           <Checkbox checked={ticked.has(type)} onCheckedChange={(on) => onTick(type, on === true)} />
+          <TypeIcon type={type} />
           {label}
         </Label>
       ))}

@@ -19,7 +19,7 @@ import { Fragment, type ReactNode } from "react";
 import { SeverityBadge } from "@/components/case-badges";
 import { alertStatusLabel } from "@/lib/alerts";
 import { caseRef, statusLabel } from "@/lib/cases";
-import { assetTypeLabel, defang, type ObservableType, observableTypeLabel } from "@/lib/observables";
+import { type AssetType, assetTypeLabel, defang, type ObservableType, observableTypeLabel } from "@/lib/observables";
 import type { SearchHit } from "@/lib/search";
 import { cn } from "@/lib/utils";
 
@@ -32,6 +32,8 @@ export const observableIcon: Record<ObservableType, LucideIcon> = {
   sha1: HashIcon,
   sha256: HashIcon,
 };
+
+export const assetIcon: Record<AssetType, LucideIcon> = { host: MonitorIcon, account: UserIcon };
 
 /** One word of the kind, for lists that mix kinds. */
 export const hitKindNoun: Record<SearchHit["kind"], string> = { cases: "Case", alerts: "Alert", observables: "Observable", assets: "Asset" };
@@ -72,8 +74,10 @@ function HitIcon({ hit }: { hit: SearchHit }) {
       const Icon = observableIcon[hit.item.type] ?? FingerprintIcon;
       return <Icon className={className} aria-hidden />;
     }
-    case "assets":
-      return hit.item.type === "host" ? <MonitorIcon className={className} aria-hidden /> : <UserIcon className={className} aria-hidden />;
+    case "assets": {
+      const Icon = assetIcon[hit.item.type] ?? FingerprintIcon;
+      return <Icon className={className} aria-hidden />;
+    }
   }
 }
 
