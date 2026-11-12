@@ -15,7 +15,7 @@ What an Analyst sees on hovering (or focusing) any IP address in Argus: the IP O
 
 ## A. Public address, looked up
 
-IPinfo Plus says more than fits in a card, so the card shows it a page at a time: the summary below first, then Location, Network, Privacy and, when there is anything mobile or satellite to say, Mobile. A pager between the header and the details steps through them, as the account card steps through several identities (`account-context-popup.md`); it names the page shown and where it is. The panel and an IP's own page show every page at once, as sections.
+IPinfo Plus says more than fits in a card, so the card shows it a page at a time: the summary below first, then Location, Network, Privacy and, when there is anything mobile or satellite to say, Mobile. A pager between the header and the details steps through them, as the account card steps through several identities (`account-context-popup.md`); it names the page shown and where it is. The details keep one height whatever the page (and while looking up): a page longer than that scrolls inside the card, so stepping never resizes the card, flips it to the other side of the IP, or slides it out from under the pointer. The panel and an IP's own page show every page at once, as sections.
 
 ```
 ┌──────────────────────────────────────────────┐
