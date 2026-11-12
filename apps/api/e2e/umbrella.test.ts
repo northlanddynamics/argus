@@ -59,18 +59,21 @@ test("the Owner adds Cisco Umbrella and chooses its list; an Analyst adds a doma
     const ownerPage = await browser.newPage();
     await signIn(ownerPage, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
     await ownerPage.goto(`${baseUrl}/settings/integrations`);
-    await ownerPage.getByRole("button", { name: "+ Add Cisco Umbrella Integration" }).click();
+    await ownerPage.getByRole("button", { name: "Add Integration" }).click();
+    await ownerPage.getByRole("menuitem", { name: /^Cisco Umbrella/ }).click();
     const dialog = ownerPage.getByRole("dialog", { name: "Add a Cisco Umbrella Integration" });
     expect(await dialog.getByLabel("Falcon cloud").count()).toBe(0);
     await dialog.getByLabel("Name").fill("Umbrella");
     await dialog.getByLabel("API key").fill(KEY);
     await dialog.getByLabel("Key secret").fill("umbrella-secret");
-    await dialog.getByLabel("Response Actions").click();
     await dialog.getByRole("button", { name: "Add Integration" }).click();
     const card = ownerPage.getByTestId("integration-Umbrella");
     await card.getByText("key …0005").waitFor();
     await health.tick();
     await card.getByText("Connected").waitFor();
+    await card.getByRole("switch", { name: "Response Actions" }).click();
+    await ownerPage.getByRole("alertdialog").getByRole("button", { name: "Allow Response Actions" }).click();
+    await card.getByRole("switch", { name: "Response Actions", checked: true }).waitFor();
     const lists = card.getByTestId("destination-list");
     await lists.getByText("None chosen yet").waitFor();
 

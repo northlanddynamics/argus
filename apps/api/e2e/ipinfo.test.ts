@@ -73,11 +73,17 @@ test("the Owner adds IPinfo; opening an IP's Enrichment on a Case shows what IPi
     const ownerPage = await browser.newPage();
     await signIn(ownerPage, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
     await ownerPage.goto(`${baseUrl}/settings/integrations`);
-    await ownerPage.getByRole("button", { name: "+ Add IPinfo Integration" }).click();
+    await ownerPage.getByRole("button", { name: "Add Integration" }).click();
+    await ownerPage.getByRole("menuitem", { name: /^IPinfo/ }).click();
     await ownerPage.getByLabel("API access token").fill("ipinfo-token-7f3a");
     await ownerPage.getByRole("button", { name: "Add Integration" }).click();
     await ownerPage.getByText("IPinfo API token").waitFor();
-    expect(await ownerPage.getByRole("button", { name: "+ Add IPinfo Integration" }).count()).toBe(0);
+    // An Organization has one IPinfo Integration: the menu says so instead of offering another.
+    await ownerPage.getByRole("button", { name: "Add Integration" }).click();
+    const ipinfoItem = ownerPage.getByRole("menuitem", { name: /^IPinfo/ });
+    await ipinfoItem.getByText("Already added").waitFor();
+    expect(await ipinfoItem.getAttribute("aria-disabled")).toBe("true");
+    await ownerPage.keyboard.press("Escape");
     if (SHOTS) await ownerPage.screenshot({ path: `${SHOTS}/settings.png`, fullPage: true });
 
     // Now hovering the IP looks it up, once, and the panel reads the same cached answer.

@@ -59,7 +59,8 @@ test("the Owner adds a CrowdStrike Integration; its detections appear live in an
     const ownerPage = await browser.newPage();
     await signIn(ownerPage, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
     await ownerPage.goto(`${baseUrl}/settings/integrations`);
-    await ownerPage.getByRole("button", { name: "+ Add CrowdStrike Integration" }).click();
+    await ownerPage.getByRole("button", { name: "Add Integration" }).click();
+    await ownerPage.getByRole("menuitem", { name: /^CrowdStrike/ }).click();
     const dialog = ownerPage.getByRole("dialog", { name: "Add a CrowdStrike Integration" });
     await dialog.getByLabel("Name").fill("CrowdStrike — Prod");
     await dialog.getByLabel("Falcon cloud").selectOption("eu-1");
@@ -107,10 +108,12 @@ test("the Owner adds a CrowdStrike Integration; its detections appear live in an
     await card.getByRole("switch", { name: "Response Actions" }).click();
     await ownerPage.getByRole("alertdialog").getByRole("button", { name: "Allow Response Actions" }).click();
     const defaults = card.getByRole("form", { name: "Response Action defaults" });
+    await defaults.getByRole("button", { name: "Edit" }).click();
     await defaults.getByLabel("Severity").selectOption("critical");
     await defaults.getByLabel("macOS").click();
     await defaults.getByRole("button", { name: "Save defaults" }).click();
-    await defaults.getByRole("button", { name: "Save defaults" }).and(ownerPage.locator(":disabled")).waitFor();
+    await defaults.getByText("Sent as Critical, for Windows and Linux").waitFor();
+    await defaults.getByText("Saved.").waitFor();
     expect((await owner.api.integrations.$get().then((r) => r.json())).integrations[0]!.responseActionDefaults).toEqual({
       severity: "critical",
       platforms: ["windows", "linux"],
@@ -136,6 +139,8 @@ test("the Owner ignores Low and Informational detections from Settings; they nev
     await signIn(page, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
     await page.goto(`${baseUrl}/settings/integrations`);
     const ignored = page.getByTestId("integration-CrowdStrike — Prod").getByRole("form", { name: "Ignored Severities" });
+    await ignored.getByText("None: detections of every Severity become Alerts.").waitFor();
+    await ignored.getByRole("button", { name: "Edit" }).click();
     const save = ignored.getByRole("button", { name: "Save ignored Severities" });
     expect(await save.isDisabled()).toBe(true);
 
@@ -145,7 +150,8 @@ test("the Owner ignores Low and Informational detections from Settings; they nev
     expect(await save.isDisabled()).toBe(true);
     for (const s of ["Critical", "High", "Medium"]) await ignored.getByLabel(s, { exact: true }).click();
     await save.click();
-    await save.and(page.locator(":disabled")).waitFor();
+    await ignored.getByText("Low and Informational: detections of these Severities are skipped").waitFor();
+    await ignored.getByText("Saved.").waitFor();
     expect((await owner.api.integrations.$get().then((r) => r.json())).integrations[0]!.ignoredSeverities).toEqual(["low", "informational"]);
 
     const stream = falcon.tenant("falcon-client-0001");
@@ -678,19 +684,24 @@ test("the Owner adds a Mimecast Integration; an Analyst blocks an email sender's
     const ownerPage = await browser.newPage();
     await signIn(ownerPage, baseUrl, "owner@acme.example", () => t.totpCode(owner.totp.secret));
     await ownerPage.goto(`${baseUrl}/settings/integrations`);
-    await ownerPage.getByRole("button", { name: "+ Add Mimecast Integration" }).click();
+    await ownerPage.getByRole("button", { name: "Add Integration" }).click();
+    await ownerPage.getByRole("menuitem", { name: /^Mimecast/ }).click();
     const dialog = ownerPage.getByRole("dialog", { name: "Add a Mimecast Integration" });
     expect(await dialog.getByLabel("Falcon cloud").count()).toBe(0);
     expect(await dialog.getByLabel("Write back to Falcon").count()).toBe(0);
     await dialog.getByLabel("Name").fill("Mimecast");
     await dialog.getByLabel("API application client ID").fill("mimecast-app-0003");
     await dialog.getByLabel("API application client secret").fill("mimecast-secret");
-    await dialog.getByLabel("Response Actions").click();
+    // Response Actions start off; they are turned on from the card, which asks first.
+    expect(await dialog.getByLabel("Response Actions").count()).toBe(0);
     await dialog.getByRole("button", { name: "Add Integration" }).click();
     const card = ownerPage.getByTestId("integration-Mimecast");
     await card.getByText("Connecting").waitFor();
     await health.tick();
     await card.getByText("Connected").waitFor();
+    await card.getByRole("switch", { name: "Response Actions" }).click();
+    await ownerPage.getByRole("alertdialog").getByRole("button", { name: "Allow Response Actions" }).click();
+    await card.getByRole("switch", { name: "Response Actions", checked: true }).waitFor();
     await card.getByText(/^Credentials checked/).waitFor();
     await card.getByText("Block defaults").waitFor();
 

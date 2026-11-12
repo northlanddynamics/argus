@@ -54,7 +54,7 @@ export type FalconCloud = (typeof FALCON_CLOUDS)[number];
 export const falconCloudLabel: Record<FalconCloud, string> = { "us-1": "US-1", "us-2": "US-2", "eu-1": "EU-1", "us-gov-1": "US-GOV-1" };
 
 /** Each cloud's Falcon console. */
-const FALCON_CONSOLES: Record<FalconCloud, string> = {
+export const FALCON_CONSOLES: Record<FalconCloud, string> = {
   "us-1": "https://falcon.crowdstrike.com",
   "us-2": "https://falcon.us-2.crowdstrike.com",
   "eu-1": "https://falcon.eu-1.crowdstrike.com",

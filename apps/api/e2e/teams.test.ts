@@ -44,7 +44,7 @@ test("the Owner sets the Teams channel webhook, sends a test post, and a new Cri
     await card.getByRole("button", { name: "Send test post" }).click();
     await card.getByText("Test post sent. Check the channel.").waitFor();
     await card.getByRole("button", { name: "Save" }).click();
-    await card.getByText("Active").waitFor();
+    await card.getByText("Webhook set").waitFor();
     await card.getByText("acme.webhook.office.com/…a1b2").waitFor();
 
     await owner.api.cases.$post({ json: { title: "Ransomware note on FS-01", caseType: "malware", severity: "critical" } });
