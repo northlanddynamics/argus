@@ -62,6 +62,7 @@ export type OrgAuditAction =
   | "workflow_run.linked"
   | "workflow_run.finished"
   | "alert.dismissed"
+  | "alert.restored"
   | "alert.falcon_status_changed"
   | "alert.falcon_assignee_changed"
   | "alert.falcon_tags_changed";

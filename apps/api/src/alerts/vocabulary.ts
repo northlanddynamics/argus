@@ -15,8 +15,24 @@ export const dismissalReasonLabel: Record<DismissalReason, string> = {
   other: "Other",
 };
 
-/** An Alert's status in Falcon, which Argus mirrors but does not own: it is not its Alert Status. */
+/**
+ * An Alert's status in Falcon, which Argus mirrors but does not own: it is not its Alert Status. Closing
+ * a New Alert in Falcon dismisses it, and reopening one dismissed puts it back to New (`applyFalconUpdate`).
+ */
 export const falconStatusLabel: Record<string, string> = { new: "New", in_progress: "In Progress", reopened: "Reopened", closed: "Closed" };
+
+/** The Falcon status that dismisses a New Alert, and those that return a dismissed one to New. */
+export const FALCON_CLOSED = "closed";
+export const FALCON_OPEN_STATUSES: readonly string[] = ["new", "in_progress", "reopened"];
+
+/** How an Alert dismissed because it was closed in Falcon by `user` explains itself. */
+export const closedInFalconComment = (user: string | null) => (user ? `Closed in Falcon by ${user}` : "Closed in Falcon");
+
+/**
+ * The Falcon tag CrowdStrike's managed service puts on the Alerts it handles. The queue hides Alerts
+ * tagged with it unless asked to show them; it is matched ignoring case.
+ */
+export const FALCON_COMPLETE_TAG = "falcon_complete";
 
 /**
  * What Argus writes back to Falcon about an Alert (ADR 0002), each the result of something done in

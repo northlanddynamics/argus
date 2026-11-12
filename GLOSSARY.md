@@ -95,8 +95,12 @@ A detection raised by an external security tool (e.g. CrowdStrike) and received 
 _Avoid_: Detection, event, signal, case
 
 **Alert Status**:
-Where an Alert stands: New, Attached (to a Case) or Dismissed. Its status, assignee and tags in Falcon are mirrored alongside but are not its Alert Status.
+Where an Alert stands: New, Attached (to a Case) or Dismissed. Its status, assignee and tags in Falcon are mirrored alongside but are not its Alert Status, except that closing a New Alert in Falcon dismisses it and reopening a Dismissed one there returns it to New; an Attached Alert stays on its Case whatever Falcon says.
 _Avoid_: Alert state
+
+**Falcon Complete Alert**:
+An Alert tagged `falcon_complete` in Falcon, being handled by CrowdStrike's managed service; the Alert queue hides these unless a Member asks to see them.
+_Avoid_: MDR alert, managed alert
 
 **Dismissal Reason**:
 Why an Alert was dismissed without being attached to a Case: False Positive, Benign, Duplicate or Other.
