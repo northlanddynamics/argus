@@ -8,13 +8,13 @@ import { openCredentials } from "../integrations/credentials";
 import type { Membership } from "../members/membership";
 import { normaliseObservable } from "../observables/vocabulary";
 import { publish } from "../realtime/signals";
-import { type IpDetails, IpinfoQuotaExceeded, IpinfoRefused, reservedRange } from "./ipinfo";
+import { EMPTY_IP_DETAILS, hasPlusDetails, type IpDetails, IpinfoQuotaExceeded, IpinfoRefused, reservedRange } from "./ipinfo";
 
 /**
  * Looking IP addresses up through the Organization's IPinfo Integration (ADR 0010), for any Member,
  * with the answers cached in `ip_lookups`: a cached answer younger than `IP_LOOKUP_FRESH_MS` is
  * served as it is, and an older one, or none, is fetched from IPinfo while the Member waits. Refresh
- * always fetches. A failed fetch keeps the last details and says why; it is not tried again for
+ * always fetches. Details cached before Argus used IPinfo Plus are fetched again, as if stale. A failed fetch keeps the last details and says why; it is not tried again for
  * `IP_LOOKUP_RETRY_MS` unless someone asks for a refresh, so a bad token doesn't cost a call on
  * every hover.
  *
@@ -67,7 +67,7 @@ type Cached = typeof ipLookups.$inferSelect;
 const answer = (ip: string, row: Cached | undefined, state: IpLookupState, error: string | null = null): IpLookup =>
   row?.bogon
     ? { ip, state: "reserved", reserved: { range: null, label: "Reserved", internal: false }, details: null, fetchedAt: null, error: null, falcon: null }
-    : { ip, state, reserved: null, details: row?.details ?? null, fetchedAt: row?.fetchedAt?.toISOString() ?? null, error, falcon: null };
+    : { ip, state, reserved: null, details: row?.details ? { ...EMPTY_IP_DETAILS, ...row.details } : null, fetchedAt: row?.fetchedAt?.toISOString() ?? null, error, falcon: null };
 
 /** Records what a call to IPinfo said about an Integration's token, unless it was rotated or paused since. */
 export async function recordIpinfoHealth(
@@ -159,7 +159,7 @@ export function ipLookupStore(
 
       const now = clock.now().getTime();
       if (!refresh && cached) {
-        const fresh = cached.fetchedAt && now - cached.fetchedAt.getTime() < IP_LOOKUP_FRESH_MS;
+        const fresh = cached.fetchedAt && now - cached.fetchedAt.getTime() < IP_LOOKUP_FRESH_MS && (cached.bogon || (cached.details && hasPlusDetails(cached.details)));
         const recentlyFailed = cached.error && now - cached.checkedAt.getTime() < IP_LOOKUP_RETRY_MS;
         if (recentlyFailed) return answer(ip, cached, "failed", cached.error);
         if (fresh && !cached.error) return answer(ip, cached, "found");

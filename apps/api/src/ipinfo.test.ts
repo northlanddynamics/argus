@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { IPINFO_RECHECK_MS, createIpinfoHealthChecker } from "./ipinfo/health";
 import { IP_LOOKUP_FRESH_MS, IP_LOOKUP_RETRY_MS } from "./ipinfo/ip-lookups";
-import { reservedRange } from "./ipinfo/ipinfo";
+import { EMPTY_IP_DETAILS, reservedRange } from "./ipinfo/ipinfo";
 import { readLookup } from "./ipinfo/ipinfo-http";
+import { eq } from "drizzle-orm";
+import { integrations, ipLookups } from "./db/schema";
 import { buildTestApp } from "./test/harness";
 
 const PASSWORD = "correct-horse-battery";
@@ -179,6 +181,35 @@ describe("IP lookups", () => {
     expect(a.t.ipinfo.lookups).toHaveLength(2);
   });
 
+  test("details cached from IPinfo Core are fetched again for the Plus fields, however fresh", async () => {
+    const a = await acme();
+    await a.addIpinfo();
+    await a.lookup("8.8.4.4");
+    // As Argus cached it before it used Plus: no VPN, Tor, carrier or accuracy fields.
+    const [row] = await a.t.deps.db.select().from(ipLookups).where(eq(ipLookups.ip, "8.8.4.4"));
+    const { vpn: _vpn, proxy: _proxy, tor: _tor, relay: _relay, anonymousService: _service, carrier: _carrier, mcc: _mcc, mnc: _mnc, ...core } = row!.details!;
+    await a.t.deps.db.update(ipLookups).set({ details: core as NonNullable<typeof row>["details"] }).where(eq(ipLookups.id, row!.id));
+
+    a.t.ipinfo.details.set("8.8.4.4", { vpn: true, anonymous: true, anonymousService: "ExampleVPN" });
+    a.t.clock.advance(1000);
+    expect((await a.lookup("8.8.4.4")).lookup).toMatchObject({ state: "found", details: { vpn: true, anonymousService: "ExampleVPN" } });
+    expect(a.t.ipinfo.lookups).toHaveLength(2);
+  });
+
+  test("a Core-era answer served while paused has every Plus field, empty", async () => {
+    const a = await acme();
+    const { body } = await a.addIpinfo();
+    await a.lookup("8.8.4.4");
+    const [row] = await a.t.deps.db.select().from(ipLookups).where(eq(ipLookups.ip, "8.8.4.4"));
+    const { vpn: _vpn, carrier: _carrier, accuracyRadius: _radius, ...core } = row!.details!;
+    await a.t.deps.db.update(ipLookups).set({ details: core as NonNullable<typeof row>["details"] }).where(eq(ipLookups.id, row!.id));
+    await a.t.deps.db.update(integrations).set({ paused: true }).where(eq(integrations.id, body.integration!.id));
+
+    const { lookup } = await a.lookup("8.8.4.4");
+    expect(lookup).toMatchObject({ state: "paused", details: { city: "Frankfurt am Main", vpn: false, carrier: null, accuracyRadius: null } });
+    expect(a.t.ipinfo.lookups).toHaveLength(1);
+  });
+
   test("IPv6 is looked up in canonical form", async () => {
     const a = await acme();
     await a.addIpinfo();
@@ -325,8 +356,81 @@ describe("reserved ranges", () => {
   });
 });
 
-describe("IPinfo Core responses", () => {
-  test("are read into IpDetails, leaving out what IPinfo leaves out", () => {
+describe("IPinfo responses", () => {
+  test("Plus answers are read into IpDetails, every field of them", () => {
+    expect(
+      readLookup({
+        ip: "185.220.101.4",
+        hostname: "tor-exit-04.example-relay.net",
+        geo: {
+          city: "Frankfurt am Main",
+          region: "Hesse",
+          region_code: "HE",
+          country: "Germany",
+          country_code: "de",
+          continent: "Europe",
+          continent_code: "eu",
+          latitude: 50.1155,
+          longitude: 8.6842,
+          timezone: "Europe/Berlin",
+          postal_code: "60306",
+          dma_code: "",
+          geoname_id: 2925533,
+          radius: 20,
+          last_changed: "2025-03-14",
+        },
+        as: { asn: "AS60729", name: "Stiftung Erneuerbare Freiheit", domain: "stiftung-erneuerbare-freiheit.de", type: "hosting", last_changed: "2024-11-02" },
+        mobile: { name: "Telekom", mcc: "262", mnc: 1 },
+        anonymous: { is_proxy: false, is_relay: false, is_tor: true, is_vpn: true, name: "ExampleVPN" },
+        is_anonymous: true,
+        is_anycast: false,
+        is_hosting: true,
+        is_mobile: true,
+        is_satellite: false,
+      }),
+    ).toEqual({
+      bogon: false,
+      details: {
+        hostname: "tor-exit-04.example-relay.net",
+        city: "Frankfurt am Main",
+        region: "Hesse",
+        regionCode: "HE",
+        country: "Germany",
+        countryCode: "DE",
+        continent: "Europe",
+        continentCode: "EU",
+        latitude: 50.1155,
+        longitude: 8.6842,
+        accuracyRadius: 20,
+        timezone: "Europe/Berlin",
+        postalCode: "60306",
+        dmaCode: null,
+        geonameId: "2925533",
+        locationChangedOn: "2025-03-14",
+        asn: "AS60729",
+        asName: "Stiftung Erneuerbare Freiheit",
+        asDomain: "stiftung-erneuerbare-freiheit.de",
+        asType: "hosting",
+        asChangedOn: "2024-11-02",
+        anonymous: true,
+        vpn: true,
+        proxy: false,
+        tor: true,
+        relay: false,
+        anonymousService: "ExampleVPN",
+        hosting: true,
+        anycast: false,
+        mobile: true,
+        satellite: false,
+        carrier: "Telekom",
+        mcc: "262",
+        mnc: "1",
+      },
+    });
+    expect(readLookup({ ip: "10.0.0.1", bogon: true })).toEqual({ bogon: true });
+  });
+
+  test("a Core answer reads too, leaving out what Core leaves out", () => {
     expect(
       readLookup({
         ip: "8.8.8.8",
@@ -342,6 +446,7 @@ describe("IPinfo Core responses", () => {
     ).toEqual({
       bogon: false,
       details: {
+        ...EMPTY_IP_DETAILS,
         hostname: "dns.google",
         city: "Mountain View",
         region: "California",
@@ -351,18 +456,13 @@ describe("IPinfo Core responses", () => {
         latitude: 37.4,
         longitude: -122.07,
         timezone: "America/Los_Angeles",
-        postalCode: null,
         asn: "AS15169",
         asName: "Google LLC",
         asDomain: "google.com",
         asType: "hosting",
-        anonymous: false,
         hosting: true,
         anycast: true,
-        mobile: false,
-        satellite: false,
       },
     });
-    expect(readLookup({ ip: "10.0.0.1", bogon: true })).toEqual({ bogon: true });
   });
 });

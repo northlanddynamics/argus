@@ -1,5 +1,5 @@
 import type { IpDetails, IpinfoConnector } from "../ipinfo/ipinfo";
-import { IpinfoQuotaExceeded, IpinfoRefused } from "../ipinfo/ipinfo";
+import { EMPTY_IP_DETAILS, IpinfoQuotaExceeded, IpinfoRefused } from "../ipinfo/ipinfo";
 
 /**
  * A fake IPinfo for tests: answers every token's lookups from `details` (by address), with made-up
@@ -32,25 +32,27 @@ export function fakeIpinfo() {
       return {
         bogon: false,
         details: {
-          hostname: null,
+          ...EMPTY_IP_DETAILS,
           city: "Frankfurt am Main",
           region: "Hesse",
+          regionCode: "HE",
           country: "Germany",
           countryCode: "DE",
           continent: "Europe",
+          continentCode: "EU",
           latitude: 50.1155,
           longitude: 8.6842,
+          accuracyRadius: 20,
           timezone: "Europe/Berlin",
           postalCode: "60306",
+          geonameId: "2925533",
+          locationChangedOn: "2025-03-14",
           asn: "AS60729",
           asName: "Example Hosting GmbH",
           asDomain: "example-hosting.de",
           asType: "hosting",
-          anonymous: false,
+          asChangedOn: "2024-11-02",
           hosting: true,
-          anycast: false,
-          mobile: false,
-          satellite: false,
           ...fake.details.get(ip),
         },
       };

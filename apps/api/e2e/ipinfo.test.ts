@@ -49,7 +49,7 @@ test("the Owner adds IPinfo; opening an IP's Enrichment on a Case shows what IPi
     await ana.api.cases.$post({ json: { title: "Tor exit traffic from FIN-LT-0231", caseType: "unauthorized_access", severity: "high" } });
     await ana.api.cases[":number"].observables.$post({ param: { number: "1" }, json: { type: "ip", value: "185.220.101.4" } });
     await ana.api.cases[":number"].observables.$post({ param: { number: "1" }, json: { type: "ip", value: "10.20.4.17" } });
-    t.ipinfo.details.set("185.220.101.4", { hostname: "tor-exit-04.example-relay.net", anonymous: true, asName: "Stiftung Erneuerbare Freiheit", asDomain: "stiftung-erneuerbare-freiheit.de" });
+    t.ipinfo.details.set("185.220.101.4", { hostname: "tor-exit-04.example-relay.net", anonymous: true, tor: true, asName: "Stiftung Erneuerbare Freiheit", asDomain: "stiftung-erneuerbare-freiheit.de" });
 
     // Before IPinfo is added, an Analyst is told an Admin can add it.
     const page = await browser.newPage({ deviceScaleFactor: 2 });
@@ -92,15 +92,35 @@ test("the Owner adds IPinfo; opening an IP's Enrichment on a Case shows what IPi
     await page.getByRole("link", { name: "IP 185.220.101.4" }).hover();
     await card.getByText("Frankfurt am Main, Hesse").waitFor();
     await card.getByText("tor-exit-04.example-relay.net").waitFor();
-    await card.getByText("Anonymous").waitFor();
+    await card.getByLabel("Flags").getByText("Tor", { exact: true }).waitFor();
     await card.getByText(/as of/).waitFor();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/hover-card.png` });
+    // The rest is a page at a time: Location, Network, Privacy (no Mobile page: nothing mobile to say).
+    await card.getByText("Summary · 1 of 4").waitFor();
+    expect(await card.getByRole("button", { name: "Previous page" }).isDisabled()).toBe(true);
+    await card.getByRole("button", { name: "Next page" }).click();
+    await card.getByText("Location · 2 of 4").waitFor();
+    await card.getByText("Hesse (HE)").waitFor();
+    await card.getByText("Within 20 km").waitFor();
+    await card.getByRole("button", { name: "Next page" }).click();
+    await card.getByText("Network · 3 of 4").waitFor();
+    await card.getByText("Stiftung Erneuerbare Freiheit").waitFor();
+    await card.getByRole("button", { name: "Next page" }).click();
+    await card.getByText("Privacy · 4 of 4").waitFor();
+    await card.getByText("Tor", { exact: true }).waitFor();
+    expect(await card.getByRole("button", { name: "Next page" }).isDisabled()).toBe(true);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/hover-card-privacy.png` });
     await page.mouse.move(0, 0);
     await card.waitFor({ state: "detached" });
     await show("185.220.101.4");
-    await panel.getByText("Frankfurt am Main, Hesse").waitFor();
+    // The panel shows everything, by subject.
+    await panel.getByText("Frankfurt am Main", { exact: true }).waitFor();
+    await panel.getByText("Hesse (HE)").waitFor();
+    await panel.getByText("Within 20 km").waitFor();
     await panel.getByText("tor-exit-04.example-relay.net").waitFor();
-    await panel.getByText("Anonymous").waitFor();
+    await panel.getByLabel("Flags").getByText("Tor", { exact: true }).waitFor();
+    await panel.getByRole("region", { name: "Privacy" }).getByText("Tor", { exact: true }).waitFor();
+    await panel.getByRole("region", { name: "Mobile" }).getByText("Satellite").waitFor();
     await panel.getByText("AS60729").waitFor();
     await panel.getByText("In 1 Case").waitFor();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/a-found.png` });
@@ -109,7 +129,7 @@ test("the Owner adds IPinfo; opening an IP's Enrichment on a Case shows what IPi
     expect(await page.getByTestId("observable-185.220.101.4").evaluate((row) => !!row.querySelector("[data-enrichment-current]"))).toBe(true);
     expect(new URL(page.url()).searchParams.get("enrichment")).toBe("ip:185.220.101.4");
     await page.reload();
-    await panel.getByText("Frankfurt am Main, Hesse").waitFor();
+    await panel.getByText("Hesse (HE)").waitFor();
 
     // Refresh asks IPinfo again.
     await panel.getByRole("button", { name: "Refresh 185.220.101.4" }).click();
@@ -150,7 +170,7 @@ test("the Owner adds IPinfo; opening an IP's Enrichment on a Case shows what IPi
     const link = page.getByRole("link", { name: "IP 185.220.101.4" });
     await link.focus();
     await page.keyboard.press("i");
-    await panel.getByText("Frankfurt am Main, Hesse").waitFor();
+    await panel.getByText("Hesse (HE)").waitFor();
     await page.keyboard.press("Escape");
     await panel.waitFor({ state: "detached" });
     await focusReturnsTo("IP 185.220.101.4");
@@ -158,7 +178,7 @@ test("the Owner adds IPinfo; opening an IP's Enrichment on a Case shows what IPi
     // The right-click menu opens it too.
     await link.click({ button: "right" });
     await page.getByRole("menuitem", { name: /^Show Enrichment/ }).click();
-    await panel.getByText("Frankfurt am Main, Hesse").waitFor();
+    await panel.getByText("Hesse (HE)").waitFor();
 
     // The IP's own page shows the details as a card.
     await page.locator("[data-slot=sheet-overlay]").click();
