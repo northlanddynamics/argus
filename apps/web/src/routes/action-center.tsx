@@ -94,7 +94,7 @@ export function ActionCenterLayout() {
     <div className="grid w-full grid-cols-1 gap-4">
       <PageHeader title="Action Center" description="Look up, respond to and mark any value, and run Falcon workflows, with or without a Case." />
       <Tabs value={onLog ? "log" : "actions"} activationMode="manual">
-        <TabsList variant="line" aria-label="Action Center" className="w-full justify-start border-b">
+        <TabsList variant="line" aria-label="Action Center" className="w-full justify-start">
           <TabsTrigger value="actions" className="h-8 flex-none" asChild>
             <Link to="/actions">Actions</Link>
           </TabsTrigger>
@@ -140,7 +140,7 @@ export function ActionsTab() {
           if (firstTaking) setRunning({ card: firstTaking, text: value });
         }}
       >
-        <Label htmlFor="action-value" className="text-xs">
+        <Label htmlFor="action-value" variant="meta">
           Value
         </Label>
         <Input
@@ -192,14 +192,14 @@ export function ActionsTab() {
                           </div>
                         </div>
                         {card.adminOnly && (
-                          <Badge variant="outline" className="border-dashed">
+                          <Badge variant="outline-dashed">
                             Admin
                           </Badge>
                         )}
                       </div>
                       <div className="flex min-w-0 flex-wrap gap-1">
                         {card.accepts.map((t) => (
-                          <Badge key={t} variant="outline" className={cn("font-normal", types.has(t as ObservableType) ? "text-foreground" : "text-muted-foreground")}>
+                          <Badge key={t} variant={types.has(t as ObservableType) ? "outline" : "outline-muted"} className="font-normal">
                             {typeLabel(t)}
                           </Badge>
                         ))}
@@ -314,7 +314,7 @@ function RunDialog({ card, initialText, onClose }: { card: CatalogueCard; initia
           <DialogTitle className="flex items-center gap-2">
             {card.label}
             {card.adminOnly && (
-              <Badge variant="outline" className="border-dashed">
+              <Badge variant="outline-dashed">
                 Admin
               </Badge>
             )}
@@ -335,8 +335,8 @@ function RunDialog({ card, initialText, onClose }: { card: CatalogueCard; initia
             }}
           >
             {blocked && (
-              <Alert className="border-notice-border bg-notice text-notice-foreground">
-                <AlertDescription className="text-notice-foreground/80">This action can't run now: {card.statusText}.</AlertDescription>
+              <Alert variant="notice">
+                <AlertDescription>This action can't run now: {card.statusText}.</AlertDescription>
               </Alert>
             )}
             <div className="grid gap-1.5">
@@ -368,16 +368,16 @@ function RunDialog({ card, initialText, onClose }: { card: CatalogueCard; initia
               </div>
             )}
             {respond && caseNumber != null && (
-              <Label className="flex items-center gap-2 font-normal">
+              <Label variant="option">
                 <Checkbox checked={internal} onCheckedChange={(c) => setInternal(!!c)} />
                 Internal: hide it from the Case's Guests
               </Label>
             )}
             {ignored && (
-              <Alert className="border-notice-border bg-notice text-notice-foreground">
-                <AlertDescription className="text-notice-foreground/80">
+              <Alert variant="notice">
+                <AlertDescription>
                   {ignored.message}.{" "}
-                  <Button type="button" variant="link" className="h-auto p-0" onClick={() => run.mutate(true)}>
+                  <Button type="button" variant="link" onClick={() => run.mutate(true)}>
                     Send anyway
                   </Button>
                 </AlertDescription>
@@ -481,8 +481,8 @@ function ContainFromCenter({ card, onClose }: { card: CatalogueCard; onClose: ()
           }}
         >
           {blocked && (
-            <Alert className="border-notice-border bg-notice text-notice-foreground">
-              <AlertDescription className="text-notice-foreground/80">This action can't run now: {card.statusText}.</AlertDescription>
+            <Alert variant="notice">
+              <AlertDescription>This action can't run now: {card.statusText}.</AlertDescription>
             </Alert>
           )}
           <div className="grid gap-1.5">
@@ -683,8 +683,8 @@ function LogRow({
             </ItemLink>
           </AccountHoverCard>
         ) : wr ? (
-          <Button variant="link" className="h-auto p-0 font-sans text-sm" onClick={onView}>
-            {e.value.value}
+          <Button variant="link" onClick={onView}>
+            <span className="font-sans">{e.value.value}</span>
           </Button>
         ) : (
           valueText
@@ -697,7 +697,7 @@ function LogRow({
         ) : (
           <span className="text-xs text-muted-foreground">
             No Case ·{" "}
-            <Button variant="link" className="h-auto p-0 text-xs" onClick={onLink}>
+            <Button variant="link" size="xs" onClick={onLink}>
               Link to Case…
             </Button>
           </span>

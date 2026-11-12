@@ -27,7 +27,6 @@ import { TagsPanel } from "@/routes/cases/tags-panel";
 import { TaskDialog } from "@/routes/cases/task-dialog";
 import { byUrgency, tasksKey, tasksQuery } from "@/lib/tasks";
 import { instant } from "@/lib/when";
-import { cn } from "@/lib/utils";
 
 type Summary = CaseView["summary"];
 
@@ -97,7 +96,7 @@ function ScopeSection({ number }: { number: number }) {
     <RailSection>
       <RailHeader>
         <RailTitle>Scope</RailTitle>
-        <Button variant="link" size="xs" className="h-auto px-0" asChild>
+        <Button variant="link" size="xs" asChild>
           <Link to="/cases/$number/observables" params={params}>
             Observables &amp; Assets
           </Link>
@@ -191,17 +190,16 @@ function OpenTasksCard({ c }: { c: CaseView }) {
             {[false, true].map((value) => (
               <Button
                 key={String(value)}
-                variant="ghost"
+                variant="segment"
                 size="xs"
                 aria-pressed={mine === value}
-                className={cn("h-6 rounded-md px-2", mine === value ? "bg-background shadow-xs hover:bg-background" : "text-muted-foreground")}
                 onClick={() => setMine(value)}
               >
                 {value ? "Mine" : "All"}
               </Button>
             ))}
           </div>
-          <Button variant="link" size="sm" className="h-auto px-0" asChild>
+          <Button variant="link" size="sm" asChild>
             <Link to="/cases/$number/tasks" params={params}>
               All Tasks
             </Link>
@@ -238,7 +236,7 @@ function OpenTasksCard({ c }: { c: CaseView }) {
                   </span>
                   <span className="shrink-0 tabular-nums @xl:w-40 @xl:text-right">
                     {t.overdue ? (
-                      <Badge variant="outline" className="border-overdue-border text-overdue">
+                      <Badge variant="overdue">
                         Overdue · {t.dueDate}
                       </Badge>
                     ) : (
@@ -291,7 +289,7 @@ function LatestActivityCard({ number }: { number: number }) {
           <h2>Latest activity</h2>
         </CardTitle>
         <CardAction>
-          <Button variant="link" size="sm" className="h-auto px-0" asChild>
+          <Button variant="link" size="sm" asChild>
             <Link to="/cases/$number/timeline" params={params}>
               Timeline &amp; Discussion
             </Link>
@@ -408,7 +406,7 @@ function CaseSummaryCard({ number, summary, readOnly }: { number: number; summar
   return (
     <div className="grid content-start gap-4">
       {conflict && (
-        <Alert className="border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80">
+        <Alert variant="notice">
           <AlertTitle>Not saved — the Case Summary changed since you opened it</AlertTitle>
           <AlertDescription className="grid gap-3">
             <p>
@@ -436,7 +434,7 @@ function CaseSummaryCard({ number, summary, readOnly }: { number: number; summar
           </CardTitle>
           {/* Nothing to attribute until something has been written. */}
           {(summary.content.content.length > 0 || summary.version > 1) && (
-            <CardDescription className="text-xs">
+            <CardDescription size="sm">
               Last saved by {summary.updatedBy.name} · v{summary.version}
             </CardDescription>
           )}

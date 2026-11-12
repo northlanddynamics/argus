@@ -2,7 +2,7 @@ import type { UseMutationResult } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { type AnalysisStats, type Detection, enginesThatAnalysed } from "api/virustotal/virustotal";
 import { RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { toast } from "sonner";
 import { Time } from "@/components/time";
 import { Badge } from "@/components/ui/badge";
@@ -51,8 +51,8 @@ export function Verdict({ stats }: { stats: AnalysisStats }) {
       {analysed > 0 && (
         <div className="h-1 overflow-hidden rounded-full bg-muted" role="presentation">
           <div
-            className={cn("h-full rounded-full", t === "malicious" ? "bg-destructive" : t === "suspicious" ? "bg-notice-foreground" : "bg-transparent")}
-            style={{ width: `${Math.max(share * 100, stats.malicious ? 3 : 0)}%` }}
+            className={cn("h-full w-(--share) rounded-full", t === "malicious" ? "bg-destructive" : t === "suspicious" ? "bg-notice-foreground" : "bg-transparent")}
+            style={{ "--share": `${Math.max(share * 100, stats.malicious ? 3 : 0)}%` } as CSSProperties}
           />
         </div>
       )}

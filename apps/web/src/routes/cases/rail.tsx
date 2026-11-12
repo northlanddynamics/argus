@@ -23,10 +23,4 @@ export function RailBody({ className, ...props }: ComponentProps<"div">) {
   return <div className={cn("grid min-w-0 gap-2 text-sm text-pretty", className)} {...props} />;
 }
 
-/**
- * A row's own actions (Edit, Retract, Promote): ghost buttons in muted ink that strengthen when the
- * row is pointed at, so a list of entries reads as a record rather than a wall of buttons. The row
- * carries `group/row`.
- */
-export const QUIET_ACTION = "text-muted-foreground group-hover/row:text-foreground";
 

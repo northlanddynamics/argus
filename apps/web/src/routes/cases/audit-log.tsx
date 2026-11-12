@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { DatePicker } from "@/components/date-picker";
-import { DATE_FILTER, FilterBar, FilterField, FilterSelect } from "@/components/filter-bar";
+import { FilterBar, FilterField, FilterSelect } from "@/components/filter-bar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { falconStatusLabel } from "@/lib/alerts";
@@ -29,7 +29,6 @@ import { promotedSources, timelineQuery } from "@/lib/timeline";
 import { useContainerWidth } from "@/hooks/use-container-width";
 import { cn } from "@/lib/utils";
 import { useCaseNumber } from "@/routes/cases/case-layout";
-import { QUIET_ACTION } from "@/routes/cases/rail";
 import { PromoteDialog } from "@/routes/cases/timeline-entry-form";
 import { membersKey } from "@/routes/settings/members";
 
@@ -210,7 +209,7 @@ export function CaseAuditLogPage() {
         <FilterSelect label="Actor" id="audit-actor" any="Anyone" value={actor || undefined} options={actors} labels={actorNames} onChange={(next) => setActor(next ?? "")} />
         <FilterSelect label="Action" id="audit-action" any="All actions" value={action || undefined} options={CASE_AUDIT_ACTIONS} labels={actionLabel} onChange={(next) => setAction(next ?? "")} />
         <FilterField label="From" htmlFor="audit-from">
-          <DatePicker id="audit-from" value={from} onChange={setFrom} placeholder="Any time" className={DATE_FILTER} />
+          <DatePicker id="audit-from" value={from} onChange={setFrom} placeholder="Any time" size="sm" className="w-36" />
         </FilterField>
       </FilterBar>
       <Card ref={ref} className="@container py-0">
@@ -226,7 +225,7 @@ export function CaseAuditLogPage() {
             <col className="w-28 @4xl:w-32" />
           </colgroup>
           <TableHeader>
-            <TableRow className="hover:bg-transparent">
+            <TableRow variant="static">
               <TableHead className="overflow-hidden px-0 @xl:pl-4">{fits("xl") && "When"}</TableHead>
               <TableHead className="overflow-hidden px-0 @2xl:px-2">{fits("2xl") && "Actor"}</TableHead>
               <TableHead className="pl-4 @xl:pl-2">Action</TableHead>
@@ -239,7 +238,7 @@ export function CaseAuditLogPage() {
           <TableBody>
             {entries.isPending &&
               Array.from({ length: 6 }, (_, i) => (
-                <TableRow key={i} className="hover:bg-transparent" aria-hidden>
+                <TableRow key={i} variant="static" aria-hidden>
                   <TableCell className="overflow-hidden px-0 @xl:pl-4"><Skeleton className="hidden h-4 w-24 @xl:block" /></TableCell>
                   <TableCell className="overflow-hidden px-0 @2xl:px-2"><Skeleton className="hidden h-4 w-24 @2xl:block" /></TableCell>
                   <TableCell className="pl-4 @xl:pl-2"><Skeleton className="h-4 w-3/5" /></TableCell>
@@ -279,10 +278,8 @@ export function CaseAuditLogPage() {
                   ) : (
                     c?.status !== "closed" && (
                       <Button
-                        variant="ghost"
+                        variant="quiet"
                         size="sm"
-                        // Quiet until the row is pointed at or focused, so one button per row doesn't drown the record.
-                        className={QUIET_ACTION}
                         aria-label="Promote to Timeline"
                         onClick={() => setPromoting(e)}
                       >
@@ -294,17 +291,17 @@ export function CaseAuditLogPage() {
               </TableRow>
             ))}
             {entries.isError && (
-              <TableRow className="hover:bg-transparent">
+              <TableRow variant="static">
                 <TableCell colSpan={5} className="px-4 whitespace-normal">
                   <span className="text-destructive">The Audit Log couldn't be loaded.</span>{" "}
-                  <Button variant="link" size="sm" className="h-auto p-0" onClick={() => void entries.refetch()}>
+                  <Button variant="link" size="sm" onClick={() => void entries.refetch()}>
                     Try again
                   </Button>
                 </TableCell>
               </TableRow>
             )}
             {entries.data?.length === 0 && (
-              <TableRow className="hover:bg-transparent">
+              <TableRow variant="static">
                 <TableCell colSpan={5} className="px-4 text-muted-foreground">
                   {filtered ? "No entries match these filters." : "Nothing recorded yet."}
                 </TableCell>

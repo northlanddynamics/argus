@@ -54,8 +54,8 @@ function Nav({ target, headingRef }: { target: EnrichmentTarget; headingRef: Rea
         </Button>
       )}
       {/* The Sheet's title, so the dialog is named "IP Enrichment"; it shows only the type. */}
-      <SheetTitle ref={headingRef} tabIndex={-1} className="min-w-0 flex-1 text-xs font-medium text-muted-foreground outline-none">
-        {observableTypeLabel[target.type]}
+      <SheetTitle ref={headingRef} tabIndex={-1} className="min-w-0 flex-1">
+        <span className="text-xs text-muted-foreground">{observableTypeLabel[target.type]}</span>
         <span className="sr-only"> Enrichment</span>
       </SheetTitle>
       {important.important && (

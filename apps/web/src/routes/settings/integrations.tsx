@@ -37,7 +37,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { FALCON_IOC_PLATFORMS, type FalconIocDefaults, type FalconIocPlatform, falconIocPlatformLabel } from "@/lib/response-actions";
 
 /** The Amber Notice treatment (DESIGN.md): the one warning style. */
-const notice = "border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80";
 
 /** A section of an Integration's card, set off from the one above by a hairline. */
 const section = "grid gap-2 border-t pt-4";
@@ -363,7 +362,7 @@ function IntegrationCard({ integration: i }: { integration: IntegrationView }) {
             <CardTitle>
               <h2>{i.name}</h2>
             </CardTitle>
-            <Badge variant={word === "Connected" ? "default" : "outline"} className={word === "Error" ? "border-destructive text-destructive" : undefined}>
+            <Badge variant={word === "Connected" ? "default" : word === "Error" ? "outline-destructive" : "outline"}>
               {word}
             </Badge>
             {writesBack && !i.writeBack && <Badge variant="outline">Alert write-back off</Badge>}
@@ -548,12 +547,12 @@ function IntegrationProblems({ integration: i, pauseError }: { integration: Inte
         </Alert>
       )}
       {i.healthDetail && !i.paused && (
-        <Alert variant={i.health === "error" ? "destructive" : "default"} className={i.health === "error" ? undefined : notice}>
+        <Alert variant={i.health === "error" ? "destructive" : "notice"}>
           <AlertDescription>{i.healthDetail}</AlertDescription>
         </Alert>
       )}
       {i.lastGap && (
-        <Alert className={notice}>
+        <Alert variant="notice">
           <AlertTitle>
             Gap in the stream, noticed <Time iso={i.lastGap.at} />
           </AlertTitle>
@@ -564,14 +563,14 @@ function IntegrationProblems({ integration: i, pauseError }: { integration: Inte
         </Alert>
       )}
       {i.hostEnrichmentError && !i.paused && (
-        <Alert className={notice}>
+        <Alert variant="notice">
           <AlertDescription>
             {i.hostEnrichmentError}. Grant {FALCON_SCOPE.hosts} to the API client to see hosts' Enrichment; nothing else is affected.
           </AlertDescription>
         </Alert>
       )}
       {i.identityEnrichmentError && !i.paused && (
-        <Alert className={notice}>
+        <Alert variant="notice">
           <AlertDescription>{i.identityEnrichmentError}. Grant it to see accounts' Enrichment; nothing else is affected.</AlertDescription>
         </Alert>
       )}
@@ -625,7 +624,7 @@ function PauseButton({ integration: i, pending, onPause }: { integration: Integr
           <AlertDialogTitle>Pause {i.name}?</AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div>
-              <Alert className={notice}>
+              <Alert variant="notice">
                 <AlertDescription>
                   {receivesAlerts
                     ? "Argus stops reading its Alert stream, so no new Alerts arrive from it until you resume it. Events Falcon no longer holds by then show here as a gap."
@@ -696,7 +695,7 @@ function DeleteIntegrationDialog({
           </AlertDialogDescription>
         </AlertDialogHeader>
         {held > 0 && (
-          <Alert className={notice}>
+          <Alert variant="notice">
             <AlertDescription>
               {counted(held, "Response Action")} taken through it {held === 1 ? "is" : "are"} still in place. Remove{" "}
               {held === 1 ? "it from its Case" : "them from their Cases"} first; the{" "}
@@ -738,7 +737,7 @@ function WriteBacks({ counts: w }: { counts: IntegrationView["writeBacks"] }) {
       <h3 className={sectionHeading}>Write-backs to Falcon</h3>
       <div className="flex flex-wrap gap-2">
         <Badge variant="outline">Pending {w.pending}</Badge>
-        <Badge variant="outline" className={w.retrying ? "border-notice-border text-notice-foreground" : undefined}>
+        <Badge variant={w.retrying ? "outline-notice" : "outline"}>
           Retrying {w.retrying}
           {w.nextRetryAt ? ` · next ${until(w.nextRetryAt)}` : ""}
         </Badge>
@@ -773,7 +772,7 @@ function ResponseActionCounts({ counts: c }: { counts: IntegrationView["response
         <Badge variant="outline">Active {c.active}</Badge>
         <Badge variant="outline">Pending {c.pending}</Badge>
         {c.failed > 0 && (
-          <Badge variant="outline" className="border-destructive text-destructive">
+          <Badge variant="outline-destructive">
             Failed {c.failed}
           </Badge>
         )}
@@ -802,14 +801,14 @@ function StreamSummary({ integration: i }: { integration: IntegrationView }) {
   const [open, setOpen] = useState(false);
   const connecting = i.health === "connecting" && !i.paused;
   return (
-    <Collapsible open={open} onOpenChange={setOpen} className="grid gap-2 text-sm">
+    <Collapsible open={open} onOpenChange={setOpen} className="grid gap-2">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span>
           <span className="text-muted-foreground">Last event </span>
           {i.lastEventAt ? <Time iso={i.lastEventAt} className="font-medium" /> : <span className="font-medium">None yet</span>}
         </span>
         <CollapsibleTrigger asChild>
-          <Button variant="ghost" size="xs" className="text-muted-foreground">
+          <Button variant="quiet" size="xs">
             <ChevronRight className={open ? "rotate-90 transition-transform" : "transition-transform"} aria-hidden />
             Stream details
           </Button>
@@ -908,7 +907,7 @@ function GuardedSwitch({
               <AlertDialogTitle>{confirmation.title}</AlertDialogTitle>
               <AlertDialogDescription asChild>
                 <div>
-                  <Alert className={notice}>
+                  <Alert variant="notice">
                     <AlertDescription>{confirmation.body}</AlertDescription>
                   </Alert>
                 </div>
@@ -1149,7 +1148,7 @@ function IgnoredSeverities({ integration: i }: { integration: IntegrationView })
         {SEVERITIES.map((s) => (
           <div key={s} className="flex items-center gap-2">
             <Checkbox id={id(s)} checked={draft.includes(s)} aria-invalid={all || undefined} onCheckedChange={(checked) => toggle(s, checked === true)} />
-            <Label htmlFor={id(s)} className="font-normal">
+            <Label htmlFor={id(s)} variant="option">
               {severityLabel[s]}
             </Label>
           </div>
@@ -1246,7 +1245,7 @@ function ResponseActionDefaults({ integration: i }: { integration: IntegrationVi
                     aria-invalid={noPlatform || undefined}
                     onCheckedChange={(checked) => togglePlatform(p, checked === true)}
                   />
-                  <Label htmlFor={id(p)} className="font-normal">
+                  <Label htmlFor={id(p)} variant="option">
                     {falconIocPlatformLabel[p]}
                   </Label>
                 </div>
@@ -1257,7 +1256,7 @@ function ResponseActionDefaults({ integration: i }: { integration: IntegrationVi
         <span className="text-sm font-medium">Visibility</span>
         <div className="flex items-center gap-2">
           <Checkbox id={id("internal")} checked={draft.internal} onCheckedChange={(checked) => setDraft((d) => ({ ...d, internal: checked === true }))} />
-          <Label htmlFor={id("internal")} className="font-normal">
+          <Label htmlFor={id("internal")} variant="option">
             Internal
           </Label>
         </div>

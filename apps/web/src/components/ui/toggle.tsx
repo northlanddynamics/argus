@@ -12,6 +12,8 @@ const toggleVariants = cva(
       variant: {
         default: "bg-transparent",
         outline: "border border-input bg-transparent hover:bg-muted",
+        // A filter chip: a pill that fills with ink when on.
+        chip: "rounded-full bg-transparent px-3 text-xs data-[state=on]:bg-foreground data-[state=on]:text-background",
       },
       size: {
         default:

@@ -94,9 +94,8 @@ function Details({ details: d, showHostname, full }: { details: IpDetails; showH
           {flags.map((f) => (
             <Badge
               key={f.key}
-              variant="outline"
+              variant={f.key === "anonymous" ? "notice" : "outline"}
               title={f.title}
-              className={cn(f.key === "anonymous" && "border-notice-border bg-notice text-notice-foreground")}
             >
               {f.label}
             </Badge>
@@ -345,7 +344,7 @@ export function IpDetailsCard({ ip, admin }: { ip: string; admin: boolean }) {
         <CardHeader>
           <CardTitle>Hosts in Falcon</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-3 text-sm">
+        <CardContent className="grid gap-3">
           {range && <RangeLine reserved={range} />}
           <FalconHostsCompact ip={ip} lookup={q.data} loading={q.isPending} admin={admin} card={false} />
         </CardContent>
@@ -357,7 +356,7 @@ export function IpDetailsCard({ ip, admin }: { ip: string; admin: boolean }) {
       <CardHeader>
         <CardTitle>IP details</CardTitle>
       </CardHeader>
-      <CardContent className="grid gap-3 text-sm">
+      <CardContent className="grid gap-3">
         <IpLookupBody lookup={q.data} loading={q.isPending} error={q.error} admin={admin} showHostname />
         <IpLookupFooter ip={ip} lookup={q.data} loading={q.isPending} />
       </CardContent>

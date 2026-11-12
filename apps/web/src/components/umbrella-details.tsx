@@ -28,7 +28,7 @@ function Matches({ check }: { check: UmbrellaIntegrationCheck }) {
         <li key={`${m.list.id}:${m.destination}`} className="grid gap-0.5">
           <span className="flex flex-wrap items-center gap-1.5">
             <span className="font-medium">{m.list.name}</span>
-            <Badge variant="outline" className={cn(m.list.access === "block" ? "border-destructive text-destructive" : undefined)}>
+            <Badge variant={m.list.access === "block" ? "outline-destructive" : "outline"}>
               {m.list.access === "block" ? "Block" : "Allow"}
             </Badge>
             {m.list.isGlobal && <Badge variant="outline">Global</Badge>}
@@ -105,7 +105,7 @@ export function UmbrellaCard({ value }: { value: string }) {
       <CardHeader>
         <CardTitle>Cisco Umbrella</CardTitle>
       </CardHeader>
-      <CardContent className="grid gap-4 text-sm">
+      <CardContent className="grid gap-4">
         {q.isPending && <ReportSkeleton />}
         {q.error && <Problem>{q.error.message}</Problem>}
         {q.data?.integrations.map((check) => (

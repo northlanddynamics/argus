@@ -1,4 +1,5 @@
 import * as React from "react"
+import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 import { Avatar as AvatarPrimitive } from "radix-ui"
 
@@ -7,14 +8,14 @@ function Avatar({
   size = "default",
   ...props
 }: React.ComponentProps<typeof AvatarPrimitive.Root> & {
-  size?: "default" | "sm" | "lg"
+  size?: "default" | "sm" | "lg" | "xs"
 }) {
   return (
     <AvatarPrimitive.Root
       data-slot="avatar"
       data-size={size}
       className={cn(
-        "group/avatar relative flex size-8 shrink-0 rounded-full select-none after:absolute after:inset-0 after:rounded-full after:border after:border-border after:mix-blend-darken data-[size=lg]:size-10 data-[size=sm]:size-6 dark:after:mix-blend-lighten",
+        "group/avatar relative flex size-8 shrink-0 rounded-full select-none after:absolute after:inset-0 after:rounded-full after:border after:border-border after:mix-blend-darken data-[size=lg]:size-10 data-[size=sm]:size-6 data-[size=xs]:size-5 dark:after:mix-blend-lighten",
         className
       )}
       {...props}
@@ -38,17 +39,40 @@ function AvatarImage({
   )
 }
 
+const tinted =
+  "text-[11px] font-semibold text-tint-foreground group-data-[size=xs]/avatar:text-[9px]"
+
+const avatarFallbackVariants = cva(
+  "flex size-full items-center justify-center rounded-full text-sm group-data-[size=sm]/avatar:text-xs",
+  {
+    variants: {
+      // A person's tint: the same person gets the same one in every view.
+      tint: {
+        none: "bg-muted text-muted-foreground",
+        sky: `${tinted} bg-tint-sky`,
+        amber: `${tinted} bg-tint-amber`,
+        emerald: `${tinted} bg-tint-emerald`,
+        rose: `${tinted} bg-tint-rose`,
+        violet: `${tinted} bg-tint-violet`,
+        lime: `${tinted} bg-tint-lime`,
+      },
+    },
+    defaultVariants: {
+      tint: "none",
+    },
+  }
+)
+
 function AvatarFallback({
   className,
+  tint,
   ...props
-}: React.ComponentProps<typeof AvatarPrimitive.Fallback>) {
+}: React.ComponentProps<typeof AvatarPrimitive.Fallback> &
+  VariantProps<typeof avatarFallbackVariants>) {
   return (
     <AvatarPrimitive.Fallback
       data-slot="avatar-fallback"
-      className={cn(
-        "flex size-full items-center justify-center rounded-full bg-muted text-sm text-muted-foreground group-data-[size=sm]/avatar:text-xs",
-        className
-      )}
+      className={cn(avatarFallbackVariants({ tint }), className)}
       {...props}
     />
   )

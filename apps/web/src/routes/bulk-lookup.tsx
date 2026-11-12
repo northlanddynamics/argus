@@ -75,7 +75,7 @@ export function BulkLookupPage() {
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Paste text here"
-          className="max-h-96 min-h-40 font-mono text-sm"
+          className="max-h-96 min-h-40 font-mono"
           spellCheck={false}
         />
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -136,7 +136,7 @@ export function BulkLookupPage() {
                 <col className="w-0 md:w-56 @7xl:w-[17.5%]" />
               </colgroup>
               <TableHeader>
-                <TableRow className="hover:bg-transparent">
+                <TableRow variant="static">
                   <TableHead>
                     <Checkbox
                       aria-label="Select all"
@@ -156,7 +156,7 @@ export function BulkLookupPage() {
                   <ResultRow key={keyOf(r)} result={r} selected={selected.has(keyOf(r))} onSelect={(on) => toggle(keyOf(r), on)} />
                 ))}
                 {!results.length && (
-                  <TableRow className="hover:bg-transparent">
+                  <TableRow variant="static">
                     <TableCell colSpan={6} className="text-muted-foreground">
                       No IPs, domains, URLs, email addresses or hashes in that text.
                     </TableCell>

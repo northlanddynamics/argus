@@ -181,13 +181,13 @@ function EntryForm({
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-medium">Cites</span>
         {fields.citations.map((c) => (
-          <Badge key={`${c.kind}:${c.id}`} variant="secondary" className="gap-1">
+          <Badge key={`${c.kind}:${c.id}`} variant="secondary">
             Task · {taskTitle(c.id)}
             <Button
               type="button"
               variant="ghost"
               size="icon-xs"
-              className="-mr-1 size-4 rounded-full"
+              className="-mr-1"
               aria-label={`Remove citation Task · ${taskTitle(c.id)}`}
               onClick={() => set({ citations: fields.citations.filter((x) => x !== c) })}
             >
@@ -222,7 +222,7 @@ function EntryForm({
             <Checkbox id={id("internal")} checked={internal.value} onCheckedChange={(checked) => internal.onChange(checked === true)} />
             <FieldContent>
               <FieldLabel htmlFor={id("internal")}>Internal</FieldLabel>
-              <FieldDescription className="text-xs">Hidden from Guests</FieldDescription>
+              <FieldDescription size="sm">Hidden from Guests</FieldDescription>
             </FieldContent>
           </Field>
         )}
@@ -368,7 +368,7 @@ export function EditEntryForm({ number, entry, onDone }: { number: number; entry
   return (
     <div className="grid gap-4">
       {conflict && (
-        <Alert className="border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80">
+        <Alert variant="notice">
           <AlertTitle>Not saved — the entry changed since you opened it</AlertTitle>
           <AlertDescription className="grid gap-2">
             <p>

@@ -21,7 +21,7 @@ import { cn, REVEAL } from "@/lib/utils";
 /** The "Internal" marker: shown on items hidden from the Case's Guests. */
 export function InternalBadge() {
   return (
-    <Badge variant="outline" className="border-dashed border-foreground/50">
+    <Badge variant="internal">
       Internal
     </Badge>
   );
@@ -111,8 +111,8 @@ export function Visibility({
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
-            size="xs"
-            className="-mx-1 h-auto px-1 py-0.5"
+            size="inline"
+            className="-mx-1"
             aria-label={`Visibility of ${label}: ${internal ? "Internal" : "visible to Guests"}`}
             disabled={mark.isPending}
           >

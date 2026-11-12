@@ -48,7 +48,7 @@ function VirustotalKeyCard() {
       <CardHeader>
         <CardTitle>VirusTotal</CardTitle>
       </CardHeader>
-      <CardContent className="grid gap-4 text-sm">
+      <CardContent className="grid gap-4">
         {current && (
           <div className="grid gap-1">
             <p>

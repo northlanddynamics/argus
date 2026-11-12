@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { EnrichmentButton, EnrichmentTarget } from "@/components/observable-details";
-import { cn } from "@/lib/utils";
 import { ObservableMenu } from "@/components/observable-menu";
 import { type FormEvent, Fragment, type ReactNode, useState } from "react";
 import { toast } from "sonner";
@@ -59,7 +58,6 @@ type Eligible = Pick<EligibleIntegration, "id" | "name" | "defaults">;
 type Sendable = { id: string; type: ObservableType; value: string };
 
 /** The Amber Notice treatment (DESIGN.md): the one warning style. */
-const notice = "border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80";
 
 /** Where the Response Actions card sits, for "Show" in the toast after a send. */
 const CARD_ID = "response-actions";
@@ -343,7 +341,7 @@ export function SendToFalconDialog({
               <FieldLabel htmlFor="response-action-internal">Internal</FieldLabel>
             </Field>
             {ignored.length > 0 && (
-              <Alert className={notice}>
+              <Alert variant="notice">
                 <AlertDescription className="grid gap-2">
                   <span>
                     {ignored.length === 1 ? "This Observable is" : "These Observables are"} on the Ignored list:
@@ -393,7 +391,7 @@ export function announce(taken: number, names: string[]) {
 }
 
 /** How heavy each state's badge is: Failed asks for attention, Active is quiet (never "in force"). */
-const stateVariant = { pending: "secondary", active: "outline", removing: "secondary", failed: "destructive", removed: "outline" } as const;
+const stateVariant = { pending: "secondary", active: "outline", removing: "secondary", failed: "destructive", removed: "outline-muted" } as const;
 
 const dismissed = (r: ResponseAction) => r.state === "removed" && !!r.dismissedBy;
 const stateLabel = (r: ResponseAction) => (dismissed(r) ? "Dismissed" : responseActionStateLabel[r.state]);
@@ -546,7 +544,7 @@ export function RemoveDialog({ number, r, onClose }: { number: number; r: Respon
           </DialogDescription>
         </DialogHeader>
         {relying && (
-          <Alert className={notice}>
+          <Alert variant="notice">
             <AlertDescription className="grid gap-2">
               <span>
                 {count === 1 ? "Another Case relies" : `${count} other Cases rely`} on this {entry}. {lifting ? "Lifting" : "Removing"} it marks their
@@ -712,7 +710,7 @@ export function ResponseActionsCard({
             </colgroup>
             {/* Column headings only once there is something under them. */}
             <TableHeader className={query.isPending || all.length ? undefined : "sr-only"}>
-              <TableRow className="hover:bg-transparent">
+              <TableRow variant="static">
                 <TableHead>Target</TableHead>
                 <TableHead>Action</TableHead>
                 <TableHead>State</TableHead>
@@ -727,7 +725,7 @@ export function ResponseActionsCard({
             <TableBody aria-live="polite" aria-busy={query.isPending}>
               {query.isPending &&
                 [0, 1].map((k) => (
-                  <TableRow key={k} className="hover:bg-transparent">
+                  <TableRow key={k} variant="static">
                     <TableCell colSpan={columns}>
                       <Skeleton className="h-8 w-full" />
                     </TableCell>
@@ -737,7 +735,7 @@ export function ResponseActionsCard({
                 const error = errorOn(r.id);
                 const subject = subjectOf(r);
                 const row = (menuButton: ReactNode) => (
-                      <TableRow data-testid={`response-action-${subject.value}`} className={cn("group/row", r.state === "removed" && "text-muted-foreground")}>
+                      <TableRow data-testid={`response-action-${subject.value}`} variant={r.state === "removed" ? "muted" : "default"} className="group/row">
                         <TableCell className="min-w-52 whitespace-normal">
                           {r.observable ? (
                             <>
@@ -771,7 +769,7 @@ export function ResponseActionsCard({
                           </span>
                         </TableCell>
                         <TableCell className="whitespace-normal">
-                          <Badge variant={stateVariant[r.state]} className={r.state === "removed" ? "text-muted-foreground" : undefined}>
+                          <Badge variant={stateVariant[r.state]}>
                             {stateLabel(r)}
                           </Badge>
                           <span className="mt-1 block text-xs text-muted-foreground">
@@ -846,7 +844,7 @@ export function ResponseActionsCard({
                 );
               })}
               {query.isSuccess && all.length === 0 && (
-                <TableRow className="hover:bg-transparent">
+                <TableRow variant="static">
                   <TableCell colSpan={columns} className="text-muted-foreground">
                     No Response Actions yet.
                   </TableCell>

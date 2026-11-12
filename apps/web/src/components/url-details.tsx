@@ -135,7 +135,7 @@ export function UrlDetailsCard({ url }: { url: string }) {
       <CardHeader>
         <CardTitle>VirusTotal</CardTitle>
       </CardHeader>
-      <CardContent className="grid gap-3 text-sm">
+      <CardContent className="grid gap-3">
         <UrlLookupBody lookup={q.data} loading={q.isPending} error={q.error} />
         <UrlFooter url={url} lookup={q.data} loading={q.isPending} />
       </CardContent>

@@ -5,7 +5,6 @@ import { type FormEvent, useState } from "react";
 import { Time } from "@/components/time";
 import { AppHeader } from "@/components/app-header";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -48,7 +47,7 @@ export function OperatorConsolePage() {
 
   return (
     <div className="min-h-svh bg-muted">
-      <AppHeader email={me.user.email} badge={<Badge variant="outline" className="text-slate-50">Operator console</Badge>} />
+      <AppHeader email={me.user.email} badge={<span className="rounded-4xl border border-console-foreground/40 px-2 py-0.5 text-xs font-medium">Operator console</span>} />
       <main className="grid gap-4 p-6">
         <PageHeader title="Operator console" description="Every Organization on this Argus, and creating new ones." />
         <div className="grid items-start gap-4 lg:grid-cols-[1fr_320px]">
@@ -66,7 +65,7 @@ export function OperatorConsolePage() {
                   <col className="@xl:w-32 @7xl:w-[10%]" />
                 </colgroup>
                 <TableHeader>
-                  <TableRow className="hover:bg-transparent">
+                  <TableRow variant="static">
                     <TableHead>Organization</TableHead>
                     <TableHead>Owner</TableHead>
                     <TableHead className="text-right">Members</TableHead>
@@ -90,7 +89,7 @@ export function OperatorConsolePage() {
                     </TableRow>
                   ))}
                   {organizations.data?.organizations.length === 0 && (
-                    <TableRow className="hover:bg-transparent">
+                    <TableRow variant="static">
                       <TableCell colSpan={4} className="text-muted-foreground">
                         No Organizations yet.
                       </TableCell>

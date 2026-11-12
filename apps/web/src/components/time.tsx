@@ -78,7 +78,9 @@ export function Time({ iso, prefix, className }: { iso: string; prefix?: string;
         </TooltipContent>
       </Tooltip>
       <ContextMenuContent className="w-64">
-        <ContextMenuLabel className="text-xs font-normal text-muted-foreground">{regional}</ContextMenuLabel>
+        <ContextMenuLabel>
+          <span className="font-normal">{regional}</span>
+        </ContextMenuLabel>
         <ContextMenuSeparator />
         <ContextMenuItem onSelect={() => void copy(utc)}>
           <CopyIcon aria-hidden />

@@ -18,6 +18,16 @@ const buttonVariants = cva(
         destructive:
           "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
         link: "text-primary underline-offset-4 hover:underline",
+        // One option of a segmented control (a `bg-muted` track): the pressed one is a raised tab.
+        segment:
+          "text-muted-foreground hover:text-foreground aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-xs",
+        // A field that opens a picker (a date, say): an outline box in body weight, muted when empty.
+        picker:
+          "border-border bg-background font-normal hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground data-[empty=true]:text-muted-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
+        // A row's own action: muted ink that strengthens when its row (`group/row`) is pointed at,
+        // so a list reads as a record rather than a wall of buttons.
+        quiet:
+          "text-muted-foreground group-hover/row:text-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground aria-pressed:bg-muted aria-pressed:text-foreground dark:hover:bg-muted/50",
       },
       size: {
         default:
@@ -31,8 +41,17 @@ const buttonVariants = cva(
         "icon-sm":
           "size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg",
         "icon-lg": "size-9",
+        // A control inside a line of text, such as a metadata menu.
+        inline:
+          "h-auto gap-1 rounded-md px-1 py-0.5 text-xs [&_svg:not([class*='size-'])]:size-3",
+        // The remove button inside a chip.
+        chip: "size-5 rounded-full [&_svg:not([class*='size-'])]:size-3",
       },
     },
+    compoundVariants: [
+      // A link is text in a sentence or a row, not a box: no height or padding.
+      { variant: "link", className: "h-auto px-0 py-0" },
+    ],
     defaultVariants: {
       variant: "default",
       size: "default",

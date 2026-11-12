@@ -87,36 +87,38 @@ export function HostFalcon({ falcon, assetId, caseNumber }: { falcon: FalconView
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-80 gap-3 text-xs"
+        className="w-80"
         aria-label="Falcon details"
         {...hover.contentProps}
       >
-        {falcon.map((view) => (
-          <section key={view.integration?.id ?? "lookup"} className="grid gap-2">
-            {(view.integration || view.ambiguous) && (
-              <header className="flex items-baseline justify-between gap-2">
-                <span className="truncate font-medium">{view.integration?.name ?? "Falcon"}</span>
-                {view.ambiguous && <span className="shrink-0 text-muted-foreground">{view.devices.length} devices with this hostname</span>}
-              </header>
-            )}
-            {view.devices.length === 0 ? (
-              <p className={view.lookup?.error ? "text-destructive" : "text-muted-foreground"}>
-                {lookupText(view.lookup)}
-                {view.lookup?.error && `: ${view.lookup.error}`}
-              </p>
-            ) : (
-              view.devices.map((d) => <DeviceFacts key={d.deviceId} device={d} />)
-            )}
-          </section>
-        ))}
-        <ItemLink
-          kind="asset"
-          id={assetId}
-          fromCase={caseNumber}
-          className="border-t pt-2 text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-        >
-          Everything Falcon reports on the host's page
-        </ItemLink>
+        <div className="grid gap-3 text-xs">
+          {falcon.map((view) => (
+            <section key={view.integration?.id ?? "lookup"} className="grid gap-2">
+              {(view.integration || view.ambiguous) && (
+                <header className="flex items-baseline justify-between gap-2">
+                  <span className="truncate font-medium">{view.integration?.name ?? "Falcon"}</span>
+                  {view.ambiguous && <span className="shrink-0 text-muted-foreground">{view.devices.length} devices with this hostname</span>}
+                </header>
+              )}
+              {view.devices.length === 0 ? (
+                <p className={view.lookup?.error ? "text-destructive" : "text-muted-foreground"}>
+                  {lookupText(view.lookup)}
+                  {view.lookup?.error && `: ${view.lookup.error}`}
+                </p>
+              ) : (
+                view.devices.map((d) => <DeviceFacts key={d.deviceId} device={d} />)
+              )}
+            </section>
+          ))}
+          <ItemLink
+            kind="asset"
+            id={assetId}
+            fromCase={caseNumber}
+            className="border-t pt-2 text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          >
+            Everything Falcon reports on the host's page
+          </ItemLink>
+        </div>
       </PopoverContent>
     </Popover>
   );

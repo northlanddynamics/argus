@@ -23,13 +23,12 @@ export function FilterBar({ children, onClear, label = "Clear" }: { children: Re
 }
 
 /** A DatePicker sized to sit in a FilterBar beside the small selects. */
-export const DATE_FILTER = "h-7 w-36 rounded-[min(var(--radius-md),10px)] px-2.5";
 
 /** One filter: its label, then its control. */
 export function FilterField({ label, htmlFor, children }: { label: string; htmlFor: string; children: ReactNode }) {
   return (
     <div className="flex items-center gap-1.5">
-      <Label htmlFor={htmlFor} className="text-xs font-normal text-muted-foreground">
+      <Label htmlFor={htmlFor} variant="meta">
         {label}
       </Label>
       {children}

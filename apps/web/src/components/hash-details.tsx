@@ -134,7 +134,7 @@ export function HashDetailsCard({ hash }: { hash: string }) {
       <CardHeader>
         <CardTitle>VirusTotal</CardTitle>
       </CardHeader>
-      <CardContent className="grid gap-3 text-sm">
+      <CardContent className="grid gap-3">
         <HashLookupBody lookup={q.data} loading={q.isPending} error={q.error} showName />
         <HashLookupFooter hash={hash} lookup={q.data} loading={q.isPending} />
       </CardContent>

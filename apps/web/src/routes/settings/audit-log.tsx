@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Time } from "@/components/time";
 import { Badge } from "@/components/ui/badge";
 import { DatePicker } from "@/components/date-picker";
-import { DATE_FILTER, FilterBar, FilterField, FilterSelect } from "@/components/filter-bar";
+import { FilterBar, FilterField, FilterSelect } from "@/components/filter-bar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -131,7 +131,7 @@ export function OrgAuditLogPage() {
         />
         <FilterSelect label="Actor" id="audit-actor" any="Anyone" value={actor || undefined} options={actors} labels={actorNames} onChange={(next) => setActor(next ?? "")} />
         <FilterField label="From" htmlFor="audit-from">
-          <DatePicker id="audit-from" value={from} onChange={setFrom} placeholder="Any time" className={DATE_FILTER} />
+          <DatePicker id="audit-from" value={from} onChange={setFrom} placeholder="Any time" size="sm" className="w-36" />
         </FilterField>
       </FilterBar>
       <Card className="@container py-0">
@@ -145,7 +145,7 @@ export function OrgAuditLogPage() {
             <col className="@4xl:w-[26%]" />
           </colgroup>
           <TableHeader>
-            <TableRow className="hover:bg-transparent">
+            <TableRow variant="static">
               <TableHead className="pl-4">When</TableHead>
               <TableHead>Actor</TableHead>
               <TableHead>Category</TableHead>
@@ -156,7 +156,7 @@ export function OrgAuditLogPage() {
           <TableBody>
             {entries.isPending &&
               Array.from({ length: 6 }, (_, i) => (
-                <TableRow key={i} className="hover:bg-transparent" aria-hidden>
+                <TableRow key={i} variant="static" aria-hidden>
                   <TableCell className="pl-4"><Skeleton className="h-4 w-24" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                   <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
@@ -181,17 +181,17 @@ export function OrgAuditLogPage() {
               </TableRow>
             ))}
             {entries.isError && (
-              <TableRow className="hover:bg-transparent">
+              <TableRow variant="static">
                 <TableCell colSpan={5} className="px-4 whitespace-normal">
                   <span className="text-destructive">The Audit Log couldn't be loaded.</span>{" "}
-                  <Button variant="link" size="sm" className="h-auto p-0" onClick={() => void entries.refetch()}>
+                  <Button variant="link" size="sm" onClick={() => void entries.refetch()}>
                     Try again
                   </Button>
                 </TableCell>
               </TableRow>
             )}
             {entries.data?.length === 0 && (
-              <TableRow className="hover:bg-transparent">
+              <TableRow variant="static">
                 <TableCell colSpan={5} className="px-4 text-muted-foreground">
                   {filtered ? "No entries match these filters." : "Nothing recorded yet."}
                 </TableCell>

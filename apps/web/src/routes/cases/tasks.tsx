@@ -25,7 +25,7 @@ const from4xl = "overflow-hidden px-0 @4xl:px-2";
 /** When a Task is due: an Overdue badge, the date, or `none`. */
 const due = (t: TaskView, none: string) =>
   t.overdue ? (
-    <Badge variant="outline" className="border-overdue-border text-overdue">
+    <Badge variant="overdue">
       Overdue · {t.dueDate}
     </Badge>
   ) : (
@@ -104,7 +104,7 @@ export function CaseTasksPage() {
             <col className="w-12" />
           </colgroup>
           <TableHeader>
-            <TableRow className="hover:bg-transparent">
+            <TableRow variant="static">
               <TableHead>Done</TableHead>
               <TableHead>Task</TableHead>
               <TableHead className={from2xl}>{fits("2xl") && "Owner"}</TableHead>
@@ -157,7 +157,7 @@ export function CaseTasksPage() {
               </TableRow>
             ))}
             {tasks.data?.length === 0 && (
-              <TableRow className="hover:bg-transparent">
+              <TableRow variant="static">
                 <TableCell colSpan={columns} className="text-muted-foreground">
                   No Tasks yet.
                 </TableCell>

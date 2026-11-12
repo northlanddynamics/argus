@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { type KeyboardEvent, type ReactNode, useEffect, useState } from "react";
+import { type CSSProperties, type KeyboardEvent, type ReactNode, useEffect, useState } from "react";
 import { SeverityBadge } from "@/components/case-badges";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -66,7 +66,7 @@ export function DashboardPage() {
             }}
           >
             {DASHBOARD_PERIODS.map((d) => (
-              <ToggleGroupItem key={d} value={String(d)} className="px-3">
+              <ToggleGroupItem key={d} value={String(d)}>
                 {d} days
               </ToggleGroupItem>
             ))}
@@ -309,7 +309,7 @@ function OpenCasesTable({ openCases }: { openCases: DashboardMetrics["openCases"
             <col />
           </colgroup>
           <TableHeader>
-            <TableRow className="hover:bg-transparent">
+            <TableRow variant="static">
               <TableHead>Severity</TableHead>
               {OPEN_STATUSES.map((status) => (
                 <TableHead key={status} className="text-center whitespace-normal">
@@ -338,7 +338,7 @@ function OpenCasesTable({ openCases }: { openCases: DashboardMetrics["openCases"
                           label={`${count(row[status])} ${severityLabel[severity]} ${cases(row[status])}, ${statusLabel[status]}`}
                         />
                         {alarm && (
-                          <Badge asChild variant="outline" className="mt-1 border-overdue-border text-overdue">
+                          <Badge asChild variant="overdue" className="mt-1">
                             <Link
                               to="/"
                               search={{ view: "unassigned", severity: "critical", status: "new" }}
@@ -391,7 +391,7 @@ function ValuesTable({ caption, head, rows, visible }: { caption: string; head: 
       <div className="max-h-72 overflow-y-auto">
         <Table>
           <TableHeader>
-            <TableRow className="hover:bg-transparent">
+            <TableRow variant="static">
               {head.map((h, i) => (
                 <TableHead key={h} className={cn(i > 0 && "text-right")}>
                   {h}
@@ -475,11 +475,11 @@ function AlertVolume({ perDay }: { perDay: DashboardMetrics["alerts"]["perDay"] 
               <div key={d.date} className="flex h-full min-w-0 flex-1 items-end" onMouseEnter={() => setReading(i)} data-testid="alert-volume-bar">
                 <div
                   className={cn(
-                    "w-full rounded-t-sm",
+                    "h-(--bar) w-full rounded-t-sm",
                     d.count ? "bg-(--series-1)" : "bg-muted-foreground/40",
                     reading !== null && reading !== i && "opacity-60",
                   )}
-                  style={{ height: d.count ? `max(2px, ${(d.count / max) * 100}%)` : 2 }}
+                  style={{ "--bar": d.count ? `max(2px, ${(d.count / max) * 100}%)` : "2px" } as CSSProperties}
                 />
               </div>
             ))}
@@ -523,7 +523,7 @@ function Dismissals({ alerts }: { alerts: DashboardMetrics["alerts"] }) {
             <div key={reason} className="grid grid-cols-[7rem_1fr_5.5rem] items-center gap-3 text-sm">
               <dt>{dismissalReasonLabel[reason]}</dt>
               <div className="h-3.5 rounded-sm bg-muted" aria-hidden>
-                <div className="h-full rounded-sm bg-(--series-1)" style={{ width: `${(counts[i]! / alerts.dismissed) * 100}%` }} />
+                <div className="h-full w-(--share) rounded-sm bg-(--series-1)" style={{ "--share": `${(counts[i]! / alerts.dismissed) * 100}%` } as CSSProperties} />
               </div>
               <dd className="text-right tabular-nums">
                 {count(counts[i]!)} <span className="text-muted-foreground">({shares[i]}%)</span>
@@ -680,7 +680,8 @@ function Trend({ metrics }: { metrics: DashboardMetrics }) {
                 ))}
               </svg>
             )}
-            {width === 0 && <div style={{ height: TREND_H }} />}
+            {/* Holds the chart's height (TREND_H, 14rem) until it is measured. */}
+            {width === 0 && <div className="h-56" />}
           </div>
         </div>
       )}

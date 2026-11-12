@@ -268,7 +268,9 @@ function IgnoreButton({ kind, item }: { kind: ItemKind; item: ItemPage }) {
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Ignore this {typeLabel(kind, item)}?</AlertDialogTitle>
-          <AlertDialogDescription className="font-mono text-xs [overflow-wrap:anywhere]">{shown(kind, item)}</AlertDialogDescription>
+          <AlertDialogDescription>
+              <span className="font-mono text-xs [overflow-wrap:anywhere]">{shown(kind, item)}</span>
+            </AlertDialogDescription>
         </AlertDialogHeader>
         {error}
         <AlertDialogFooter>
@@ -524,7 +526,7 @@ function CasesCard({ item, actions }: { item: ItemPage; actions: boolean }) {
             {actions && <col className="@3xl:w-12" />}
           </colgroup>
           <TableHeader className={item.cases.length ? undefined : "sr-only"}>
-            <TableRow className="hover:bg-transparent">
+            <TableRow variant="static">
               <TableHead>Case</TableHead>
               <TableHead>Severity</TableHead>
               <TableHead>Status</TableHead>
@@ -571,7 +573,7 @@ function CasesCard({ item, actions }: { item: ItemPage; actions: boolean }) {
               );
             })}
             {item.cases.length === 0 && (
-              <TableRow className="hover:bg-transparent">
+              <TableRow variant="static">
                 <TableCell colSpan={actions ? 6 : 5} className="text-muted-foreground">
                   Not on any Case you can see yet.
                 </TableCell>
@@ -601,7 +603,7 @@ function AlertsCard({ item }: { item: ItemPage }) {
             <col className="@3xl:w-32 @7xl:w-[10%]" />
           </colgroup>
           <TableHeader className={item.alerts.length ? undefined : "sr-only"}>
-            <TableRow className="hover:bg-transparent">
+            <TableRow variant="static">
               <TableHead>Alert</TableHead>
               <TableHead>Severity</TableHead>
               <TableHead>Alert Status</TableHead>
@@ -646,7 +648,7 @@ function AlertsCard({ item }: { item: ItemPage }) {
               </TableRow>
             ))}
             {item.alerts.length === 0 && (
-              <TableRow className="hover:bg-transparent">
+              <TableRow variant="static">
                 <TableCell colSpan={5} className="text-muted-foreground">
                   No Alert names it.
                 </TableCell>
@@ -684,7 +686,7 @@ function ResponseActionsCard({ item, actions }: { item: ItemPage; actions: boole
             {actions && <col className="@3xl:w-12" />}
           </colgroup>
           <TableHeader className={item.responseActions.length ? undefined : "sr-only"}>
-            <TableRow className="hover:bg-transparent">
+            <TableRow variant="static">
               <TableHead>Action</TableHead>
               <TableHead>State</TableHead>
               <TableHead>Case</TableHead>
@@ -732,7 +734,7 @@ function ResponseActionsCard({ item, actions }: { item: ItemPage; actions: boole
               );
             })}
             {item.responseActions.length === 0 && (
-              <TableRow className="hover:bg-transparent">
+              <TableRow variant="static">
                 <TableCell colSpan={actions ? 5 : 4} className="text-muted-foreground">
                   No Response Actions taken on it.
                 </TableCell>

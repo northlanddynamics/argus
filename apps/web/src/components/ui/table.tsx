@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 
 import { useColumnResize, type ColumnResizer } from "@/hooks/use-column-resize"
@@ -27,7 +28,7 @@ function Table({ className, ref, ...props }: React.ComponentProps<"table">) {
         <table
           ref={setRef}
           data-slot="table"
-          className={cn("w-full caption-bottom text-sm", className)}
+          className={cn("w-full caption-bottom text-sm transition-opacity aria-busy:opacity-60", className)}
           {...props}
         />
       </ColumnResizeContext>
@@ -68,14 +69,35 @@ function TableFooter({ className, ...props }: React.ComponentProps<"tfoot">) {
   )
 }
 
-function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
+const tableRowVariants = cva("border-b transition-colors", {
+  variants: {
+    variant: {
+      // Selected rows take a half-strength fill: muted text on the full grey wash falls short of 4.5:1.
+      default:
+        "hover:bg-muted/50 focus-within:bg-muted/50 has-aria-expanded:bg-muted/50 aria-[current=true]:bg-muted/50 data-[state=selected]:bg-muted/50",
+      // A row that live updates change: it flashes, then fades back.
+      live: "duration-700 hover:bg-muted/50 focus-within:bg-muted/50 has-aria-expanded:bg-muted/50 data-[changed=true]:bg-muted data-[changed=true]:duration-0",
+      // A record that no longer applies (a removed response action, say): muted ink.
+      muted:
+        "text-muted-foreground hover:bg-muted/50 focus-within:bg-muted/50 has-aria-expanded:bg-muted/50",
+      // Header, placeholder and empty-state rows: nothing to point at.
+      static: "data-[state=selected]:bg-muted/50",
+    },
+  },
+  defaultVariants: {
+    variant: "default",
+  },
+})
+
+function TableRow({
+  className,
+  variant,
+  ...props
+}: React.ComponentProps<"tr"> & VariantProps<typeof tableRowVariants>) {
   return (
     <tr
       data-slot="table-row"
-      className={cn(
-        "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
-        className
-      )}
+      className={cn(tableRowVariants({ variant }), className)}
       {...props}
     />
   )

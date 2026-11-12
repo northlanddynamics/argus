@@ -57,7 +57,7 @@ export function SearchPage() {
       {results.isError && (
         <p className="py-8 text-center text-sm">
           <span className="text-destructive">Could not search.</span>{" "}
-          <Button variant="link" size="sm" className="h-auto p-0" onClick={() => void results.refetch()}>
+          <Button variant="link" size="sm" onClick={() => void results.refetch()}>
             Try again
           </Button>
         </p>
@@ -84,7 +84,7 @@ export function SearchPage() {
             {kinds.length > 0 && Object.values(data.counts).some(Boolean) && (
               <>
                 {" "}
-                <Button variant="link" size="sm" className="h-auto p-0" onClick={() => void setSearch({ kinds: [] })}>
+                <Button variant="link" size="sm" onClick={() => void setSearch({ kinds: [] })}>
                   Search every kind
                 </Button>
               </>

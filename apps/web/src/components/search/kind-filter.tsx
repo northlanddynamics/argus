@@ -28,7 +28,7 @@ export function KindFilter({
       onValueChange={(value) => onChange(SEARCH_KINDS.filter((k) => value.includes(k)))}
     >
       {SEARCH_KINDS.map((kind) => (
-        <ToggleGroupItem key={kind} value={kind} className="h-7 rounded-full px-3 text-xs data-[state=on]:bg-foreground data-[state=on]:text-background">
+        <ToggleGroupItem key={kind} value={kind} variant="chip" size="sm">
           {searchKindLabel[kind]}
           {counts?.[kind] && <span className="ml-1 tabular-nums opacity-70">{counts[kind]}</span>}
         </ToggleGroupItem>

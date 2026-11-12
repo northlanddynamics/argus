@@ -248,7 +248,7 @@ export function CaseLayout() {
               ) : (
                 <>
                   <Field orientation="horizontal" className={fieldClass}>
-                    <FieldLabel htmlFor="case-status" className={labelClass}>
+                    <FieldLabel htmlFor="case-status" variant="meta">
                       Status
                     </FieldLabel>
                     <Select
@@ -274,7 +274,7 @@ export function CaseLayout() {
                     </Select>
                   </Field>
                   <Field orientation="horizontal" className={fieldClass}>
-                    <FieldLabel htmlFor="case-severity" className={labelClass}>
+                    <FieldLabel htmlFor="case-severity" variant="meta">
                       Severity
                     </FieldLabel>
                     <Select value={c.severity} disabled={locked} onValueChange={(value) => change.mutate({ severity: value as Severity })}>
@@ -291,7 +291,7 @@ export function CaseLayout() {
                     </Select>
                   </Field>
                   <Field orientation="horizontal" className={fieldClass}>
-                    <FieldLabel htmlFor="case-type" className={labelClass}>
+                    <FieldLabel htmlFor="case-type" variant="meta">
                       Type
                     </FieldLabel>
                     <Select value={c.caseType} disabled={locked} onValueChange={(value) => change.mutate({ caseType: value as CaseType })}>
@@ -308,7 +308,7 @@ export function CaseLayout() {
                     </Select>
                   </Field>
                   <Field orientation="horizontal" className={fieldClass}>
-                    <FieldLabel htmlFor="case-assignee" className={labelClass}>
+                    <FieldLabel htmlFor="case-assignee" variant="meta">
                       Assignee
                     </FieldLabel>
                     <Select
@@ -333,7 +333,7 @@ export function CaseLayout() {
                       </SelectContent>
                     </Select>
                     {c.assignee?.id !== me.user.id && (
-                      <Button variant="link" size="xs" className="h-auto p-0 text-xs" disabled={locked} onClick={() => change.mutate({ assigneeId: me.user.id })}>
+                      <Button variant="link" size="xs" disabled={locked} onClick={() => change.mutate({ assigneeId: me.user.id })}>
                         Assign to me
                       </Button>
                     )}
@@ -350,7 +350,7 @@ export function CaseLayout() {
               </p>
             )}
             {c.closed && c.resolution && (
-              <Alert className="border-notice-border bg-notice text-notice-foreground *:data-[slot=alert-description]:text-notice-foreground/80">
+              <Alert variant="notice">
                 <AlertTitle>Closed · {resolutionLabel[c.resolution]}</AlertTitle>
                 <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
                   <span>
@@ -372,7 +372,7 @@ export function CaseLayout() {
             )}
           </section>
           <Tabs value={section} activationMode="manual">
-            <TabsList variant="line" aria-label="Case sections" className="w-full flex-wrap justify-start border-b group-data-horizontal/tabs:h-auto!">
+            <TabsList variant="line" aria-label="Case sections" className="w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto!">
               <TabsTrigger value="/cases/$number" className="h-8 flex-none" asChild {...keyFor("/cases/$number")}>
                 <Link to="/cases/$number" params={params}>
                   Overview
@@ -390,7 +390,7 @@ export function CaseLayout() {
                     {c.tasks.done}/{c.tasks.total}
                   </TabCount>
                   {overdue > 0 && (
-                    <Badge variant="outline" className="border-overdue-border text-overdue tabular-nums">
+                    <Badge variant="overdue" className="tabular-nums">
                       {overdue} overdue
                     </Badge>
                   )}
