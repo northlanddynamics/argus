@@ -60,6 +60,16 @@ test("the Observables page lists the Organization's Observables and its Ignored 
     expect(await table.getByRole("listitem").count()).toBe(3);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/observables.png` });
 
+    // As on a Case: resting the pointer on an IP shows its hover card, and its Enrichment opens in the panel.
+    await table.getByRole("link", { name: /185\.220\.101\.4/ }).hover();
+    await page.getByTestId("ip-hover-card").waitFor();
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/observables-hover.png` });
+    await page.mouse.move(0, 0);
+    await page.getByTestId("ip-hover-card").waitFor({ state: "detached" });
+    await table.getByRole("button", { name: "Show Enrichment for 185.220.101.4" }).click();
+    await page.getByRole("dialog", { name: "IP Enrichment" }).waitFor();
+    await page.keyboard.press("Escape");
+
     // Ticking a type narrows the list to it.
     const filters = page.getByRole("navigation", { name: "Filter by type" });
     await filters.getByRole("checkbox", { name: "IP" }).click();
