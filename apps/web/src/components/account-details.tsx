@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
-import type { FocusEvent, ReactElement, ReactNode } from "react";
+import { ChevronLeftIcon, ChevronRightIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
+import { type FocusEvent, type ReactElement, type ReactNode, useState } from "react";
 import { toast } from "sonner";
 import { ValueHeader } from "@/components/enrichment-parts";
 import { Time } from "@/components/time";
@@ -155,28 +155,47 @@ function AccountCard({ assetId, account }: { assetId: string; account: string })
   const shown = item?.value ?? account;
   const refreshing = refresh.isPending || groups.some((g) => g.lookup?.refreshing || g.identities.some((i) => i.enrichment.refreshing));
   const asOf = latestFetch(groups);
+  const entries = groups.flatMap((g): { group: Group; identity: Identity | null }[] => (g.identities.length ? g.identities.map((i) => ({ group: g, identity: i })) : [{ group: g, identity: null }]));
+  const [index, setIndex] = useState(0);
+  const at = Math.min(index, Math.max(entries.length - 1, 0));
+  const entry = entries[at];
   let body: ReactNode;
   if (q.isPending) body = <DetailsSkeleton />;
   else if (!item) body = <Problem>{q.error?.message ?? "Could not load the account"}</Problem>;
-  else if (!groups.length) body = <p className="text-muted-foreground">No CrowdStrike Integration to look this account up in. An Admin can add one in Settings · Integrations.</p>;
-  else
+  else if (!entry) body = <p className="text-muted-foreground">No CrowdStrike Integration to look this account up in. An Admin can add one in Settings · Integrations.</p>;
+  else {
+    const { group: g, identity } = entry;
     body = (
-      <div className="grid gap-3">
-        {groups.map((g) => (
-          <section key={g.integration.id} aria-label={g.integration.name} className="grid gap-2">
-            {groups.length > 1 && <p className="text-xs text-muted-foreground">{g.integration.name}</p>}
-            {g.integration.enrichmentUnavailable && <Problem>{g.integration.enrichmentUnavailable}.</Problem>}
-            {g.identities.map((i) => (
-              <IdentityFacts key={i.entityId} group={g} identity={i} />
-            ))}
-            {g.lookup && !g.identities.length && <LookupState lookup={g.lookup} />}
-          </section>
-        ))}
-      </div>
+      <section aria-label={g.integration.name} className="grid gap-2">
+        {groups.length > 1 && <p className="text-xs text-muted-foreground">{g.integration.name}</p>}
+        {g.integration.enrichmentUnavailable && <Problem>{g.integration.enrichmentUnavailable}.</Problem>}
+        {identity ? <IdentityFacts key={identity.entityId} group={g} identity={identity} /> : g.lookup && <LookupState lookup={g.lookup} />}
+      </section>
     );
+  }
   return (
     <div className="grid gap-2.5" data-testid="account-hover-card">
       <ValueHeader shown={shown} copy={shown} copied={`Copied ${shown}`} href={null} hrefLabel="" />
+      {entries.length > 1 && (
+        <div className="flex items-center justify-between gap-2 border-t pt-2 text-xs text-muted-foreground">
+          <Button variant="ghost" size="icon-xs" disabled={at === 0} onClick={() => setIndex(at - 1)} aria-label="Previous identity" title="Previous identity">
+            <ChevronLeftIcon aria-hidden />
+          </Button>
+          <span className="tabular-nums" aria-live="polite">
+            Identity {at + 1} of {entries.length}
+          </span>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            disabled={at === entries.length - 1}
+            onClick={() => setIndex(at + 1)}
+            aria-label="Next identity"
+            title="Next identity"
+          >
+            <ChevronRightIcon aria-hidden />
+          </Button>
+        </div>
+      )}
       <div className="max-h-96 overflow-y-auto border-t pt-2.5">{body}</div>
       {groups.length > 0 && (
         <div className="flex items-center justify-between gap-2 border-t pt-2 text-xs text-muted-foreground">

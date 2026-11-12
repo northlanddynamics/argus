@@ -4,6 +4,7 @@ import { Link, useNavigate, useRouteContext, useSearch } from "@tanstack/react-r
 import { ChevronLeftIcon, ChevronRightIcon, SearchIcon } from "lucide-react";
 import { useState } from "react";
 import { KindFilter } from "@/components/search/kind-filter";
+import { AccountHoverCard } from "@/components/account-details";
 import { SearchHitLink, SearchHitRow } from "@/components/search/search-hit";
 import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
@@ -109,9 +110,15 @@ export function SearchPage() {
           <ul aria-label="Results" className="divide-y rounded-lg border">
             {data.hits.map((hit) => (
               <li key={hitKey(hit)}>
-                <SearchHitLink hit={hit} guest={guest} className="rounded-none px-3 py-2">
-                  <SearchHitRow hit={hit} query={q} showKind />
-                </SearchHitLink>
+                <AccountHoverCard
+                  assetId={hit.kind === "assets" ? hit.item.id : ""}
+                  account={hit.kind === "assets" ? hit.item.value : ""}
+                  enabled={hit.kind === "assets" && hit.item.type === "account"}
+                >
+                  <SearchHitLink hit={hit} guest={guest} className="rounded-none px-3 py-2">
+                    <SearchHitRow hit={hit} query={q} showKind />
+                  </SearchHitLink>
+                </AccountHoverCard>
               </li>
             ))}
           </ul>

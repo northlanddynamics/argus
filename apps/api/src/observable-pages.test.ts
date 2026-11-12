@@ -157,7 +157,7 @@ describe("Observable and Asset pages", () => {
     expect(await a.observable(a.ben, "no-such-id")).toBe(404);
   });
 
-  test("an Alert's host and user lead to their Asset pages, from its page's Alerts and from the queue", async () => {
+  test("an Alert's host and user lead to their Asset pages, from its page's Alerts, the queue and the Alert itself", async () => {
     const a = await acme();
     const alert = await a.detect("epp");
     const ip = await a.named(alert, "185.220.101.4");
@@ -171,6 +171,10 @@ describe("Observable and Asset pages", () => {
     const body = await (await a.ben.api.alerts.$get({ query: { status: "new" } })).json();
     if (!("alerts" in body)) throw new Error("No Alert queue");
     expect(body.alerts.map((x) => [x.host, x.hostAsset, x.userName, x.userAsset])).toEqual([["FIN-LT-0231", { id: host }, "d.howe", { id: account }]]);
+
+    const detail = await (await a.ben.api.alerts[":id"].$get({ param: { id: alert } })).json();
+    if (!("alert" in detail)) throw new Error("No Alert detail");
+    expect([detail.alert.hostAsset, detail.alert.userAsset]).toEqual([{ id: host }, { id: account }]);
 
     // A detection naming no host has nothing to lead to.
     await a.detect("epp", { CompositeId: "acme:ind:no-host", Hostname: undefined, UserName: undefined });

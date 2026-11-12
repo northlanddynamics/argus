@@ -529,7 +529,20 @@ export function AlertQueuePage() {
                       {(streams?.length ?? 0) > 1 && ` · ${a.integration.name}`}
                       <span className="@3xl:hidden">
                         {(a.host ?? a.userName) && " · "}
-                        <span className="font-mono">{[a.host, a.userName].filter(Boolean).join(" / ")}</span>
+                        <span className="font-mono">
+                          {a.host}
+                          {a.host && a.userName && " / "}
+                          {a.userName &&
+                            (a.userAsset ? (
+                              <AccountHoverCard assetId={a.userAsset.id} account={a.userName}>
+                                <ItemLink kind="asset" id={a.userAsset.id} className="hover:underline" aria-label={`Account ${a.userName}`}>
+                                  {a.userName}
+                                </ItemLink>
+                              </AccountHoverCard>
+                            ) : (
+                              a.userName
+                            ))}
+                        </span>
                       </span>
                     </div>
                   </TableCell>
@@ -759,7 +772,7 @@ function Extracted({
 }: {
   label: string;
   kind: ItemKind;
-  items: { id: string; text: string; title: string; type?: string; observable?: { type: ObservableType; value: string } }[];
+  items: { id: string; text: string; title: string; type?: string; observable?: { type: ObservableType; value: string }; account?: string }[];
 }) {
   return (
     <section aria-label={label} className="grid gap-1">
@@ -768,15 +781,17 @@ function Extracted({
         <div className="flex flex-wrap gap-1" data-enrichment-list>
           {items.map((item) => (
             <span key={item.id} className="group/row inline-flex max-w-full items-center">
-              <EnrichmentTarget type={item.observable?.type ?? ""} value={item.observable?.value ?? ""} enabled={!!item.observable}>
-                <ObservableMenu observable={item.observable}>
-                  <Badge variant="outline" className="max-w-full truncate font-mono hover:bg-muted" title={item.title} asChild>
-                    <ItemLink kind={kind} id={item.id}>
-                      {item.text}
-                    </ItemLink>
-                  </Badge>
-                </ObservableMenu>
-              </EnrichmentTarget>
+              <AccountHoverCard assetId={item.id} account={item.account ?? ""} enabled={item.account !== undefined}>
+                <EnrichmentTarget type={item.observable?.type ?? ""} value={item.observable?.value ?? ""} enabled={!!item.observable}>
+                  <ObservableMenu observable={item.observable}>
+                    <Badge variant="outline" className="max-w-full truncate font-mono hover:bg-muted" title={item.title} asChild>
+                      <ItemLink kind={kind} id={item.id}>
+                        {item.text}
+                      </ItemLink>
+                    </Badge>
+                  </ObservableMenu>
+                </EnrichmentTarget>
+              </AccountHoverCard>
               {item.observable && <EnrichmentButton type={item.observable.type} value={item.observable.value} className="size-5" />}
             </span>
           ))}
@@ -959,7 +974,17 @@ function AlertPanel({ id, onClose, onAct }: { id: string; onClose: () => void; o
           <dt className="text-muted-foreground">Host</dt>
           <dd className={cn("min-w-0 break-all", a.host ? "font-mono text-xs leading-5" : "text-muted-foreground")}>{a.host ?? "None"}</dd>
           <dt className="text-muted-foreground">User</dt>
-          <dd className={cn("min-w-0 break-all", a.userName ? "font-mono text-xs leading-5" : "text-muted-foreground")}>{a.userName ?? "None"}</dd>
+          <dd className={cn("min-w-0 break-all", a.userName ? "font-mono text-xs leading-5" : "text-muted-foreground")}>
+            {a.userName && a.userAsset ? (
+              <AccountHoverCard assetId={a.userAsset.id} account={a.userName}>
+                <ItemLink kind="asset" id={a.userAsset.id} className="hover:underline" aria-label={`Account ${a.userName}`}>
+                  {a.userName}
+                </ItemLink>
+              </AccountHoverCard>
+            ) : (
+              (a.userName ?? "None")
+            )}
+          </dd>
           <dt className="text-muted-foreground">Received</dt>
           <dd>{exactTime(a.receivedAt)}</dd>
           {a.attached && (
@@ -1014,7 +1039,12 @@ function AlertPanel({ id, onClose, onAct }: { id: string; onClose: () => void; o
         <Extracted
           label="Extracted Assets"
           kind="asset"
-          items={a.indicators.assets.map((x) => ({ id: x.id, text: `${assetTypeLabel[x.type]} ${x.value}`, title: x.value }))}
+          items={a.indicators.assets.map((x) => ({
+            id: x.id,
+            text: `${assetTypeLabel[x.type]} ${x.value}`,
+            title: x.value,
+            account: x.type === "account" ? x.value : undefined,
+          }))}
         />
         {a.indicators.observables.length + a.indicators.assets.length > 0 && (
           <p className="text-xs text-muted-foreground">
