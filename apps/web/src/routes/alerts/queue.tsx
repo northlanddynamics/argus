@@ -12,6 +12,7 @@ import { Time } from "@/components/time";
 import { SeverityBadge, StatusBadge } from "@/components/case-badges";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { FilterBar, FilterSelect } from "@/components/filter-bar";
+import { AccountHoverCard } from "@/components/account-details";
 import { ItemLink } from "@/components/item-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -548,9 +549,11 @@ export function AlertQueuePage() {
                     {a.userName && (
                       <div className="truncate text-muted-foreground" title={a.userName}>
                         {a.userAsset ? (
-                          <ItemLink kind="asset" id={a.userAsset.id} className="hover:underline" aria-label={`Account ${a.userName}`}>
-                            {a.userName}
-                          </ItemLink>
+                          <AccountHoverCard assetId={a.userAsset.id} account={a.userName}>
+                            <ItemLink kind="asset" id={a.userAsset.id} className="hover:underline" aria-label={`Account ${a.userName}`}>
+                              {a.userName}
+                            </ItemLink>
+                          </AccountHoverCard>
                         ) : (
                           a.userName
                         )}
@@ -833,15 +836,17 @@ function RelatedCases({ alert }: { alert: AlertDetail }) {
               </div>
               <div className="flex flex-wrap gap-1">
                 {c.shared.map((s) => (
-                  <ObservableMenu key={`${s.kind}-${s.id}`} observable={s.kind === "observable" ? s : null}>
-                    <Badge variant="outline" className="max-w-full truncate font-mono hover:bg-muted" title={s.value} asChild>
-                      <ItemLink kind={s.kind} id={s.id}>
-                        {s.kind === "observable"
-                          ? `${observableTypeLabel[s.type]} ${shownObservable(s.type, s.value)}`
-                          : `${assetTypeLabel[s.type]} ${s.value}`}
-                      </ItemLink>
-                    </Badge>
-                  </ObservableMenu>
+                  <AccountHoverCard key={`${s.kind}-${s.id}`} assetId={s.id} account={s.value} enabled={s.kind === "asset" && s.type === "account"}>
+                    <ObservableMenu observable={s.kind === "observable" ? s : null}>
+                      <Badge variant="outline" className="max-w-full truncate font-mono hover:bg-muted" title={s.value} asChild>
+                        <ItemLink kind={s.kind} id={s.id}>
+                          {s.kind === "observable"
+                            ? `${observableTypeLabel[s.type]} ${shownObservable(s.type, s.value)}`
+                            : `${assetTypeLabel[s.type]} ${s.value}`}
+                        </ItemLink>
+                      </Badge>
+                    </ObservableMenu>
+                  </AccountHoverCard>
                 ))}
               </div>
               {c.attach ? (

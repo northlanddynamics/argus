@@ -6,6 +6,7 @@ import { type ReactElement, type ReactNode, useId, useState } from "react";
 import { toast } from "sonner";
 import { CaseRef } from "@/components/case-ref";
 import { Time } from "@/components/time";
+import { AccountHoverCard } from "@/components/account-details";
 import { ItemLink } from "@/components/item-link";
 import { observableIcon } from "@/components/search/search-hit";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -418,18 +419,20 @@ function LinkedCard<Type extends string>(props: {
                     {/* The value takes the room that is left, cut short with … when it doesn't fit; its page shows it whole. */}
                     <TableCell>
                       <span className="flex min-w-0 items-center gap-2">
-                        <EnrichmentTarget type={item.type} value={item.value} enabled={props.kind === "observable"}>
-                          <ItemLink
-                            kind={props.kind}
-                            id={item.id}
-                            fromCase={props.caseNumber}
-                            className="min-w-0 truncate font-mono text-xs hover:underline"
-                            title={props.fullValue(item.type, item.value)}
-                            aria-label={`${typeLabel[item.type]} ${props.fullValue(item.type, item.value)}`}
-                          >
-                            {shown(item.type, item.value)}
-                          </ItemLink>
-                        </EnrichmentTarget>
+                        <AccountHoverCard assetId={item.id} account={item.value} enabled={props.kind === "asset" && item.type === "account"}>
+                          <EnrichmentTarget type={item.type} value={item.value} enabled={props.kind === "observable"}>
+                            <ItemLink
+                              kind={props.kind}
+                              id={item.id}
+                              fromCase={props.caseNumber}
+                              className="min-w-0 truncate font-mono text-xs hover:underline"
+                              title={props.fullValue(item.type, item.value)}
+                              aria-label={`${typeLabel[item.type]} ${props.fullValue(item.type, item.value)}`}
+                            >
+                              {shown(item.type, item.value)}
+                            </ItemLink>
+                          </EnrichmentTarget>
+                        </AccountHoverCard>
                         {props.kind === "observable" && <EnrichmentButton type={item.type as ObservableType} value={item.value} className="-my-1" />}
                         {item.important && (
                           <Badge variant="outline" className="shrink-0">

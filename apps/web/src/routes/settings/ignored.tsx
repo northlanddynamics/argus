@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/page-header";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Time } from "@/components/time";
+import { AccountHoverCard } from "@/components/account-details";
 import { ItemLink } from "@/components/item-link";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -81,11 +82,13 @@ export function IgnoredObservablesPage() {
               {list.data?.map((e) => (
                 <TableRow key={`${e.kind}:${e.id}`}>
                   <TableCell className="font-mono text-xs break-all whitespace-normal">
-                    <ObservableMenu observable={e.kind === "observable" ? { type: e.type as ObservableType, value: e.value } : null}>
-                      <ItemLink kind={e.kind} id={e.id} className="hover:underline" title={e.value}>
-                        {shown(e)}
-                      </ItemLink>
-                    </ObservableMenu>
+                    <AccountHoverCard assetId={e.id} account={e.value} enabled={e.kind === "asset" && e.type === "account"}>
+                      <ObservableMenu observable={e.kind === "observable" ? { type: e.type as ObservableType, value: e.value } : null}>
+                        <ItemLink kind={e.kind} id={e.id} className="hover:underline" title={e.value}>
+                          {shown(e)}
+                        </ItemLink>
+                      </ObservableMenu>
+                    </AccountHoverCard>
                   </TableCell>
                   <TableCell className="text-muted-foreground">{typeLabel(e)}</TableCell>
                   <TableCell className={cn(fromSm, "truncate")} title={e.by.name}>
