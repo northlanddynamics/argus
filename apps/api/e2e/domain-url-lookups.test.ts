@@ -98,6 +98,17 @@ test("opening the Enrichment of a domain, an email address or a URL on a Case sh
       await popup.waitFor({ state: "detached" });
     };
 
+    // Resting the pointer on a domain shows the report in a hover card, not the panel.
+    const card = page.getByTestId("domain-hover-card");
+    await page.getByRole("link", { name: "Domain invoice-portal[.]biz" }).hover();
+    await card.getByText("7/93").waitFor();
+    await card.getByText("Newly registered:").waitFor();
+    await card.getByText(/as of/).waitFor();
+    expect(await popup.count()).toBe(0);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/vt-domain-hover-card.png` });
+    await page.mouse.move(0, 0);
+    await card.waitFor({ state: "detached" });
+
     // A domain: the verdict, and that it was registered days ago.
     await show("invoice-portal[.]biz");
     await popup.getByText("7/93").waitFor();

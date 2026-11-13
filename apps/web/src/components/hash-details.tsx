@@ -1,14 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
+import type { ReactElement } from "react";
+import { EnrichmentHoverCard } from "@/components/enrichment-hover-card";
 import { Time } from "@/components/time";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EnrichmentLayout, KnownLine, SourceSection, ValueHeader } from "@/components/enrichment-parts";
 import { communityRow, detectionsRow, joined, KeyLink, listed, NoKey, Problem, ReportSkeleton, Rows, Tags, Verdict, VirustotalFooter } from "@/components/virustotal-parts";
 import { formatBytes } from "@/lib/evidence";
 import { type FileReport, type HashLookup, hashLookupQuery, useRefreshHashLookup } from "@/lib/hash-lookups";
+import { cn } from "@/lib/utils";
 
 /**
- * What VirusTotal says about a file, by its hash (ADR 0011), as the Enrichment panel and a hash
- * Observable's page show it; laid out in `docs/wireframes/hash-context-popup.md` and
+ * What VirusTotal says about a file, by its hash (ADR 0011), as the hover card, the Enrichment panel
+ * and a hash Observable's page show it; laid out in `docs/wireframes/hash-context-popup.md` and
  * `enrichment-panel.md`. The parts are shared with domains and URLs (`virustotal-parts.tsx`).
  */
 
@@ -139,5 +142,45 @@ export function HashDetailsCard({ hash }: { hash: string }) {
         <HashLookupFooter hash={hash} lookup={q.data} loading={q.isPending} />
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * The hover card's content (`docs/wireframes/hash-context-popup.md`); mounted only while it is open,
+ * so the lookup starts when it opens. While it looks up and once there is a report, the body keeps
+ * one height and scrolls, so the card doesn't grow, flip to the other side of the hash and slip out
+ * from under the pointer.
+ */
+function HashCard({ hash }: { hash: string }) {
+  const q = useQuery(hashLookupQuery(hash));
+  const lookup = q.data;
+  const shown = lookup?.hash ?? hash.toLowerCase();
+  const fixed = q.isPending || !!lookup?.report;
+  return (
+    <div className="grid grid-cols-1 gap-2.5" data-testid="hash-hover-card">
+      <ValueHeader shown={shown} copy={shown} copied="Copied the hash" href={`https://www.virustotal.com/gui/file/${encodeURIComponent(shown)}`} hrefLabel="Open on VirusTotal" truncate>
+        {lookup?.report?.name && <span className="text-xs break-all text-muted-foreground">{lookup.report.name}</span>}
+      </ValueHeader>
+      <div className={cn("border-t pt-2.5", fixed && "h-64 overflow-y-auto overscroll-contain")} data-testid="hash-hover-card-body">
+        <HashLookupBody lookup={lookup} loading={q.isPending} error={q.error} />
+      </div>
+      {lookup?.state !== "no_key" && (
+        <div className="border-t pt-2">
+          <HashLookupFooter hash={hash} lookup={lookup} loading={q.isPending} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Wraps a hash as it is shown anywhere so that resting the pointer on it opens what VirusTotal says
+ * about its file, as `EnrichmentHoverCard` does.
+ */
+export function HashHoverCard({ hash, enabled = true, held = false, children }: { hash: string; enabled?: boolean; held?: boolean; children: ReactElement }) {
+  return (
+    <EnrichmentHoverCard enabled={enabled} held={held} card={() => <HashCard hash={hash} />}>
+      {children}
+    </EnrichmentHoverCard>
   );
 }

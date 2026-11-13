@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
-import { type FocusEvent, type ReactElement, type ReactNode, useState } from "react";
+import { type ReactElement, type ReactNode, useState } from "react";
 import { toast } from "sonner";
 import { CardPager } from "@/components/card-pager";
+import { EnrichmentHoverCard } from "@/components/enrichment-hover-card";
 import { EnrichmentLayout, KnownLine, SourceSection, ValueHeader } from "@/components/enrichment-parts";
 import { ObservableText } from "@/components/observable-details";
 import { Time } from "@/components/time";
@@ -11,12 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FalconHostsCompact, FalconHostsSections, RangeLine } from "@/components/ip-falcon-hosts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { meQuery } from "@/lib/api";
-import { useHoverCardOpen } from "@/lib/hover-card";
 import { asTypeLabel, type IpDetails, type IpLookup, ipLookupQuery, reservedRange, useRefreshIpLookup } from "@/lib/ip-lookups";
-import { canManage } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 
 /**
@@ -495,25 +492,14 @@ function IpCard({ ip, admin }: { ip: string; admin: boolean }) {
 
 /**
  * Wraps an IP as it is shown anywhere (a link to its page, a badge, plain text) so that resting the
- * pointer on it opens what IPinfo says about it (`docs/wireframes/ip-context-popup.md`). Focus
- * doesn't open it: from the keyboard, `I` opens the Enrichment panel. `children` must be one element
- * that can hold a ref. `enabled` false leaves it as it is; `held` keeps the card shut without
- * remounting the IP (while the Enrichment panel shows it, so focus can return to it). Guests see the IP alone: Argus never
- * spends the Organization's IPinfo quota on their behalf.
+ * pointer on it opens what IPinfo says about it (`docs/wireframes/ip-context-popup.md`), as
+ * `EnrichmentHoverCard` does.
  */
 export function IpHoverCard({ ip, enabled = true, held = false, children }: { ip: string; enabled?: boolean; held?: boolean; children: ReactElement }) {
-  const role = useQuery(meQuery).data?.organization?.role;
-  const card = useHoverCardOpen();
-  if (!enabled || !role) return children;
   return (
-    <HoverCard openDelay={400} closeDelay={150} open={card.open && !held} onOpenChange={card.onOpenChange}>
-      <HoverCardTrigger asChild data-hovercard="" onFocus={(e: FocusEvent) => e.preventDefault()}>
-        {children}
-      </HoverCardTrigger>
-      <HoverCardContent className="w-80" side="bottom" align="start" collisionPadding={16}>
-        <IpCard ip={ip} admin={canManage(role)} />
-      </HoverCardContent>
-    </HoverCard>
+    <EnrichmentHoverCard enabled={enabled} held={held} card={(admin) => <IpCard ip={ip} admin={admin} />}>
+      {children}
+    </EnrichmentHoverCard>
   );
 }
 

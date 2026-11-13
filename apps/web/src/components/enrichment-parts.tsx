@@ -37,7 +37,8 @@ export function EnrichmentLayout({ header, children }: { header: ReactNode; chil
 
 /**
  * The value whole and wrapped, Copy, and ↗ to it on its source's site when there is a page to open.
- * `copy` is what Copy copies, `children` anything shown under it.
+ * `copy` is what Copy copies, `children` anything shown under it. `truncate` keeps the value to one
+ * line, cut short with an ellipsis and whole on hover, where space is tight (a hover card).
  */
 export function ValueHeader({
   shown,
@@ -45,6 +46,7 @@ export function ValueHeader({
   copied,
   href,
   hrefLabel,
+  truncate = false,
   children,
 }: {
   shown: string;
@@ -52,6 +54,7 @@ export function ValueHeader({
   copied: string;
   href: string | null;
   hrefLabel: string;
+  truncate?: boolean;
   children?: ReactNode;
 }) {
   const onCopy = () =>
@@ -60,9 +63,11 @@ export function ValueHeader({
       () => toast.error("Couldn't copy to the clipboard"),
     );
   return (
-    <div className="grid gap-0.5">
+    <div className="grid grid-cols-1 gap-0.5">
       <div className="flex items-start gap-1">
-        <span className="min-w-0 flex-1 py-0.5 font-mono text-sm font-medium break-all">{shown}</span>
+        <span className={cn("min-w-0 flex-1 py-0.5 font-mono text-sm font-medium", truncate ? "truncate" : "break-all")} title={truncate ? shown : undefined}>
+          {shown}
+        </span>
         <Button variant="ghost" size="icon-xs" onClick={onCopy} aria-label="Copy" title="Copy">
           <CopyIcon aria-hidden />
         </Button>

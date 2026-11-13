@@ -1,6 +1,6 @@
 # Domain, email and URL context popups: wireframes
 
-> Where these details appear has moved to the Enrichment panel (`enrichment-panel.md`): hover no longer opens a popup. The content and wording of each state below still apply, as a section of the panel.
+> A domain shows these details in two places: this hover card, on resting the pointer on it, and the Enrichment panel (`enrichment-panel.md`), opened on purpose. Email addresses and URLs show them in the panel only. The hover card opens on pointer hover only, after 400 ms, as the IP card does; from the keyboard, `I` opens the panel instead. Its body keeps one height and scrolls, and a DNS record in it opens that record's Enrichment in the panel. Umbrella's lists show in the panel only.
 
 What a Member sees on hovering (or focusing) a domain, an email address or a URL in Argus: on a Case's Observables and their pages, an Alert's extracted indicators, Bulk Lookup and Response Actions. The report comes from VirusTotal, looked up with the Member's own API key and cached for the Organization (ADR 0012). It follows the hash context popup (`hash-context-popup.md`) in everything but its content; its "no key", "never seen" and "failed" states are the hash popup's C, D and E.
 

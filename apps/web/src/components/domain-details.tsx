@@ -1,4 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
+import type { ReactElement } from "react";
+import { EnrichmentHoverCard } from "@/components/enrichment-hover-card";
 import { Time } from "@/components/time";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EnrichmentLayout, FollowValue, KnownLine, SourceSection, ValueHeader } from "@/components/enrichment-parts";
@@ -7,10 +9,11 @@ import { communityRow, detectionsRow, KeyLink, listed, NoKey, Problem, ReportSke
 import { type DomainLookup, type DomainReport, domainLookupQuery, useRefreshDomainLookup } from "@/lib/domain-url-lookups";
 import type { EnrichableType } from "@/lib/enrichment";
 import { defang } from "@/lib/observables";
+import { cn } from "@/lib/utils";
 
 /**
- * What VirusTotal says about a domain (ADR 0012), as the Enrichment panel and a domain or email
- * Observable's page show it; laid out in `docs/wireframes/domain-url-context-popup.md` and
+ * What VirusTotal says about a domain (ADR 0012), as a domain's hover card, the Enrichment panel and
+ * a domain or email Observable's page show it; laid out in `docs/wireframes/domain-url-context-popup.md` and
  * `enrichment-panel.md`. Its DNS records open their own Enrichment. An email
  * address shows its domain's report: VirusTotal is only ever asked about the domain. Below it, which
  * Cisco Umbrella destination lists hold the domain (ADR 0014), when the Organization has Umbrella.
@@ -190,5 +193,43 @@ export function DomainDetailsCard({ type, value }: { type: "domain" | "email"; v
         <DomainFooter value={value} lookup={q.data} loading={q.isPending} />
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * The hover card's content (`docs/wireframes/domain-url-context-popup.md`); mounted only while it is
+ * open, so the lookup starts when it opens. While it looks up and once there is a report, the body
+ * keeps one height and scrolls, so the card doesn't grow, flip and slip out from under the pointer.
+ * A record in it opens its own Enrichment in the panel.
+ */
+function DomainCard({ value }: { value: string }) {
+  const q = useQuery(domainLookupQuery(value));
+  const lookup = q.data;
+  const shown = defang("domain", value);
+  const fixed = q.isPending || !!lookup?.report;
+  return (
+    <div className="grid gap-2.5" data-testid="domain-hover-card">
+      <ValueHeader shown={shown} copy={shown} copied="Copied (defanged)" href={domainHref(lookup)} hrefLabel="Open on VirusTotal" />
+      <div className={cn("border-t pt-2.5", fixed && "h-64 overflow-y-auto overscroll-contain")} data-testid="domain-hover-card-body">
+        <DomainLookupBody lookup={lookup} loading={q.isPending} error={q.error} />
+      </div>
+      {lookup?.state !== "no_key" && lookup?.state !== "withheld" && (
+        <div className="border-t pt-2">
+          <DomainFooter value={value} lookup={lookup} loading={q.isPending} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Wraps a domain as it is shown anywhere so that resting the pointer on it opens what VirusTotal
+ * says about it, as `EnrichmentHoverCard` does.
+ */
+export function DomainHoverCard({ domain, enabled = true, held = false, children }: { domain: string; enabled?: boolean; held?: boolean; children: ReactElement }) {
+  return (
+    <EnrichmentHoverCard enabled={enabled} held={held} card={() => <DomainCard value={domain} />}>
+      {children}
+    </EnrichmentHoverCard>
   );
 }
