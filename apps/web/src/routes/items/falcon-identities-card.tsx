@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { RefreshCwIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import { Fragment } from "react";
+import { FactGroups, type FactGroup, joined } from "@/components/fact-groups";
 import { Time } from "@/components/time";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -8,17 +9,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { type ItemPage, itemPagesKey, refreshEnrichment } from "@/lib/observables";
+import { cn } from "@/lib/utils";
 
 type FalconIdentity = ItemPage["falconIdentities"][number]["identities"][number];
 type IdentityFacts = NonNullable<FalconIdentity["enrichment"]["identity"]>;
 type Lookup = NonNullable<ItemPage["falconIdentities"][number]["lookup"]>;
-
-/** A yes/no fact Falcon may not have given; `flagged` is the answer that deserves attention. */
-function YesNo({ value, flagged, yes = "Yes", no = "No" }: { value: boolean | null; flagged: boolean; yes?: string; no?: string }) {
-  if (value === null) return null;
-  const label = value ? yes : no;
-  return value === flagged ? <Badge variant="outline">{label}</Badge> : <>{label}</>;
-}
 
 /** Falcon's risk factors, such as `STALE_ACCOUNT`, as words. */
 const riskFactorLabel = (type: string) => type.toLowerCase().replaceAll("_", " ").replace(/^./, (c) => c.toUpperCase());
@@ -78,21 +73,29 @@ export function FalconIdentitiesCard({ item }: { item: ItemPage }) {
               <section
                 key={`${group.integration.id} ${identity.entityId}`}
                 aria-label={`Falcon identity ${identity.enrichment.identity?.displayName ?? identity.entityId}`}
-                className="grid min-w-0 content-start gap-3 rounded-lg border p-3"
+                className={cn("grid min-w-0 content-start gap-3", identities.length > 1 && "rounded-lg border p-3")}
               >
-                <div className="grid gap-1">
+                <div className="grid gap-0.5">
                   <p className="text-sm font-medium break-words">{identity.enrichment.identity?.displayName ?? "Unnamed identity"}</p>
-                  <p className="font-mono text-xs break-all text-muted-foreground">{identity.entityId}</p>
-                  <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                    <span>{group.integration.name}</span>
+                  <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
+                    <span className="font-mono break-all">{identity.entityId}</span>
+                    <span>· {group.integration.name}</span>
                     {group.ambiguous && (
-                      <Badge variant="outline" title="Several Falcon identities go by this account name for this Integration">
-                        Ambiguous
-                      </Badge>
+                      <>
+                        <Badge variant="outline" title="Several Falcon identities go by this account name for this Integration">
+                          Ambiguous
+                        </Badge>
+                        <span>
+                          · recorded <Time iso={identity.recordedAt} />
+                        </span>
+                      </>
                     )}
-                    <span>
-                      · recorded <Time iso={identity.recordedAt} />
-                    </span>
+                    {identity.enrichment.fetchedAt && (
+                      <span>
+                        · as of <Time iso={identity.enrichment.fetchedAt} />
+                        {identity.enrichment.refreshing && " · refreshing…"}
+                      </span>
+                    )}
                   </p>
                 </div>
                 <IdentityEnrichment enrichment={identity.enrichment} />
@@ -129,24 +132,31 @@ function IdentityLookup({ integration, lookup }: { integration: string; lookup: 
   );
 }
 
-/** The values Falcon gave, joined by `by`; null when it gave none. */
-const joined = (values: readonly (string | null)[], by: string) => values.filter(Boolean).join(by) || null;
+/**
+ * The yes/no answers Falcon gave about an identity. `flagged` is the answer that deserves attention:
+ * it is shown as a badge saying `flag`; the other answer joins one muted line saying `fine`.
+ */
+const states = (identity: IdentityFacts) =>
+  [
+    { value: identity.enabled, flagged: false, flag: "Disabled", fine: "Enabled" },
+    { value: identity.lockedOut, flagged: true, flag: "Locked out", fine: "not locked out" },
+    { value: identity.stale, flagged: true, flag: "Stale", fine: "not stale" },
+    { value: identity.privileged, flagged: true, flag: "Privileged", fine: "not privileged" },
+    { value: identity.watched, flagged: true, flag: "Watched", fine: "not watched" },
+    { value: identity.passwordNeverExpires, flagged: true, flag: "Password never expires", fine: "password expires" },
+  ].filter((s): s is typeof s & { value: boolean } => s.value !== null);
 
-/** What Falcon last reported about one identity, as of when it was fetched. */
+/**
+ * What Falcon last reported about one identity: its risk and anything about it that deserves
+ * attention first, then the rest in groups. When it was fetched is said above it.
+ */
 function IdentityEnrichment({ enrichment }: { enrichment: FalconIdentity["enrichment"] }) {
-  const { identity, fetchedAt, notFound, error, refreshing } = enrichment;
-  const asOf = fetchedAt && (
-    <p className="text-xs text-muted-foreground">
-      As of <Time iso={fetchedAt} />
-      {refreshing && " · refreshing…"}
-    </p>
-  );
+  const { identity, notFound, error, refreshing } = enrichment;
   const problem = error && <p className="text-xs text-destructive">Last fetch failed: {error}</p>;
   if (notFound) {
     return (
       <div className="grid gap-1">
         <p className="text-sm">Not found in Falcon.</p>
-        {asOf}
         {problem}
       </div>
     );
@@ -159,45 +169,70 @@ function IdentityEnrichment({ enrichment }: { enrichment: FalconIdentity["enrich
       </div>
     );
   }
-  const facts: { label: string; value: ReactNode }[] = [
-    { label: "Risk", value: <Risk identity={identity} /> },
-    { label: "Risk factors", value: joined(identity.riskFactors.map((f) => riskFactorLabel(f.type)), ", ") },
-    { label: "Enabled", value: <YesNo value={identity.enabled} flagged={false} /> },
-    { label: "Locked out", value: <YesNo value={identity.lockedOut} flagged /> },
-    { label: "Stale", value: <YesNo value={identity.stale} flagged /> },
+  const answered = states(identity);
+  const flags = answered.filter((s) => s.value === s.flagged);
+  const fine = answered.filter((s) => s.value !== s.flagged);
+  const hasRisk = identity.riskScore !== null || !!identity.riskSeverity;
+  const groups: FactGroup[] = [
     {
-      label: "Privileged",
-      value:
-        identity.privileged === null ? null : (
-          <>
-            <YesNo value={identity.privileged} flagged />
-            {identity.privilegedGroups.length > 0 && <span className="text-muted-foreground"> · {identity.privilegedGroups.join(", ")}</span>}
-          </>
-        ),
+      label: "Identifiers",
+      facts: [
+        { label: "UPN", value: identity.upn && <span className="font-mono text-xs">{identity.upn}</span> },
+        { label: "Email", value: identity.email && <span className="font-mono text-xs">{identity.email}</span> },
+        { label: "SAM name", value: identity.samAccountName && <span className="font-mono text-xs">{identity.samAccountName}</span> },
+      ],
     },
-    { label: "Watched", value: <YesNo value={identity.watched} flagged /> },
-    { label: "Password set", value: identity.passwordLastSet && <Time iso={identity.passwordLastSet} /> },
-    { label: "Password expires", value: <YesNo value={identity.passwordNeverExpires === null ? null : !identity.passwordNeverExpires} flagged={false} no="Never" /> },
-    { label: "Last activity", value: identity.lastActivity && <Time iso={identity.lastActivity} /> },
-    { label: "UPN", value: identity.upn },
-    { label: "Email", value: identity.email },
-    { label: "SAM name", value: identity.samAccountName },
-    { label: "Department", value: joined([identity.department, identity.title], " · ") },
-    { label: "Domain", value: identity.domain },
-    { label: "OU", value: identity.ou },
-    { label: "Endpoints", value: joined(identity.endpoints, ", ") },
+    {
+      label: "Directory",
+      facts: [
+        { label: "Domain", value: identity.domain },
+        { label: "OU", value: identity.ou },
+        { label: "Department", value: joined([identity.department, identity.title], " · ") },
+        { label: "Privileged groups", value: joined(identity.privilegedGroups, ", ") },
+      ],
+    },
+    {
+      label: "Activity",
+      facts: [
+        { label: "Last activity", value: identity.lastActivity && <Time iso={identity.lastActivity} /> },
+        { label: "Password set", value: identity.passwordLastSet && <Time iso={identity.passwordLastSet} /> },
+        {
+          label: "Endpoints",
+          value: identity.endpoints.length > 0 && (
+            <span className="font-mono text-xs">
+              {identity.endpoints.map((endpoint, i) => (
+                <Fragment key={endpoint}>
+                  {i > 0 && ", "}
+                  <span className="whitespace-nowrap">{endpoint}</span>
+                </Fragment>
+              ))}
+            </span>
+          ),
+        },
+      ],
+    },
   ];
   return (
-    <div className="grid gap-2">
-      <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-1 text-sm">
-        {facts.map(({ label, value }) => (
-          <div key={label} className="contents">
-            <dt className="text-muted-foreground">{label}</dt>
-            <dd className="break-words">{value ?? <span className="text-muted-foreground">—</span>}</dd>
+    <div className="grid gap-3">
+      <div className="grid gap-1.5">
+        {(hasRisk || flags.length > 0) && (
+          <div className="flex flex-wrap items-center gap-1.5 text-sm">
+            {hasRisk && <Risk identity={identity} />}
+            {flags.map((s) => (
+              <Badge key={s.flag} variant="outline">
+                {s.flag}
+              </Badge>
+            ))}
           </div>
-        ))}
-      </dl>
-      {asOf}
+        )}
+        {fine.length > 0 && <p className="text-xs text-muted-foreground">{fine.map((s, i) => (i === 0 ? s.fine.replace(/^./, (c) => c.toUpperCase()) : s.fine)).join(" · ")}</p>}
+        {identity.riskFactors.length > 0 && (
+          <p className="text-xs text-muted-foreground">
+            Risk factors: <span className="text-foreground">{identity.riskFactors.map((f) => riskFactorLabel(f.type)).join(", ")}</span>
+          </p>
+        )}
+      </div>
+      <FactGroups groups={groups} source="Falcon" />
       {problem}
     </div>
   );
@@ -210,5 +245,11 @@ function Risk({ identity }: { identity: IdentityFacts }) {
   const grade = riskSeverity ? riskSeverity.charAt(0) + riskSeverity.slice(1).toLowerCase() : null;
   const score = riskScore === null ? null : `${Math.round(riskScore * 100)}`;
   const label = joined([score, grade], " · ");
-  return riskSeverity && riskSeverity.toUpperCase() !== "NORMAL" ? <Badge variant="outline">{label}</Badge> : <>{label}</>;
+  return riskSeverity && riskSeverity.toUpperCase() !== "NORMAL" ? (
+    <Badge variant="outline">Risk {label}</Badge>
+  ) : (
+    <span className="text-muted-foreground">
+      Risk <span className="text-foreground">{label}</span>
+    </span>
+  );
 }

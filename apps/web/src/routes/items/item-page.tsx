@@ -5,6 +5,7 @@ import { HashDetailsCard } from "@/components/hash-details";
 import { IpDetailsCard, IpText } from "@/components/ip-details";
 import { UmbrellaCard } from "@/components/umbrella-details";
 import { UrlDetailsCard } from "@/components/url-details";
+import { FactGroups, type FactGroup, joined } from "@/components/fact-groups";
 import { ObservableMenu } from "@/components/observable-menu";
 import { Link, useParams, useRouteContext } from "@tanstack/react-router";
 import { BellOffIcon, CheckIcon, CopyIcon, ExternalLinkIcon,  LockIcon,  RefreshCwIcon, SearchIcon, StarIcon, StarOffIcon } from "lucide-react";
@@ -373,30 +374,36 @@ function FalconDevicesCard({ item }: { item: ItemPage }) {
               <section
                 key={`${group.integration.id} ${device.deviceId}`}
                 aria-label={`Falcon device ${device.deviceId}`}
-                className="grid min-w-0 content-start gap-3 rounded-lg border p-3"
+                className={cn("grid min-w-0 content-start gap-3", devices.length > 1 && "rounded-lg border p-3")}
               >
-                <div className="grid gap-1">
+                <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
                   <a
                     href={device.consoleUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1 font-mono text-xs break-all hover:underline"
+                    className="inline-flex items-center gap-1 font-mono break-all text-foreground hover:underline"
                   >
                     {device.deviceId}
                     <ExternalLinkIcon className="size-3 shrink-0 text-muted-foreground" aria-label="Opens in the Falcon console" />
                   </a>
-                  <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                    <span>{group.integration.name}</span>
-                    {group.ambiguous && (
+                  <span>· {group.integration.name}</span>
+                  {group.ambiguous && (
+                    <>
                       <Badge variant="outline" title="Several Falcon devices go by this name for this Integration">
                         Ambiguous
                       </Badge>
-                    )}
+                      <span>
+                        · recorded <Time iso={device.recordedAt} />
+                      </span>
+                    </>
+                  )}
+                  {device.enrichment.fetchedAt && (
                     <span>
-                      · recorded <Time iso={device.recordedAt} />
+                      · as of <Time iso={device.enrichment.fetchedAt} />
+                      {device.enrichment.refreshing && " · refreshing…"}
                     </span>
-                  </p>
-                </div>
+                  )}
+                </p>
                 <HostEnrichment enrichment={device.enrichment} />
               </section>
             ))}
@@ -431,28 +438,21 @@ function HostLookup({ integration, lookup }: { integration: string; lookup: NonN
   );
 }
 
-/** The values Falcon gave, joined by `by`; null when it gave none. */
-const joined = (values: readonly (string | null)[], by: string) => values.filter(Boolean).join(by) || null;
-
 /** A host's containment: plain when it isn't contained, marked otherwise. */
 const Containment = ({ state }: { state: NonNullable<HostFacts["containment"]> }) =>
   state === "normal" ? containmentLabel.normal : <Badge variant="outline">{containmentLabel[state]}</Badge>;
 
-/** What Falcon last reported about one device, as of when it was fetched. */
+/**
+ * What Falcon last reported about one device, in four groups: its state, where it is on the network,
+ * what the machine is, and where it sits in the directory. When it was fetched is said above it.
+ */
 function HostEnrichment({ enrichment }: { enrichment: FalconDevice["enrichment"] }) {
-  const { host, fetchedAt, notFound, error, refreshing } = enrichment;
-  const asOf = fetchedAt && (
-    <p className="text-xs text-muted-foreground">
-      As of <Time iso={fetchedAt} />
-      {refreshing && " · refreshing…"}
-    </p>
-  );
+  const { host, notFound, error, refreshing } = enrichment;
   const problem = error && <p className="text-xs text-destructive">Last fetch failed: {error}</p>;
   if (notFound) {
     return (
       <div className="grid gap-1">
         <p className="text-sm">Not found in Falcon.</p>
-        {asOf}
         {problem}
       </div>
     );
@@ -465,35 +465,47 @@ function HostEnrichment({ enrichment }: { enrichment: FalconDevice["enrichment"]
       </div>
     );
   }
-  const facts: { label: string; value: ReactNode }[] = [
-    { label: "Containment", value: host.containment && <Containment state={host.containment} /> },
-    { label: "Platform", value: joined([host.platform, host.osVersion], " · ") },
-    { label: "Sensor", value: joined([host.sensorVersion, host.sensorStatus], " · ") },
-    { label: "First seen", value: host.firstSeen && <Time iso={host.firstSeen} /> },
-    { label: "Last seen", value: host.lastSeen && <Time iso={host.lastSeen} /> },
-    { label: "Local IP", value: host.localIp && <IpText ip={host.localIp} /> },
-    { label: "External IP", value: host.externalIp && <IpText ip={host.externalIp} /> },
-    { label: "MAC", value: host.macAddress },
-    { label: "Domain", value: host.domain },
-    { label: "OU", value: joined(host.ou, ", ") },
-    { label: "Site", value: host.site },
-    { label: "Hardware", value: joined([host.manufacturer, host.model], " ") },
-    { label: "Serial", value: host.serialNumber },
-    { label: "Last logged on", value: host.lastLoggedOnUser },
-    { label: "Host groups", value: joined(host.hostGroups, ", ") },
-    { label: "Falcon tags", value: joined(host.tags, ", ") },
+  const groups: FactGroup[] = [
+    {
+      label: "State",
+      facts: [
+        { label: "Containment", value: host.containment && <Containment state={host.containment} /> },
+        { label: "Sensor", value: joined([host.sensorVersion, host.sensorStatus], " · ") },
+        { label: "Last seen", value: host.lastSeen && <Time iso={host.lastSeen} /> },
+        { label: "First seen", value: host.firstSeen && <Time iso={host.firstSeen} /> },
+      ],
+    },
+    {
+      label: "Network",
+      facts: [
+        { label: "Local IP", value: host.localIp && <IpText ip={host.localIp} /> },
+        { label: "External IP", value: host.externalIp && <IpText ip={host.externalIp} /> },
+        { label: "MAC", value: host.macAddress && <span className="font-mono text-xs">{host.macAddress}</span> },
+      ],
+    },
+    {
+      label: "Machine",
+      facts: [
+        { label: "Platform", value: joined([host.platform, host.osVersion], " · ") },
+        { label: "Hardware", value: joined([host.manufacturer, host.model], " ") },
+        { label: "Serial", value: host.serialNumber && <span className="font-mono text-xs">{host.serialNumber}</span> },
+        { label: "Last user", value: host.lastLoggedOnUser && <span className="font-mono text-xs">{host.lastLoggedOnUser}</span> },
+      ],
+    },
+    {
+      label: "Directory",
+      facts: [
+        { label: "Domain", value: host.domain },
+        { label: "OU", value: joined(host.ou, ", ") },
+        { label: "Site", value: host.site },
+        { label: "Host groups", value: joined(host.hostGroups, ", ") },
+        { label: "Falcon tags", value: joined(host.tags, ", ") },
+      ],
+    },
   ];
   return (
     <div className="grid gap-2">
-      <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-1 text-sm">
-        {facts.map(({ label, value }) => (
-          <div key={label} className="contents">
-            <dt className="text-muted-foreground">{label}</dt>
-            <dd className="break-words">{value ?? <span className="text-muted-foreground">—</span>}</dd>
-          </div>
-        ))}
-      </dl>
-      {asOf}
+      <FactGroups groups={groups} source="Falcon" />
       {problem}
     </div>
   );
