@@ -7,7 +7,7 @@ What a Member sees on hovering (or focusing) an MD5, SHA-1 or SHA-256 in Argus: 
 ## Behaviour
 
 - Opens, closes, places itself and starts its lookup as the IP context popup does. When there isn't room for all of it, it scrolls.
-- The header shows the whole hash, lowercase and wrapped; Copy copies it, and ↗ opens the file on virustotal.com.
+- The header shows the hash lowercase. The hover card keeps it to one line, cut short with an ellipsis and whole on hover; the panel and its page wrap it. Copy copies it whole, and ↗ opens the file on virustotal.com.
 - Guests get no popup.
 
 ## A. Found

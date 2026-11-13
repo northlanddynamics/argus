@@ -157,8 +157,8 @@ function HashCard({ hash }: { hash: string }) {
   const shown = lookup?.hash ?? hash.toLowerCase();
   const fixed = q.isPending || !!lookup?.report;
   return (
-    <div className="grid gap-2.5" data-testid="hash-hover-card">
-      <ValueHeader shown={shown} copy={shown} copied="Copied the hash" href={`https://www.virustotal.com/gui/file/${encodeURIComponent(shown)}`} hrefLabel="Open on VirusTotal">
+    <div className="grid grid-cols-1 gap-2.5" data-testid="hash-hover-card">
+      <ValueHeader shown={shown} copy={shown} copied="Copied the hash" href={`https://www.virustotal.com/gui/file/${encodeURIComponent(shown)}`} hrefLabel="Open on VirusTotal" truncate>
         {lookup?.report?.name && <span className="text-xs break-all text-muted-foreground">{lookup.report.name}</span>}
       </ValueHeader>
       <div className={cn("border-t pt-2.5", fixed && "h-64 overflow-y-auto overscroll-contain")} data-testid="hash-hover-card-body">
