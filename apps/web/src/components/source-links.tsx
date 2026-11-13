@@ -39,7 +39,7 @@ export function SourceLinks({ links, size = "xs", className }: { links: SourceLi
                 <ChevronDownIcon aria-hidden data-icon="inline-end" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="max-w-80">
+            <DropdownMenuContent align="end" className="w-80">
               <DropdownMenuLabel className="text-xs text-muted-foreground">Open in {source}</DropdownMenuLabel>
               {records.map((r) => (
                 <DropdownMenuItem key={r.href} asChild>
