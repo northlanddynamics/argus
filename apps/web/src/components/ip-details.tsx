@@ -10,6 +10,7 @@ import { ObservableText } from "@/components/observable-details";
 import { Time } from "@/components/time";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { IpMap } from "@/components/ip-map";
 import { FalconHostsCompact, FalconHostsSections, RangeLine } from "@/components/ip-falcon-hosts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -247,6 +248,12 @@ function sections(d: IpDetails, showHostname: boolean): Section[] {
   ];
 }
 
+/** Where IPinfo places the IP on a map, when it gave coordinates and the Organization has a Mapbox token. */
+function LocationMap({ details: d, interactive, className }: { details: IpDetails; interactive?: boolean; className?: string }) {
+  if (d.latitude === null || d.longitude === null) return null;
+  return <IpMap latitude={d.latitude} longitude={d.longitude} accuracyRadius={d.accuracyRadius} interactive={interactive} className={className} />;
+}
+
 /** The hover card's pages: the summary, then a page per subject; Mobile only when there is something mobile or satellite to say. */
 function cardPages(d: IpDetails): { title: string; body: ReactNode }[] {
   const relevant = sections(d, false).filter((s) => s.key !== "mobile" || d.mobile || d.satellite || d.carrier || d.mcc);
@@ -260,7 +267,18 @@ function cardPages(d: IpDetails): { title: string; body: ReactNode }[] {
         </div>
       ),
     },
-    ...relevant.map((s) => ({ title: s.title, body: <Rows rows={s.rows} /> })),
+    ...relevant.map((s) => ({
+      title: s.title,
+      body:
+        s.key === "location" ? (
+          <div className="grid gap-2">
+            <LocationMap details={d} interactive={false} className="h-28" />
+            <Rows rows={s.rows} />
+          </div>
+        ) : (
+          <Rows rows={s.rows} />
+        ),
+    })),
   ];
 }
 
@@ -273,6 +291,7 @@ function FullDetails({ details: d, showHostname }: { details: IpDetails; showHos
         <section key={s.key} aria-label={s.title} className="grid gap-1.5">
           <h4 className="text-xs font-medium text-muted-foreground">{s.title}</h4>
           <Rows rows={s.rows} />
+          {s.key === "location" && <LocationMap details={d} className="mt-1" />}
         </section>
       ))}
     </div>

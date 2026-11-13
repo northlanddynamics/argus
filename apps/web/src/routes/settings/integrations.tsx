@@ -30,6 +30,7 @@ import { ChevronDown, ChevronRight, Plus } from "lucide-react";
 import { ago, FALCON_CLOUDS, type FalconCloud, falconCloudLabel, healthWord, type IntegrationView, integrationsKey, integrationsQuery } from "@/lib/alerts";
 import { api, errorMessage } from "@/lib/api";
 import { useLiveStatus } from "@/lib/live";
+import { mapboxKey, mapboxQuery } from "@/lib/mapbox";
 import { FALCON_CONSOLES } from "api/alerts/vocabulary";
 import { type Provider, providerLabel } from "api/integrations/vocabulary";
 import { SEVERITIES, type Severity, severityLabel } from "api/cases/vocabulary";
@@ -136,6 +137,7 @@ export function IntegrationsPage() {
         </Card>
       )}
       <TeamsChannelCard />
+      <MapboxCard />
     </>
   );
 }
@@ -296,6 +298,117 @@ function TeamsChannelCard() {
               Save
             </Button>
             <Saved show={save.isSuccess}>Webhook saved. New posts go to this channel.</Saved>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** The Organization's Mapbox public token, which draws where IPinfo places an IP on a map. */
+function MapboxCard() {
+  const queryClient = useQueryClient();
+  const [token, setToken] = useState("");
+  const mapbox = useQuery(mapboxQuery);
+  const refresh = () => queryClient.invalidateQueries({ queryKey: mapboxKey });
+  const save = useMutation({
+    mutationFn: async () => ok(await api.mapbox.$put({ json: { token } }), "Could not save the token"),
+    onSuccess: async () => {
+      setToken("");
+      await refresh();
+    },
+  });
+  const remove = useMutation({
+    mutationFn: async () => ok(await api.mapbox.$delete(), "Could not remove the token"),
+    onSuccess: refresh,
+  });
+  const configured = Boolean(mapbox.data?.token);
+  const error = save.error ?? remove.error;
+  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    save.mutate();
+  };
+  return (
+    <Card id="mapbox" data-testid="mapbox">
+      <CardHeader className="border-b">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <CardTitle>
+              <h2>Mapbox</h2>
+            </CardTitle>
+            <Badge variant={configured ? "default" : "outline"}>{configured ? "Token set" : "Not set"}</Badge>
+          </div>
+          {configured && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" size="sm" disabled={remove.isPending}>
+                  Remove
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Remove the Mapbox token?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    IP details stop showing a map; their coordinates still link to OpenStreetMap. You can add a token again at any time.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction variant="destructive" onClick={() => remove.mutate()}>
+                    Remove token
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {mapbox.isError && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertDescription>{mapbox.error.message}</AlertDescription>
+          </Alert>
+        )}
+        <form className="grid gap-4" onSubmit={onSubmit}>
+          <p className="max-w-prose text-sm text-muted-foreground">
+            Shows where IPinfo places an IP on a map, in its hover card, the Enrichment panel and its own page. Use a public token (
+            <span className="font-mono">pk.…</span>): every Member's browser uses it, so restrict it to this site's URL in Mapbox.
+          </p>
+          <div className="grid gap-2">
+            <Label htmlFor="mapbox-token">{configured ? "Replace the public token" : "Public token"}</Label>
+            <Input
+              id="mapbox-token"
+              autoComplete="off"
+              spellCheck={false}
+              className="font-mono"
+              placeholder="pk.eyJ1Ijoi…"
+              value={token}
+              onChange={(e) => {
+                setToken(e.target.value);
+                save.reset();
+              }}
+            />
+            {mapbox.data?.hint && (
+              <p className="text-sm text-muted-foreground">
+                In use: <span className="font-mono">{mapbox.data.hint}</span>
+                {mapbox.data.updatedBy && mapbox.data.updatedAt && (
+                  <>
+                    , set by {mapbox.data.updatedBy.name} <Time iso={mapbox.data.updatedAt} />
+                  </>
+                )}
+              </p>
+            )}
+          </div>
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error.message}</AlertDescription>
+            </Alert>
+          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="submit" disabled={save.isPending || !token}>
+              Save
+            </Button>
+            <Saved show={save.isSuccess}>Token saved. IP details now show a map.</Saved>
           </div>
         </form>
       </CardContent>

@@ -162,6 +162,8 @@ export const organizationPolicy = {
   canManageIntegrations: managesOrganization,
   /** Set, test and remove the Organization's Teams channel webhook, and see which one is in use. */
   canManageTeamsChannel: managesOrganization,
+  /** Set and remove the Organization's Mapbox public token, which draws IPinfo locations on a map. */
+  canManageMapbox: managesOrganization,
   /** Add Observables and Assets to the Ignored list and remove them. */
   canManageIgnoredObservables: managesOrganization,
   /** Mark Observables Important, so they drive Correlations, and unmark them. Any Member. */

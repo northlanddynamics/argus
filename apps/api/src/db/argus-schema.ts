@@ -1451,6 +1451,22 @@ export const teamsChannels = pgTable("teams_channels", {
 });
 
 /**
+ * The Organization's Mapbox public token (a `pk.` token), which Members' browsers use to draw where
+ * IPinfo places an IP on a map. It is public by design, scoped in Mapbox by URL, so it is stored as
+ * given and sent to every Member.
+ */
+export const mapboxTokens = pgTable("mapbox_tokens", {
+  organizationId: text("organization_id")
+    .primaryKey()
+    .references(() => organization.id, { onDelete: "restrict" }),
+  token: text("token").notNull(),
+  updatedById: text("updated_by_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "restrict" }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+});
+
+/**
  * Posts to the Organization's Teams channel, queued in the transaction that made the change and
  * sent after it commits (`teams/teams.ts`). They name the Case by id, so each is written from the
  * Case as it is when sent; a Restricted Case gets a link only.

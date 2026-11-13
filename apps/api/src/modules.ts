@@ -26,6 +26,7 @@ import { searchStore } from "./search/search";
 import { ssoStore } from "./sso/sso";
 import { tagStore } from "./tags/tags";
 import { teamsChannelStore } from "./teams/teams";
+import { mapboxStore } from "./mapbox/mapbox";
 import { taskStore } from "./tasks/tasks";
 import { umbrellaDomainCheckStore } from "./umbrella/domain-checks";
 import { timelineStore } from "./timeline/timeline";
@@ -75,6 +76,7 @@ export function createModules(deps: Deps) {
     alerts: alertStore(deps),
     notifications: notificationStore(deps),
     teamsChannel: teamsChannelStore(deps),
+    mapbox: mapboxStore(deps),
     sso: ssoStore(deps),
     search: searchStore(deps),
     metrics: metricsStore(deps),
