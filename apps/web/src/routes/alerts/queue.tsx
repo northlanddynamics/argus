@@ -10,8 +10,7 @@ import { Time } from "@/components/time";
 import { SeverityBadge } from "@/components/case-badges";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { FilterBar, FilterField, FilterSelect } from "@/components/filter-bar";
-import { ItemContext } from "@/components/item-context";
-import { ItemLink } from "@/components/item-link";
+import { ItemText, ItemTypeIcon, ItemValue } from "@/components/item-value";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -554,36 +553,38 @@ export function AlertQueuePage() {
                       <span className="font-mono">{a.externalId}</span> · {alertKindLabel[a.kind]}
                       {(streams?.length ?? 0) > 1 && ` · ${a.integration.name}`}
                       <span className="@3xl:hidden">
-                        {(a.host ?? a.userName) && " · "}
-                        <span className="font-mono">{[a.host, a.userName].filter(Boolean).join(" / ")}</span>
+                        {a.host && (
+                          <>
+                            {" · "}
+                            <ItemTypeIcon type="host" className="inline size-3 align-[-2px]" /> <span className="font-mono">{a.host}</span>
+                          </>
+                        )}
+                        {a.userName && (
+                          <>
+                            {" · "}
+                            <ItemTypeIcon type="account" className="inline size-3 align-[-2px]" /> <span className="font-mono">{a.userName}</span>
+                          </>
+                        )}
                       </span>
                     </div>
                   </TableCell>
                   <TableCell className={cn(narrowHidden, "font-mono text-xs")}>
                     <div className="hidden @3xl:block">
-                    <div className="truncate" title={a.host ?? undefined}>
+                    <div className="flex min-w-0">
                       {a.host === null ? (
                         <span className="font-sans text-muted-foreground">No host</span>
                       ) : a.hostAsset ? (
-                        <ItemContext item={{ kind: "asset", id: a.hostAsset.id, type: "host", value: a.host }}>
-                          <ItemLink kind="asset" id={a.hostAsset.id} className="hover:underline" aria-label={`Host ${a.host}`}>
-                            {a.host}
-                          </ItemLink>
-                        </ItemContext>
+                        <ItemValue item={{ kind: "asset", id: a.hostAsset.id, type: "host", value: a.host }} id={a.hostAsset.id} truncate />
                       ) : (
-                        a.host
+                        <ItemText type="host" value={a.host} truncate />
                       )}
                     </div>
                     {a.userName && (
-                      <div className="truncate text-muted-foreground" title={a.userName}>
+                      <div className="flex min-w-0">
                         {a.userAsset ? (
-                          <ItemContext item={{ kind: "asset", id: a.userAsset.id, type: "account", value: a.userName }}>
-                            <ItemLink kind="asset" id={a.userAsset.id} className="hover:underline" aria-label={`Account ${a.userName}`}>
-                              {a.userName}
-                            </ItemLink>
-                          </ItemContext>
+                          <ItemValue item={{ kind: "asset", id: a.userAsset.id, type: "account", value: a.userName }} id={a.userAsset.id} truncate />
                         ) : (
-                          a.userName
+                          <ItemText type="account" value={a.userName} truncate />
                         )}
                       </div>
                     )}

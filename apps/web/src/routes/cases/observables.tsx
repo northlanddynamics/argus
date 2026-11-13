@@ -8,7 +8,7 @@ import { CaseRef } from "@/components/case-ref";
 import { Time } from "@/components/time";
 import { ItemContext, itemReference } from "@/components/item-context";
 import { ItemLink } from "@/components/item-link";
-import { observableIcon } from "@/components/search/search-hit";
+import { observableIcon } from "@/components/item-value";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";

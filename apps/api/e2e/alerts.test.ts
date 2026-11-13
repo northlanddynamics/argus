@@ -23,6 +23,7 @@ afterAll(async () => {
 });
 
 const PASSWORD = "correct-horse-battery";
+const SHOTS = process.env.E2E_SCREENSHOTS;
 
 const starting = () => new Response("starting", { status: 503 });
 
@@ -360,9 +361,9 @@ test("an Alert shows the Observables and Assets it names; attaching it adds them
     await signIn(page, baseUrl, "ana@acme.example", () => t.totpCode(ana.totp.secret));
     await page.goto(`${baseUrl}/alerts`);
     await page.getByTestId("alert-ldt:1").getByRole("button", { name: "Encoded PowerShell from Office process" }).click();
-    await page.getByRole("region", { name: "Extracted Observables" }).getByText("IP 185.220.101.4").waitFor();
-    await page.getByRole("region", { name: "Extracted Assets" }).getByText("Host FIN-LT-0231").waitFor();
-    await page.getByRole("region", { name: "Extracted Assets" }).getByText("Account d.howe").waitFor();
+    await page.getByRole("region", { name: "Extracted Observables" }).getByRole("link", { name: "IP 185.220.101.4" }).waitFor();
+    await page.getByRole("region", { name: "Extracted Assets" }).getByRole("link", { name: "Host FIN-LT-0231" }).waitFor();
+    await page.getByRole("region", { name: "Extracted Assets" }).getByRole("link", { name: "Account d.howe" }).waitFor();
 
     await page.getByLabel("Select ldt:1").check();
     await page.getByRole("toolbar", { name: "Selected Alerts" }).getByRole("button", { name: "Attach to Case…" }).click();
@@ -875,6 +876,7 @@ test("a host's hover card shows what Falcon says about it, in the Alert queue an
     const links = page.getByRole("region", { name: "Alert" }).getByRole("link", { name: "Host FIN-LT-0231" });
     await links.last().waitFor();
     expect(await links.count()).toBe(2);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/alert-host-user.png` });
     for (const link of [links.first(), links.last()]) {
       await page.mouse.move(0, 0);
       await card.waitFor({ state: "detached" });

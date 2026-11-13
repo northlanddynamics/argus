@@ -1,39 +1,15 @@
 import { ItemContext, type ItemReference, itemReference } from "@/components/item-context";
+import { ItemTypeIcon } from "@/components/item-value";
 import { Link, useNavigate } from "@tanstack/react-router";
-import {
-  AtSignIcon,
-  BellOffIcon,
-  FingerprintIcon,
-  FolderIcon,
-  GlobeIcon,
-  HashIcon,
-  LinkIcon,
-  LockIcon,
-  type LucideIcon,
-  MonitorIcon,
-  NetworkIcon,
-  SirenIcon,
-  UserIcon,
-} from "lucide-react";
+import { BellOffIcon, FolderIcon, LockIcon, SirenIcon } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
 import { SeverityBadge } from "@/components/case-badges";
 import { alertStatusLabel } from "@/lib/alerts";
 import { caseRef, statusLabel } from "@/lib/cases";
-import { type AssetType, assetTypeLabel, defang, type ObservableType, observableTypeLabel } from "@/lib/observables";
+import { defang } from "@/lib/observables";
 import type { SearchHit } from "@/lib/search";
 import { cn } from "@/lib/utils";
 
-export const observableIcon: Record<ObservableType, LucideIcon> = {
-  ip: NetworkIcon,
-  domain: GlobeIcon,
-  url: LinkIcon,
-  email: AtSignIcon,
-  md5: HashIcon,
-  sha1: HashIcon,
-  sha256: HashIcon,
-};
-
-export const assetIcon: Record<AssetType, LucideIcon> = { host: MonitorIcon, account: UserIcon };
 
 /** One word of the kind, for lists that mix kinds. */
 export const hitKindNoun: Record<SearchHit["kind"], string> = { cases: "Case", alerts: "Alert", observables: "Observable", assets: "Asset" };
@@ -70,14 +46,9 @@ function HitIcon({ hit }: { hit: SearchHit }) {
       return <FolderIcon className={className} aria-hidden />;
     case "alerts":
       return <SirenIcon className={className} aria-hidden />;
-    case "observables": {
-      const Icon = observableIcon[hit.item.type] ?? FingerprintIcon;
-      return <Icon className={className} aria-hidden />;
-    }
-    case "assets": {
-      const Icon = assetIcon[hit.item.type] ?? FingerprintIcon;
-      return <Icon className={className} aria-hidden />;
-    }
+    case "observables":
+    case "assets":
+      return <ItemTypeIcon type={hit.item.type} className={className} />;
   }
 }
 
@@ -141,7 +112,7 @@ export function SearchHitRow({ hit, query, showKind = false }: { hit: SearchHit;
           <Highlighted text={defang(o.type, o.value)} query={query} />
         </span>
       );
-      detail = <IgnoredDetail ignored={o.ignored} text={`${observableTypeLabel[o.type]} · ${casesLine(o.cases)}`} />;
+      detail = <IgnoredDetail ignored={o.ignored} text={casesLine(o.cases)} />;
       break;
     }
     case "assets": {
@@ -151,7 +122,7 @@ export function SearchHitRow({ hit, query, showKind = false }: { hit: SearchHit;
           <Highlighted text={x.value} query={query} />
         </span>
       );
-      detail = <IgnoredDetail ignored={x.ignored} text={`${assetTypeLabel[x.type]} · ${casesLine(x.cases)}`} />;
+      detail = <IgnoredDetail ignored={x.ignored} text={casesLine(x.cases)} />;
       break;
     }
   }

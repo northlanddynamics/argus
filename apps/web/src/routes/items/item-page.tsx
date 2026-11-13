@@ -7,14 +7,12 @@ import { UmbrellaCard } from "@/components/umbrella-details";
 import { UrlDetailsCard } from "@/components/url-details";
 import { ObservableMenu } from "@/components/observable-menu";
 import { Link, useParams, useRouteContext } from "@tanstack/react-router";
-import { BellOffIcon, CheckIcon, CopyIcon, ExternalLinkIcon, FingerprintIcon, LockIcon, MonitorIcon, RefreshCwIcon, SearchIcon, StarIcon, StarOffIcon, UserIcon } from "lucide-react";
+import { BellOffIcon, CheckIcon, CopyIcon, ExternalLinkIcon,  LockIcon,  RefreshCwIcon, SearchIcon, StarIcon, StarOffIcon } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
 import { CaseRef } from "@/components/case-ref";
-import { ItemContext } from "@/components/item-context";
-import { ItemLink } from "@/components/item-link";
+import { ItemText, ItemTypeIcon, ItemValue } from "@/components/item-value";
 import { Time } from "@/components/time";
 import { SeverityBadge, StatusBadge } from "@/components/case-badges";
-import { observableIcon } from "@/components/search/search-hit";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -89,11 +87,8 @@ function Breakable({ text }: { text: string }) {
   ));
 }
 
-function TypeIcon({ kind, item }: { kind: ItemKind; item: ItemPage }) {
-  const className = "size-4 text-muted-foreground";
-  if (kind === "asset") return item.type === "host" ? <MonitorIcon className={className} aria-hidden /> : <UserIcon className={className} aria-hidden />;
-  const Icon = observableIcon[item.type as ObservableType] ?? FingerprintIcon;
-  return <Icon className={className} aria-hidden />;
+function TypeIcon({ item }: { kind: ItemKind; item: ItemPage }) {
+  return <ItemTypeIcon type={item.type} decorative className="size-4" />;
 }
 
 /**
@@ -621,13 +616,9 @@ function AlertsCard({ item }: { item: ItemPage }) {
                   </Link>
                   {a.host &&
                     (a.hostAsset && a.hostAsset.id !== item.id ? (
-                      <ItemContext item={{ kind: "asset", id: a.hostAsset.id, type: "host", value: a.host }}>
-                        <ItemLink kind="asset" id={a.hostAsset.id} className="block w-fit font-mono text-xs text-muted-foreground hover:underline" aria-label={`Host ${a.host}`}>
-                          {a.host}
-                        </ItemLink>
-                      </ItemContext>
+                      <ItemValue item={{ kind: "asset", id: a.hostAsset.id, type: "host", value: a.host }} id={a.hostAsset.id} className="flex w-fit" />
                     ) : (
-                      <span className="block font-mono text-xs text-muted-foreground">{a.host}</span>
+                      <ItemText type="host" value={a.host} className="flex" />
                     ))}
                 </TableCell>
                 <TableCell>

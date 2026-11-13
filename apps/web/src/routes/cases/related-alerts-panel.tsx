@@ -2,9 +2,8 @@ import { AlertMenu } from "@/components/alert-menu";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { SeverityBadge } from "@/components/case-badges";
-import { ItemContext, itemReference } from "@/components/item-context";
-import { ItemLink } from "@/components/item-link";
-import { Badge } from "@/components/ui/badge";
+import { itemReference } from "@/components/item-context";
+import { ItemValue } from "@/components/item-value";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { SirenIcon } from "lucide-react";
@@ -12,7 +11,6 @@ import { useState } from "react";
 import { alertsKey, type CaseCorrelation, caseCorrelationsQuery } from "@/lib/alerts";
 import { api } from "@/lib/api";
 import { type CaseView, caseRef } from "@/lib/cases";
-import { assetTypeLabel, observableTypeLabel, shownObservable } from "@/lib/observables";
 
 /**
  * Case Overview · Related Alerts (Correlation): the New Alerts sharing this Case's Important
@@ -113,13 +111,7 @@ function SharedItems({ items, more }: { items: readonly Shared[]; more: number }
   return (
     <div className="flex flex-wrap gap-1">
       {items.map((s) => (
-        <ItemContext key={`${s.kind}-${s.id}`} item={itemReference(s.kind, s)}>
-            <Badge variant="outline" className="max-w-full truncate font-mono" title={s.value} asChild>
-              <ItemLink kind={s.kind} id={s.id}>
-                {s.kind === "observable" ? `${observableTypeLabel[s.type]} ${shownObservable(s.type, s.value)}` : `${assetTypeLabel[s.type]} ${s.value}`}
-              </ItemLink>
-            </Badge>
-        </ItemContext>
+        <ItemValue key={`${s.kind}-${s.id}`} item={itemReference(s.kind, s)} id={s.id} badge />
       ))}
       {more > 0 && <span className="text-xs text-muted-foreground">+{more} more</span>}
     </div>

@@ -7,8 +7,8 @@ import type { ObservableType } from "api/observables/vocabulary";
 import { ActionLogo } from "@/components/action-logo";
 import { CaseRef } from "@/components/case-ref";
 import { EnrichmentButton } from "@/components/observable-details";
-import { ItemContext, itemReference } from "@/components/item-context";
-import { ItemLink } from "@/components/item-link";
+import { itemReference } from "@/components/item-context";
+import { ItemText, itemTypeLabel, ItemValue } from "@/components/item-value";
 import { PageHeader } from "@/components/page-header";
 import { Time } from "@/components/time";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -242,10 +242,8 @@ function ParsedValues({ card, text }: { card: CatalogueCard; text: string }) {
         const ok = card.accepts.includes(o.type);
         return (
           <li key={`${o.type}:${o.value}`} className="flex items-center justify-between gap-2 border-b px-2 py-1 last:border-b-0">
-            <span className={cn("min-w-0 font-mono break-all", !ok && "text-muted-foreground line-through")}>{shownObservable(o.type, o.value)}</span>
-            {ok ? (
-              <Badge variant="outline">{typeLabel(o.type)}</Badge>
-            ) : (
+            <ItemText type={o.type} value={o.value} className={cn(!ok && "text-muted-foreground line-through")} />
+            {!ok && (
               <span className="flex-none text-muted-foreground">
                 {card.label} takes no {typeLabel(o.type)}
               </span>
@@ -420,11 +418,13 @@ function LookupResults({ result }: { result: RunResult }) {
       {result.values.map((v) => (
         <li key={`${v.type}:${v.value}`} className="flex items-center justify-between gap-2">
           <span className="min-w-0">
-            <ItemContext item={v.type && v.outcome !== "skipped" ? { kind: "observable", type: v.type, value: v.value } : null}>
-              <span tabIndex={v.type && v.outcome !== "skipped" ? 0 : undefined} className={cn("font-mono text-xs break-all outline-none focus-visible:ring-2 focus-visible:ring-ring/50", v.outcome === "skipped" && "text-muted-foreground line-through")}>
-                {v.type ? shownObservable(v.type, v.value) : v.value}
-              </span>
-            </ItemContext>
+            {!v.type ? (
+              <span className={cn("font-mono text-xs break-all", v.outcome === "skipped" && "text-muted-foreground line-through")}>{v.value}</span>
+            ) : v.outcome === "skipped" ? (
+              <ItemText type={v.type} value={v.value} className="text-muted-foreground line-through" />
+            ) : (
+              <ItemValue item={{ kind: "observable", type: v.type, value: v.value }} />
+            )}
             {v.detail && <span className="block text-xs text-muted-foreground">{v.detail}</span>}
           </span>
           <span className="flex flex-none items-center gap-1">
@@ -677,21 +677,15 @@ function LogRow({
       </TableCell>
       <TableCell className="font-mono text-xs whitespace-nowrap">
         {e.observableId ? (
-          <ItemContext item={itemReference("observable", { id: e.observableId, ...e.value })}>
-            <ItemLink kind="observable" id={e.observableId}>
-              {valueText}
-            </ItemLink>
-          </ItemContext>
+          <ItemValue item={itemReference("observable", { id: e.observableId, ...e.value })} id={e.observableId} />
         ) : e.assetId ? (
-          <ItemContext item={itemReference("asset", { id: e.assetId, ...e.value })}>
-            <ItemLink kind="asset" id={e.assetId}>
-              {valueText}
-            </ItemLink>
-          </ItemContext>
+          <ItemValue item={itemReference("asset", { id: e.assetId, ...e.value })} id={e.assetId} />
         ) : wr ? (
           <Button variant="link" onClick={onView}>
             <span className="font-sans">{e.value.value}</span>
           </Button>
+        ) : itemTypeLabel(e.value.type) !== e.value.type ? (
+          <ItemText type={e.value.type} value={e.value.value} />
         ) : (
           valueText
         )}

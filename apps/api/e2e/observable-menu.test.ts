@@ -105,6 +105,8 @@ test("right-clicking an Observable copies it defanged or fanged, and opens a has
     await page.getByLabel("Text to look up").fill("seen 185.220.101.4 and hxxps://invoice-portal[.]biz/pay");
     await page.getByRole("button", { name: "Look up", exact: true }).click();
     const ip = page.getByRole("link", { name: "185.220.101.4" });
+    await ip.waitFor();
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/bulk-lookup.png` });
     await ip.click({ button: "right" });
     await menu.getByRole("menuitem", { name: /^Show Enrichment/ }).click();
     await page.getByRole("dialog", { name: "IP Enrichment" }).waitFor();
@@ -113,7 +115,7 @@ test("right-clicking an Observable copies it defanged or fanged, and opens a has
     await menu.getByRole("menuitem", { name: "Open in IPinfo.io" }).waitFor();
     await closeMenu();
     // A value Argus doesn't hold yet opens its Enrichment when clicked.
-    const url = page.getByRole("button", { name: "hxxps://invoice-portal[.]biz/pay", exact: true });
+    const url = page.getByRole("button", { name: "URL hxxps://invoice-portal[.]biz/pay", exact: true });
     await url.click();
     await page.getByRole("dialog", { name: "URL Enrichment" }).waitFor();
     await page.locator("[data-slot=sheet-overlay]").click();
@@ -164,7 +166,7 @@ test("an Admin ignores an Observable from its menu wherever it is shown, and fro
     await page.goto(`${baseUrl}/lookup`);
     await page.getByLabel("Text to look up").fill("seen hxxps://invoice-portal[.]biz/pay");
     await page.getByRole("button", { name: "Look up", exact: true }).click();
-    await page.getByRole("button", { name: "hxxps://invoice-portal[.]biz/pay", exact: true }).click({ button: "right" });
+    await page.getByRole("button", { name: "URL hxxps://invoice-portal[.]biz/pay", exact: true }).click({ button: "right" });
     await menu.getByRole("menuitem", { name: "Ignore…" }).click();
     await page.getByRole("alertdialog").getByRole("button", { name: "Ignore" }).click();
     await page.goto(`${baseUrl}/observables/ignored`);

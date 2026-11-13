@@ -1,16 +1,10 @@
-import { FingerprintIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { ItemContext, itemReference } from "@/components/item-context";
 import { ItemLink } from "@/components/item-link";
 import { EnrichmentButton } from "@/components/observable-details";
-import { assetIcon, Highlighted, observableIcon } from "@/components/search/search-hit";
-import { type AssetType, defang, type ItemKind, type ObservableType } from "@/lib/observables";
-
-/** The icon of an Observable's or Asset's type, as search results show it. */
-export function TypeIcon({ type, className = "size-4 shrink-0 text-muted-foreground" }: { type: string; className?: string }) {
-  const Icon = observableIcon[type as ObservableType] ?? assetIcon[type as AssetType] ?? FingerprintIcon;
-  return <Icon className={className} aria-hidden />;
-}
+import { ItemTypeIcon } from "@/components/item-value";
+import { Highlighted } from "@/components/search/search-hit";
+import {  defang, type ItemKind, type ObservableType } from "@/lib/observables";
 
 /**
  * An Observable or Asset in the Observables page's lists, laid out as a search result: its type's
@@ -47,7 +41,7 @@ export function ItemRow({
               title={value}
               className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2 outline-none focus-visible:bg-muted data-[enrichment-current]:bg-muted"
             >
-              <TypeIcon type={type} />
+              <ItemTypeIcon type={type} className="size-4" />
               <div className="min-w-0 flex-1">
                 <div className="truncate font-mono text-sm">
                   <Highlighted text={shown} query={query} />

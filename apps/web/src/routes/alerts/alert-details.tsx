@@ -4,9 +4,9 @@ import { XIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AlertMenu } from "@/components/alert-menu";
 import { SeverityBadge, StatusBadge } from "@/components/case-badges";
-import { ItemLink } from "@/components/item-link";
 import { EnrichmentButton } from "@/components/observable-details";
-import { ItemContext, itemReference } from "@/components/item-context";
+import { itemReference } from "@/components/item-context";
+import { ItemValue } from "@/components/item-value";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -23,7 +23,7 @@ import {
 } from "@/lib/alerts";
 import { api } from "@/lib/api";
 import { caseRef } from "@/lib/cases";
-import { assetTypeLabel, type ItemKind, type ObservableType, observableTypeLabel, shownObservable } from "@/lib/observables";
+import { type ItemKind, type ObservableType } from "@/lib/observables";
 import { cn } from "@/lib/utils";
 import { exactTime } from "@/lib/when";
 import { MoveAlertDialog } from "@/routes/alerts/alert-dialogs";
@@ -85,13 +85,8 @@ function FalconComments({ comments: c }: { comments: AlertDetail["falconComments
 function SubjectAsset({ type, value, asset }: { type: "host" | "account"; value: string | null; asset: { id: string } | null }) {
   if (value === null) return "None";
   if (!asset) return value;
-  return (
-    <ItemContext item={{ kind: "asset", id: asset.id, type, value }}>
-      <ItemLink kind="asset" id={asset.id} className="hover:underline" aria-label={`${type === "host" ? "Host" : "Account"} ${value}`}>
-        {value}
-      </ItemLink>
-    </ItemContext>
-  );
+  // The field's own label says what it is, so no icon.
+  return <ItemValue item={{ kind: "asset", id: asset.id, type, value }} id={asset.id} icon={false} />;
 }
 
 /** Observables or Assets an Alert names, as badges. */
@@ -102,7 +97,7 @@ function Extracted({
 }: {
   label: string;
   kind: ItemKind;
-  items: { id: string; text: string; title: string; type: string; value: string }[];
+  items: { id: string; type: string; value: string }[];
 }) {
   return (
     <section aria-label={label} className="grid gap-1">
@@ -111,13 +106,7 @@ function Extracted({
         <div className="flex flex-wrap gap-1" data-enrichment-list>
           {items.map((item) => (
             <span key={item.id} className="group/row inline-flex max-w-full items-center">
-              <ItemContext item={itemReference(kind, item)}>
-                <Badge variant="outline" className="max-w-full truncate font-mono" title={item.title} asChild>
-                  <ItemLink kind={kind} id={item.id}>
-                    {item.text}
-                  </ItemLink>
-                </Badge>
-              </ItemContext>
+              <ItemValue item={itemReference(kind, item)} id={item.id} badge />
               {kind === "observable" && <EnrichmentButton type={item.type as ObservableType} value={item.value} className="size-5" />}
             </span>
           ))}
@@ -177,15 +166,7 @@ function RelatedCases({ alert }: { alert: AlertDetail }) {
               </div>
               <div className="flex flex-wrap gap-1">
                 {c.shared.map((s) => (
-                  <ItemContext key={`${s.kind}-${s.id}`} item={itemReference(s.kind, s)}>
-                      <Badge variant="outline" className="max-w-full truncate font-mono" title={s.value} asChild>
-                        <ItemLink kind={s.kind} id={s.id}>
-                          {s.kind === "observable"
-                            ? `${observableTypeLabel[s.type]} ${shownObservable(s.type, s.value)}`
-                            : `${assetTypeLabel[s.type]} ${s.value}`}
-                        </ItemLink>
-                      </Badge>
-                  </ItemContext>
+                  <ItemValue key={`${s.kind}-${s.id}`} item={itemReference(s.kind, s)} id={s.id} badge />
                 ))}
               </div>
               {c.attach ? (
@@ -348,12 +329,12 @@ export function AlertDetails({ id, onClose, onAct }: { id: string; onClose: () =
         <Extracted
           label="Extracted Observables"
           kind="observable"
-          items={a.indicators.observables.map((o) => ({ id: o.id, text: `${observableTypeLabel[o.type]} ${shownObservable(o.type, o.value)}`, title: o.value, type: o.type, value: o.value }))}
+          items={a.indicators.observables}
         />
         <Extracted
           label="Extracted Assets"
           kind="asset"
-          items={a.indicators.assets.map((x) => ({ id: x.id, text: `${assetTypeLabel[x.type]} ${x.value}`, title: x.value, type: x.type, value: x.value }))}
+          items={a.indicators.assets}
         />
         {a.indicators.observables.length + a.indicators.assets.length > 0 && (
           <p className="text-xs text-muted-foreground">
