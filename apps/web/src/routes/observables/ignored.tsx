@@ -9,22 +9,17 @@ import { useMe } from "@/lib/api";
 import { useLiveStatus } from "@/lib/live";
 import { canManage } from "@/lib/roles";
 import {
-  type AssetType,
-  assetTypeLabel,
   defang,
   type IgnoredEntry,
   ignoredQuery,
   itemPagesKey,
   type ObservableType,
-  observableTypeLabel,
   refang,
   setIgnored,
   tickedTypes,
 } from "@/lib/observables";
 import { ItemRow } from "@/routes/observables/item-row";
 
-const typeLabel = (e: IgnoredEntry) =>
-  e.kind === "observable" ? observableTypeLabel[e.type as ObservableType] : assetTypeLabel[e.type as AssetType];
 const shown = (e: IgnoredEntry) => (e.kind === "observable" ? defang(e.type as ObservableType, e.value) : e.value);
 
 /** Whether `e` is of a ticked type (any, when none is) and contains `q`, as shown or as held. */
@@ -94,7 +89,7 @@ export function IgnoredTab() {
               query={q}
               detail={
                 <>
-                  {typeLabel(e)} · Added by {e.by.name} · <Time iso={e.at} />
+                  Added by {e.by.name} · <Time iso={e.at} />
                 </>
               }
               aside={

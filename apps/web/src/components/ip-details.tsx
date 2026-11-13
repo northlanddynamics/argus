@@ -507,7 +507,7 @@ export function IpHoverCard({ ip, enabled = true, held = false, children }: { ip
   if (!enabled || !role) return children;
   return (
     <HoverCard openDelay={400} closeDelay={150} open={card.open && !held} onOpenChange={card.onOpenChange}>
-      <HoverCardTrigger asChild onFocus={(e: FocusEvent) => e.preventDefault()}>
+      <HoverCardTrigger asChild data-hovercard="" onFocus={(e: FocusEvent) => e.preventDefault()}>
         {children}
       </HoverCardTrigger>
       <HoverCardContent className="w-80" side="bottom" align="start" collisionPadding={16}>

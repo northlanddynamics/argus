@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { EnrichmentButton, EnrichmentTarget } from "@/components/observable-details";
-import { ObservableMenu } from "@/components/observable-menu";
+import { EnrichmentButton } from "@/components/observable-details";
+import { itemReference } from "@/components/item-context";
+import { ItemText, ItemValue } from "@/components/item-value";
 import { type FormEvent, Fragment, type ReactNode, useState } from "react";
 import { toast } from "sonner";
 import { CaseRef } from "@/components/case-ref";
 import { Time } from "@/components/time";
-import { ItemLink } from "@/components/item-link";
 import { Visibility } from "@/components/visibility";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -270,7 +270,7 @@ export function SendToFalconDialog({
             <ul className="grid gap-1 text-sm" aria-label="Skipped">
               {result.skipped.map((s) => (
                 <li key={s.observable.id}>
-                  <span className="font-mono text-xs break-all">{labelOf(s.observable)}</span>
+                  <ItemText type={s.observable.type} value={s.observable.value} />
                   <span className="block text-xs text-muted-foreground">{s.reason}</span>
                 </li>
               ))}
@@ -329,7 +329,7 @@ export function SendToFalconDialog({
             <ul className="grid max-h-48 gap-1.5 overflow-y-auto text-sm" aria-label="Observables to send">
               {plan.map(({ o, status }) => (
                 <li key={o.id}>
-                  <span className="block font-mono text-xs break-all">{labelOf(o)}</span>
+                  <ItemText type={o.type} value={o.value} className="flex" />
                   <span className={status.sends ? "block text-xs text-muted-foreground" : "block text-xs text-muted-foreground line-through decoration-muted-foreground/40"}>
                     {status.text}
                   </span>
@@ -348,8 +348,8 @@ export function SendToFalconDialog({
                   </span>
                   <ul className="grid gap-0.5">
                     {ignored.map((o) => (
-                      <li key={o.id} className="font-mono text-xs break-all">
-                        {labelOf(o)}
+                      <li key={o.id}>
+                        <ItemText type={o.type} value={o.value} />
                       </li>
                     ))}
                   </ul>
@@ -740,24 +740,15 @@ export function ResponseActionsCard({
                           {r.observable ? (
                             <>
                               <span className="flex items-start gap-1">
-                                <EnrichmentTarget type={r.observable.type} value={r.observable.value}>
-                                  <ObservableMenu observable={r.observable}>
-                                    <ItemLink kind="observable" id={r.observable.id} className="block min-w-0 font-mono text-xs break-all hover:underline" title={r.observable.value}>
-                                      {shownObservable(r.observable.type, r.observable.value)}
-                                    </ItemLink>
-                                  </ObservableMenu>
-                                </EnrichmentTarget>
+                                <ItemValue item={itemReference("observable", r.observable)} id={r.observable.id} />
                                 <EnrichmentButton type={r.observable.type} value={r.observable.value} className="-my-1 ml-auto" />
                               </span>
-                              <span className="text-xs text-muted-foreground">{observableTypeLabel[r.observable.type]}</span>
                             </>
                           ) : (
                             <>
-                              <ItemLink kind="asset" id={subject.id} className="block font-mono text-xs break-all hover:underline" title={subject.value}>
-                                {subject.value}
-                              </ItemLink>
-                              <span className="text-xs break-all text-muted-foreground">
-                                Host · device <span className="font-mono">{r.target.value}</span>
+                              <ItemValue item={{ kind: "asset", id: subject.id, type: "host", value: subject.value }} id={subject.id} />
+                              <span className="block pl-5 text-xs break-all text-muted-foreground">
+                                device <span className="font-mono">{r.target.value}</span>
                               </span>
                             </>
                           )}

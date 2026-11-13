@@ -1,14 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { EnrichmentButton, EnrichmentTarget } from "@/components/observable-details";
+import { EnrichmentButton } from "@/components/observable-details";
 import { Link } from "@tanstack/react-router";
 import { BellOffIcon, type LucideIcon, MonitorIcon, PlusIcon, SirenIcon, StarIcon, UserIcon } from "lucide-react";
 import { type ReactElement, type ReactNode, useId, useState } from "react";
 import { toast } from "sonner";
 import { CaseRef } from "@/components/case-ref";
 import { Time } from "@/components/time";
-import { AccountHoverCard } from "@/components/account-details";
+import { ItemContext, itemReference } from "@/components/item-context";
 import { ItemLink } from "@/components/item-link";
-import { observableIcon } from "@/components/search/search-hit";
+import { observableIcon } from "@/components/item-value";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -419,8 +419,7 @@ function LinkedCard<Type extends string>(props: {
                     {/* The value takes the room that is left, cut short with … when it doesn't fit; its page shows it whole. */}
                     <TableCell>
                       <span className="flex min-w-0 items-center gap-2">
-                        <AccountHoverCard assetId={item.id} account={item.value} enabled={props.kind === "asset" && item.type === "account"}>
-                          <EnrichmentTarget type={item.type} value={item.value} enabled={props.kind === "observable"}>
+                        <ItemContext item={itemReference(props.kind, item)} menu={false}>
                             <ItemLink
                               kind={props.kind}
                               id={item.id}
@@ -431,8 +430,7 @@ function LinkedCard<Type extends string>(props: {
                             >
                               {shown(item.type, item.value)}
                             </ItemLink>
-                          </EnrichmentTarget>
-                        </AccountHoverCard>
+                        </ItemContext>
                         {props.kind === "observable" && <EnrichmentButton type={item.type as ObservableType} value={item.value} className="-my-1" />}
                         {item.important && (
                           <Badge variant="outline" className="shrink-0">

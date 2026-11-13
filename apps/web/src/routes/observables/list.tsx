@@ -5,7 +5,7 @@ import { Time } from "@/components/time";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLiveStatus } from "@/lib/live";
 import { cn } from "@/lib/utils";
-import { OBSERVABLE_TYPES, observableListQuery, observableTypeLabel, tickedTypes } from "@/lib/observables";
+import { OBSERVABLE_TYPES, observableListQuery, tickedTypes } from "@/lib/observables";
 import { ItemRow } from "@/routes/observables/item-row";
 
 const cases = (n: number) => (n === 0 ? "On no Case" : n === 1 ? "1 Case" : `${n} Cases`);
@@ -66,7 +66,7 @@ export function ObservablesTab() {
                       Ignored ·{" "}
                     </>
                   )}
-                  {observableTypeLabel[o.type]} · {cases(o.cases)}
+                  {cases(o.cases)}
                 </>
               }
               aside={

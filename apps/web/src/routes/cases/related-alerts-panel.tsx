@@ -1,12 +1,9 @@
 import { AlertMenu } from "@/components/alert-menu";
-import { ObservableMenu } from "@/components/observable-menu";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { SeverityBadge } from "@/components/case-badges";
-import { AccountHoverCard } from "@/components/account-details";
-import { EnrichmentTarget } from "@/components/observable-details";
-import { ItemLink } from "@/components/item-link";
-import { Badge } from "@/components/ui/badge";
+import { itemReference } from "@/components/item-context";
+import { ItemValue } from "@/components/item-value";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { SirenIcon } from "lucide-react";
@@ -14,7 +11,6 @@ import { useState } from "react";
 import { alertsKey, type CaseCorrelation, caseCorrelationsQuery } from "@/lib/alerts";
 import { api } from "@/lib/api";
 import { type CaseView, caseRef } from "@/lib/cases";
-import { assetTypeLabel, observableTypeLabel, shownObservable } from "@/lib/observables";
 
 /**
  * Case Overview · Related Alerts (Correlation): the New Alerts sharing this Case's Important
@@ -115,17 +111,7 @@ function SharedItems({ items, more }: { items: readonly Shared[]; more: number }
   return (
     <div className="flex flex-wrap gap-1">
       {items.map((s) => (
-        <AccountHoverCard key={`${s.kind}-${s.id}`} assetId={s.id} account={s.value} enabled={s.kind === "asset" && s.type === "account"}>
-          <EnrichmentTarget type={s.type} value={s.value} enabled={s.kind === "observable"}>
-          <ObservableMenu observable={s.kind === "observable" ? s : null}>
-            <Badge variant="outline" className="max-w-full truncate font-mono" title={s.value} asChild>
-              <ItemLink kind={s.kind} id={s.id}>
-                {s.kind === "observable" ? `${observableTypeLabel[s.type]} ${shownObservable(s.type, s.value)}` : `${assetTypeLabel[s.type]} ${s.value}`}
-              </ItemLink>
-            </Badge>
-          </ObservableMenu>
-          </EnrichmentTarget>
-        </AccountHoverCard>
+        <ItemValue key={`${s.kind}-${s.id}`} item={itemReference(s.kind, s)} id={s.id} badge />
       ))}
       {more > 0 && <span className="text-xs text-muted-foreground">+{more} more</span>}
     </div>

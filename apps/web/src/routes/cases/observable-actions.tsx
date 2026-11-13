@@ -62,6 +62,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { caseQuery, isReadOnly, type Severity } from "@/lib/cases";
 import { useMarkInternal } from "@/lib/internal";
+import { ItemText } from "@/components/item-value";
 import { defang, type ObservableType, observableTypeLabel, shownObservable } from "@/lib/observables";
 import {
   type ContainmentIntegration,
@@ -211,8 +212,8 @@ function useQuickSend(number: number) {
               </span>
               <ul className="grid gap-0.5">
                 {asking?.ignored.map((o) => (
-                  <li key={o.id} className="font-mono text-xs break-all">
-                    {labelOf(o)}
+                  <li key={o.id}>
+                    <ItemText type={o.type} value={o.value} />
                   </li>
                 ))}
               </ul>

@@ -860,6 +860,8 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
         description: row.description,
         host: row.host,
         userName: row.userName,
+        /** The host and account Assets behind `host` and `userName`, for links to their pages. */
+        ...(await alertSubjectAssets(db, [row])).get(row.id)!,
         detectedAt: row.detectedAt?.toISOString() ?? null,
         receivedAt: row.receivedAt.toISOString(),
         version: row.version,

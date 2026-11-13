@@ -24,6 +24,7 @@ import { CaseRolesPanel } from "@/routes/cases/case-roles-panel";
 import { LinkedCasesPanel } from "@/routes/cases/linked-cases-panel";
 import { RailBody, RailHeader, RailSection, RailTitle } from "@/routes/cases/rail";
 import { TagsPanel } from "@/routes/cases/tags-panel";
+import { ItemValue } from "@/components/item-value";
 import { TaskDialog } from "@/routes/cases/task-dialog";
 import { byUrgency, tasksKey, tasksQuery } from "@/lib/tasks";
 import { instant } from "@/lib/when";
@@ -110,9 +111,8 @@ function ScopeSection({ number }: { number: number }) {
           <ul className="grid gap-1" aria-label="Contained hosts">
             {contained.map((h) => (
               <li key={h.id} className="flex min-w-0 items-center justify-between gap-2">
-                <span className="truncate font-mono text-xs" title={h.value}>
-                  {h.value}
-                </span>
+                {/* Listed under "Contained hosts", so no icon. */}
+                <ItemValue item={{ kind: "asset", id: h.id, type: "host", value: h.value }} id={h.id} fromCase={number} truncate icon={false} />
                 <Badge variant="outline">{containmentText[h.containment as keyof typeof containmentText]}</Badge>
               </li>
             ))}

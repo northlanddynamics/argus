@@ -1,11 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
-import { EnrichmentButton, EnrichmentTarget, ObservableText } from "@/components/observable-details";
-import { ObservableMenu } from "@/components/observable-menu";
+import { EnrichmentButton } from "@/components/observable-details";
+import { ItemValue } from "@/components/item-value";
 import { Link } from "@tanstack/react-router";
 import { useDeferredValue, useMemo, useState } from "react";
 import { CaseRef } from "@/components/case-ref";
-import { ItemLink } from "@/components/item-link";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,9 +16,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { CasePicker } from "@/routes/alerts/alert-dialogs";
 import { bulkLookup, extractObservables, linkToCase, type LookupResult } from "@/lib/bulk-lookup";
-import { hasEnrichment } from "@/lib/enrichment";
 import { caseRef, casesKey } from "@/lib/cases";
-import { itemPagesKey, observableTypeLabel, shownObservable } from "@/lib/observables";
+import { itemPagesKey } from "@/lib/observables";
 
 const plural = (n: number, word: string) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
 const keyOf = (r: Pick<LookupResult, "type" | "value">) => `${r.type} ${r.value}`;
@@ -145,7 +143,6 @@ export function BulkLookupPage() {
                     />
                   </TableHead>
                   <TableHead>Value</TableHead>
-                  <TableHead>Type</TableHead>
                   <TableHead>Seen</TableHead>
                   <TableHead className="hidden md:table-cell">Cases</TableHead>
                   <TableHead className="hidden md:table-cell">Alerts</TableHead>
@@ -157,7 +154,7 @@ export function BulkLookupPage() {
                 ))}
                 {!results.length && (
                   <TableRow variant="static">
-                    <TableCell colSpan={6} className="text-muted-foreground">
+                    <TableCell colSpan={5} className="text-muted-foreground">
                       No IPs, domains, URLs, email addresses or hashes in that text.
                     </TableCell>
                   </TableRow>
@@ -185,35 +182,17 @@ export function BulkLookupPage() {
 }
 
 function ResultRow({ result: r, selected, onSelect }: { result: LookupResult; selected: boolean; onSelect: (on: boolean) => void }) {
-  const shown = shownObservable(r.type, r.value);
   return (
     <TableRow data-state={selected ? "selected" : undefined} className="group/row">
       <TableCell>
         <Checkbox aria-label={`Select ${r.value}`} checked={selected} onCheckedChange={(on) => onSelect(on === true)} />
       </TableCell>
-      <TableCell className="max-w-0 min-w-48 font-mono text-xs break-all whitespace-normal" title={r.value}>
+      <TableCell className="max-w-0 min-w-64 font-mono text-xs break-all whitespace-normal" title={r.value}>
         <span className="flex items-start gap-1">
-          {r.known ? (
-            <EnrichmentTarget type={r.type} value={r.value}>
-              <ObservableMenu observable={r}>
-                <ItemLink kind="observable" id={r.known.id} className="min-w-0 hover:underline">
-                  {shown}
-                </ItemLink>
-              </ObservableMenu>
-            </EnrichmentTarget>
-          ) : hasEnrichment(r.type) ? (
-            <ObservableText type={r.type} value={r.value} className="min-w-0 no-underline">
-              {shown}
-            </ObservableText>
-          ) : (
-            <ObservableMenu observable={r}>
-              <span>{shown}</span>
-            </ObservableMenu>
-          )}
+          <ItemValue item={{ kind: "observable", type: r.type, value: r.value }} id={r.known?.id} />
           <EnrichmentButton type={r.type} value={r.value} className="-my-0.5 ml-auto" />
         </span>
       </TableCell>
-      <TableCell className="text-muted-foreground">{observableTypeLabel[r.type]}</TableCell>
       <TableCell>{r.known ? <Badge>Known</Badge> : <Badge variant="outline">Unknown</Badge>}</TableCell>
       <TableCell className="hidden whitespace-normal md:table-cell">
         {r.known?.cases.length ? (
