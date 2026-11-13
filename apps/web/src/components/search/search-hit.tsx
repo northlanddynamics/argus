@@ -108,7 +108,7 @@ export function SearchHitRow({ hit, query, showKind = false }: { hit: SearchHit;
     case "observables": {
       const o = hit.item;
       title = (
-        <span className="font-mono">
+        <span className="font-mono" data-hovercard-text>
           <Highlighted text={defang(o.type, o.value)} query={query} />
         </span>
       );
@@ -118,7 +118,7 @@ export function SearchHitRow({ hit, query, showKind = false }: { hit: SearchHit;
     case "assets": {
       const x = hit.item;
       title = (
-        <span className="font-mono">
+        <span className="font-mono" data-hovercard-text>
           <Highlighted text={x.value} query={query} />
         </span>
       );

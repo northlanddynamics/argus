@@ -43,7 +43,7 @@ export function ItemRow({
             >
               <ItemTypeIcon type={type} className="size-4" />
               <div className="min-w-0 flex-1">
-                <div className="truncate font-mono text-sm">
+                <div className="truncate font-mono text-sm" data-hovercard-text>
                   <Highlighted text={shown} query={query} />
                 </div>
                 <div className="truncate text-xs text-muted-foreground">{detail}</div>

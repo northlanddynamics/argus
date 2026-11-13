@@ -192,7 +192,7 @@ export function HostHoverCard({ assetId, host, enabled = true, children }: { ass
   if (!enabled || !role) return children;
   return (
     <HoverCard openDelay={400} closeDelay={150} open={card.open} onOpenChange={card.onOpenChange}>
-      <HoverCardTrigger asChild onFocus={(e: FocusEvent) => e.preventDefault()}>
+      <HoverCardTrigger asChild data-hovercard="" onFocus={(e: FocusEvent) => e.preventDefault()}>
         {children}
       </HoverCardTrigger>
       <HoverCardContent className="w-80" side="bottom" align="start" collisionPadding={16}>

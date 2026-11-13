@@ -212,3 +212,27 @@
     background-color: var(--muted);
   }
 }
+
+/*
+ * A value that opens a hover card (an IP, host or account: `IpHoverCard`, `HostHoverCard`,
+ * `AccountHoverCard`) is underlined with faint dots at rest, the old cue for "more on hover", and
+ * solid as soon as the pointer or focus is on it, before the card opens. A value with no card has
+ * no underline until hovered, so the dots alone say a card is coming; no colour, which the palette
+ * keeps for Severity and notices. Where the trigger is a whole row (a search result, the
+ * Observables page), only its `[data-hovercard-text]` is underlined.
+ */
+@layer components {
+  [data-hovercard]:not(:has([data-hovercard-text])),
+  [data-hovercard] [data-hovercard-text] {
+    text-decoration-line: underline;
+    text-decoration-style: dotted;
+    text-decoration-thickness: 1px;
+    text-decoration-color: color-mix(in oklab, currentColor 45%, transparent);
+    text-underline-offset: 3px;
+  }
+  [data-hovercard]:not(:has([data-hovercard-text])):is(:hover, :focus-visible),
+  [data-hovercard]:is(:hover, :focus-visible) [data-hovercard-text] {
+    text-decoration-style: solid;
+    text-decoration-color: currentColor;
+  }
+}

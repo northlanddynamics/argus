@@ -132,7 +132,7 @@ export function ItemValue({
     shown = (
       <button
         type="button"
-        className={cn(inline, "cursor-pointer text-left hover:underline")}
+        className={cn(inline, "cursor-pointer text-left underline underline-offset-2 hover:text-muted-foreground")}
         title={item.value}
         aria-label={label}
         onClick={(e) => panel.toggle(target, { from: e.currentTarget })}

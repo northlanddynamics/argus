@@ -54,7 +54,7 @@ function HostName({ h, className, inCard = false }: { h: IpHost; className?: str
     <span className={cn("flex min-w-0 items-center gap-1", className)}>
       {h.asset ? (
         <ItemContext item={{ kind: "asset", id: h.asset.id, type: "host", value: name }} hoverCard={!inCard}>
-          <ItemLink kind="asset" id={h.asset.id} className="min-w-0 truncate font-medium underline underline-offset-2 hover:text-muted-foreground" title="Open its page">
+          <ItemLink kind="asset" id={h.asset.id} className="min-w-0 truncate font-medium hover:underline" title="Open its page">
             {name}
           </ItemLink>
         </ItemContext>
