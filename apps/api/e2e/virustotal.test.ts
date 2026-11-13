@@ -41,7 +41,7 @@ async function signIn(page: Page, baseUrl: string, email: string, code: () => Pr
 const SHA256 = "a3f5c8e1d2b4a6f8e0c2d4b6a8f0e2c4d6b8a0f2e4c6d8b0a2f4e6c8d0b2a4f6";
 const MD5 = "9e107d9d372bb6826bd81d3542a419d6";
 
-test("an Analyst adds their own VirusTotal key; opening a hash's Enrichment on a Case shows what VirusTotal knows about the file", async () => {
+test("an Analyst adds their own VirusTotal key; hovering a hash or opening its Enrichment on a Case shows what VirusTotal knows about the file", async () => {
   const { t, baseUrl, stop } = await serveTestApp();
   try {
     await t.inviteOwner("Acme Security", "owner@acme.example");
@@ -83,8 +83,20 @@ test("an Analyst adds their own VirusTotal key; opening a hash's Enrichment on a
     await page.getByText("…a1b2").waitFor();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/vt-settings.png`, fullPage: true });
 
-    // Now opening the hash's Enrichment looks it up with her key.
+    // Now resting the pointer on the hash looks it up with her key and shows the report in a hover card, not the panel.
     await page.goto(`${baseUrl}/cases/1/observables`);
+    const card = page.getByTestId("hash-hover-card");
+    await page.getByRole("link", { name: `SHA-256 ${SHA256}` }).hover();
+    await card.getByText("Invoice_0423.pdf.exe").waitFor();
+    await card.getByText("61/69").waitFor();
+    await card.getByText("and 58 more").waitFor();
+    await card.getByText(/as of/).waitFor();
+    expect(await popup.count()).toBe(0);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/vt-hover-card.png` });
+    await page.mouse.move(0, 0);
+    await card.waitFor({ state: "detached" });
+
+    // The panel reads the same cached answer.
     await show(SHA256);
     await popup.getByText("Invoice_0423.pdf.exe").waitFor();
     await popup.getByText("trojan.emotet/generic").waitFor();

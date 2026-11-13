@@ -25,3 +25,5 @@ Everything ADR 0011 decided for hashes holds: each Member's own key, lookups mad
 - The v3 domain and URL APIs are unverified against a live key.
 
 _Update: hover no longer opens anything. The same details now open in the Enrichment panel, docked on the right (`docs/wireframes/enrichment-panel.md`); what is looked up, cached and shown is unchanged._
+
+_Update: resting the pointer on a domain (not an email address or a URL) opens the hover card again, beside the Enrichment panel; focus does not open it. Opening it makes the same cached lookup the panel does, so it spends a Member's key only when nothing fresh is cached._
