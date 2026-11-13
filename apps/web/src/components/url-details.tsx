@@ -109,7 +109,7 @@ export function UrlEnrichment({ url }: { url: string }) {
   return (
     <EnrichmentLayout
       header={
-        <ValueHeader shown={shown} copy={shown} copied="Copied (defanged)" href={href} hrefLabel="Open on VirusTotal">
+        <ValueHeader shown={shown} copy={shown} copied="Copied (defanged)" links={href ? [{ source: "VirusTotal", href }] : []}>
           <KnownLine type="url" value={url} />
         </ValueHeader>
       }

@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { CopyIcon, ExternalLinkIcon } from "lucide-react";
+import { CopyIcon } from "lucide-react";
 import { createContext, type ReactNode, useContext } from "react";
 import { toast } from "sonner";
 import { ObservableMenu } from "@/components/observable-menu";
+import { type SourceLink, SourceLinks } from "@/components/source-links";
 import { Button } from "@/components/ui/button";
 import { bulkLookup } from "@/lib/bulk-lookup";
 import { type EnrichableType, useEnrichmentPanel } from "@/lib/enrichment";
@@ -36,22 +37,21 @@ export function EnrichmentLayout({ header, children }: { header: ReactNode; chil
 }
 
 /**
- * The value whole and wrapped, Copy, and ↗ to it on its source's site when there is a page to open.
- * `copy` is what Copy copies, `children` anything shown under it.
+ * The value whole and wrapped, Copy, and a button to its record on each site that has one
+ * (VirusTotal, IPinfo.io, the Falcon console). `copy` is what Copy copies, `children` anything shown
+ * under it.
  */
 export function ValueHeader({
   shown,
   copy,
   copied,
-  href,
-  hrefLabel,
+  links = [],
   children,
 }: {
   shown: string;
   copy: string;
   copied: string;
-  href: string | null;
-  hrefLabel: string;
+  links?: SourceLink[];
   children?: ReactNode;
 }) {
   const onCopy = () =>
@@ -66,15 +66,9 @@ export function ValueHeader({
         <Button variant="ghost" size="icon-xs" onClick={onCopy} aria-label="Copy" title="Copy">
           <CopyIcon aria-hidden />
         </Button>
-        {href && (
-          <Button variant="ghost" size="icon-xs" asChild>
-            <a href={href} target="_blank" rel="noreferrer noopener" aria-label={hrefLabel} title={hrefLabel}>
-              <ExternalLinkIcon aria-hidden />
-            </a>
-          </Button>
-        )}
       </div>
       {children}
+      <SourceLinks links={links} className="mt-1" />
     </div>
   );
 }

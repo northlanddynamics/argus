@@ -28,7 +28,7 @@ export function ObservableCopyItems({ Item, type, value }: { Item: ItemComponent
   ));
 }
 
-/** Open it where it can be looked up outside Argus: a hash in VirusTotal, a public IP on IPinfo.io. */
+/** Open it where it can be looked up outside Argus: a hash or domain in VirusTotal, a public IP in VirusTotal and on IPinfo.io. */
 export function ObservableLookupItems({ Item, type, value }: { Item: ItemComponent; type: ObservableType; value: string }) {
   return observableLookups(type, value).map((l) => (
     <Item key={l.label} onSelect={() => open(l.href)}>

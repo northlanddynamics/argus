@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { meQuery } from "@/lib/api";
+import { observableLookups } from "@/lib/observables";
 import { useHoverCardOpen } from "@/lib/hover-card";
 import { asTypeLabel, type IpDetails, type IpLookup, ipLookupQuery, reservedRange, useRefreshIpLookup } from "@/lib/ip-lookups";
 import { canManage } from "@/lib/roles";
@@ -422,7 +423,7 @@ export function IpEnrichment({ ip, admin }: { ip: string; admin: boolean }) {
   return (
     <EnrichmentLayout
       header={
-        <ValueHeader shown={shown} copy={shown} copied={`Copied ${shown}`} href={publicIp ? `https://ipinfo.io/${encodeURIComponent(shown)}` : null} hrefLabel="Open on ipinfo.io">
+        <ValueHeader shown={shown} copy={shown} copied={`Copied ${shown}`} links={publicIp ? observableLookups("ip", shown) : []}>
           {lookup?.details?.hostname && <span className="font-mono text-xs break-all text-muted-foreground">{lookup.details.hostname}</span>}
           {internal && range && <RangeLine reserved={range} />}
           <KnownLine type="ip" value={ip} />
@@ -469,7 +470,7 @@ function IpCard({ ip, admin }: { ip: string; admin: boolean }) {
   const fixed = !internal && (q.isPending || pages.length > 0);
   return (
     <div className="grid gap-2.5" data-testid="ip-hover-card">
-      <ValueHeader shown={shown} copy={shown} copied={`Copied ${shown}`} href={publicIp ? `https://ipinfo.io/${encodeURIComponent(shown)}` : null} hrefLabel="Open on ipinfo.io">
+      <ValueHeader shown={shown} copy={shown} copied={`Copied ${shown}`} links={publicIp ? observableLookups("ip", shown) : []}>
         {lookup?.details?.hostname && <span className="font-mono text-xs break-all text-muted-foreground">{lookup.details.hostname}</span>}
         {internal && range && <RangeLine reserved={range} />}
       </ValueHeader>

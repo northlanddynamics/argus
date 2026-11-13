@@ -182,7 +182,7 @@ function AccountCard({ assetId, account }: { assetId: string; account: string })
     );
   return (
     <div className="grid gap-2.5" data-testid="account-hover-card">
-      <ValueHeader shown={shown} copy={shown} copied={`Copied ${shown}`} href={null} hrefLabel="" />
+      <ValueHeader shown={shown} copy={shown} copied={`Copied ${shown}`}  />
       {pages.length > 1 && <CardPager at={at} count={pages.length} onStep={setIndex} noun="identity" label={groups.length > 1 ? page?.group.integration.name : undefined} />}
       <div className="max-h-96 overflow-y-auto border-t pt-2.5">{body}</div>
       {groups.length > 0 && (

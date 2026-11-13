@@ -6,6 +6,7 @@ import { IpDetailsCard, IpText } from "@/components/ip-details";
 import { UmbrellaCard } from "@/components/umbrella-details";
 import { UrlDetailsCard } from "@/components/url-details";
 import { ObservableMenu } from "@/components/observable-menu";
+import { type SourceLink, SourceLinks } from "@/components/source-links";
 import { Link, useParams, useRouteContext } from "@tanstack/react-router";
 import { BellOffIcon, CheckIcon, CopyIcon, ExternalLinkIcon,  LockIcon,  RefreshCwIcon, SearchIcon, StarIcon, StarOffIcon } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
@@ -44,6 +45,7 @@ import {
   itemPageQuery,
   itemPagesKey,
   type ObservableType,
+  observableLookups,
   observableTypeLabel,
   refreshEnrichment,
   setIgnored,
@@ -139,6 +141,7 @@ function ItemPageView({ kind, id }: { kind: ItemKind; id: string }) {
           actions={
             <>
               <CopyButton text={shown(kind, item)} />
+              {!guest && <SourceLinks links={itemSourceLinks(kind, item)} size="sm" />}
               <Button variant="outline" size="sm" asChild>
                 <Link to="/search" search={{ q: item.value }}>
                   <SearchIcon />
@@ -284,6 +287,20 @@ function IgnoreButton({ kind, item }: { kind: ItemKind; item: ItemPage }) {
       </AlertDialogContent>
     </AlertDialog>
   );
+}
+
+/**
+ * Its records outside Argus, for the header's buttons: an Observable where it can be looked up
+ * (VirusTotal, IPinfo.io), a host each of its Falcon devices in the console.
+ */
+function itemSourceLinks(kind: ItemKind, item: ItemPage): SourceLink[] {
+  if (kind === "observable") return observableLookups(item.type as ObservableType, item.value);
+  const devices = item.falconDevices.flatMap((g) => g.devices.map((d) => ({ g, d })));
+  return devices.map(({ g, d }) => ({
+    source: "Falcon",
+    href: d.consoleUrl,
+    detail: devices.length > 1 ? `${g.integration.name} · ${d.deviceId}` : undefined,
+  }));
 }
 
 function CopyButton({ text }: { text: string }) {

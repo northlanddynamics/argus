@@ -64,17 +64,20 @@ export function observableCopies(type: ObservableType, value: string) {
 
 /**
  * Where an Observable can be looked up outside Argus: a hash or a domain (an email address's, too)
- * in VirusTotal, a public IP on IPinfo.io. Reserved IPs and internal names mean nothing outside
+ * in VirusTotal, a public IP in VirusTotal and on IPinfo.io. Reserved IPs and internal names mean nothing outside
  * their own network, so have none (as in ADR 0010 and ADR 0012). A URL's VirusTotal page is under an
  * identifier only VirusTotal knows, so its popup links it once VirusTotal has reported on it.
  */
-export function observableLookups(type: ObservableType, value: string): { label: string; href: string }[] {
-  if (HASHES.includes(type)) return [{ label: "Open in VirusTotal", href: `https://www.virustotal.com/gui/file/${encodeURIComponent(value)}` }];
+export function observableLookups(type: ObservableType, value: string): { label: string; source: string; href: string }[] {
+  const vt = (path: string) => ({ label: "Open in VirusTotal", source: "VirusTotal", href: `https://www.virustotal.com/gui/${path}` });
+  if (HASHES.includes(type)) return [vt(`file/${encodeURIComponent(value)}`)];
   if (type === "domain" || type === "email") {
     const domain = type === "email" ? value.slice(value.lastIndexOf("@") + 1) : value;
-    return withheldDomain(domain) ? [] : [{ label: "Open in VirusTotal", href: `https://www.virustotal.com/gui/domain/${encodeURIComponent(domain)}` }];
+    return withheldDomain(domain) ? [] : [vt(`domain/${encodeURIComponent(domain)}`)];
   }
-  if (type === "ip" && !reservedRange(value)) return [{ label: "Open in IPinfo.io", href: `https://ipinfo.io/${encodeURIComponent(value)}` }];
+  if (type === "ip" && !reservedRange(value)) {
+    return [vt(`ip-address/${encodeURIComponent(value)}`), { label: "Open in IPinfo.io", source: "IPinfo.io", href: `https://ipinfo.io/${encodeURIComponent(value)}` }];
+  }
   return [];
 }
 

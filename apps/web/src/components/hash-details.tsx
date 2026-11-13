@@ -113,7 +113,7 @@ export function HashEnrichment({ hash, type }: { hash: string; type: "md5" | "sh
   return (
     <EnrichmentLayout
       header={
-        <ValueHeader shown={shown} copy={shown} copied="Copied the hash" href={`https://www.virustotal.com/gui/file/${encodeURIComponent(shown)}`} hrefLabel="Open on VirusTotal">
+        <ValueHeader shown={shown} copy={shown} copied="Copied the hash" links={[{ source: "VirusTotal", href: `https://www.virustotal.com/gui/file/${encodeURIComponent(shown)}` }]}>
           {lookup?.report?.name && <span className="text-xs break-all text-muted-foreground">{lookup.report.name}</span>}
           <KnownLine type={type} value={hash} />
         </ValueHeader>

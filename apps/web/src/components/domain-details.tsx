@@ -146,7 +146,8 @@ function DomainFooter({ value, lookup, loading, named }: { value: string; lookup
 }
 
 /** VirusTotal's page for a domain, when it may be looked up there. */
-const domainHref = (lookup: DomainLookup | undefined) => (lookup && lookup.state !== "withheld" ? `https://www.virustotal.com/gui/domain/${encodeURIComponent(lookup.domain)}` : null);
+const domainLinks = (lookup: DomainLookup | undefined) =>
+  lookup && lookup.state !== "withheld" ? [{ source: "VirusTotal", href: `https://www.virustotal.com/gui/domain/${encodeURIComponent(lookup.domain)}` }] : [];
 
 /** The Enrichment panel's content for a domain or email address: its header, then what VirusTotal says about the domain. */
 export function DomainEnrichment({ type, value }: { type: "domain" | "email"; value: string }) {
@@ -157,7 +158,7 @@ export function DomainEnrichment({ type, value }: { type: "domain" | "email"; va
   return (
     <EnrichmentLayout
       header={
-        <ValueHeader shown={shown} copy={shown} copied="Copied (defanged)" href={domainHref(lookup)} hrefLabel="Open on VirusTotal">
+        <ValueHeader shown={shown} copy={shown} copied="Copied (defanged)" links={domainLinks(lookup)}>
           {type === "email" && lookup && <span className="text-xs break-all text-muted-foreground">Its domain, {defang("domain", lookup.domain)}</span>}
           <KnownLine type={type} value={value} />
         </ValueHeader>
