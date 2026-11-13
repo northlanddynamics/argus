@@ -3,7 +3,7 @@ import type { Db, Tx } from "../db/client";
 import { orgAuditLog } from "../db/schema";
 import { secureId } from "../ids";
 
-export const ORG_AUDIT_CATEGORIES = ["members", "case-roles", "sso", "integrations", "alerts", "teams", "ignored-observables", "important-observables", "response-actions", "workflows"] as const;
+export const ORG_AUDIT_CATEGORIES = ["members", "case-roles", "sso", "integrations", "alerts", "teams", "mapbox", "ignored-observables", "important-observables", "response-actions", "workflows"] as const;
 export type OrgAuditCategory = (typeof ORG_AUDIT_CATEGORIES)[number];
 
 export type OrgAuditAction =
@@ -41,6 +41,9 @@ export type OrgAuditAction =
   | "teams.webhook_set"
   | "teams.webhook_changed"
   | "teams.webhook_removed"
+  | "mapbox.token_set"
+  | "mapbox.token_changed"
+  | "mapbox.token_removed"
   | "ignored_observable.added"
   | "ignored_observable.removed"
   | "important_observable.added"

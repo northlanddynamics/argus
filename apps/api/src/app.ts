@@ -24,6 +24,7 @@ import { responseActionRoutes } from "./routes/response-actions";
 import { searchRoutes } from "./routes/search";
 import { ssoRoutes } from "./routes/sso";
 import { teamsChannelRoutes } from "./routes/teams-channel";
+import { mapboxRoutes } from "./routes/mapbox";
 import { umbrellaCheckRoutes } from "./routes/umbrella-checks";
 import { workflowRoutes } from "./routes/workflows";
 
@@ -77,6 +78,7 @@ export function createApi(deps: Deps, live: Live = createLive(deps)) {
     .route("/virustotal-key", virustotalKeyRoutes(deps, modules))
     .route("/notifications", notificationRoutes(deps, modules))
     .route("/teams-channel", teamsChannelRoutes(deps, modules))
+    .route("/mapbox", mapboxRoutes(deps, modules))
     .route("/sso", ssoRoutes(deps, modules))
     .route("/search", searchRoutes(deps, modules))
     .route("/metrics", metricsRoutes(deps, modules))

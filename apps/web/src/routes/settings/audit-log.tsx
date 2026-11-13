@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { api } from "@/lib/api";
 import { membersKey } from "@/routes/settings/members";
 
-const categories = { members: "Members", "case-roles": "Case Roles", sso: "Single sign-on", integrations: "Integrations", alerts: "Alerts", teams: "Teams", "ignored-observables": "Ignored Observables", "important-observables": "Important Observables", "response-actions": "Response Actions without a Case", workflows: "Workflows without a Case" } as const;
+const categories = { members: "Members", "case-roles": "Case Roles", sso: "Single sign-on", integrations: "Integrations", alerts: "Alerts", teams: "Teams", mapbox: "Mapbox", "ignored-observables": "Ignored Observables", "important-observables": "Important Observables", "response-actions": "Response Actions without a Case", workflows: "Workflows without a Case" } as const;
 type Category = keyof typeof categories;
 
 const actionLabels: Record<string, string> = {
@@ -50,6 +50,9 @@ const actionLabels: Record<string, string> = {
   "teams.webhook_set": "Set the webhook of the",
   "teams.webhook_changed": "Replaced the webhook of the",
   "teams.webhook_removed": "Removed the webhook of the",
+  "mapbox.token_set": "Set the",
+  "mapbox.token_changed": "Replaced the",
+  "mapbox.token_removed": "Removed the",
   "ignored_observable.added": "Added to the Ignored list:",
   "ignored_observable.removed": "Removed from the Ignored list:",
   "important_observable.added": "Marked Important:",
