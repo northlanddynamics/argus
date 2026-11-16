@@ -14,6 +14,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarSeparator,
   useSidebar,
 } from "@/components/ui/sidebar";
 import { rowClass, WorkQueue } from "@/components/work-queue";
@@ -73,6 +74,25 @@ function NavRail({ me }: { me: Me }) {
           <SidebarGroupContent className="px-1.5 md:px-0">
             <nav aria-label="Main">
             <SidebarMenu>
+              {me.organization && !me.guest && (
+                <>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={!!matchRoute({ to: "/dashboard" })}
+                      tooltip={{ children: "Dashboard", hidden: false, className: "data-closed:animate-none" }}
+                    >
+                      <Link to="/dashboard" aria-current={matchRoute({ to: "/dashboard" }) ? "page" : undefined} onClick={closeMobile}>
+                        <ChartColumnIcon />
+                        <span>Dashboard</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <li role="none">
+                    <SidebarSeparator className="my-2" />
+                  </li>
+                </>
+              )}
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
@@ -143,18 +163,6 @@ function NavRail({ me }: { me: Me }) {
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={!!matchRoute({ to: "/dashboard" })}
-                      tooltip={{ children: "Dashboard", hidden: false, className: "data-closed:animate-none" }}
-                    >
-                      <Link to="/dashboard" aria-current={matchRoute({ to: "/dashboard" }) ? "page" : undefined} onClick={closeMobile}>
-                        <ChartColumnIcon />
-                        <span>Dashboard</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
                 </>
               )}
               <SidebarMenuItem>
@@ -170,18 +178,23 @@ function NavRail({ me }: { me: Me }) {
                 </SidebarMenuButton>
               </SidebarMenuItem>
               {canManage(me.organization?.role) && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={!!matchRoute({ to: "/settings", fuzzy: true })}
-                    tooltip={{ children: "Settings", hidden: false, className: "data-closed:animate-none" }}
-                  >
-                    <Link to="/settings" aria-current={matchRoute({ to: "/settings", fuzzy: true }) ? "location" : undefined} onClick={closeMobile}>
-                      <SettingsIcon />
-                      <span>Settings</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
+                <>
+                  <li role="none">
+                    <SidebarSeparator className="my-2" />
+                  </li>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={!!matchRoute({ to: "/settings", fuzzy: true })}
+                      tooltip={{ children: "Settings", hidden: false, className: "data-closed:animate-none" }}
+                    >
+                      <Link to="/settings" aria-current={matchRoute({ to: "/settings", fuzzy: true }) ? "location" : undefined} onClick={closeMobile}>
+                        <SettingsIcon />
+                        <span>Settings</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </>
               )}
             </SidebarMenu>
             </nav>
