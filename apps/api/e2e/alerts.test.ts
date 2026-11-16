@@ -99,7 +99,9 @@ test("the Owner adds a CrowdStrike Integration; its detections appear live in an
     expect(await page.getByTestId("alert-ldt:8c4f:41").getByText("Critical").isVisible()).toBe(true);
     await page.getByText("CrowdStrike — Prod: Connected, last event").waitFor();
 
-    await page.getByLabel("Severity").selectOption("critical");
+    await page.getByRole("button", { name: "Severity", exact: true }).click();
+    await page.getByRole("option").filter({ hasText: /^Critical/ }).click();
+    await page.keyboard.press("Escape");
     await page.getByTestId("alert-ldt:71aa:11").waitFor({ state: "detached" });
     await page.getByTestId("alert-ldt:8c4f:41").waitFor();
 
@@ -246,6 +248,7 @@ test("on a Case, an Analyst opens an attached Alert in a flyout, and follows the
     if (!("case" in opened)) throw new Error("Could not open a Case");
     const number = opened.case.number;
     const queue = await (await ana.api.alerts.$get({ query: {} })).json();
+    if (!("alerts" in queue)) throw new Error("Could not list Alerts");
     const chosen = queue.alerts.filter((a) => a.externalId !== "ldt:3").map((a) => ({ id: a.id, version: a.version }));
     await ana.api.alerts.attach.$post({ json: { case: number, alerts: chosen } });
 
@@ -278,7 +281,7 @@ test("on a Case, an Analyst opens an attached Alert in a flyout, and follows the
     await page.getByLabel("Attached to").press("Enter");
     await page.getByTestId("alert-ldt:1").waitFor();
     await page.getByTestId("alert-ldt:3").waitFor({ state: "detached" });
-    expect(await page.getByLabel("Alert Status").inputValue()).toBe("attached");
+    await page.getByRole("button", { name: /^Alert Status\s*Attached$/ }).waitFor();
   } finally {
     await stop();
   }

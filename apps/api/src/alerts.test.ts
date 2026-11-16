@@ -131,6 +131,48 @@ describe("The Alert queue", () => {
     expect((await a.ana.api.alerts.$get({ query: { pageSize: "201" } })).status as number).toBe(400);
     expect((await a.ana.api.alerts.$get({ query: { page: "0" } })).status as number).toBe(400);
   });
+
+  test("a facet matches any of its values, and the facets together match all of them", async () => {
+    const a = await acme();
+    await a.detect("ldt:1", "High one", "High");
+    await a.detect("ldt:2", "Low one", "Low");
+    await a.detect("ldt:3", "Critical one", "Critical");
+    a.stream.detection("IdpDetectionSummaryEvent", "ind:4", { Name: "Identity one", SeverityName: "High" });
+    await a.stream.drained();
+    await a.dismiss(await a.select("ldt:2"));
+    const ids = async (query: Parameters<typeof a.queue>[1]) => (await a.queue(a.ana, query)).map((x) => x.externalId).toSorted();
+
+    expect(await ids({ severity: ["high", "low"], status: "new" })).toEqual(["ind:4", "ldt:1"]);
+    expect(await ids({ severity: ["high", "low"], status: ["new", "dismissed"] })).toEqual(["ind:4", "ldt:1", "ldt:2"]);
+    expect(await ids({ severity: "high", kind: "epp" })).toEqual(["ldt:1"]);
+    expect(await ids({ kind: "idp" })).toEqual(["ind:4"]);
+    expect((await a.ana.api.alerts.$get({ query: { kind: "edr" as "epp" } })).status as number).toBe(400);
+  });
+
+  test("facets count each value with the other filters applied", async () => {
+    const a = await acme();
+    await a.detect("ldt:1", "High one", "High");
+    await a.detect("ldt:2", "Low one", "Low");
+    await a.detect("ldt:3", "Another high", "High");
+    a.stream.detection("IdpDetectionSummaryEvent", "ind:4", { Name: "Identity one", SeverityName: "Critical" });
+    await a.stream.drained();
+    await a.dismiss(await a.select("ldt:3"));
+    const facets = async (query: Parameters<typeof a.queue>[1] & {}) => {
+      const body = await (await a.ana.api.alerts.$get({ query })).json();
+      if (!("facets" in body)) throw new Error("Could not list Alerts");
+      return body.facets;
+    };
+    const integrationId = (await a.alert("ldt:1")).integration.id;
+
+    const found = await facets({ status: "new", severity: "high" });
+    // Severity counts ignore the Severity filter, so every other value stays pickable.
+    expect(found.severity).toEqual({ high: 1, low: 1, critical: 1 });
+    expect(found.status).toEqual({ new: 1, dismissed: 1 });
+    expect(found.kind).toEqual({ epp: 1 });
+    expect(found.integration).toEqual({ [integrationId]: 1 });
+
+    expect(await facets({ kind: "epp" })).toMatchObject({ status: { new: 2, dismissed: 1 }, kind: { epp: 3, idp: 1 }, severity: { high: 2, low: 1 } });
+  });
 });
 
 describe("Alerts handled by Falcon Complete", () => {

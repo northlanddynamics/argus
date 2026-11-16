@@ -31,7 +31,7 @@ export function CaseAlertsPanel({ c }: { c: CaseView }) {
         {member && (
           <div>
             <Button variant="link" size="xs" asChild>
-              <Link to="/alerts" search={{ status: "attached", case: c.number, falconComplete: "show" }}>
+              <Link to="/alerts" search={{ status: ["attached"], case: c.number, falconComplete: "show" }}>
                 Alert queue
               </Link>
             </Button>

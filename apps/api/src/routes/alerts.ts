@@ -3,18 +3,22 @@ import { NotPermitted } from "../access/policy";
 import { Hono } from "hono";
 import { z } from "zod";
 import { AlertNotFound, AlertRefused, FALCON_COMPLETE_FILTERS, NoAlertsToAttach, QUEUE_MAX_PAGE_SIZE } from "../alerts/alerts";
-import { ALERT_STATUSES, DISMISSAL_REASONS } from "../alerts/vocabulary";
+import { ALERT_KINDS, ALERT_STATUSES, DISMISSAL_REASONS } from "../alerts/vocabulary";
 import { caseSummarySchema } from "../cases/case-summary";
 import { CaseClosed, CaseNotFound } from "../cases/cases";
 import { CASE_TYPES, SEVERITIES } from "../cases/vocabulary";
 import type { Deps } from "../deps";
 import { type MemberEnv, requireMember } from "../members/membership";
 import type { Modules } from "../modules";
+import { oneOrMore } from "./query";
 
+/** Each facet matches an Alert with any of its values. */
 const queueQuery = z.object({
-  status: z.enum(ALERT_STATUSES).optional(),
-  severity: z.enum(SEVERITIES).optional(),
-  integration: z.string().min(1).optional(),
+  status: oneOrMore(z.enum(ALERT_STATUSES)),
+  severity: oneOrMore(z.enum(SEVERITIES)),
+  kind: oneOrMore(z.enum(ALERT_KINDS)),
+  /** Integration ids. */
+  integration: oneOrMore(z.string().min(1)),
   /** Only the Alerts attached to this Case. */
   case: z.coerce.number().int().positive().optional(),
   /** Alerts tagged `falcon_complete` in Falcon: hidden unless this says `show` (with the rest) or `only`. */
@@ -61,11 +65,11 @@ export const alertRoutes = (deps: Deps, { alerts }: Modules) =>
   new Hono<MemberEnv>()
     .use(requireMember(deps.db))
     .get("/", zValidator("query", queueQuery), async (c) => {
-      const { status, severity, integration, case: caseNumber, falconComplete, page, pageSize } = c.req.valid("query");
+      const { status, severity, kind, integration, case: caseNumber, falconComplete, page, pageSize } = c.req.valid("query");
       try {
-        // One page of the queue, newest first, with `total`: how many Alerts match in all.
-        const queue = await alerts.list(c.get("membership"), { status, severity, integrationId: integration, caseNumber, falconComplete }, { page, pageSize });
-        return c.json({ alerts: queue.alerts, total: queue.total, page: queue.page, pageSize: queue.pageSize }, 200);
+        // One page of the queue, newest first, with `total`: how many Alerts match in all, and each facet's counts.
+        const queue = await alerts.list(c.get("membership"), { status, severity, kind, integrationId: integration, caseNumber, falconComplete }, { page, pageSize });
+        return c.json({ alerts: queue.alerts, total: queue.total, facets: queue.facets, page: queue.page, pageSize: queue.pageSize }, 200);
       } catch (e) {
         if (e instanceof CaseNotFound) return c.json(caseNotFound, 404);
         throw e;

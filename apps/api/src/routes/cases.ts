@@ -13,6 +13,7 @@ import {
 import { CASE_LIST_VIEWS, CaseClosed, CaseNotClosed, CaseNotFound, NotAMember, NotPermitted, StaleSummary } from "../cases/cases";
 import { CASE_AUDIT_ACTIONS, CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabulary";
 import type { Deps } from "../deps";
+import { oneOrMore } from "./query";
 import { AlreadyGuest, ExpiryPassed, GuestNotFound, NotAGuest } from "../guests/guests";
 import { MentionCannotSeeCase, MessageNotFound, MessageRetracted } from "../discussion/discussion";
 import { type EvidenceAccess, EvidenceEmpty, EvidenceNotFound, EvidenceTooLarge } from "../evidence/evidence";
@@ -46,13 +47,6 @@ const openBody = z.object({
   severity: z.enum(SEVERITIES),
   summary: caseSummarySchema.optional(),
 });
-
-/** A facet's values: one (`?severity=high`) or several (`?severity=high&severity=critical`). */
-const oneOrMore = <T extends z.ZodType>(value: T) =>
-  z
-    .union([value, z.array(value)])
-    .transform((v): z.output<T>[] => (Array.isArray(v) ? v : [v]))
-    .optional();
 
 const listQuery = z.object({
   view: z.enum(CASE_LIST_VIEWS).optional(),
