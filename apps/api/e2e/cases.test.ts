@@ -706,7 +706,9 @@ test("an Analyst tags a Case, filters the list by Tag, links Cases and marks one
     await page.getByRole("link", { name: "Cases", exact: true }).first().click();
     await page.getByRole("tab", { name: /All open/ }).click();
     await page.getByRole("link", { name: "Beaconing host", exact: true }).waitFor();
-    await page.getByLabel("Tag").selectOption("bec");
+    await page.getByRole("button", { name: "Tag", exact: true }).click();
+    await page.getByRole("option").filter({ hasText: /^#bec/ }).click();
+    await page.keyboard.press("Escape");
     await page.getByRole("cell").filter({ hasText: "#bec" }).filter({ hasText: "#finance" }).waitFor();
     await page.getByRole("link", { name: "Beaconing host", exact: true }).waitFor({ state: "detached" });
 

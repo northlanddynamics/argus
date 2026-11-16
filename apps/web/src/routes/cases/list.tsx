@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/page-header";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon, Columns3Icon, LayoutGridIcon, LockIcon, SquareSplitHorizontalIcon, TableIcon, UsersIcon } from "lucide-react";
@@ -9,7 +9,8 @@ import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/u
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { FilterBar, FilterSelect } from "@/components/filter-bar";
+import { FacetedFilter } from "@/components/faceted-filter";
+import { FilterBar } from "@/components/filter-bar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -41,20 +42,21 @@ import { OpenCaseDialog } from "@/routes/cases/open-case-dialog";
 const wide = "overflow-hidden px-0 @6xl:px-2";
 /** The content of a `wide` cell, shown only when its column is. */
 const wideContent = "hidden @6xl:inline";
-export const CASE_VIEWS = ["mine", "unassigned", "open", "closed"] as const;
+export const CASE_VIEWS = ["mine", "unassigned", "open", "closed", "all"] as const;
 export type CaseListView = (typeof CASE_VIEWS)[number];
 const ACCESS = ["restricted", "guests"] as const;
 type Access = (typeof ACCESS)[number];
 const SORTS = ["updated", "severity", "number"] as const;
 type Sort = (typeof SORTS)[number];
 type Order = "asc" | "desc";
+/** Each facet matches a Case with any of its values; picking none is no filter. */
 export type CaseListSearch = {
   view?: CaseListView;
-  status?: Status;
-  severity?: Severity;
-  caseType?: CaseType;
-  tag?: string;
-  access?: Access;
+  status?: Status[];
+  severity?: Severity[];
+  caseType?: CaseType[];
+  tag?: string[];
+  access?: Access[];
   sort?: Sort;
   order?: Order;
   /** How the Cases are laid out; see `CASE_LAYOUTS`. */
@@ -64,15 +66,26 @@ export type CaseListSearch = {
 };
 
 const pick = <T extends string>(list: readonly T[], value: unknown) => (list.includes(value as T) ? (value as T) : undefined);
+/** The values of `value`, one or a list, that are in `list`, in its order; undefined for none. */
+const pickMany = <T extends string>(list: readonly T[], value: unknown) => {
+  const given = new Set([value].flat());
+  const found = list.filter((v) => given.has(v));
+  return found.length ? found : undefined;
+};
+/** The Tags in `value`, one or a list, in their stored form; undefined for none. */
+const pickTags = (value: unknown) => {
+  const found = [...new Set([value].flat().flatMap((t) => (typeof t === "string" ? (normaliseTag(t) ?? []) : [])))];
+  return found.length ? found : undefined;
+};
 
 /** Reads the list's view, filters and sort from the URL, ignoring anything unknown. */
 export const validateCaseListSearch = (search: Record<string, unknown>): CaseListSearch => ({
   view: pick(CASE_VIEWS, search.view),
-  status: pick(STATUSES, search.status),
-  severity: pick(SEVERITIES, search.severity),
-  caseType: pick(CASE_TYPES, search.caseType),
-  tag: typeof search.tag === "string" ? (normaliseTag(search.tag) ?? undefined) : undefined,
-  access: pick(ACCESS, search.access),
+  status: pickMany(STATUSES, search.status),
+  severity: pickMany(SEVERITIES, search.severity),
+  caseType: pickMany(CASE_TYPES, search.caseType),
+  tag: pickTags(search.tag),
+  access: pickMany(ACCESS, search.access),
   sort: pick(SORTS, search.sort),
   order: pick(["asc", "desc"] as const, search.order),
   layout: pick(CASE_LAYOUTS, search.layout),
@@ -98,11 +111,18 @@ const storeLayout = (layout: CaseLayout) => {
 const layoutLabel: Record<CaseLayout, string> = { table: "Table", cards: "Cards", board: "Board", split: "Split" };
 const layoutIcon: Record<CaseLayout, typeof TableIcon> = { table: TableIcon, cards: LayoutGridIcon, board: Columns3Icon, split: SquareSplitHorizontalIcon };
 
-const viewLabel: Record<CaseListView, string> = { mine: "My Cases", unassigned: "Unassigned", open: "All open", closed: "Closed" };
+const viewLabel: Record<CaseListView, string> = { mine: "My Cases", unassigned: "Unassigned", open: "All open", closed: "Closed", all: "All" };
 const accessLabel: Record<Access, string> = { restricted: "Restricted", guests: "With Guests" };
 const sortLabel: Record<Sort, string> = { updated: "last change", severity: "Severity", number: "Case number" };
 /** Statuses a Case in the open views can have; the Closed view has only one. */
 const OPEN_STATUSES = STATUSES.filter((s) => s !== "closed");
+/** The Statuses a Case in `view` can have. */
+const statusesIn = (view: CaseListView): readonly Status[] => (view === "all" ? STATUSES : view === "closed" ? ["closed"] : OPEN_STATUSES);
+/** The picked Statuses a Case in `view` can have, so moving to another view drops the rest. */
+const statusFilterIn = (view: CaseListView, status: Status[] | undefined) => {
+  const kept = view === "closed" ? [] : (status?.filter((s) => statusesIn(view).includes(s)) ?? []);
+  return kept.length ? kept : undefined;
+};
 const FILTERS = ["status", "severity", "caseType", "tag", "access"] as const;
 const noFilters = { status: undefined, severity: undefined, caseType: undefined, tag: undefined, access: undefined };
 
@@ -144,6 +164,8 @@ export function CasesPage() {
   const { layout: _layout, preview: _preview, ...filters } = search;
   const cases = useQuery({
     queryKey: [...casesKey, { ...filters, view }],
+    // The facets keep their counts while the next ones load, rather than blinking out at each pick.
+    placeholderData: keepPreviousData,
     queryFn: async () => {
       const res = await api.cases.$get({ query: { ...filters, view } });
       if (!res.ok) throw new Error(`The server answered ${res.status}`);
@@ -152,9 +174,10 @@ export function CasesPage() {
   });
   const rows = cases.data?.cases;
   const counts = cases.data?.counts;
+  const facets = cases.data?.facets;
   const justChanged = useJustChanged(rows);
   const tagsInUse = useQuery(tagsInUseQuery);
-  const tagOptions = [...new Set([...(tagsInUse.data?.map((t) => t.tag) ?? []), ...(search.tag ? [search.tag] : [])])].toSorted();
+  const tagOptions = [...new Set([...(tagsInUse.data?.map((t) => t.tag) ?? []), ...Object.keys(facets?.tag ?? {}), ...(search.tag ?? [])])].toSorted();
   const tagLabels = Object.fromEntries(tagOptions.map((t) => [t, tagLabel(t)]));
 
   /** Clicking a column sorts by it, newest or most severe first; clicking it again reverses. */
@@ -223,7 +246,7 @@ export function CasesPage() {
           <TabsList variant="line" aria-label="Case views" className="w-full justify-start overflow-x-auto overflow-y-hidden">
             {CASE_VIEWS.map((v) => (
               <TabsTrigger key={v} value={v} className="flex-none" asChild>
-                <Link to="/" search={{ ...search, view: v, status: v === "closed" || search.status === "closed" ? undefined : search.status }}>
+                <Link to="/" search={{ ...search, view: v, status: statusFilterIn(v, search.status), preview: undefined }}>
                   {viewLabel[v]}
                   {counts && <span className="text-xs text-muted-foreground tabular-nums">{` ${counts[v]}`}</span>}
                 </Link>
@@ -233,12 +256,12 @@ export function CasesPage() {
         </Tabs>
         <FilterBar onClear={filtered ? () => setSearch(noFilters) : undefined}>
           {view !== "closed" && (
-            <FilterSelect label="Status" id="filter-status" any="Any" value={search.status} options={search.status === "closed" ? STATUSES : OPEN_STATUSES} labels={statusLabel} onChange={(status) => setSearch({ status })} />
+            <FacetedFilter title="Status" options={statusesIn(view)} labels={statusLabel} counts={facets?.status} selected={search.status} onChange={(status) => setSearch({ status })} />
           )}
-          <FilterSelect label="Severity" id="filter-severity" any="Any" value={search.severity} options={SEVERITIES} labels={severityLabel} onChange={(severity) => setSearch({ severity })} />
-          <FilterSelect label="Case Type" id="filter-type" any="Any" value={search.caseType} options={CASE_TYPES} labels={caseTypeLabel} onChange={(caseType) => setSearch({ caseType })} />
-          <FilterSelect label="Tag" id="filter-tag" any="Any" value={search.tag} options={tagOptions} labels={tagLabels} onChange={(tag) => setSearch({ tag })} />
-          <FilterSelect label="Access" id="filter-access" any="Any" value={search.access} options={ACCESS} labels={accessLabel} onChange={(access) => setSearch({ access })} />
+          <FacetedFilter title="Severity" options={SEVERITIES} labels={severityLabel} counts={facets?.severity} selected={search.severity} onChange={(severity) => setSearch({ severity })} />
+          <FacetedFilter title="Case Type" options={CASE_TYPES} labels={caseTypeLabel} counts={facets?.caseType} selected={search.caseType} onChange={(caseType) => setSearch({ caseType })} />
+          <FacetedFilter title="Tag" options={tagOptions} labels={tagLabels} counts={facets?.tag} selected={search.tag} onChange={(tag) => setSearch({ tag })} />
+          <FacetedFilter title="Access" options={ACCESS} labels={accessLabel} counts={facets?.access} selected={search.access} onChange={(access) => setSearch({ access })} />
         </FilterBar>
       </div>
 
@@ -263,7 +286,7 @@ export function CasesPage() {
         <>
           {layout === "cards" && <CaseCards rows={rows} justChanged={justChanged} />}
           {layout === "board" && (
-            <CaseBoard rows={rows} statuses={view === "closed" ? ["closed"] : search.status ? [search.status] : OPEN_STATUSES} justChanged={justChanged} />
+            <CaseBoard rows={rows} statuses={search.status ?? statusesIn(view)} justChanged={justChanged} />
           )}
           {layout === "split" && (
             <CaseSplit
@@ -464,6 +487,7 @@ function EmptyState({ view, filtered, unassigned, onClear }: { view: CaseListVie
       ),
     },
     closed: { title: "No Cases have been Closed yet" },
+    all: { title: "No Cases yet" },
   };
   const { title, next } = message[view];
   return (

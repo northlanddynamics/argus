@@ -301,7 +301,7 @@ describe("Listing Cases", () => {
     expect((await list(analyst, { view: "mine" })).cases.map((c) => c.title)).toEqual(["Mine"]);
     expect((await list(analyst, { view: "unassigned" })).cases.map((c) => c.title)).toEqual(["Nobody's"]);
     expect((await list(owner, { view: "mine" })).cases.map((c) => c.title)).toEqual(["Olive's"]);
-    expect((await list(analyst)).counts).toEqual({ mine: 1, unassigned: 1, open: 3, closed: 0 });
+    expect((await list(analyst)).counts).toEqual({ all: 3, mine: 1, unassigned: 1, open: 3, closed: 0 });
   });
 
   test("counts follow the filters, so the count for the view is the whole match even past the list's limit", async () => {
@@ -314,8 +314,58 @@ describe("Listing Cases", () => {
     const done = await open(owner, { title: "Closed, Critical", severity: "critical" });
     expect((await close(owner, done.number, { resolution: "benign" })).status).toBe(200);
 
-    expect((await list(analyst, { severity: "critical" })).counts).toEqual({ mine: 1, unassigned: 1, open: 2, closed: 1 });
-    expect((await list(analyst)).counts).toEqual({ mine: 1, unassigned: 2, open: 3, closed: 1 });
+    expect((await list(analyst, { severity: "critical" })).counts).toEqual({ all: 3, mine: 1, unassigned: 1, open: 2, closed: 1 });
+    expect((await list(analyst)).counts).toEqual({ all: 4, mine: 1, unassigned: 2, open: 3, closed: 1 });
+  });
+
+  test("All lists open and Closed Cases together", async () => {
+    const { analyst, open, close, list } = await acme();
+    await open(analyst, { title: "Open" });
+    const done = await open(analyst, { title: "Done" });
+    await close(analyst, done.number, { resolution: "benign" });
+    expect((await list(analyst, { view: "all" })).cases.map((c) => c.title).toSorted()).toEqual(["Done", "Open"]);
+    expect((await list(analyst, { view: "all", status: "closed" })).cases.map((c) => c.title)).toEqual(["Done"]);
+  });
+
+  test("a facet matches any of its values, and facets together match all of them", async () => {
+    const { analyst, open, list } = await acme();
+    await open(analyst, { title: "High phishing", severity: "high", caseType: "phishing" });
+    await open(analyst, { title: "Low phishing", severity: "low", caseType: "phishing" });
+    await open(analyst, { title: "High malware", severity: "high", caseType: "malware" });
+    await open(analyst, { title: "Medium phishing", severity: "medium", caseType: "phishing" });
+    const titles = async (query: Parameters<typeof list>[1]) => (await list(analyst, query)).cases.map((c) => c.title).toSorted();
+
+    expect(await titles({ severity: ["high", "low"] })).toEqual(["High malware", "High phishing", "Low phishing"]);
+    expect(await titles({ severity: ["high", "low"], caseType: "phishing" })).toEqual(["High phishing", "Low phishing"]);
+    expect(await titles({ severity: "medium" })).toEqual(["Medium phishing"]);
+  });
+
+  test("facets count each value with the other facets applied, in the view", async () => {
+    const { analyst, open, close, list } = await acme();
+    const tag = async (number: number, value: string) =>
+      expect((await analyst.api.cases[":number"].tags.$post({ param: { number: String(number) }, json: { tag: value } })).status).toBe(201);
+    const a = await open(analyst, { title: "A", severity: "high", caseType: "phishing" });
+    await tag(a.number, "bec");
+    const b = await open(analyst, { title: "B", severity: "low", caseType: "phishing" });
+    await tag(b.number, "bec");
+    await tag(b.number, "payroll");
+    await open(analyst, { title: "C", severity: "high", caseType: "malware" });
+    const done = await open(analyst, { title: "D", severity: "high", caseType: "phishing" });
+    await close(analyst, done.number, { resolution: "benign" });
+
+    const { facets } = await list(analyst, { severity: "high" });
+    // Severity counts ignore the Severity filter, so every other value stays pickable.
+    expect(facets.severity).toEqual({ high: 2, low: 1 });
+    expect(facets.caseType).toEqual({ phishing: 1, malware: 1 });
+    expect(facets.status).toEqual({ new: 2 });
+    expect(facets.tag).toEqual({ bec: 1 });
+    expect(facets.access).toEqual({});
+
+    expect((await list(analyst, { view: "all", caseType: "phishing" })).facets).toMatchObject({
+      severity: { high: 2, low: 1 },
+      status: { new: 2, closed: 1 },
+      tag: { bec: 2, payroll: 1 },
+    });
   });
 
   test("sorts by Severity, number or last change, either way", async () => {
@@ -632,7 +682,7 @@ describe("Organization isolation", () => {
     await t.inviteOwner("Globex", "owner@globex.example");
     const globex = await t.acceptInvite("owner@globex.example", PASSWORD, "Gil Globex");
     expect((await list(globex)).cases).toEqual([]);
-    expect((await list(globex)).counts).toEqual({ mine: 0, unassigned: 0, open: 0, closed: 0 });
+    expect((await list(globex)).counts).toEqual({ all: 0, mine: 0, unassigned: 0, open: 0, closed: 0 });
     expect((await view(globex, acmeCase.number)).status).toBe(404);
     expect((await change(globex, acmeCase.number, { severity: "low" })).status).toBe(404);
     expect((await saveSummary(globex, acmeCase.number, { summary: summary("x"), version: 1 })).status).toBe(404);

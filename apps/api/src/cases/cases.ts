@@ -1,11 +1,11 @@
-import { and, asc, count, desc, eq, isNull, ne, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, ne, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { Tx } from "../db/client";
 import type { Deps } from "../deps";
 import { type Actor, canSeeCase, casePermissions, casePolicy, isGuest, NotPermitted, visibleCases, visibleItems } from "../access/policy";
 import { caseRoleAssignmentsOf, caseRoleHolderIds } from "../case-roles/holders";
 import { guestGrantsOf } from "../guests/grants";
-import { alerts, caseGuests, cases, organization, tasks, user } from "../db/schema";
+import { alerts, caseGuests, caseTags, cases, organization, tasks, user } from "../db/schema";
 import { caseClosedComment, queueWriteBacks } from "../crowdstrike/write-back";
 import { secureId } from "../ids";
 import type { Membership, Participant } from "../members/membership";
@@ -32,24 +32,33 @@ export type CaseChanges = {
   assigneeId?: string | null;
   restricted?: boolean;
 };
-export type CaseListView = "open" | "mine" | "unassigned" | "closed";
+export type CaseListView = "all" | "open" | "mine" | "unassigned" | "closed";
+export const CASE_LIST_VIEWS = ["all", "open", "mine", "unassigned", "closed"] as const satisfies readonly CaseListView[];
 /** "restricted": Restricted Cases. "guests": Cases a Guest can see now. */
 export type CaseListAccess = "restricted" | "guests";
 /** "updated" (the default) and "number" go newest first when descending, "severity" Critical first. */
 export type CaseListSort = "updated" | "severity" | "number";
-/** `tag` in its stored form (`tags/vocabulary.ts`). */
+/**
+ * Each facet matches a Case with any of its values; the facets together match a Case that every one
+ * of them matches. `tag` in its stored form (`tags/vocabulary.ts`).
+ */
 export type CaseListFilter = {
   view?: CaseListView;
-  status?: Status;
-  severity?: Severity;
-  caseType?: CaseType;
-  tag?: string;
-  access?: CaseListAccess;
+  status?: Status[];
+  severity?: Severity[];
+  caseType?: CaseType[];
+  tag?: string[];
+  access?: CaseListAccess[];
   sort?: CaseListSort;
   order?: "asc" | "desc";
 };
 /** The most Cases one list returns; `counts` still says how many match. */
 export const CASE_LIST_LIMIT = 500;
+
+/** `match(values)` when any values are picked; no filter when none are. */
+const anyOf = <T,>(values: T[] | undefined, match: (values: T[]) => SQL | undefined) => (values?.length ? match(values) : undefined);
+/** Grouped counts as value → count. */
+const tally = (found: { value: string; n: number }[]) => Object.fromEntries(found.map((f) => [f.value, f.n]));
 
 export class CaseNotFound extends Error {}
 export class NotAMember extends Error {}
@@ -335,12 +344,15 @@ export function caseStore(deps: Pick<Deps, "db" | "clock" | "mailer" | "baseUrl"
     /**
      * The Cases `me` can see in one of the list views, matching `filter`, at most `CASE_LIST_LIMIT`.
      * `counts` gives how many Cases match the same filters in each view, so the count for `view`
-     * is the full number even when the list stops at the limit.
+     * is the full number even when the list stops at the limit. `facets` gives, for each value of
+     * each facet, how many Cases in `view` would match with that value picked, the other facets as
+     * they are; values no Case has are left out.
      */
     async list(me: Actor, filter: CaseListFilter = {}) {
       const now = clock.now();
       const notClosed = ne(cases.status, "closed");
       const views: Record<CaseListView, SQL | undefined> = {
+        all: undefined,
         open: notClosed,
         mine: and(notClosed, eq(cases.assigneeId, me.userId)),
         unassigned: and(notClosed, isNull(cases.assigneeId)),
@@ -351,14 +363,19 @@ export function caseStore(deps: Pick<Deps, "db" | "clock" | "mailer" | "baseUrl"
         restricted: eq(cases.restricted, true),
         guests: sql`exists (select 1 from ${caseGuests} where ${countingGuests})`,
       };
-      const matching = and(
-        visibleCases(me),
-        filter.status ? eq(cases.status, filter.status) : undefined,
-        filter.severity ? eq(cases.severity, filter.severity) : undefined,
-        filter.caseType ? eq(cases.caseType, filter.caseType) : undefined,
-        filter.tag ? hasTag(filter.tag) : undefined,
-        filter.access ? access[filter.access] : undefined,
-      );
+      const facetFilters = {
+        status: anyOf(filter.status, (v) => inArray(cases.status, v)),
+        severity: anyOf(filter.severity, (v) => inArray(cases.severity, v)),
+        caseType: anyOf(filter.caseType, (v) => inArray(cases.caseType, v)),
+        tag: anyOf(filter.tag, (v) => or(...v.map(hasTag))),
+        access: anyOf(filter.access, (v) => or(...v.map((a) => access[a]))),
+      };
+      type Facet = keyof typeof facetFilters;
+      /** Every facet's filter but `facet`'s. */
+      const matchingExcept = (facet?: Facet) =>
+        and(visibleCases(me), ...Object.entries(facetFilters).filter(([f]) => f !== facet).map(([, where]) => where));
+      const matching = matchingExcept();
+      const inView = views[filter.view ?? "open"];
       // Critical ranks highest, so descending puts it first.
       const severityRank = sql`case ${cases.severity} ${sql.join(
         SEVERITIES.map((s, i) => sql`when ${s} then ${SEVERITIES.length - i}`),
@@ -386,17 +403,53 @@ export function caseStore(deps: Pick<Deps, "db" | "clock" | "mailer" | "baseUrl"
         })
         .from(cases)
         .leftJoin(assignee, eq(cases.assigneeId, assignee.id))
-        .where(and(matching, views[filter.view ?? "open"]))
+        .where(and(matching, inView))
         .orderBy(direction(sortBy), direction(cases.number))
         .limit(CASE_LIST_LIMIT);
       const countOf = async (where: SQL | undefined) =>
         (await db.select({ n: count() }).from(cases).where(and(matching, where)))[0]?.n ?? 0;
-      const [mine, unassigned, open, closed] = await Promise.all(
-        (["mine", "unassigned", "open", "closed"] as const).map((v) => countOf(views[v])),
-      );
+      const counts = Object.fromEntries(
+        await Promise.all(CASE_LIST_VIEWS.map(async (v) => [v, await countOf(views[v])] as const)),
+      ) as Record<CaseListView, number>;
+
+      const byColumn = async (facet: "status" | "severity" | "caseType") =>
+        tally(
+          await db
+            .select({ value: cases[facet], n: count() })
+            .from(cases)
+            .where(and(matchingExcept(facet), inView))
+            .groupBy(cases[facet]),
+        );
+      const [status, severity, caseType, tag, accessCounts] = await Promise.all([
+        byColumn("status"),
+        byColumn("severity"),
+        byColumn("caseType"),
+        db
+          .select({ value: caseTags.tag, n: count() })
+          .from(cases)
+          .innerJoin(caseTags, and(eq(caseTags.caseId, cases.id), isNull(caseTags.removedAt)))
+          .where(and(matchingExcept("tag"), inView))
+          .groupBy(caseTags.tag)
+          .then(tally),
+        db
+          .select({
+            restricted: sql<number>`count(*) filter (where ${access.restricted})::int`,
+            guests: sql<number>`count(*) filter (where ${access.guests})::int`,
+          })
+          .from(cases)
+          .where(and(matchingExcept("access"), inView)),
+      ]);
+      const accessFacet = Object.fromEntries(Object.entries(accessCounts[0] ?? {}).filter(([, n]) => n > 0));
       return {
         cases: rows.map((row) => ({ ...listItem(row), guests: row.guests, alerts: row.alerts, overdueTasks: row.overdueTasks, tasks: { done: row.tasksDone, total: row.tasksTotal } })),
-        counts: { mine, unassigned, open, closed },
+        counts,
+        facets: {
+          status: status as Partial<Record<Status, number>>,
+          severity: severity as Partial<Record<Severity, number>>,
+          caseType: caseType as Partial<Record<CaseType, number>>,
+          tag: tag as Record<string, number>,
+          access: accessFacet as Partial<Record<CaseListAccess, number>>,
+        },
       };
     },
 
