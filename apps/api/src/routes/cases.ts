@@ -10,7 +10,7 @@ import {
   CaseRoleRetired,
   NotAMember as CaseRoleNotForMember,
 } from "../case-roles/case-roles";
-import { CaseClosed, CaseNotClosed, CaseNotFound, NotAMember, NotPermitted, StaleSummary } from "../cases/cases";
+import { CASE_LIST_VIEWS, CaseClosed, CaseNotClosed, CaseNotFound, NotAMember, NotPermitted, StaleSummary } from "../cases/cases";
 import { CASE_AUDIT_ACTIONS, CASE_TYPES, RESOLUTIONS, SEVERITIES, STATUSES } from "../cases/vocabulary";
 import type { Deps } from "../deps";
 import { AlreadyGuest, ExpiryPassed, GuestNotFound, NotAGuest } from "../guests/guests";
@@ -47,18 +47,26 @@ const openBody = z.object({
   summary: caseSummarySchema.optional(),
 });
 
+/** A facet's values: one (`?severity=high`) or several (`?severity=high&severity=critical`). */
+const oneOrMore = <T extends z.ZodType>(value: T) =>
+  z
+    .union([value, z.array(value)])
+    .transform((v): z.output<T>[] => (Array.isArray(v) ? v : [v]))
+    .optional();
+
 const listQuery = z.object({
-  view: z.enum(["open", "mine", "unassigned", "closed"]).optional(),
-  status: z.enum(STATUSES).optional(),
-  severity: z.enum(SEVERITIES).optional(),
-  caseType: z.enum(CASE_TYPES).optional(),
+  view: z.enum(CASE_LIST_VIEWS).optional(),
+  status: oneOrMore(z.enum(STATUSES)),
+  severity: oneOrMore(z.enum(SEVERITIES)),
+  caseType: oneOrMore(z.enum(CASE_TYPES)),
   /** "#BEC" and "bec" are the same Tag. */
-  tag: z
-    .string()
-    .refine((t) => normaliseTag(t) !== null, TAG_EXPECTED)
-    .transform((t) => normaliseTag(t) ?? t)
-    .optional(),
-  access: z.enum(["restricted", "guests"]).optional(),
+  tag: oneOrMore(
+    z
+      .string()
+      .refine((t) => normaliseTag(t) !== null, TAG_EXPECTED)
+      .transform((t) => normaliseTag(t) ?? t),
+  ),
+  access: oneOrMore(z.enum(["restricted", "guests"])),
   sort: z.enum(["updated", "severity", "number"]).optional(),
   order: z.enum(["asc", "desc"]).optional(),
 });

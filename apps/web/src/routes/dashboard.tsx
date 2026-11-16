@@ -279,7 +279,7 @@ function useWidth<T extends HTMLElement>() {
 const cases = (n: number) => (n === 1 ? "Case" : "Cases");
 
 /** A count that opens the Case list filtered to it; a zero opens nothing, so it isn't a link. */
-function CountLink({ n, label, search }: { n: number; label: string; search: { severity?: Severity; status?: OpenStatus } }) {
+function CountLink({ n, label, search }: { n: number; label: string; search: { severity?: Severity[]; status?: OpenStatus[] } }) {
   if (n === 0) return <span className="block px-1 text-muted-foreground">0</span>;
   return (
     <Link to="/" search={{ view: "open", ...search }} className={cn(focusRing, "block px-1 underline-offset-4 hover:underline")} aria-label={label}>
@@ -334,14 +334,14 @@ function OpenCasesTable({ openCases }: { openCases: DashboardMetrics["openCases"
                       <TableCell key={status} className={cell}>
                         <CountLink
                           n={row[status]}
-                          search={{ severity, status }}
+                          search={{ severity: [severity], status: [status] }}
                           label={`${count(row[status])} ${severityLabel[severity]} ${cases(row[status])}, ${statusLabel[status]}`}
                         />
                         {alarm && (
                           <Badge asChild variant="overdue" className="mt-1">
                             <Link
                               to="/"
-                              search={{ view: "unassigned", severity: "critical", status: "new" }}
+                              search={{ view: "unassigned", severity: ["critical"], status: ["new"] }}
                               className={focusRing}
                               aria-label={`${count(waiting)} Critical ${cases(waiting)} in New with no Assignee`}
                             >
@@ -353,7 +353,7 @@ function OpenCasesTable({ openCases }: { openCases: DashboardMetrics["openCases"
                     );
                   })}
                   <TableCell className={cn(cell, "font-semibold")}>
-                    <CountLink n={total} search={{ severity }} label={`${count(total)} open ${severityLabel[severity]} ${cases(total)}`} />
+                    <CountLink n={total} search={{ severity: [severity] }} label={`${count(total)} open ${severityLabel[severity]} ${cases(total)}`} />
                   </TableCell>
                 </TableRow>
               );
@@ -368,7 +368,7 @@ function OpenCasesTable({ openCases }: { openCases: DashboardMetrics["openCases"
                 <TableCell key={status} className={cn(cell, "font-semibold")}>
                   <CountLink
                     n={statusTotal(status)}
-                    search={{ status }}
+                    search={{ status: [status] }}
                     label={`${count(statusTotal(status))} open ${cases(statusTotal(status))}, ${statusLabel[status]}`}
                   />
                 </TableCell>
