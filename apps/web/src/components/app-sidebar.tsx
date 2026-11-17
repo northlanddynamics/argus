@@ -14,6 +14,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarSeparator,
   useSidebar,
 } from "@/components/ui/sidebar";
 import { rowClass, WorkQueue } from "@/components/work-queue";
@@ -73,6 +74,25 @@ function NavRail({ me }: { me: Me }) {
           <SidebarGroupContent className="px-1.5 md:px-0">
             <nav aria-label="Main">
             <SidebarMenu>
+              {me.organization && !me.guest && (
+                <>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={!!matchRoute({ to: "/dashboard" })}
+                      tooltip={{ children: "Dashboard", hidden: false, className: "data-closed:animate-none" }}
+                    >
+                      <Link to="/dashboard" aria-current={matchRoute({ to: "/dashboard" }) ? "page" : undefined} onClick={closeMobile}>
+                        <ChartColumnIcon />
+                        <span>Dashboard</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <li role="none">
+                    <SidebarSeparator className="my-2" />
+                  </li>
+                </>
+              )}
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
@@ -89,6 +109,62 @@ function NavRail({ me }: { me: Me }) {
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+              {me.organization && !me.guest && (
+                <>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={!!matchRoute({ to: "/alerts" })}
+                      tooltip={{ children: "Alerts", hidden: false, className: "data-closed:animate-none" }}
+                    >
+                      <Link to="/alerts" aria-current={matchRoute({ to: "/alerts" }) ? "page" : undefined} onClick={closeMobile}>
+                        <SirenIcon />
+                        <span>Alerts</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={!!matchRoute({ to: "/observables", fuzzy: true })}
+                      tooltip={{ children: "Observables", hidden: false, className: "data-closed:animate-none" }}
+                    >
+                      <Link
+                        to="/observables"
+                        aria-current={matchRoute({ to: "/observables", fuzzy: true }) ? (matchRoute({ to: "/observables" }) ? "page" : "location") : undefined}
+                        onClick={closeMobile}
+                      >
+                        <FingerprintIcon />
+                        <span>Observables</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={!!matchRoute({ to: "/lookup" })}
+                      tooltip={{ children: "Bulk Lookup", hidden: false, className: "data-closed:animate-none" }}
+                    >
+                      <Link to="/lookup" aria-current={matchRoute({ to: "/lookup" }) ? "page" : undefined} onClick={closeMobile}>
+                        <ListChecksIcon />
+                        <span>Bulk Lookup</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={!!matchRoute({ to: "/actions", fuzzy: true })}
+                      tooltip={{ children: "Actions", hidden: false, className: "data-closed:animate-none" }}
+                    >
+                      <Link to="/actions" aria-current={matchRoute({ to: "/actions", fuzzy: true }) ? "page" : undefined} onClick={closeMobile}>
+                        <ZapIcon />
+                        <span>Actions</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </>
+              )}
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
@@ -101,93 +177,24 @@ function NavRail({ me }: { me: Me }) {
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-              {me.organization && !me.guest && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={!!matchRoute({ to: "/alerts" })}
-                    tooltip={{ children: "Alerts", hidden: false, className: "data-closed:animate-none" }}
-                  >
-                    <Link to="/alerts" aria-current={matchRoute({ to: "/alerts" }) ? "page" : undefined} onClick={closeMobile}>
-                      <SirenIcon />
-                      <span>Alerts</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
-              {me.organization && !me.guest && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={!!matchRoute({ to: "/observables", fuzzy: true })}
-                    tooltip={{ children: "Observables", hidden: false, className: "data-closed:animate-none" }}
-                  >
-                    <Link
-                      to="/observables"
-                      aria-current={matchRoute({ to: "/observables", fuzzy: true }) ? (matchRoute({ to: "/observables" }) ? "page" : "location") : undefined}
-                      onClick={closeMobile}
-                    >
-                      <FingerprintIcon />
-                      <span>Observables</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
-              {me.organization && !me.guest && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={!!matchRoute({ to: "/actions", fuzzy: true })}
-                    tooltip={{ children: "Actions", hidden: false, className: "data-closed:animate-none" }}
-                  >
-                    <Link to="/actions" aria-current={matchRoute({ to: "/actions", fuzzy: true }) ? "page" : undefined} onClick={closeMobile}>
-                      <ZapIcon />
-                      <span>Actions</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
-              {me.organization && !me.guest && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={!!matchRoute({ to: "/dashboard" })}
-                    tooltip={{ children: "Dashboard", hidden: false, className: "data-closed:animate-none" }}
-                  >
-                    <Link to="/dashboard" aria-current={matchRoute({ to: "/dashboard" }) ? "page" : undefined} onClick={closeMobile}>
-                      <ChartColumnIcon />
-                      <span>Dashboard</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
-              {me.organization && !me.guest && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={!!matchRoute({ to: "/lookup" })}
-                    tooltip={{ children: "Bulk Lookup", hidden: false, className: "data-closed:animate-none" }}
-                  >
-                    <Link to="/lookup" aria-current={matchRoute({ to: "/lookup" }) ? "page" : undefined} onClick={closeMobile}>
-                      <ListChecksIcon />
-                      <span>Bulk Lookup</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
               {canManage(me.organization?.role) && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={!!matchRoute({ to: "/settings", fuzzy: true })}
-                    tooltip={{ children: "Settings", hidden: false, className: "data-closed:animate-none" }}
-                  >
-                    <Link to="/settings" aria-current={matchRoute({ to: "/settings", fuzzy: true }) ? "location" : undefined} onClick={closeMobile}>
-                      <SettingsIcon />
-                      <span>Settings</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
+                <>
+                  <li role="none">
+                    <SidebarSeparator className="my-2" />
+                  </li>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={!!matchRoute({ to: "/settings", fuzzy: true })}
+                      tooltip={{ children: "Settings", hidden: false, className: "data-closed:animate-none" }}
+                    >
+                      <Link to="/settings" aria-current={matchRoute({ to: "/settings", fuzzy: true }) ? "location" : undefined} onClick={closeMobile}>
+                        <SettingsIcon />
+                        <span>Settings</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </>
               )}
             </SidebarMenu>
             </nav>
