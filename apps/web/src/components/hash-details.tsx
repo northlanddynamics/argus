@@ -179,7 +179,7 @@ function HashCard({ hash }: { hash: string }) {
  */
 export function HashHoverCard({ hash, enabled = true, held = false, children }: { hash: string; enabled?: boolean; held?: boolean; children: ReactElement }) {
   return (
-    <EnrichmentHoverCard enabled={enabled} held={held} card={() => <HashCard hash={hash} />}>
+    <EnrichmentHoverCard enabled={enabled} held={held} renderCard={() => <HashCard hash={hash} />}>
       {children}
     </EnrichmentHoverCard>
   );
