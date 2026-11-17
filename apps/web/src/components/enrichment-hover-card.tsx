@@ -11,7 +11,7 @@ import { canManage } from "@/lib/roles";
  *
  * Opens 400 ms after the pointer rests on the value and closes 150 ms after it leaves both; focus
  * doesn't open it (from the keyboard, `I` opens the Enrichment panel), nor does it open over a
- * right-click menu. `card` is its content, mounted only while it is open, so the lookup starts when
+ * right-click menu. `renderCard` gives its content, mounted only while it is open, so the lookup starts when
  * it opens rather than when the value renders. `children` must be one element that can hold a ref.
  * `enabled` false leaves it as it is; `held` keeps the card shut without remounting the value (while
  * the Enrichment panel shows it, so focus can return to it). Guests see the value alone: Argus never
@@ -20,13 +20,13 @@ import { canManage } from "@/lib/roles";
 export function EnrichmentHoverCard({
   enabled = true,
   held = false,
-  card,
+  renderCard,
   children,
 }: {
   enabled?: boolean;
   held?: boolean;
   /** The card's content; `admin` says whether the viewer can fix a missing Integration themselves. */
-  card: (admin: boolean) => ReactNode;
+  renderCard: (admin: boolean) => ReactNode;
   children: ReactElement;
 }) {
   const role = useQuery(meQuery).data?.organization?.role;
@@ -38,7 +38,7 @@ export function EnrichmentHoverCard({
         {children}
       </HoverCardTrigger>
       <HoverCardContent className="w-80" side="bottom" align="start" collisionPadding={16}>
-        {card(canManage(role))}
+        {renderCard(canManage(role))}
       </HoverCardContent>
     </HoverCard>
   );

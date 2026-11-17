@@ -9,6 +9,7 @@ import { CaseRef } from "@/components/case-ref";
 import { Time } from "@/components/time";
 import { SeverityBadge } from "@/components/case-badges";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { FacetedFilter } from "@/components/faceted-filter";
 import { FilterBar, FilterField, FilterSelect } from "@/components/filter-bar";
 import { ItemText, ItemTypeIcon, ItemValue } from "@/components/item-value";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
+  ALERT_KINDS,
   ALERT_STATUSES,
   type AlertKind,
   alertKindLabel,
@@ -37,15 +39,18 @@ import { AttachAlertsDialog, attachAlerts, type BulkOutcome, DismissAlertsDialog
 import { AlertDetails } from "@/routes/alerts/alert-details";
 
 /**
+ * Each facet (`status`, `severity`, `kind`, `integration`) matches an Alert with any of its values.
  * `status` is New unless the URL says otherwise; "any" shows every Status. `falconComplete` shows the
  * Alerts tagged falcon_complete in Falcon, hidden unless it says "show" or "only". `page` is which page
  * of the queue, from 1. `alert` is the Alert shown in full. `case` keeps to the Alerts attached to
  * the Case with that number.
  */
 export type AlertQueueSearch = {
-  status?: AlertStatus | "any";
-  severity?: Severity;
-  integration?: string;
+  status?: AlertStatus[] | "any";
+  severity?: Severity[];
+  kind?: AlertKind[];
+  /** Integration ids. */
+  integration?: string[];
   case?: number;
   falconComplete?: "show" | "only";
   page?: number;
@@ -57,12 +62,24 @@ const FALCON_COMPLETE_CHOICES = ["hide", "show", "only"] as const;
 const falconCompleteLabel = { hide: "Hidden", show: "Shown", only: "Only these" } as const;
 
 const pick = <T extends string>(list: readonly T[], value: unknown) => (list.includes(value as T) ? (value as T) : undefined);
+/** The values of `value`, one or a list, that are in `list`, in its order; undefined for none. */
+const pickMany = <T extends string>(list: readonly T[], value: unknown) => {
+  const given = new Set([value].flat());
+  const found = list.filter((v) => given.has(v));
+  return found.length ? found : undefined;
+};
+/** The non-empty strings in `value`, one or a list; undefined for none. */
+const pickStrings = (value: unknown) => {
+  const found = [...new Set([value].flat().filter((v): v is string => typeof v === "string" && v !== ""))];
+  return found.length ? found : undefined;
+};
 
 /** Reads the queue's filters from the URL, ignoring anything unknown. */
 export const validateAlertQueueSearch = (search: Record<string, unknown>): AlertQueueSearch => ({
-  status: pick([...ALERT_STATUSES, "any"] as const, search.status),
-  severity: pick(SEVERITIES, search.severity),
-  integration: typeof search.integration === "string" && search.integration ? search.integration : undefined,
+  status: [search.status].flat().includes("any") ? "any" : pickMany(ALERT_STATUSES, search.status),
+  severity: pickMany(SEVERITIES, search.severity),
+  kind: pickMany(ALERT_KINDS, search.kind),
+  integration: pickStrings(search.integration),
   case: caseNumberOf(search.case),
   falconComplete: pick(["show", "only"] as const, search.falconComplete),
   page: Number.isInteger(Number(search.page)) && Number(search.page) > 1 ? Number(search.page) : undefined,
@@ -87,7 +104,9 @@ const pickedOf = (a: AlertRow): Picked => ({ version: a.version, severity: a.sev
 /** The Case Type a Case opened from an Alert of each kind most often is; the Member can change it. */
 const caseTypeFor: Record<AlertKind, CaseType> = { epp: "malware", idp: "account_compromise", mobile: "malware" };
 const shortcut = { o: "open", a: "attach", d: "dismiss" } as const;
-const noFilters = { status: undefined, severity: undefined, integration: undefined, case: undefined, falconComplete: undefined };
+const noFilters = { status: undefined, severity: undefined, kind: undefined, integration: undefined, case: undefined, falconComplete: undefined };
+/** The Alert Statuses the queue shows unless the URL picks others. */
+const DEFAULT_STATUSES: AlertStatus[] = ["new"];
 /**
  * Host / user and Received give way when the queue is narrow (the Alert panel is open). Their cells
  * stay in the row, emptied and without padding, so the cells after them keep their columns.
@@ -140,21 +159,26 @@ function useQueueKeys(
 export function AlertQueuePage() {
   const search = useSearch({ from: "/_app/alerts" });
   const navigate = useNavigate({ from: "/alerts" });
-  const status = search.status ?? "new";
+  /** The picked Alert Statuses; none is every Status. */
+  const statuses = search.status === "any" ? [] : (search.status ?? DEFAULT_STATUSES);
   const page = search.page ?? 1;
   const setSearch = (next: Partial<AlertQueueSearch>) => navigate({ search: (prev) => ({ ...prev, ...next }) });
 
   const integrations = useQuery(integrationsQuery);
   /** The Integrations that bring in Alerts; others (Response Actions only) have no place in the queue. */
   const streams = integrations.data?.filter((i) => i.capabilities.receivesAlerts);
+  /** The Integrations to filter by: those bringing in Alerts, and any picked in the URL. */
+  const integrationOptions = [...new Set([...(streams?.map((i) => i.id) ?? []), ...(search.integration ?? [])])];
+  const integrationLabels = Object.fromEntries(integrationOptions.map((id) => [id, integrations.data?.find((i) => i.id === id)?.name ?? "Unknown Integration"]));
   const alerts = useQuery({
     // Not keyed on the Alert shown in the panel: opening one mustn't reload the queue.
-    queryKey: [...alertsKey, { status, severity: search.severity, integration: search.integration, case: search.case, falconComplete: search.falconComplete, page }],
+    queryKey: [...alertsKey, { statuses, severity: search.severity, kind: search.kind, integration: search.integration, case: search.case, falconComplete: search.falconComplete, page }],
     queryFn: async () => {
       const res = await api.alerts.$get({
         query: {
-          ...(status !== "any" && { status }),
+          ...(statuses.length > 0 && { status: statuses }),
           severity: search.severity,
+          kind: search.kind,
           integration: search.integration,
           case: search.case === undefined ? undefined : String(search.case),
           falconComplete: search.falconComplete,
@@ -163,7 +187,7 @@ export function AlertQueuePage() {
         },
       });
       // A Case that doesn't exist, or that the Member can't see, has no Alerts to show.
-      if (res.status === 404 && search.case !== undefined) return { alerts: [], total: 0, page, pageSize: PAGE_SIZE };
+      if (res.status === 404 && search.case !== undefined) return { alerts: [], total: 0, facets: undefined, page, pageSize: PAGE_SIZE };
       if (!res.ok) throw new Error("Could not load Alerts");
       return res.json();
     },
@@ -171,6 +195,7 @@ export function AlertQueuePage() {
     placeholderData: keepPreviousData,
   });
   const total = alerts.data?.total ?? 0;
+  const facets = alerts.data?.facets;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const first = (page - 1) * PAGE_SIZE + 1;
   /** Row indexes are per page, so a shift-click range never starts from a row on another one. */
@@ -189,8 +214,7 @@ export function AlertQueuePage() {
   const [outcome, setOutcome] = useState<BulkOutcome | null>(null);
   const showing = search.alert ?? null;
   const setShowing = (alert: string | null) => setSearch({ alert: alert ?? undefined });
-  const filtered =
-    status !== "new" || search.severity !== undefined || search.integration !== undefined || search.case !== undefined || search.falconComplete !== undefined;
+  const filtered = Object.keys(noFilters).some((f) => search[f as keyof typeof noFilters] !== undefined);
   /**
    * Changes the filters, starting again from the first page; the last action's notice is about Alerts
    * that may no longer be shown, so it goes.
@@ -371,38 +395,31 @@ export function AlertQueuePage() {
         </Alert>
       )}
       <FilterBar onClear={filtered ? () => filter(noFilters) : undefined}>
-        <FilterSelect
-          label="Alert Status"
-          id="alert-status"
-          value={status}
-          options={[...ALERT_STATUSES, "any"] as const}
-          labels={{ ...alertStatusLabel, any: "Any" }}
-          onChange={(next) => filter({ status: next === "new" ? undefined : next })}
+        <FacetedFilter
+          title="Alert Status"
+          options={ALERT_STATUSES}
+          labels={alertStatusLabel}
+          counts={facets?.status}
+          selected={statuses}
+          // Picking none shows every Status; picking just New is the default again.
+          onChange={(next) => filter({ status: !next ? "any" : next.join() === DEFAULT_STATUSES.join() ? undefined : next })}
         />
-        <FilterSelect
-          label="Severity"
-          id="alert-severity"
-          any="Any"
-          value={search.severity}
-          options={SEVERITIES}
-          labels={severityLabel}
-          onChange={(severity) => filter({ severity })}
-        />
+        <FacetedFilter title="Severity" options={SEVERITIES} labels={severityLabel} counts={facets?.severity} selected={search.severity} onChange={(severity) => filter({ severity })} />
+        <FacetedFilter title="Detection" options={ALERT_KINDS} labels={alertKindLabel} counts={facets?.kind} selected={search.kind} onChange={(kind) => filter({ kind })} />
         {((streams?.length ?? 0) > 1 || search.integration) && (
-          <FilterSelect
-            label="Integration"
-            id="alert-integration"
-            any="Any"
-            value={search.integration}
-            options={streams?.map((i) => i.id) ?? []}
-            labels={Object.fromEntries(streams?.map((i) => [i.id, i.name]) ?? [])}
+          <FacetedFilter
+            title="Integration"
+            options={integrationOptions}
+            labels={integrationLabels}
+            counts={facets?.integration}
+            selected={search.integration}
             onChange={(integration) => filter({ integration })}
           />
         )}
         <CaseFilter
           value={search.case}
           // Only Attached Alerts are on a Case: the New ones the queue starts with would show nothing.
-          onChange={(next) => filter({ case: next, ...(next !== undefined && status === "new" && { status: "attached" }) })}
+          onChange={(next) => filter({ case: next, ...(next !== undefined && search.status === undefined && { status: ["attached"] }) })}
         />
         <FilterSelect
           label="Falcon Complete"
@@ -665,7 +682,7 @@ export function AlertQueuePage() {
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-muted-foreground">
         <p role="status" className="tabular-nums">
           {pages > 1 ? `${first}–${first + loaded.length - 1} of ` : ""}
-          {total} {status === "any" ? "" : `${alertStatusLabel[status]} `}
+          {total} {statuses.length === 1 ? `${alertStatusLabel[statuses[0]!]} ` : ""}
           {total === 1 ? "Alert" : "Alerts"}
           {search.case !== undefined && ` on ${caseRef(search.case)}`}
           {pages > 1 && ", newest first"}

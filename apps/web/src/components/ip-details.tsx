@@ -516,7 +516,7 @@ function IpCard({ ip, admin }: { ip: string; admin: boolean }) {
  */
 export function IpHoverCard({ ip, enabled = true, held = false, children }: { ip: string; enabled?: boolean; held?: boolean; children: ReactElement }) {
   return (
-    <EnrichmentHoverCard enabled={enabled} held={held} card={(admin) => <IpCard ip={ip} admin={admin} />}>
+    <EnrichmentHoverCard enabled={enabled} held={held} renderCard={(admin) => <IpCard ip={ip} admin={admin} />}>
       {children}
     </EnrichmentHoverCard>
   );

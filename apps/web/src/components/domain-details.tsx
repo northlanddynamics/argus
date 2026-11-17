@@ -228,7 +228,7 @@ function DomainCard({ value }: { value: string }) {
  */
 export function DomainHoverCard({ domain, enabled = true, held = false, children }: { domain: string; enabled?: boolean; held?: boolean; children: ReactElement }) {
   return (
-    <EnrichmentHoverCard enabled={enabled} held={held} card={() => <DomainCard value={domain} />}>
+    <EnrichmentHoverCard enabled={enabled} held={held} renderCard={() => <DomainCard value={domain} />}>
       {children}
     </EnrichmentHoverCard>
   );

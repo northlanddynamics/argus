@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, type SQL, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { casePolicy, isGuest, visibleAlerts, visibleCases, visibleItems } from "../access/policy";
 import { recordOrgAudit } from "../audit/org-audit-log";
@@ -27,6 +27,7 @@ import {
 } from "../observables/observables";
 import { publish } from "../realtime/signals";
 import {
+  type AlertKind,
   alertLabel,
   type AlertStatus,
   closedInFalconComment,
@@ -134,16 +135,25 @@ export class AlertNotFound extends Error {
   }
 }
 
-/** `falconComplete`: whether Alerts tagged `falcon_complete` in Falcon are hidden (the default), shown with the rest, or the only ones shown. */
+/**
+ * Each facet (`status`, `severity`, `kind`, `integrationId`) matches an Alert with any of its values,
+ * and the filters together match an Alert that every one of them matches; picking none is no filter.
+ * `falconComplete`: whether Alerts tagged `falcon_complete` in Falcon are hidden (the default), shown
+ * with the rest, or the only ones shown.
+ */
 export type AlertFilter = {
-  status?: AlertStatus;
-  severity?: Severity;
-  integrationId?: string;
+  status?: AlertStatus[];
+  severity?: Severity[];
+  kind?: AlertKind[];
+  integrationId?: string[];
   caseNumber?: number;
   falconComplete?: FalconCompleteFilter;
 };
 export const FALCON_COMPLETE_FILTERS = ["hide", "show", "only"] as const;
 export type FalconCompleteFilter = (typeof FALCON_COMPLETE_FILTERS)[number];
+
+/** `match(values)` when any values are picked; no filter when none are. */
+const anyOf = <T,>(values: T[] | undefined, match: (values: T[]) => SQL | undefined) => (values?.length ? match(values) : undefined);
 
 /** Whether an Alert is tagged `falcon_complete` in Falcon, ignoring case. */
 const taggedFalconComplete = sql<boolean>`exists (select 1 from jsonb_array_elements_text(${alerts.falconTags}) as tag where lower(tag) = ${FALCON_COMPLETE_TAG})`;
@@ -606,25 +616,57 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
   return {
     /**
      * The Alert queue: the Organization's Alerts `me` can see that match `filter`, newest first, a page
-     * at a time, with how many match in all.
+     * at a time, with how many match in all. `facets` gives, for each value of each facet, how many
+     * Alerts would match with that value picked, the other filters as they are; values no Alert has
+     * are left out.
      */
     async list(me: Membership, filter: AlertFilter = {}, paging: QueuePage = {}) {
       const page = Math.max(1, paging.page ?? 1);
       const pageSize = Math.min(Math.max(1, paging.pageSize ?? QUEUE_PAGE_SIZE), QUEUE_MAX_PAGE_SIZE);
       let caseId: string | undefined;
       if (filter.caseNumber !== undefined) caseId = (await caseNumbered(db, me, filter.caseNumber)).id;
-      const matching = and(
+      const base = and(
         eq(alerts.organizationId, me.organizationId),
         visibleAlerts(me, alerts.caseId),
-        filter.status ? eq(alerts.status, filter.status) : undefined,
-        filter.severity ? eq(alerts.severity, filter.severity) : undefined,
-        filter.integrationId ? eq(alerts.integrationId, filter.integrationId) : undefined,
         caseId ? eq(alerts.caseId, caseId) : undefined,
         (filter.falconComplete ?? "hide") === "hide" ? sql`not ${taggedFalconComplete}` : undefined,
         filter.falconComplete === "only" ? taggedFalconComplete : undefined,
       );
-      const [counted] = await db.select({ total: sql<number>`count(*)::int` }).from(alerts).where(matching);
+      const facetFilters = {
+        status: anyOf(filter.status, (v) => inArray(alerts.status, v)),
+        severity: anyOf(filter.severity, (v) => inArray(alerts.severity, v)),
+        kind: anyOf(filter.kind, (v) => inArray(alerts.kind, v)),
+        integrationId: anyOf(filter.integrationId, (v) => inArray(alerts.integrationId, v)),
+      };
+      type Facet = keyof typeof facetFilters;
+      /** Every filter but `facet`'s. */
+      const matchingExcept = (facet?: Facet) => and(base, ...Object.entries(facetFilters).filter(([f]) => f !== facet).map(([, where]) => where));
+      const matching = matchingExcept();
+      const tallyBy = async (facet: Facet) =>
+        Object.fromEntries(
+          (
+            await db
+              .select({ value: alerts[facet], n: count() })
+              .from(alerts)
+              .where(matchingExcept(facet))
+              .groupBy(alerts[facet])
+          ).map((f) => [f.value, f.n]),
+        );
+      const [[counted], status, severity, kind, integration] = await Promise.all([
+        db.select({ total: sql<number>`count(*)::int` }).from(alerts).where(matching),
+        tallyBy("status"),
+        tallyBy("severity"),
+        tallyBy("kind"),
+        tallyBy("integrationId"),
+      ]);
       const total: number = counted?.total ?? 0;
+      const facets = {
+        status: status as Partial<Record<AlertStatus, number>>,
+        severity: severity as Partial<Record<Severity, number>>,
+        kind: kind as Partial<Record<AlertKind, number>>,
+        /** By Integration id. */
+        integration: integration as Record<string, number>,
+      };
       const rows = await db
         .select({
           id: alerts.id,
@@ -686,7 +728,7 @@ export function alertStore(deps: Pick<Deps, "db" | "clock" | "baseUrl" | "teams"
           receivedAt: receivedAt.toISOString(),
         };
       });
-      return { alerts: shown, total, page, pageSize };
+      return { alerts: shown, total, facets, page, pageSize };
     },
 
     /**
